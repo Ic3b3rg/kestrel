@@ -30,7 +30,7 @@ One empirical AFK ticket is required before the final Review First specification
 
 This note owns the neutral inference contract and capability vocabulary; Project-scoped connections and secret/egress separation; profile approval, selection, drift, suspension, and deprecation; typed response, error, usage, retry, cancellation, and accounting behavior; Review First's minimum capabilities and exclusions; and cross-provider conformance.
 
-It does not repeat the full Review First threat model. It adopts the controls in [Review First trust and security model](./review-first-trust-security-model.md), especially `RF-SEC-08`, `RF-SEC-10`, `RF-SEC-13`, and `RF-SEC-14`. It also does not decide model quality thresholds, conceptual extraction design, local review retention, Operator authentication, Agent Run tools, or production adapter implementation language.
+It does not repeat the full Review First threat model. It adopts the controls in [Review First trust and security model](https://github.com/Ic3b3rg/kestrel/blob/accb1615d8b6b189a9d27f3606612d05ee533fa6/docs/research/review-first-trust-security-model.md), especially `RF-SEC-08`, `RF-SEC-10`, `RF-SEC-13`, and `RF-SEC-14`. It also does not decide model quality thresholds, conceptual extraction design, local review retention, Operator authentication, Agent Run tools, or production adapter implementation language.
 
 ## Threat model first
 
@@ -119,7 +119,7 @@ Threat containment, secret-store implementation, SSRF defenses, log redaction, r
 
 **Source fact.** Bedrock inference profiles can route across regions, and the destinations of global profiles may change. Geographic profiles have a different stability statement. ([Bedrock cross-region profiles](https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-support.html))
 
-**Kestrel decision.** A requested model string is not identity evidence. Each invocation stores both `requested_target` and all available `resolved_target` fields: provider model/version, deployment, endpoint, region/route, service tier, and inference profile. If an approved invariant cannot be observed before or after the call, the attestation records that limitation and uses a shorter expiry; a hard invariant that cannot be established makes the profile ineligible.
+**Kestrel decision.** A requested model string is not identity evidence. Each model call stores both `requested_target` and all available `resolved_target` fields: provider model/version, deployment, endpoint, region/route, service tier, and inference profile. If an approved invariant cannot be observed before or after the call, the attestation records that limitation and uses a shorter expiry; a hard invariant that cannot be established makes the profile ineligible.
 
 ### State, streaming, stops, and cancellation differ
 
@@ -163,15 +163,15 @@ Threat containment, secret-store implementation, SSRF defenses, log redaction, r
 
 ## Versioned Model Inference Boundary
 
-### Public entities
+### Boundary records
 
-The control plane exposes seven stable domain objects:
+The control plane exposes seven stable, versioned interface records. These names do not replace the shared product vocabulary in `CONTEXT.md`:
 
 1. `ProviderConnection`: Project-bound secret handle and upstream account scope.
 2. `ProviderProfile`: exact callable API surface, target, route, feature configuration, and limits.
 3. `CapabilityAttestation`: versioned claims plus evidence and conformance status for that profile.
 4. `ProfileApproval`: Operator acceptance of the profile and data policy for named Project data classes and Kestrel stages.
-5. `ModelInvocation`: immutable logical request plus one or more bounded transport attempts.
+5. `ModelCall`: immutable logical request plus one or more bounded transport attempts.
 6. `ModelResult`: typed terminal output, model identity, stop outcome, request correlation, and validation state.
 7. `UsageLedgerEntry`: append-only estimated/reported/reconciled quantities and money.
 
@@ -185,7 +185,7 @@ Provider-specific SDK objects, error classes, role lists, headers, and raw optio
 - Required-field or semantic changes require a new major boundary version.
 - New optional capabilities, error details, usage dimensions, and stop reasons are additive.
 - A profile declares the exact contract versions it implements; the scheduler never coerces across major versions.
-- Stored invocations are decoded with their historical schema and are never reinterpreted under a new adapter.
+- Stored model calls are decoded with their historical schema and are never reinterpreted under a new adapter.
 
 ### Provider Connection contract
 
@@ -217,7 +217,7 @@ connection_id: one Project-bound connection
 surface: {api_family, https origin, allowlisted path, exact API version or tightly expired stable channel}
 target: {requested ID, target kind, version policy, expected resolved ID}
 route: {request region, finite processing-region set, service tier/throughput}
-features: {instruction channel, structured-output dialect/subset, stateless state}
+features: {instruction channel, structured-output dialect/subset, stateless state, fixed generation-policy digest}
 optimizations: {streaming, prompt cache, token-count mode}
 forbidden_features: [tools]
 data_policy: {training, no application state, abuse retention and exceptions}
@@ -226,7 +226,7 @@ limits: context, output, request bytes, concurrency, timeout, attempts, cost
 attestation: evidence refs, adapter tests, observed_at, expires_at, digest
 ```
 
-Adapter defaults never fill a missing profile value at invocation time. Redirects are disabled unless the destination is pre-attested as part of the same exact surface. DNS, TLS, proxy, and egress enforcement follow `RF-SEC-10`.
+Adapter defaults never fill a missing profile value at call time. Provider-specific generation controls may exist only in an adapter-versioned profile schema: they are frozen into the profile digest, shown at approval, and cannot be changed by a neutral request. Redirects are disabled unless the destination is pre-attested as part of the same exact surface. DNS, TLS, proxy, and egress enforcement follow `RF-SEC-10`.
 
 ### Capability levels
 
@@ -234,13 +234,13 @@ Each request classifies every relevant behavior:
 
 | Level | Meaning | May an adapter emulate it? |
 | --- | --- | --- |
-| `hard_requirement` | Invocation is invalid unless the profile has current native/attested support. | No. |
+| `hard_requirement` | A model call is invalid unless the profile has current native/attested support. | No. |
 | `optional_optimization` | Kestrel remains correct without it; use is profile-approved and observable. | Yes, but it must not alter guarantees. |
 | `provider_native_guarantee` | Exact surface promises a behavior and conformance verifies the mapping. | No; local validation may add defense. |
 | `prompt_emulation` | Prompt wording seeks a behavior with no provider enforcement. | Only for quality hints, never to satisfy a hard requirement. |
 | `forbidden` | The capability must be absent even if the provider offers it. | No. |
 
-Examples: native JSON Schema shape control is a V1 hard requirement and provider-native guarantee; local schema validation is a Kestrel guarantee; caching and streaming are optional optimizations; asking for JSON in prose is prompt emulation; tools and provider storage are forbidden.
+Examples: native JSON Schema shape control is a V1 hard requirement and provider-native guarantee; local schema validation is a Kestrel guarantee; caching and streaming are optional optimizations; asking for JSON in prose is prompt emulation; tools and provider application storage are forbidden.
 
 ### Review First V1 minimum profile
 
@@ -277,8 +277,8 @@ These exclusions are schema-level and broker-enforced, not prompt instructions.
 
 ```yaml
 contract_version: kestrel.model-inference/v1
-invocation_id: Kestrel-generated UUID
-logical_idempotency_key: hash(Project, review revision, stage, prompt, schema, profile)
+model_call_id: Kestrel-generated UUID
+logical_deduplication_key: hash(Project, review revision, stage, prompt, schema, profile)
 project_id: exact Project
 review_revision_id: exact immutable review revision
 profile_id: exact approved profile
@@ -287,7 +287,7 @@ purpose: review_first.change_overview | review_first.conceptual_review | other_a
 policy_instruction: Kestrel-versioned text reference plus digest
 input_blocks: bounded text plus Project/revision/source provenance
 output_schema: Kestrel schema ID, version, digest, and bounded inline schema
-generation: {max_output_tokens, optional approved temperature}
+generation: {max_output_tokens}
 deadline_at: absolute deadline
 budget: {input bytes, estimated input tokens, output tokens, decimal money}
 requirements: explicit capability levels
@@ -298,7 +298,7 @@ The request contains no credential, host, free-form provider options, model alia
 ### Typed result and stop outcome
 
 ```yaml
-invocation_id: original Kestrel ID
+model_call_id: original Kestrel ID
 attempts: immutable ordered transport-attempt summaries
 profile_snapshot: exact profile and attestation digest
 requested_target: target from profile
@@ -341,7 +341,7 @@ Normalized usage is loss-aware, not falsely uniform:
 
 - `input_tokens`, `output_tokens`, `total_tokens` when reported;
 - `cached_input_read_tokens` and `cache_write_tokens` when reported;
-- provider-specific reasoning/thought, tool, media, character, request, or throughput dimensions in a typed extension map;
+- provider-specific reasoning/thought, tool, media, character, request, or throughput dimensions in adapter-defined, result-only namespaced fields that cannot drive portable orchestration;
 - `count_source`: provider reported, provider preflight, local estimate, or unavailable;
 - `cost_estimate_before`, `cost_estimate_after`, and `cost_reconciled` as decimal money;
 - price catalog source, currency, unit rules, effective time, retrieved time, and digest; and
@@ -373,7 +373,7 @@ Before approval, Kestrel shows:
 - exact target kind and identifier, pinning/alias/upgrade behavior, known resolved version, and service tier;
 - request and possible processing/storage regions, including routing sets;
 - training use, application state, abuse retention, ZDR/MAM equivalent, human-review possibility, exceptions, and evidence expiry;
-- enabled native features and explicitly forbidden features;
+- enabled native features, fixed generation settings, and explicitly forbidden features;
 - context/output/request limits, throughput/quota class, concurrency, timeout, and retry policy;
 - price snapshot and Project hard budgets; and
 - conformance result, adapter version, limitations, and attestation digest.
@@ -410,19 +410,19 @@ Price-only drift MAY keep an existing profile technically eligible when it remai
 
 ### Idempotency boundary
 
-`logical_idempotency_key` deduplicates Kestrel scheduling and durable result publication. It does not prove provider-side exactly-once inference or billing. The reviewed synchronous inference surfaces do not supply one portable, documented idempotency guarantee, so V1 assumes none.
+`logical_deduplication_key` deduplicates Kestrel scheduling and durable result publication. It does not prove provider-side exactly-once inference or billing. The reviewed synchronous inference surfaces do not supply one portable, documented idempotency guarantee, so V1 assumes none.
 
 Each outbound delivery is a numbered physical attempt. If a future exact surface has a documented idempotency key, it may be added as a profile capability only after live conformance; Kestrel still records every delivery and does not generalize that guarantee to another endpoint.
 
 ### Kestrel-owned bounded retry
 
-Default V1 budget is at most **two physical attempts** for one logical invocation and only while the original deadline and reserved cost permit. SDK retries MUST be disabled; if impossible, their maximum and telemetry must be proven and each SDK delivery consumes this same budget.
+Default V1 budget is at most **two physical attempts** for one logical model call and only while the original deadline and reserved cost permit. SDK retries MUST be disabled; if impossible, their maximum and telemetry must be proven and each SDK delivery consumes this same budget.
 
 An automatic retry is allowed only when Kestrel can classify the first attempt as `not_sent` or `rejected_before_inference`, for example a local connection failure before any body bytes or a documented rate/capacity rejection with bounded `Retry-After`. Delay uses capped exponential backoff plus jitter and never exceeds the absolute deadline.
 
 There is no automatic retry when delivery is `possibly_accepted` or `accepted`: timeout after body delivery, connection loss after headers, interrupted SSE, malformed terminal response, local validation failure, or missing usage all become terminal `outcome_unknown`, `stream_interrupted`, or `malformed_response` as appropriate. This avoids duplicate analysis and spend without pretending the provider did no work.
 
-V1 performs no automatic semantic “repair” inference after a refusal, safety stop, truncation, or schema/evidence validation failure. A deliberate new attempt receives a new invocation ID, new budget reservation, explicit relation to the prior attempt, and the same exact profile unless the Operator separately chooses another.
+V1 performs no automatic semantic “repair” inference after a refusal, safety stop, truncation, or schema/evidence validation failure. A deliberate new attempt receives a new `model_call_id`, new budget reservation, explicit relation to the prior attempt, and the same exact profile unless the Operator separately chooses another.
 
 ### Fallback
 
@@ -436,9 +436,9 @@ Before outbound delivery, cancellation is definitive and releases the reservatio
 
 ## Observability and audit
 
-For every logical invocation and physical attempt, Kestrel records content-minimized structured telemetry:
+For every logical model call and physical attempt, Kestrel records content-minimized structured telemetry:
 
-- Project, review revision, purpose, invocation/attempt IDs, logical idempotency digest, and queue lease;
+- Project, review revision, purpose, model-call/attempt IDs, logical deduplication digest, and queue lease;
 - connection/profile IDs, approval and attestation digests, adapter/contract versions;
 - requested and resolved model/deployment/version/route/service tier;
 - timestamps for queue, connection, send, first event, terminal, validation, and cancellation;
@@ -511,20 +511,20 @@ Create exactly one `wayfinder:task`:
 
 **Title:** `Prove the Review First Model Provider boundary across unlike live surfaces`
 
-**Task:** Implement a disposable contract harness for two unlike current surfaces—direct OpenAI Responses and direct Anthropic Messages are the recommended pair—and run only synthetic/public Review First fixtures. Demonstrate exact request mapping, the Kestrel schema subset, local validation, refusal/filter/truncation, streaming assembly, request IDs, usage/cache dimensions, token preflight, rate/error classification, disabled SDK retries, outcome-unknown interruption, cost reconciliation, profile drift, and account data-policy attestation. Record adapter/profile/schema digests and redacted evidence; use disposable Project/workspace-scoped credentials, no tools, no private source, and no production adapter commitment. If credentials or entitlement make that pair unavailable, use Vertex `generateContent` as the documented substitute and record why.
+**Task:** Implement a disposable contract harness for two unlike current surfaces—one direct API and one managed-cloud API, with direct OpenAI Responses plus Bedrock Runtime Converse as the recommended pair—and run only synthetic/public Review First fixtures. Demonstrate exact request mapping, the Kestrel schema subset, local validation, refusal/filter/truncation, streaming assembly, request IDs, usage/cache dimensions, token preflight, rate/error classification, disabled SDK retries, outcome-unknown interruption, cost reconciliation, profile drift, and account data-policy attestation. Record adapter/profile/schema digests and redacted evidence; use disposable Project/workspace/role-scoped credentials, no tools, no private source, and no production adapter commitment. If credentials or entitlement make that pair unavailable, substitute direct Anthropic Messages or Vertex `generateContent` while preserving one direct and one managed-cloud surface, and record why.
 
-**Dependencies:** the new task depends on this ticket (#6). It may run in parallel with #9 because #9 tests conceptual extraction usefulness, not the transport/security boundary. Both the new task and #9 block #10. The new task does not block unrelated downstream Agent Run research.
+**Dependencies:** the new task depends on [Define Model Provider portability and control](https://github.com/Ic3b3rg/kestrel/issues/6). It may run in parallel with [Validate conceptual change extraction on real pull requests](https://github.com/Ic3b3rg/kestrel/issues/9), which tests conceptual extraction usefulness rather than the transport/security boundary. Both tasks block [Lock the Review First product and technical specification](https://github.com/Ic3b3rg/kestrel/issues/10). The new task does not block unrelated downstream Agent Run research.
 
-This is genuinely separate from #9: a good conceptual review can hide adapter retries, identity drift, weak schema enforcement, or incorrect accounting. It is also separate from #10: the final spec should consume evidence, not perform live provider experiments during a HITL integration decision.
+This is genuinely separate from [Validate conceptual change extraction on real pull requests](https://github.com/Ic3b3rg/kestrel/issues/9): a good conceptual review can hide adapter retries, identity drift, weak schema enforcement, or incorrect accounting. It is also separate from [Lock the Review First product and technical specification](https://github.com/Ic3b3rg/kestrel/issues/10): the final spec should consume evidence, not perform live provider experiments during a HITL integration decision.
 
 ### Initial profile selection: no new HITL ticket
 
 Do **not** create a separate “choose the initial provider/profile” grilling ticket. There are two different choices:
 
 1. At runtime, each Operator explicitly approves and selects a Project profile; that product behavior is fixed here.
-2. At release planning, Kestrel decides which adapter/profile combinations are certified for Review First. That decision needs the live boundary task plus #9 quality evidence and belongs in existing HITL #10, `Lock the Review First product and technical specification`.
+2. At release planning, Kestrel decides which adapter/profile combinations are certified for Review First. That decision needs the live boundary task plus the quality evidence from [Validate conceptual change extraction on real pull requests](https://github.com/Ic3b3rg/kestrel/issues/9) and belongs in the existing HITL [Lock the Review First product and technical specification](https://github.com/Ic3b3rg/kestrel/issues/10).
 
-A new human ticket now would either guess before evidence or duplicate #10. #10 must name the initially certified surface(s), schema bundle, minimum quality/evaluation evidence, default Project-profile onboarding, and any deployment prerequisites. Supporting additional production adapters remains expansion, not a hidden V1 promise.
+A new human ticket now would either guess before evidence or duplicate [Lock the Review First product and technical specification](https://github.com/Ic3b3rg/kestrel/issues/10). That ticket must name the initially certified surface(s), schema bundle, minimum quality/evaluation evidence, default Project-profile onboarding, and any deployment prerequisites. Supporting additional production adapters remains expansion, not a hidden V1 promise.
 
 ### Existing fog
 
@@ -538,13 +538,13 @@ No separate tickets are justified now for caching, streaming, tools, stateful se
 - A pinned model ID does not guarantee bit-for-bit deterministic output or unchanged safety/routing infrastructure.
 - Preflight token counts and prices may differ from billed usage; ambiguous network outcomes can remain permanently unreconciled. Transport abort is not proven provider cancellation, and V1 has no portable exactly-once inference guarantee.
 - Native structured output controls shape, not truth, source grounding, completeness, or evidence validity.
-- The small schema subset is a research decision pending the two-surface live test; narrowing is allowed before #10, while later expansion requires new conformance.
-- This contract does not select the best model for conceptual review quality or define evaluation thresholds; #9 and #10 own those decisions.
+- The small schema subset is a research decision pending the two-surface live test; narrowing is allowed before [Lock the Review First product and technical specification](https://github.com/Ic3b3rg/kestrel/issues/10), while later expansion requires new conformance.
+- This contract does not select the best model for conceptual review quality or define evaluation thresholds; [Validate conceptual change extraction on real pull requests](https://github.com/Ic3b3rg/kestrel/issues/9) and [Lock the Review First product and technical specification](https://github.com/Ic3b3rg/kestrel/issues/10) own those decisions.
 - Self-hosted local/open-weight inference can implement this boundary later, but model artifact trust, hardware scheduling, sandboxing, and local data policy require separate evidence.
 - Pricing examples were intentionally omitted because exact prices are volatile; only dimensions and snapshot requirements are fixed.
 
 ## Downstream handoff
 
-The final Review First spec should import this boundary by reference and lock only five remaining release facts after evidence: initially certified profile(s), exact `kestrel.review-json-schema/1` bundle, profile onboarding/approval UI, quality threshold from #9, and deployment prerequisites. Implementers can then build one adapter without coupling callers to it, while the live conformance harness proves that a second unlike adapter fits the same typed boundary.
+The final Review First spec should import this boundary by reference and lock only five remaining release facts after evidence: initially certified profile(s), exact `kestrel.review-json-schema/1` bundle, profile onboarding/approval UI, quality threshold from [Validate conceptual change extraction on real pull requests](https://github.com/Ic3b3rg/kestrel/issues/9), and deployment prerequisites. Implementers can then build one adapter without coupling callers to it, while the live conformance harness proves that a second unlike adapter fits the same typed boundary.
 
 The enduring rule is concise: **Kestrel selects and approves an exact profile, sends a typed stateless request through a credentialed broker, accepts only a terminal locally validated result, records every attempt and cost, and fails closed on uncertainty or drift.**
