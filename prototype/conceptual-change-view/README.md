@@ -8,8 +8,13 @@ Operator understand a pull request through Change Intent, affected concepts
 and flows, comments, provisional risk, evidence, and flow-relevant code without
 using the raw diff as the primary view?
 
-The same simulated change is presented in three structurally different
-variants, switchable with `?variant=A`, `?variant=B`, and `?variant=C`.
+The same simulated change is presented in three structurally different source
+variants plus the Operator-approved synthesis, switchable with `?variant=A`,
+`?variant=B`, `?variant=C`, and `?variant=D`.
+
+Variant D combines A's complete narrative information architecture with B's
+Graph-centered interaction. C contributes only its claim-to-evidence-to-code
+trace inside node details.
 
 ## Run
 

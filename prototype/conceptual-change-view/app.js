@@ -134,6 +134,7 @@ const variants = {
   A: { name: "Percorso narrativo", render: renderNarrative },
   B: { name: "Graph centrale", render: renderGraphCockpit },
   C: { name: "Matrice delle claim", render: renderClaimLedger },
+  D: { name: "Sintesi A + B", render: renderHybrid },
 };
 
 let selectedNodeId = "scheduler";
@@ -512,6 +513,147 @@ if current_head != review.analyzed_head {
   );
 }
 
+function renderHybrid() {
+  const selected = nodeById(selectedNodeId);
+
+  return shell(
+    `<div class="hybrid-layout">
+      <nav class="section-index hybrid-index" aria-label="Sezioni della Conceptual Review sintetizzata">
+        <span class="index-title">In questa review</span>
+        <a class="active" href="#hybrid-overview"><span>01</span> Sintesi</a>
+        <a href="#hybrid-intent"><span>02</span> Change Intent</a>
+        <a href="#hybrid-graph"><span>03</span> Graph</a>
+        <a href="#hybrid-evidence"><span>04</span> Evidenze</a>
+        <a href="#hybrid-thread"><span>05</span> Review Thread</a>
+        <button class="secondary-action" data-action="open-diff">Apri diff completo</button>
+      </nav>
+
+      <div class="hybrid-review">
+        <section id="hybrid-overview" class="hybrid-opening">
+          <div class="hybrid-lead">
+            <span class="section-label">Change Overview · orientamento prima del Graph</span>
+            <h2>Una review obsoleta resta utile, ma non finge di essere corrente.</h2>
+            <p>${review.overview}</p>
+            <div class="overview-meta">
+              <span>6 passaggi comportamentali</span>
+              <span>4 modificati</span>
+              <span>1 limite aperto</span>
+            </div>
+          </div>
+          <aside class="hybrid-attention">
+            <div class="attention-signal">1</div>
+            <div>
+              <span class="section-label">La tua attenzione</span>
+              <h3>Concorrenza dello scheduler</h3>
+              <p>Il controllo esiste, ma manca una prova dell’interleaving reale.</p>
+              <a href="#hybrid-evidence">Esamina il limite ${icon("arrow")}</a>
+            </div>
+          </aside>
+        </section>
+
+        <section id="hybrid-intent" class="hybrid-intent-panel">
+          <div class="hybrid-intent-heading">
+            <div>
+              <span class="section-label">Change Intent</span>
+              <h2>Ciò che questa modifica deve garantire</h2>
+            </div>
+            <span class="provenance-chip">Da PR + Work Item</span>
+          </div>
+          <p>${review.intent}</p>
+          <div class="intent-chips">
+            ${review.acceptance.map((item) => `<span>${item}</span>`).join("")}
+          </div>
+        </section>
+
+        <section id="hybrid-graph" class="hybrid-graph-section">
+          <header class="hybrid-graph-header">
+            <div>
+              <span class="section-label">Core della Conceptual Review · focused Graph delta</span>
+              <h2>Head cambia durante l’analisi</h2>
+              <p>Seleziona un nodo per attraversare comportamento, claim, evidenza e codice.</p>
+            </div>
+            <div class="hybrid-graph-actions">
+              <div class="graph-legend">
+                <span><i class="legend-dot changed"></i> Modificato</span>
+                <span><i class="legend-dot context"></i> Contesto</span>
+                <span><i class="legend-line inferred"></i> Inferito</span>
+              </div>
+              <button class="secondary-action" data-action="expand-graph">Espandi Graph</button>
+            </div>
+          </header>
+
+          <div class="hybrid-graph-frame">
+            <div class="graph-canvas hybrid-canvas" aria-label="Graph comportamentale interattivo">
+              <svg class="graph-links" viewBox="0 0 900 500" preserveAspectRatio="none" aria-hidden="true">
+                <path class="verified" d="M110 250 C180 250 175 130 260 130" />
+                <path class="verified" d="M365 130 C430 130 415 250 485 250" />
+                <path class="inferred" d="M590 250 C655 250 640 125 715 125" />
+                <path class="verified" d="M590 250 C655 250 640 380 715 380" />
+                <path class="verified" d="M790 150 C820 210 820 300 790 355" />
+              </svg>
+              ${graphNode("provider-event", 10, 42)}
+              ${graphNode("revision-guard", 26, 16)}
+              ${graphNode("scheduler", 49, 42)}
+              ${graphNode("preserve-results", 73, 15)}
+              ${graphNode("supersede", 73, 68)}
+              ${graphNode("operator-restart", 88, 42)}
+              <div class="graph-annotation" style="--x:51%;--y:77%">
+                <span>Copertura mancante</span>
+                <strong>Interleaving scheduler</strong>
+              </div>
+              <div class="canvas-controls" aria-label="Controlli Graph">
+                <button aria-label="Riduci">−</button><span>100%</span><button aria-label="Ingrandisci">+</button>
+                <button data-action="center-graph">Centra</button>
+              </div>
+            </div>
+
+            <aside class="hybrid-node-panel" aria-label="Dettaglio del nodo selezionato">
+              ${nodeInspector(selected, "hybrid")}
+              <div class="hybrid-trace">
+                <span class="section-label">Tracciabilità della claim</span>
+                <div><i>Intent</i><strong>Risultati mai correnti sulla revisione sbagliata</strong></div>
+                <div><i>Claim</i><strong>${selected.finding}</strong></div>
+                <div><i>Prova</i><strong>${selected.evidence}</strong></div>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section id="hybrid-evidence" class="hybrid-evidence-grid">
+          <article class="hybrid-finding">
+            <div class="hybrid-card-heading">
+              <span class="section-label">Finding principale</span>
+              <span class="risk-badge">High · provvisorio</span>
+            </div>
+            <h3>La concorrenza resta da dimostrare</h3>
+            <p>Il test verifica la sequenza nominale, ma non forza il cambio head tra controllo ed enqueue.</p>
+            <button class="text-action" data-action="open-code">Apri evidenza e codice ${icon("arrow")}</button>
+          </article>
+          <article class="hybrid-coverage">
+            <div class="hybrid-card-heading">
+              <span class="section-label">Copertura dichiarata</span>
+              <strong>86%</strong>
+            </div>
+            <div class="meter"><i style="width:86%"></i></div>
+            <p>19 di 22 regioni cambiate sono collegate al Graph. Tre restano non mappate e visibili come limite.</p>
+          </article>
+        </section>
+
+        <section id="hybrid-thread" class="hybrid-thread">
+          <div class="thread-avatar">P</div>
+          <div>
+            <span class="section-label">Review Thread · ancorato a Ferma nuovi stadi</span>
+            <blockquote>“Cosa succede se la nuova head arriva dopo il controllo ma prima dell’enqueue?”</blockquote>
+            <span class="thread-meta">Priya · revisione ${review.analyzedHead} · 12 minuti fa</span>
+          </div>
+          <button class="secondary-action" data-action="reply-thread">Rispondi nel thread</button>
+        </section>
+      </div>
+    </div>`,
+    "D",
+  );
+}
+
 function graphNode(id, x, y) {
   const node = nodeById(id);
   return `
@@ -625,6 +767,7 @@ document.addEventListener("click", (event) => {
       "reply-thread": "Risposta al Review Thread",
       "show-intent": "Criteri di accettazione",
       "center-graph": "Graph centrato",
+      "expand-graph": "Graph a tutto schermo",
       "open-code": "Codice alla revisione analizzata",
       "ask-node": "Nuovo Review Thread sul nodo",
       "ask-claim": "Nuovo Review Thread sulla claim",
