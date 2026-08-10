@@ -73,9 +73,11 @@ expire after one hour. GitHub currently allows a request to select at most 500
 repositories when minting one token. ([Installation tokens](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-an-installation-access-token-for-a-github-app))
 
 The installer chooses all or selected repositories and approves the requested App
-permissions. A GitHub App retains read access to public resources, but that fact
-does not establish a Kestrel Project or authorize a public-repository invocation.
-([Installing a GitHub App](https://docs.github.com/en/apps/using-github-apps/installing-a-github-app-from-a-third-party))
+permissions. Some REST reads are available without authentication for public
+resources, but public readability does not establish a Kestrel Project or
+authorize a Provider Invocation.
+([Installing a GitHub App](https://docs.github.com/en/apps/using-github-apps/installing-a-github-app-from-a-third-party),
+[issue comment endpoints](https://docs.github.com/en/rest/issues/comments?apiVersion=2026-03-10))
 
 **Kestrel decision.** Each self-hosted Kestrel installation owns its App private
 key and webhook secret. Registration SHOULD use a GitHub App Manifest so the
@@ -120,8 +122,8 @@ catalog and mention behavior. ([Webhook catalog](https://docs.github.com/en/webh
 the Markdown structure, not a substring: quoted text, code blocks, inline code,
 and later paragraphs do not invoke. The first non-empty paragraph must begin with
 exactly one configured App-login mention followed by `plan`; remaining text is the
-planning prompt. The adapter records the login snapshot and parser version, while
-authorization uses IDs rather than names.
+Planning Session input. The adapter records the login snapshot and parser version,
+while authorization uses IDs rather than names.
 
 Before applying an effect, Kestrel refetches the comment with the installation
 token. If it was deleted, cannot be read, or its current body no longer has the
@@ -311,11 +313,11 @@ transport receipt. Domain effects and an outbox record commit in one transaction
 A duplicate returns the original result and can never create a second Work Item or
 Planning Session.
 
-GitHub documents delivery identity and redelivery, but does not promise event
-ordering. Kestrel therefore treats order-independence as an architectural
-inference: it uses provider timestamps only as observations, refetches current
-state, compares immutable IDs/revision SHAs, and never lets an older delivery
-overwrite a newer resource snapshot.
+GitHub explicitly warns that webhook deliveries may arrive in a different order
+than their underlying events. Kestrel therefore uses provider timestamps only as
+observations, refetches current state, compares immutable IDs/revision SHAs, and
+never lets an older delivery overwrite a newer resource snapshot.
+([Webhook troubleshooting](https://docs.github.com/en/webhooks/testing-and-troubleshooting-webhooks/troubleshooting-webhooks#webhooks-deliveries-are-out-of-order))
 
 A recovery job checks failed App deliveries well inside GitHub's three-day window
 and requests redelivery by GUID. An outage beyond that window is not recoverable
@@ -398,7 +400,7 @@ interaction:
 trigger:
   kind: plan
   parser_version: string
-  prompt: string
+  request_text: string
 ```
 
 `work_request` and `change_proposal` are provider-neutral subject kinds; `issue`
@@ -433,7 +435,7 @@ is equivalent to:
 EnsurePlanningSession(
   provider_subject_link,
   authorized_operator,
-  prompt,
+  request_text,
   optional_immutable_revision
 )
 ```
@@ -469,7 +471,7 @@ known limits, not reasons to broaden V1:
 - GitHub can add event actions. The adapter rejects unknown actions by default,
   as GitHub's webhook guidance recommends.
 
-One focused Wayfinder implementation-spike ticket is genuinely required before
+One focused Wayfinder empirical-validation ticket is genuinely required before
 claiming Review First supports every fork case:
 
 > **Prove immutable GitHub PR revision acquisition across fork states.** Build an
