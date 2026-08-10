@@ -28,10 +28,10 @@ authenticated Operator action
   -> typed, Project-scoped context assembly
   -> approved Model Provider egress broker (no tools, no secrets)
   -> schema/evidence validation of untrusted model output
-  -> safely rendered, immutable ReviewSnapshot
+  -> safely rendered, immutable review-revision record
 ```
 
-Review First therefore contains prompt injection rather than claiming to eliminate it. Even a fully compromised model response can at worst become rejected or safely rendered Project-local data; it cannot obtain a repository or provider credential, initiate another network request, execute a command, write to GitHub, cross a Project namespace, or silently change the reviewed revision.
+Review First therefore contains prompt injection rather than claiming to eliminate it. Even a fully compromised model response can at worst become rejected or safely rendered Project-local data; it cannot obtain a repository or provider credential, trigger an automatic network request, execute a command, write to GitHub, cross a Project namespace, or silently change the reviewed revision.
 
 Private code may leave the Kestrel Installation only through a Model Provider path that the Operator has explicitly approved for that Project. The approval is bound to a provider, endpoint/capability set, processing and storage geography, retention/training posture, and effective policy version. A missing, changed, or incompatible attestation stops analysis. Kestrel never silently falls back to a different model, endpoint, region, stateful feature, or provider.
 
@@ -149,7 +149,7 @@ Classification is attached to the object, not inferred from which storage servic
 | extraction/retrieval -> context assembler | poisoned text and potentially wrong-Project records | mandatory Project/revision filters, typed provenance on every block, deterministic budgets, no source-controlled prompt/template/config |
 | context -> Model Provider broker | private selected context and request metadata | explicit approved egress policy, redaction/quarantine, endpoint allowlist, no tools/stateful features, credential injection only at broker |
 | Model Provider -> validator | untrusted text/JSON, citations, links and usage metadata | byte/token limits, strict schema, known identifiers, evidence resolution, no commands/URLs/tool calls, safe failure |
-| validator -> durable review | accepted claims and source references | immutable ReviewSnapshot, provenance/coverage/limits, transactional audit, no Repository Provider write |
+| validator -> durable review | accepted claims and source references | immutable review-revision record, provenance/coverage/limits, transactional audit, no Repository Provider write |
 | review -> PWA renderer | source, Markdown, model prose, links, Unicode and graphs | contextual encoding, sanitized Markdown, raw HTML/scripts/external images disabled, CSP, safe link navigation and source-code neutralization |
 | all services -> logs/metrics | identifiers, errors and potentially sensitive payloads | structured allowlisted fields, redaction, injection-safe encoding, Project access control, tamper-evident protected audit stream |
 | worker -> host/other Projects | processes, filesystem, IPC and network attempts | least privilege, namespace and resource isolation, deny-by-default egress, no host/control sockets, detection and teardown |
@@ -160,7 +160,7 @@ Classification is attached to the object, not inferred from which storage servic
 | --- | --- | --- |
 | Spoofing | attacker replays a valid GitHub delivery or fabricates the Operator/provider identity | dedupe plus stable identity and current authorization; no review action from transport authenticity alone |
 | Spoofing | stolen PWA session explicitly starts reviews or approves new egress | current session protection and auditable sensitive action; bootstrap/recovery policy resolved separately |
-| Tampering | PR head moves after capture, a force push occurs, or base/head content is mixed | snapshot remains bound to captured immutable IDs; a new head creates a new snapshot, never silent replacement |
+| Tampering | PR head moves after capture, a force push occurs, or base/head content is mixed | review remains bound to captured immutable IDs; a new head creates a new review revision, never silent replacement |
 | Tampering | acquisition redirect, truncated tree, or mutable ref supplies different bytes | manifest verifies object identity/size/hash and records incompleteness; mismatch is a hard failure |
 | Tampering / EoP | path traversal, absolute path, duplicate/case-colliding path, symlink or archive entry escapes workspace | entry rejected; no out-of-root read/write; entire affected input is quarantined or fails deterministically |
 | EoP | submodule or LFS pointer causes fetch from attacker URL or an ungranted private repository | no implicit fetch; pointer is metadata and coverage is disclosed unless a separately authorized acquisition resolves it |
@@ -199,7 +199,7 @@ A deliberately attempted provider mutation must fail at both the Kestrel capabil
 
 Acquisition accepts immutable base and head commit identities captured when the Operator starts the review. The manifest records Project/provider IDs, commit IDs, tree/object identities, byte hashes, modes, sizes, acquisition time, missing objects, and acquisition method/version. Branch names and PR numbers are display metadata.
 
-The UI always shows the exact snapshot identity. A newer PR head creates a separate ReviewSnapshot and marks the earlier one superseded or historical; it never rewrites the old review. Failure to acquire or verify either required revision is a hard gate, subject to the explicit partial-coverage rules documented by the review.
+The UI always shows the exact analyzed revision. A newer PR head creates a separate review revision and marks the earlier one superseded or historical; it never rewrites the old review. Failure to acquire or verify either required revision is a hard gate, subject to the explicit partial-coverage rules documented by the review.
 
 The exact GitHub acquisition order and inaccessible-revision behavior remain with “Prove immutable GitHub pull-request revision acquisition.”
 
@@ -227,7 +227,7 @@ This deliberately limits Review First evidence. A Conceptual Review must say tha
 
 ### RF-SEC-06 — Least-privilege disposable workers
 
-Each analysis lease is bound to one Installation, Project, ReviewSnapshot and revision manifest. Its worker has:
+Each analysis lease is bound to one Installation, Project, review operation and revision manifest. Its worker has:
 
 - an unprivileged identity with no privilege escalation;
 - a read-only exact-revision view and a separate bounded writable scratch area;
@@ -257,7 +257,7 @@ The model has no tools in Review First: no web search, URL fetch, code interpret
 
 ### RF-SEC-09 — Project and revision isolation
 
-Authorization and namespace keys include Installation, Project and ReviewSnapshot or revision wherever data can be stored or recovered: database rows, object paths, queues, leases, scratch, caches, search indexes, vector stores, embeddings, prompt state, artifacts, logs and metrics access.
+Authorization and namespace keys include Installation, Project and review operation or exact revision wherever data can be stored or recovered: database rows, object paths, queues, leases, scratch, caches, search indexes, vector stores, embeddings, prompt state, artifacts, logs and metrics access.
 
 No plaintext extraction, embedding, context, model response, or cache hit may be shared across Projects. Shared physical infrastructure is permitted only when logical access controls and encryption boundaries preserve the same invariant. Blob hashes alone are not authorization keys.
 
@@ -373,10 +373,10 @@ Prompt-injection tests use multiple models and adversarial variants, but their p
 
 ## Required audit and observability fields
 
-Every ReviewSnapshot needs a correlation chain with content-minimized fields:
+Every review operation needs a correlation chain with content-minimized fields:
 
 - `event_id`, event type/schema version, control-plane receive time, asserted source time and clock-confidence/offset where relevant;
-- Installation, Project, Work Item, review operation and immutable ReviewSnapshot IDs;
+- Installation, Project, Work Item, review operation and immutable analyzed-revision IDs;
 - actor type/stable ID, authenticated session reference, requested action, authorization-policy version, result and denial reason;
 - Repository Provider connection/installation/repository IDs, delivery/request IDs, captured base/head commit IDs and acquisition method/version;
 - source-manifest hash, object/file/byte counts, accepted/skipped/rejected/truncated counts, unsafe-object reasons and revision-verification result;
