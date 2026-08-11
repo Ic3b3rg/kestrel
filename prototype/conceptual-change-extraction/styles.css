@@ -164,7 +164,7 @@ a {
 .brand small,
 .manual-ai small {
   color: var(--ink-soft);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .phase-pill {
@@ -184,14 +184,14 @@ a {
 }
 
 .phase-pill small {
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 850;
   letter-spacing: 0.09em;
 }
 
 .phase-pill strong {
   color: #263d83;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .inbox-context {
@@ -225,13 +225,13 @@ a {
 }
 
 .manual-ai strong {
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .eyebrow {
   display: block;
   color: var(--accent);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 850;
   letter-spacing: 0.11em;
   text-transform: uppercase;
@@ -577,7 +577,7 @@ a {
   display: block;
   margin-bottom: 4px;
   color: var(--accent);
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 820;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -596,7 +596,7 @@ a {
 .pr-title-block p {
   margin: 6px 0 0;
   color: var(--ink-soft);
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .pr-title-block p i,
@@ -622,7 +622,7 @@ a {
   border-radius: 10px;
   color: var(--ink-soft);
   background: var(--surface);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 740;
   text-decoration: none;
 }
@@ -663,14 +663,14 @@ a {
 
 .orientation-notice p {
   margin: 0;
-  font-size: 9px;
+  font-size: 10px;
   line-height: 1.4;
 }
 
 .concept-workspace {
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(230px, 0.72fr) minmax(470px, 1.75fr) minmax(280px, 0.84fr);
+  grid-template-columns: minmax(250px, 0.8fr) minmax(460px, 1.65fr) minmax(300px, 0.9fr);
   overflow: hidden;
   border: 1px solid var(--line-strong);
   border-radius: 18px;
@@ -694,7 +694,7 @@ a {
 
 .summary-copy {
   margin: 12px 0 0;
-  font-size: clamp(13px, 1.05vw, 15px);
+  font-size: clamp(15px, 1.2vw, 17px);
   font-weight: 560;
   letter-spacing: -0.015em;
   line-height: 1.45;
@@ -713,7 +713,7 @@ a {
   display: block;
   margin-bottom: 9px;
   color: var(--ink-faint);
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 850;
   letter-spacing: 0.1em;
 }
@@ -721,8 +721,8 @@ a {
 .declared-intent p {
   margin: 0;
   color: var(--ink-soft);
-  font-size: 10px;
-  line-height: 1.42;
+  font-size: 11px;
+  line-height: 1.48;
 }
 
 .scope-block > div {
@@ -737,7 +737,7 @@ a {
   border-radius: 7px;
   color: var(--ink-soft);
   background: var(--surface);
-  font-size: 8px;
+  font-size: 9px;
   font-style: normal;
   font-weight: 680;
 }
@@ -766,12 +766,12 @@ a {
 }
 
 .orientation-input strong {
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .orientation-input small {
   overflow: hidden;
-  font-size: 7px;
+  font-size: 8px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -811,7 +811,7 @@ a {
   border-radius: 999px;
   color: var(--amber);
   background: var(--amber-soft);
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 800;
 }
 
@@ -864,8 +864,8 @@ a {
   z-index: 2;
   top: var(--y);
   left: var(--x);
-  width: 132px;
-  min-height: 68px;
+  width: 140px;
+  min-height: 74px;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-content: center;
@@ -894,8 +894,8 @@ a {
 
 .flow-node > span {
   grid-row: 1 / span 2;
-  width: 23px;
-  height: 23px;
+  width: 25px;
+  height: 25px;
   display: grid;
   place-items: center;
   border-radius: 7px;
@@ -909,18 +909,18 @@ a {
 }
 
 .flow-node strong {
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.25;
 }
 
 .flow-node small {
   color: var(--amber);
-  font-size: 7px;
+  font-size: 9px;
   font-weight: 750;
 }
 
 .selection-strip {
-  min-height: 72px;
+  min-height: 82px;
   display: grid;
   grid-template-columns: auto minmax(115px, 0.65fr) minmax(180px, 1.4fr) minmax(120px, 0.65fr);
   align-items: center;
@@ -958,21 +958,21 @@ a {
 
 .selection-strip small {
   color: var(--ink-faint);
-  font-size: 7px;
+  font-size: 9px;
   font-weight: 820;
   letter-spacing: 0.08em;
 }
 
 .selection-strip strong {
   overflow: hidden;
-  font-size: 9px;
+  font-size: 11px;
   text-overflow: ellipsis;
 }
 
 .selection-strip > p {
   margin: 0;
   color: var(--ink-soft);
-  font-size: 9px;
+  font-size: 10px;
   line-height: 1.4;
 }
 
@@ -1013,7 +1013,7 @@ a {
 .graph-empty p {
   margin: 0;
   color: var(--ink-soft);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -1046,20 +1046,20 @@ a {
   border-radius: 7px;
   color: var(--amber);
   background: var(--amber-soft);
-  font-size: 7px;
+  font-size: 9px;
   font-weight: 850;
 }
 
 .verify-list strong {
   display: block;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.35;
 }
 
 .verify-list p {
   margin: 3px 0 0;
   color: var(--ink-soft);
-  font-size: 8px;
+  font-size: 10px;
   line-height: 1.4;
 }
 
@@ -1085,7 +1085,7 @@ a {
   border-radius: 7px;
   color: var(--ink-soft);
   background: var(--surface);
-  font-size: 7px;
+  font-size: 9px;
   font-weight: 680;
   text-decoration: none;
 }
@@ -1125,7 +1125,7 @@ a {
 .not-a-verdict p {
   margin: 0;
   color: #73562c;
-  font-size: 8px;
+  font-size: 10px;
   line-height: 1.4;
 }
 
@@ -1159,12 +1159,12 @@ a {
 }
 
 .review-handoff strong {
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .review-handoff small {
   color: #aeb6b0;
-  font-size: 8px;
+  font-size: 9px;
 }
 
 .primary-button,
@@ -1176,7 +1176,7 @@ a {
   gap: 8px;
   padding: 9px 13px;
   border-radius: 10px;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 780;
   cursor: pointer;
 }
