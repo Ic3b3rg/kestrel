@@ -1,46 +1,44 @@
-# PROTOTYPE — Conceptual change extraction
+# PROTOTYPE — Conceptual change extraction UI
 
-Throwaway logic prototype for
+Throwaway UI prototype for
 [Validate conceptual change extraction on real pull requests](https://github.com/Ic3b3rg/kestrel/issues/9).
 
 ## Question
 
-Can a disposable pipeline turn real pull-request descriptions, exact-revision
-diffs, comments, shallow repository context, and provider test evidence into a
-stable conceptual model and a useful behavioral Graph? Where must it abstain or
-declare partial coverage?
+Can an Operator understand the conceptual result extracted from a real pull
+request — changed behavior, intent, Evidence, Findings, and limits — without
+first understanding the extraction pipeline or opening the raw diff?
 
-This prototype deliberately separates four things:
+Three radically different presentations share the same captured data and are
+switchable with `?variant=A`, `?variant=B`, and `?variant=C`:
 
-1. immutable, offline GitHub fixtures;
-2. a deterministic Evidence registry;
-3. two recorded interpretive extraction passes, treated as untrusted data; and
-4. deterministic validation, Graph identity reconciliation, and failure reporting.
+1. **A — Racconto guidato:** one concise narrative from change to behavior,
+   attention point, Evidence, and gaps.
+2. **B — Mappa visuale:** the focused behavioral Graph is the dominant surface
+   and drives a node inspector.
+3. **C — Esiti → prove:** expected outcomes organize implementation Evidence,
+   uncertainty, and the affected behavior.
 
-The two recorded passes are interpretive drafts produced during this agent
-session, not independent or reproducible model samples. The second pass
-deliberately introduces plausible phrasing changes, node splits/merges, and one
-unsupported Graph so those failure modes are concrete enough to inspect. This
-tests the stabilizing envelope, not model quality or model variance. The
-prototype does **not** choose a Model Provider, production schema, graph
-database, or implementation language. It never executes repository code or
-contacts GitHub while the TUI is running.
+This is an adjustment to the accepted Conceptual Review direction from
+[Prototype the conceptual change view](https://github.com/Ic3b3rg/kestrel/issues/7),
+not a reopening of its product semantics. Pipeline mechanics remain available
+behind **Dettagli estrazione**, never in the primary reading path.
 
 ## Run
 
 From the repository root:
 
 ```sh
-python3 prototype/conceptual-change-extraction/app.py
+python3 -m http.server 4174 --directory prototype/conceptual-change-extraction
 ```
 
-The app keeps all interaction state in memory. Use `a` to advance through the
-pipeline, `r` to compare the two extraction passes, `n`/`p` to switch case, and
-`q` to quit. Run the compact all-case report with:
+Then open:
 
-```sh
-python3 prototype/conceptual-change-extraction/app.py --report
-```
+<http://127.0.0.1:4174/?variant=A&case=small-behavior>
+
+The floating bottom switcher changes variants and updates the URL. The PR tabs
+change the real captured case. Arrow keys cycle variants when focus is not in
+an editable control. Everything is read-only and runs in the browser.
 
 ## Real cases
 
@@ -69,10 +67,10 @@ verdict.
 
 - Repository context is shallow: metadata, languages, the root tree, README,
   root manifests, changed-file patches, comments, reviews, and check summaries.
-- No model is called live, so provider variance, prompt behavior, cost, and
-  latency remain outside this prototype.
+- The interpretive drafts were produced during one agent session, not as
+  independent Model Provider samples. Provider variance, prompt behavior,
+  cost, and latency remain outside this prototype.
 - Provider checks are evidence that jobs reported a result, not proof of every
   behavior claimed by a check name.
-- Usefulness remains an Operator judgment. The program can expose unresolved
-  references, unstable identities, graph-shape problems, and hidden exclusions;
-  it cannot decide whether the resulting explanation is genuinely useful.
+- Usefulness remains an Operator judgment. This page is designed to make that
+  judgment possible before exposing validation and identity mechanics.
