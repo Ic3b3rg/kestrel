@@ -1,0 +1,278 @@
+{
+  "fixture_version": 1,
+  "case": "small-behavior",
+  "captured_at": "2026-08-11T11:14:56.099976+00:00",
+  "source": {
+    "repository": "cli/cli",
+    "pull_number": 14094,
+    "url": "https://github.com/cli/cli/pull/14094",
+    "state": "open",
+    "draft": false,
+    "merged": false,
+    "author": "seanturner83",
+    "title": "Add `gh uptime` to report GitHub service status",
+    "body": "## What\n\nAdds `gh uptime`: a command that reports the operational status of GitHub's\nservices from the public status page (<https://www.githubstatus.com>).\n\n```\n$ gh uptime\n✓ All Systems Operational\n\n  ✓ Git Operations         operational\n  ✓ API Requests           operational\n  ✓ Actions                operational\n  ...\n```\n\nIt queries the Statuspage summary API — **not** `api.github.com` — and sends no\nauthentication, so it works when your token is unset, and (the point) when the\nAPI itself is degraded. The gh auth token is never sent to the third-party host.\n\n## Why\n\nPartly for fun, but there's a real use case: **holding automation until an\nincident clears, then resuming.** During an Actions outage you currently have to\npoll `githubstatus.com` by hand. With this you can let a script wait it out:\n\n```sh\n# wait out an Actions outage, then kick off a workflow\ngh uptime --component Actions --watch && gh workflow run ci.yml\n```\n\nFlags aimed at scripting:\n\n- `--json` / `--jq` — machine-readable output (`gh uptime -c Actions --jq .operational` → a bare bool)\n- `--component <name>` — scope to a single service (e.g. `Actions`)\n- `--exit-code` — non-zero exit when the target is not operational, so it composes with `&&`\n- `--watch` / `--interval` — poll until the target returns to operational (min 5s to respect the status page)\n\n## Notes\n\n- No new dependencies; uses the existing `cmdutil`/`iostreams`/`httpmock` machinery.\n- Auth is disabled for the command (`DisableAuthCheck`) since the status page is public.\n- Non-service rows the status page carries (e.g. the \"Visit www.githubstatus.com…\" link) are filtered out.\n- Unit tests cover flag parsing, all-operational vs degraded rendering, `--exit-code`, component scoping, unknown component, and `--json` export — all via `httpmock`, no network.\n\nHappy to adjust naming/scope — I picked `uptime` to avoid colliding with the existing `gh status` (notifications/activity).\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n",
+    "base_sha": "83c6321b8faba2ec6202af70b1cc0e2ed936495e",
+    "head_sha": "e5c604576acb2c4991fe22329f28dc52d8cfee3d",
+    "base_ref": "trunk",
+    "head_ref": "feat/uptime-command",
+    "additions": 575,
+    "deletions": 0,
+    "changed_files": 4
+  },
+  "files": [
+    {
+      "path": "pkg/cmd/root/root.go",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 0,
+      "changes": 2,
+      "blob_url": "https://github.com/cli/cli/blob/e5c604576acb2c4991fe22329f28dc52d8cfee3d/pkg%2Fcmd%2Froot%2Froot.go",
+      "raw_url": "https://github.com/cli/cli/raw/e5c604576acb2c4991fe22329f28dc52d8cfee3d/pkg%2Fcmd%2Froot%2Froot.go",
+      "patch": "@@ -44,6 +44,7 @@ import (\n \tskillsCmd \"github.com/cli/cli/v2/pkg/cmd/skills\"\n \tsshKeyCmd \"github.com/cli/cli/v2/pkg/cmd/ssh-key\"\n \tstatusCmd \"github.com/cli/cli/v2/pkg/cmd/status\"\n+\tuptimeCmd \"github.com/cli/cli/v2/pkg/cmd/uptime\"\n \tvariableCmd \"github.com/cli/cli/v2/pkg/cmd/variable\"\n \tversionCmd \"github.com/cli/cli/v2/pkg/cmd/version\"\n \tworkflowCmd \"github.com/cli/cli/v2/pkg/cmd/workflow\"\n@@ -155,6 +156,7 @@ func NewCmdRoot(f *cmdutil.Factory, telemetry ghtelemetry.CommandRecorder, versi\n \t// Root commands with standalone functionality and no subcommands\n \tcmd.AddCommand(copilotCmd.NewCmdCopilot(f, telemetry, nil))\n \tcmd.AddCommand(statusCmd.NewCmdStatus(f, nil))\n+\tcmd.AddCommand(uptimeCmd.NewCmdUptime(f, nil))\n \tcmd.AddCommand(creditsCmd.NewCmdCredits(f, nil))\n \tcmd.AddCommand(licensesCmd.NewCmdLicenses(f))\n \tcmd.AddCommand(sendTelemetryCmd.NewCmdSendTelemetry(f))"
+    },
+    {
+      "path": "pkg/cmd/uptime/render.go",
+      "status": "added",
+      "additions": 131,
+      "deletions": 0,
+      "changes": 131,
+      "blob_url": "https://github.com/cli/cli/blob/e5c604576acb2c4991fe22329f28dc52d8cfee3d/pkg%2Fcmd%2Fuptime%2Frender.go",
+      "raw_url": "https://github.com/cli/cli/raw/e5c604576acb2c4991fe22329f28dc52d8cfee3d/pkg%2Fcmd%2Fuptime%2Frender.go",
+      "patch": "@@ -0,0 +1,131 @@\n+package uptime\n+\n+import (\n+\t\"fmt\"\n+\t\"strings\"\n+\n+\t\"github.com/cli/cli/v2/pkg/iostreams\"\n+)\n+\n+// uptimeFields are the columns available to --json.\n+var uptimeFields = []string{\n+\t\"indicator\",\n+\t\"description\",\n+\t\"component\",\n+\t\"status\",\n+\t\"operational\",\n+\t\"components\",\n+}\n+\n+// exportedComponent is the per-component JSON shape.\n+type exportedComponent struct {\n+\tName        string `json:\"name\"`\n+\tStatus      string `json:\"status\"`\n+\tOperational bool   `json:\"operational\"`\n+}\n+\n+// exportShape builds the object returned by --json/--jq. When a single\n+// component is requested the top-level status/operational reflect just that\n+// component, so `gh uptime -c Actions --json operational` is a clean boolean.\n+func exportShape(s *summary, name string) map[string]interface{} {\n+\tcomps := leafComponents(s)\n+\texported := make([]exportedComponent, 0, len(comps))\n+\tfor _, c := range comps {\n+\t\texported = append(exported, exportedComponent{\n+\t\t\tName:        c.Name,\n+\t\t\tStatus:      c.Status,\n+\t\t\tOperational: c.Status == \"operational\",\n+\t\t})\n+\t}\n+\n+\tout := map[string]interface{}{\n+\t\t\"indicator\":   s.Status.Indicator,\n+\t\t\"description\": s.Status.Description,\n+\t\t\"components\":  exported,\n+\t\t\"operational\": targetOperational(s, name),\n+\t}\n+\n+\tif name != \"\" {\n+\t\tout[\"component\"] = name\n+\t\tstatus := \"unknown\"\n+\t\tfor _, c := range comps {\n+\t\t\tif strings.EqualFold(c.Name, name) {\n+\t\t\t\tstatus = c.Status\n+\t\t\t\tbreak\n+\t\t\t}\n+\t\t}\n+\t\tout[\"status\"] = status\n+\t} else {\n+\t\tout[\"component\"] = nil\n+\t\tout[\"status\"] = s.Status.Indicator\n+\t}\n+\n+\treturn out\n+}\n+\n+// render prints the human-readable report.\n+func render(io *iostreams.IOStreams, s *summary, name string) error {\n+\tcs := io.ColorScheme()\n+\tout := io.Out\n+\n+\t// Single-component view.\n+\tif name != \"\" {\n+\t\tfor _, c := range leafComponents(s) {\n+\t\t\tif strings.EqualFold(c.Name, name) {\n+\t\t\t\tfmt.Fprintf(out, \"%s %s %s\\n\", statusIcon(cs, c.Status), c.Name, statusText(cs, c.Status))\n+\t\t\t\treturn nil\n+\t\t\t}\n+\t\t}\n+\t\treturn fmt.Errorf(\"no such GitHub component %q; run `gh uptime` to list components\", name)\n+\t}\n+\n+\t// Overall banner.\n+\tfmt.Fprintf(out, \"%s %s\\n\", overallIcon(cs, s.Status.Indicator), cs.Bold(s.Status.Description))\n+\n+\tif !io.IsStdoutTTY() {\n+\t\t// Non-TTY: keep the per-line output stable and unstyled-ish for scripts\n+\t\t// that grep it (colour is auto-disabled by the ColorScheme already).\n+\t}\n+\n+\tfmt.Fprintln(out)\n+\tfor _, c := range leafComponents(s) {\n+\t\tfmt.Fprintf(out, \"  %s %-22s %s\\n\", statusIcon(cs, c.Status), c.Name, statusText(cs, c.Status))\n+\t}\n+\treturn nil\n+}\n+\n+func overallIcon(cs *iostreams.ColorScheme, indicator string) string {\n+\tswitch indicator {\n+\tcase \"none\":\n+\t\treturn cs.SuccessIcon()\n+\tcase \"minor\":\n+\t\treturn cs.WarningIcon()\n+\tdefault: // major, critical\n+\t\treturn cs.FailureIcon()\n+\t}\n+}\n+\n+func statusIcon(cs *iostreams.ColorScheme, status string) string {\n+\tswitch status {\n+\tcase \"operational\":\n+\t\treturn cs.SuccessIcon()\n+\tcase \"degraded_performance\", \"partial_outage\":\n+\t\treturn cs.WarningIcon()\n+\tdefault: // major_outage, unknown\n+\t\treturn cs.FailureIcon()\n+\t}\n+}\n+\n+// statusText renders the human label (e.g. \"major_outage\" -> \"major outage\")\n+// in a colour matching severity.\n+func statusText(cs *iostreams.ColorScheme, status string) string {\n+\tlabel := strings.ReplaceAll(status, \"_\", \" \")\n+\tswitch status {\n+\tcase \"operational\":\n+\t\treturn cs.Green(label)\n+\tcase \"degraded_performance\", \"partial_outage\":\n+\t\treturn cs.Yellow(label)\n+\tdefault:\n+\t\treturn cs.Red(label)\n+\t}\n+}"
+    },
+    {
+      "path": "pkg/cmd/uptime/uptime.go",
+      "status": "added",
+      "additions": 227,
+      "deletions": 0,
+      "changes": 227,
+      "blob_url": "https://github.com/cli/cli/blob/e5c604576acb2c4991fe22329f28dc52d8cfee3d/pkg%2Fcmd%2Fuptime%2Fuptime.go",
+      "raw_url": "https://github.com/cli/cli/raw/e5c604576acb2c4991fe22329f28dc52d8cfee3d/pkg%2Fcmd%2Fuptime%2Fuptime.go",
+      "patch": "@@ -0,0 +1,227 @@\n+package uptime\n+\n+import (\n+\t\"encoding/json\"\n+\t\"fmt\"\n+\t\"net/http\"\n+\t\"sort\"\n+\t\"strings\"\n+\t\"time\"\n+\n+\t\"github.com/MakeNowJust/heredoc\"\n+\t\"github.com/cli/cli/v2/pkg/cmdutil\"\n+\t\"github.com/cli/cli/v2/pkg/iostreams\"\n+\t\"github.com/spf13/cobra\"\n+)\n+\n+// statusURL is the public GitHub Status (Statuspage) summary endpoint. It is\n+// deliberately NOT api.github.com and requires no authentication, so this\n+// command never sends the user's GitHub token to a third-party host.\n+const statusURL = \"https://www.githubstatus.com/api/v2/summary.json\"\n+\n+// componentOrder pins the display order to the grouping used on\n+// githubstatus.com; anything unlisted sorts alphabetically after these.\n+var componentOrder = map[string]int{\n+\t\"Git Operations\":     0,\n+\t\"API Requests\":       1,\n+\t\"Webhooks\":           2,\n+\t\"Issues\":             3,\n+\t\"Pull Requests\":      4,\n+\t\"Actions\":            5,\n+\t\"Packages\":           6,\n+\t\"Pages\":              7,\n+\t\"Codespaces\":         8,\n+\t\"Copilot\":            9,\n+\t\"Copilot Extensions\": 10,\n+}\n+\n+type summary struct {\n+\tStatus struct {\n+\t\tIndicator   string `json:\"indicator\"`   // none | minor | major | critical\n+\t\tDescription string `json:\"description\"` // e.g. \"All Systems Operational\"\n+\t} `json:\"status\"`\n+\tComponents []component `json:\"components\"`\n+}\n+\n+type component struct {\n+\tName   string `json:\"name\"`\n+\tStatus string `json:\"status\"` // operational | degraded_performance | partial_outage | major_outage\n+\tGroup  bool   `json:\"group\"`\n+}\n+\n+// UptimeOptions holds the resolved dependencies + flags for `gh uptime`.\n+type UptimeOptions struct {\n+\tHTTPClient func() *http.Client\n+\tIO         *iostreams.IOStreams\n+\tExporter   cmdutil.Exporter\n+\n+\tComponent string\n+\tWatch     bool\n+\tInterval  time.Duration\n+\tExitCode  bool\n+}\n+\n+func NewCmdUptime(f *cmdutil.Factory, runF func(*UptimeOptions) error) *cobra.Command {\n+\topts := &UptimeOptions{\n+\t\tIO: f.IOStreams,\n+\t\t// A plain client — the factory's HttpClient injects the gh auth token,\n+\t\t// which must never be sent to githubstatus.com.\n+\t\tHTTPClient: func() *http.Client {\n+\t\t\treturn &http.Client{Timeout: 15 * time.Second}\n+\t\t},\n+\t}\n+\n+\tcmd := &cobra.Command{\n+\t\tUse:   \"uptime\",\n+\t\tShort: \"Show the operational status of GitHub services\",\n+\t\tLong: heredoc.Docf(`\n+\t\t\tReport the current operational status of GitHub's services, as published\n+\t\t\tat <https://www.githubstatus.com>.\n+\n+\t\t\tThis queries the public GitHub Status page (not api.github.com) and sends\n+\t\t\tno authentication, so it works even when your token is unset or when the\n+\t\t\tAPI itself is degraded.\n+\n+\t\t\tWith %[1]s--watch%[1]s the command polls until GitHub (or a single named\n+\t\t\t%[1]s--component%[1]s) returns to operational — useful for holding a script\n+\t\t\tuntil an incident clears. Combined with %[1]s--exit-code%[1]s it composes\n+\t\t\tdirectly into automation:\n+\n+\t\t\t    # wait out an Actions outage, then kick off a workflow\n+\t\t\t    gh uptime --component Actions --watch && gh workflow run ci.yml\n+\t\t`, \"`\"),\n+\t\tArgs: cobra.NoArgs,\n+\t\tExample: heredoc.Doc(`\n+\t\t\t# current status of every GitHub service\n+\t\t\t$ gh uptime\n+\n+\t\t\t# just Actions, machine-readable, for a polling loop\n+\t\t\t$ gh uptime --component Actions --json component,status,indicator\n+\n+\t\t\t# fail (non-zero exit) if anything is degraded — gate a deploy\n+\t\t\t$ gh uptime --exit-code || echo \"GitHub degraded; holding\"\n+\n+\t\t\t# block until Actions recovers, checking every 30s\n+\t\t\t$ gh uptime --component Actions --watch --interval 30s\n+\t\t`),\n+\t\tRunE: func(cmd *cobra.Command, args []string) error {\n+\t\t\tif opts.Interval < 5*time.Second {\n+\t\t\t\treturn cmdutil.FlagErrorf(\"--interval must be at least 5s to respect the status page\")\n+\t\t\t}\n+\t\t\tif runF != nil {\n+\t\t\t\treturn runF(opts)\n+\t\t\t}\n+\t\t\treturn uptimeRun(opts)\n+\t\t},\n+\t}\n+\n+\tcmd.Flags().StringVarP(&opts.Component, \"component\", \"c\", \"\", \"Report a single component by name (e.g. \\\"Actions\\\")\")\n+\tcmd.Flags().BoolVarP(&opts.Watch, \"watch\", \"w\", false, \"Poll until the target is operational\")\n+\tcmd.Flags().DurationVarP(&opts.Interval, \"interval\", \"i\", 30*time.Second, \"Polling interval for --watch\")\n+\tcmd.Flags().BoolVar(&opts.ExitCode, \"exit-code\", false, \"Exit non-zero when the target is not operational\")\n+\tcmdutil.AddJSONFlags(cmd, &opts.Exporter, uptimeFields)\n+\n+\t// No GitHub auth needed to read a public status page.\n+\tcmdutil.DisableAuthCheck(cmd)\n+\n+\treturn cmd\n+}\n+\n+func uptimeRun(opts *UptimeOptions) error {\n+\tclient := opts.HTTPClient()\n+\n+\tfor {\n+\t\ts, err := fetchSummary(client)\n+\t\tif err != nil {\n+\t\t\treturn err\n+\t\t}\n+\n+\t\toperational := targetOperational(s, opts.Component)\n+\n+\t\t// In watch mode, keep polling silently until operational, then render once.\n+\t\tif opts.Watch && !operational {\n+\t\t\ttime.Sleep(opts.Interval)\n+\t\t\tcontinue\n+\t\t}\n+\n+\t\tif opts.Exporter != nil {\n+\t\t\tif err := opts.Exporter.Write(opts.IO, exportShape(s, opts.Component)); err != nil {\n+\t\t\t\treturn err\n+\t\t\t}\n+\t\t} else if err := render(opts.IO, s, opts.Component); err != nil {\n+\t\t\treturn err\n+\t\t}\n+\n+\t\tif opts.ExitCode && !operational {\n+\t\t\treturn cmdutil.SilentError\n+\t\t}\n+\t\treturn nil\n+\t}\n+}\n+\n+func fetchSummary(client *http.Client) (*summary, error) {\n+\treq, err := http.NewRequest(http.MethodGet, statusURL, nil)\n+\tif err != nil {\n+\t\treturn nil, err\n+\t}\n+\treq.Header.Set(\"Accept\", \"application/json\")\n+\tresp, err := client.Do(req)\n+\tif err != nil {\n+\t\treturn nil, fmt.Errorf(\"could not reach the GitHub status page: %w\", err)\n+\t}\n+\tdefer resp.Body.Close()\n+\tif resp.StatusCode != http.StatusOK {\n+\t\treturn nil, fmt.Errorf(\"GitHub status page returned %s\", resp.Status)\n+\t}\n+\tvar s summary\n+\tif err := json.NewDecoder(resp.Body).Decode(&s); err != nil {\n+\t\treturn nil, fmt.Errorf(\"could not parse the GitHub status page response: %w\", err)\n+\t}\n+\treturn &s, nil\n+}\n+\n+// targetOperational reports whether the whole platform (component == \"\") or a\n+// single named component is currently operational.\n+func targetOperational(s *summary, name string) bool {\n+\tif name == \"\" {\n+\t\treturn s.Status.Indicator == \"none\"\n+\t}\n+\tfor _, c := range s.Components {\n+\t\tif c.Group {\n+\t\t\tcontinue\n+\t\t}\n+\t\tif strings.EqualFold(c.Name, name) {\n+\t\t\treturn c.Status == \"operational\"\n+\t\t}\n+\t}\n+\treturn false\n+}\n+\n+// leafComponents returns the real, non-group service components in a stable\n+// display order. The status page carries a couple of non-service rows (e.g. a\n+// \"Visit www.githubstatus.com for more information\" link) as components; those\n+// are dropped so callers only ever see actual GitHub services.\n+func leafComponents(s *summary) []component {\n+\tout := make([]component, 0, len(s.Components))\n+\tfor _, c := range s.Components {\n+\t\tif c.Group {\n+\t\t\tcontinue\n+\t\t}\n+\t\tif strings.HasPrefix(c.Name, \"Visit \") || strings.Contains(c.Name, \"githubstatus.com\") {\n+\t\t\tcontinue\n+\t\t}\n+\t\tout = append(out, c)\n+\t}\n+\tsort.SliceStable(out, func(i, j int) bool {\n+\t\toi, iok := componentOrder[out[i].Name]\n+\t\toj, jok := componentOrder[out[j].Name]\n+\t\tif iok && jok {\n+\t\t\treturn oi < oj\n+\t\t}\n+\t\tif iok != jok {\n+\t\t\treturn iok\n+\t\t}\n+\t\treturn out[i].Name < out[j].Name\n+\t})\n+\treturn out\n+}"
+    },
+    {
+      "path": "pkg/cmd/uptime/uptime_test.go",
+      "status": "added",
+      "additions": 215,
+      "deletions": 0,
+      "changes": 215,
+      "blob_url": "https://github.com/cli/cli/blob/e5c604576acb2c4991fe22329f28dc52d8cfee3d/pkg%2Fcmd%2Fuptime%2Fuptime_test.go",
+      "raw_url": "https://github.com/cli/cli/raw/e5c604576acb2c4991fe22329f28dc52d8cfee3d/pkg%2Fcmd%2Fuptime%2Fuptime_test.go",
+      "patch": "@@ -0,0 +1,215 @@\n+package uptime\n+\n+import (\n+\t\"bytes\"\n+\t\"encoding/json\"\n+\t\"net/http\"\n+\t\"strings\"\n+\t\"testing\"\n+\t\"time\"\n+\n+\t\"github.com/cli/cli/v2/pkg/cmdutil\"\n+\t\"github.com/cli/cli/v2/pkg/httpmock\"\n+\t\"github.com/cli/cli/v2/pkg/iostreams\"\n+\t\"github.com/google/shlex\"\n+\t\"github.com/stretchr/testify/assert\"\n+\t\"github.com/stretchr/testify/require\"\n+)\n+\n+// fixture builds a githubstatus summary.json body for the given overall\n+// indicator/description and component name->status pairs.\n+func fixture(indicator, description string, comps [][2]string) string {\n+\tbody := map[string]interface{}{\n+\t\t\"status\": map[string]string{\"indicator\": indicator, \"description\": description},\n+\t}\n+\tlist := make([]map[string]interface{}, 0, len(comps))\n+\tfor _, c := range comps {\n+\t\tlist = append(list, map[string]interface{}{\"name\": c[0], \"status\": c[1], \"group\": false})\n+\t}\n+\tbody[\"components\"] = list\n+\tb, _ := json.Marshal(body)\n+\treturn string(b)\n+}\n+\n+func TestNewCmdUptime(t *testing.T) {\n+\ttests := []struct {\n+\t\tname    string\n+\t\tcli     string\n+\t\twantErr string\n+\t\twant    UptimeOptions\n+\t}{\n+\t\t{\n+\t\t\tname: \"no args\",\n+\t\t\tcli:  \"\",\n+\t\t\twant: UptimeOptions{Interval: 30 * time.Second},\n+\t\t},\n+\t\t{\n+\t\t\tname: \"component + json\",\n+\t\t\tcli:  \"--component Actions --json status\",\n+\t\t\twant: UptimeOptions{Component: \"Actions\", Interval: 30 * time.Second},\n+\t\t},\n+\t\t{\n+\t\t\tname: \"watch with interval\",\n+\t\t\tcli:  \"--watch --interval 45s\",\n+\t\t\twant: UptimeOptions{Watch: true, Interval: 45 * time.Second},\n+\t\t},\n+\t\t{\n+\t\t\tname:    \"interval too small\",\n+\t\t\tcli:     \"--watch --interval 1s\",\n+\t\t\twantErr: \"--interval must be at least 5s to respect the status page\",\n+\t\t},\n+\t\t{\n+\t\t\tname:    \"rejects positional args\",\n+\t\t\tcli:     \"Actions\",\n+\t\t\twantErr: `unknown command \"Actions\" for \"uptime\"`,\n+\t\t},\n+\t}\n+\n+\tfor _, tt := range tests {\n+\t\tt.Run(tt.name, func(t *testing.T) {\n+\t\t\tios, _, _, _ := iostreams.Test()\n+\t\t\tf := &cmdutil.Factory{IOStreams: ios}\n+\n+\t\t\tvar gotOpts *UptimeOptions\n+\t\t\tcmd := NewCmdUptime(f, func(o *UptimeOptions) error {\n+\t\t\t\tgotOpts = o\n+\t\t\t\treturn nil\n+\t\t\t})\n+\n+\t\t\targv, err := shlex.Split(tt.cli)\n+\t\t\trequire.NoError(t, err)\n+\t\t\tcmd.SetArgs(argv)\n+\t\t\tcmd.SetOut(&bytes.Buffer{})\n+\t\t\tcmd.SetErr(&bytes.Buffer{})\n+\n+\t\t\t_, err = cmd.ExecuteC()\n+\t\t\tif tt.wantErr != \"\" {\n+\t\t\t\trequire.EqualError(t, err, tt.wantErr)\n+\t\t\t\treturn\n+\t\t\t}\n+\t\t\trequire.NoError(t, err)\n+\t\t\tassert.Equal(t, tt.want.Component, gotOpts.Component)\n+\t\t\tassert.Equal(t, tt.want.Watch, gotOpts.Watch)\n+\t\t\tassert.Equal(t, tt.want.Interval, gotOpts.Interval)\n+\t\t})\n+\t}\n+}\n+\n+func runWith(t *testing.T, opts *UptimeOptions, body string) (stdout string, err error) {\n+\tt.Helper()\n+\treg := &httpmock.Registry{}\n+\treg.Register(\n+\t\thttpmock.REST(http.MethodGet, \"api/v2/summary.json\"),\n+\t\thttpmock.StringResponse(body),\n+\t)\n+\tios, _, stdoutBuf, _ := iostreams.Test()\n+\topts.IO = ios\n+\topts.HTTPClient = func() *http.Client {\n+\t\treturn &http.Client{Transport: reg}\n+\t}\n+\terr = uptimeRun(opts)\n+\treturn stdoutBuf.String(), err\n+}\n+\n+func TestUptimeRun_AllOperational(t *testing.T) {\n+\tbody := fixture(\"none\", \"All Systems Operational\", [][2]string{\n+\t\t{\"Git Operations\", \"operational\"},\n+\t\t{\"Actions\", \"operational\"},\n+\t})\n+\tout, err := runWith(t, &UptimeOptions{Interval: 30 * time.Second}, body)\n+\trequire.NoError(t, err)\n+\tassert.Contains(t, out, \"All Systems Operational\")\n+\tassert.Contains(t, out, \"Git Operations\")\n+\tassert.Contains(t, out, \"Actions\")\n+}\n+\n+func TestUptimeRun_ExitCodeWhenDegraded(t *testing.T) {\n+\tbody := fixture(\"major\", \"Partial System Outage\", [][2]string{\n+\t\t{\"Actions\", \"major_outage\"},\n+\t\t{\"Git Operations\", \"operational\"},\n+\t})\n+\t// Without --exit-code: reports but returns nil.\n+\tout, err := runWith(t, &UptimeOptions{Interval: 30 * time.Second}, body)\n+\trequire.NoError(t, err)\n+\tassert.Contains(t, out, \"Partial System Outage\")\n+\n+\t// With --exit-code: SilentError (exit 1) because the platform is degraded.\n+\t_, err = runWith(t, &UptimeOptions{Interval: 30 * time.Second, ExitCode: true}, body)\n+\tassert.ErrorIs(t, err, cmdutil.SilentError)\n+}\n+\n+func TestUptimeRun_ComponentExitCode(t *testing.T) {\n+\tbody := fixture(\"major\", \"Partial System Outage\", [][2]string{\n+\t\t{\"Actions\", \"major_outage\"},\n+\t\t{\"Git Operations\", \"operational\"},\n+\t})\n+\t// A degraded component we don't care about must not trip --exit-code when we\n+\t// scope to a healthy one.\n+\t_, err := runWith(t, &UptimeOptions{Component: \"Git Operations\", Interval: 30 * time.Second, ExitCode: true}, body)\n+\trequire.NoError(t, err, \"scoped to an operational component, exit code should be clean\")\n+\n+\t// Scoped to the outaged component, --exit-code must fail.\n+\t_, err = runWith(t, &UptimeOptions{Component: \"Actions\", Interval: 30 * time.Second, ExitCode: true}, body)\n+\tassert.ErrorIs(t, err, cmdutil.SilentError)\n+}\n+\n+func TestUptimeRun_UnknownComponent(t *testing.T) {\n+\tbody := fixture(\"none\", \"All Systems Operational\", [][2]string{\n+\t\t{\"Actions\", \"operational\"},\n+\t})\n+\t_, err := runWith(t, &UptimeOptions{Component: \"Nope\", Interval: 30 * time.Second}, body)\n+\trequire.Error(t, err)\n+\tassert.Contains(t, err.Error(), \"no such GitHub component\")\n+}\n+\n+func TestUptimeRun_JSONExport(t *testing.T) {\n+\tbody := fixture(\"major\", \"Partial System Outage\", [][2]string{\n+\t\t{\"Actions\", \"major_outage\"},\n+\t\t{\"Git Operations\", \"operational\"},\n+\t})\n+\texporter := cmdutil.NewJSONExporter()\n+\texporter.SetFields([]string{\"operational\", \"status\", \"component\"})\n+\tout, err := runWith(t, &UptimeOptions{Component: \"Actions\", Interval: 30 * time.Second, Exporter: exporter}, body)\n+\trequire.NoError(t, err)\n+\n+\tvar got map[string]interface{}\n+\trequire.NoError(t, json.Unmarshal([]byte(out), &got))\n+\tassert.Equal(t, false, got[\"operational\"])\n+\tassert.Equal(t, \"major_outage\", got[\"status\"])\n+\tassert.Equal(t, \"Actions\", got[\"component\"])\n+}\n+\n+func TestLeafComponents_DropsNonServiceRows(t *testing.T) {\n+\ts := &summary{}\n+\ts.Components = []component{\n+\t\t{Name: \"Actions\", Status: \"operational\"},\n+\t\t{Name: \"Visit www.githubstatus.com for more information\", Status: \"operational\"},\n+\t\t{Name: \"Some Group\", Status: \"operational\", Group: true},\n+\t}\n+\tgot := leafComponents(s)\n+\trequire.Len(t, got, 1)\n+\tassert.Equal(t, \"Actions\", got[0].Name)\n+}\n+\n+func TestTargetOperational(t *testing.T) {\n+\ts := &summary{Components: []component{\n+\t\t{Name: \"Actions\", Status: \"major_outage\"},\n+\t\t{Name: \"Git Operations\", Status: \"operational\"},\n+\t}}\n+\ts.Status.Indicator = \"major\"\n+\n+\tassert.False(t, targetOperational(s, \"\"), \"platform indicator major => not operational\")\n+\tassert.False(t, targetOperational(s, \"Actions\"))\n+\tassert.True(t, targetOperational(s, \"git operations\"), \"component match is case-insensitive\")\n+\tassert.False(t, targetOperational(s, \"Missing\"), \"unknown component is treated as not operational\")\n+}\n+\n+// ensure the fields list advertised to --json stays in sync with what we emit.\n+func TestUptimeFieldsCoverExport(t *testing.T) {\n+\tshape := exportShape(&summary{}, \"Actions\")\n+\tfor _, f := range []string{\"operational\", \"status\", \"component\", \"indicator\", \"description\", \"components\"} {\n+\t\t_, ok := shape[f]\n+\t\tassert.True(t, ok, \"export shape missing advertised field %q\", f)\n+\t\tassert.Contains(t, strings.Join(uptimeFields, \",\"), f)\n+\t}\n+}"
+    }
+  ],
+  "conversation_comments": [
+    {
+      "id": 5208630587,
+      "author": "giaki3003",
+      "association": "NONE",
+      "body": "LGTM 🚀",
+      "created_at": "2026-08-06T19:39:23Z",
+      "url": "https://github.com/cli/cli/pull/14094#issuecomment-5208630587"
+    }
+  ],
+  "review_comments": [],
+  "reviews": [],
+  "test_evidence": {
+    "check_runs": [],
+    "commit_status": {
+      "state": "pending",
+      "statuses": []
+    }
+  },
+  "repository_context": {
+    "id": 212613049,
+    "description": "GitHub’s official command line tool",
+    "default_branch": "trunk",
+    "primary_language": "Go",
+    "languages": {
+      "Go": 7338492,
+      "Shell": 19967,
+      "Makefile": 3940,
+      "PowerShell": 2768,
+      "Batchfile": 26
+    },
+    "topics": [
+      "cli",
+      "git",
+      "github-api-v4",
+      "golang"
+    ],
+    "root_tree": [
+      {
+        "path": ".devcontainer",
+        "mode": "040000",
+        "type": "tree",
+        "sha": "d793bd80f1384120ccc0d99e036a0da2c4026f8b"
+      },
+      {
+        "path": ".gitattributes",
+        "mode": "100644",
+        "type": "blob",
+        "sha": "b790b5648354bc1f268040c273e7899d06d09f5f"
+      },
+      {
+        "path": ".github",
+        "mode": "040000",
+        "type": "tree",
+        "sha": "3071d89be79e19c9f0b4a2fa1a056555252f25b1"
+      },
+      {
+        "path": ".gitignore",
+        "mode": "100644",
+        "type": "blob",
+        "sha": "2d65ee64682362cfb60f389081d7408e65538b61"
+      },
+      {
+        "path": ".golangci.yml",
+        "mode": "100644",
+        "type": "blob",
+        "sha": "f50707936b21a4d7886d80dcff3682e1c2a7186c"
+      },
+      {
+        "path": ".goreleaser.yml",
+        "mode": "100644",
+        "type": "blob",
+        "sha": "9dd3c3e00bc1e28c91fdff1169281578bd5dfc15"
+      },
+      {
+        "path": "AGENTS.md",
+        "mode": "100644",
+        "type": "blob",
+        "sha": "d6c1ff5d3f8fd5f3f3dc20a21c4e7ede8def4115"
+      },
+      {
+        "path": "LICENSE",
+        "mode": "100644",
+        "type": "blob",
+        "sha": "b6a58a9572cbd7e4550f8205a9c4fd199cd442f2"
+      },
+      {
+        "path": "Makefile",
+        "mode": "100644",
+        "type": "blob",
+        "sha": "c3b18f3133216972d42be4403d00aec7be755a09"
+      },
+      {
+        "path": "README.md",
+        "mode": "100644",
+        "type": "blob",
+        "sha": "61623976c3bbd0acc4f16792748acb419a789b5c"
+      },
+      {
+        "path": "acceptance",
+        "mode": "040000",
+        "type": "tree",
+        "sha": "80cf089d34591a67250e4509bc885279f47d6286"
+      },
+      {
+        "path": "api",
+        "mode": "040000",
+        "type": "tree",
+        "sha": "82e30a3ca8f331a26e6461340dc67df1e5b2630d"
+      },
+      {
+        "path": "build",
+        "mode": "040000",
+        "type": "tree",
+        "sha": "536a17d5ef051cce44b6e58b376c7c3c6681c537"
+      },
+      {
+        "path": "cmd",
+        "mode": "040000",
+        "type": "tree",
+        "sha": "942ec59d4cada2f6a292d52cce2515eb4614b5d5"
+      },
+      {
+        "path": "context",
+        "mode": "040000",
+        "type": "tree",
+        "sha": "19e85389b441343a0d00d3bc50efe1ecca5db64a"
+      },
+      {
+        "path": "docs",
+        "mode": "040000",
+        "type": "tree",
+        "sha": "20b4bab2281e8a32fb8ef1083e9fac0756023674"
+      },
+      {
+        "path": "git",
+        "mode": "040000",
+        "type": "tree",
+        "sha": "70e31f8aa552e4dd18d5aa189126ad6638a7c34a"
+      },
+      {
+        "path": "go.mod",
+        "mode": "100644",
+        "type": "blob",
+        "sha": "07ea6eb03c90e8156ec6791030943a60a2925367"
+      },
+      {
+        "path": "go.sum",
+        "mode": "100644",
+        "type": "blob",
+        "sha": "33ee0c49947e4730041b0092d79f8e453d3f34ef"
+      },
+      {
+        "path": "internal",
+        "mode": "040000",
+        "type": "tree",
+        "sha": "8f7e4daa6bb2739e92ff8524019bf32684290a0d"
+      },
+      {
+        "path": "pkg",
+        "mode": "040000",
+        "type": "tree",
+        "sha": "d3c3789223463c2afe40c0ce52a3d701e1a16251"
+      },
+      {
+        "path": "script",
+        "mode": "040000",
+        "type": "tree",
+        "sha": "e4b51dc06ac33a4816b6468e0afc25f652fb2492"
+      },
+      {
+        "path": "skills",
+        "mode": "040000",
+        "type": "tree",
+        "sha": "041bd2aadced9dfee81810e54efcba4aa25c9ab3"
+      },
+      {
+        "path": "test",
+        "mode": "040000",
+        "type": "tree",
+        "sha": "116d5e1d15778cb2257cffe827ad6bea726d4f52"
+      },
+      {
+        "path": "utils",
+        "mode": "040000",
+        "type": "tree",
+        "sha": "ba802efc3400966ee76799ada101b3b03b9c9177"
+      }
+    ],
+    "readme": {
+      "path": "README.md",
+      "sha": "61623976c3bbd0acc4f16792748acb419a789b5c",
+      "source_chars": 5911,
+      "truncated": false,
+      "content": "# GitHub CLI\n\n`gh` is GitHub on the command line. It brings pull requests, issues, and other GitHub concepts to the terminal next to where you are already working with `git` and your code.\n\n![screenshot of gh pr status](https://user-images.githubusercontent.com/98482/84171218-327e7a80-aa40-11ea-8cd1-5177fc2d0e72.png)\n\nGitHub CLI is supported for users on GitHub.com, GitHub Enterprise Cloud, and GitHub Enterprise Server 2.20+ with support for macOS, Windows, and Linux.\n\n## Documentation\n\nFor [installation options see below](#installation), for usage instructions [see the manual](https://cli.github.com/manual/).\n\n## Agent skills\n\nAn [agent skill](https://agentskills.io) is available for driving `gh` from coding agents. Install or update it with the built-in `gh skill` command:\n\n```shell\n# Install the skill (user scope recommended)\ngh skill install cli/cli gh --scope user\n\n# Update the skill after a `gh` release\ngh skill update gh\n```\n\n## Contributing\n\nIf anything feels off or if you feel that some functionality is missing, please check out the [contributing page](.github/CONTRIBUTING.md). There you will find instructions for sharing your feedback, building the tool locally, and submitting pull requests to the project.\n\nIf you are a hubber and are interested in shipping new commands for the CLI, check out our [doc on internal contributions](docs/working-with-us.md)\n\n<!-- this anchor is linked to from elsewhere, so avoid renaming it -->\n## Installation\n\n### [macOS](docs/install_macos.md)\n\n- [Homebrew](docs/install_macos.md#homebrew)\n- [Precompiled binaries](docs/install_macos.md#precompiled-binaries) on [releases page][]\n\nFor additional macOS packages and installers, see [community-supported docs](docs/install_macos.md#community-unofficial)\n\n### [Linux & Unix](docs/install_linux.md)\n\n- [Debian, Raspberry Pi, Ubuntu](docs/install_linux.md#debian)\n- [Amazon Linux, CentOS, Fedora, openSUSE, RHEL, SUSE](docs/install_linux.md#rpm)\n- [Precompiled binaries](docs/install_linux.md#precompiled-binaries) on [releases page][]\n\nFor additional Linux & Unix packages and installers, see [community-supported docs](docs/install_linux.md#community-unofficial)\n\n### [Windows](docs/install_windows.md)\n\n- [WinGet](docs/install_windows.md#winget)\n- [Precompiled binaries](docs/install_windows.md#precompiled-binaries) on [releases page][]\n\nFor additional Windows packages and installers, see [community-supported docs](docs/install_windows.md#community-unofficial)\n\n### Build from source\n\nSee here on how to [build GitHub CLI from source](docs/install_source.md).\n\n### GitHub Codespaces\n\nTo add GitHub CLI to your codespace, add the following to your [devcontainer file](https://docs.github.com/en/codespaces/setting-up-your-project-for-codespaces/adding-features-to-a-devcontainer-file):\n\n```json\n\"features\": {\n  \"ghcr.io/devcontainers/features/github-cli:1\": {}\n}\n```\n\n### GitHub Actions\n\n[GitHub-hosted runners](https://docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners) have the GitHub CLI pre-installed, which is updated weekly.\n\nIf a specific version is needed, your GitHub Actions workflow will need to install it based on the [macOS](#macos), [Linux & Unix](#linux--unix), or [Windows](#windows) instructions above.\n\nFor information on all pre-installed tools, see [`actions/runner-images`](https://github.com/actions/runner-images)\n\n### Verification of binaries\n\nStarting with v2.93.0, releases of `gh` are published as immutable releases. For more information, see [Immutable releases](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases).\n\nSince version 2.50.0, `gh` has been producing [Build Provenance Attestation](https://github.blog/changelog/2024-06-25-artifact-attestations-is-generally-available/), enabling a cryptographically verifiable paper-trail back to the origin GitHub repository, git revision, and build instructions used. The build provenance attestations are signed and rely on Public Good [Sigstore](https://www.sigstore.dev/) for PKI.\n\nThere are two common ways to verify a downloaded release, depending on whether `gh` is already installed or not. If `gh` is installed, it's trivial to verify a new release:\n\n- **Option 1: Using `gh` if already installed:**\n\n  ```shell\n  $ gh at verify -R cli/cli gh_2.62.0_macOS_arm64.zip\n  Loaded digest sha256:fdb77f31b8a6dd23c3fd858758d692a45f7fc76383e37d475bdcae038df92afc for file://gh_2.62.0_macOS_arm64.zip\n  Loaded 1 attestation from GitHub API\n  ✓ Verification succeeded!\n\n  sha256:fdb77f31b8a6dd23c3fd858758d692a45f7fc76383e37d475bdcae038df92afc was attested by:\n  REPO     PREDICATE_TYPE                  WORKFLOW\n  cli/cli  https://slsa.dev/provenance/v1  .github/workflows/deployment.yml@refs/heads/trunk\n  ```\n\n- **Option 2: Using Sigstore [`cosign`](https://github.com/sigstore/cosign):**\n\n  To perform this, download the [attestation](https://github.com/cli/cli/attestations) for the downloaded release and use cosign to verify the authenticity of the downloaded release:\n\n  ```shell\n  $ cosign verify-blob-attestation --bundle cli-cli-attestation-3120304.sigstore.json \\\n        --new-bundle-format \\\n        --certificate-oidc-issuer=\"https://token.actions.githubusercontent.com\" \\\n        --certificate-identity=\"https://github.com/cli/cli/.github/workflows/deployment.yml@refs/heads/trunk\" \\\n        gh_2.62.0_macOS_arm64.zip\n  Verified OK\n  ```\n\n## Comparison with hub\n\nFor many years, [hub](https://github.com/github/hub) was the unofficial GitHub CLI tool. `gh` is a new project that helps us explore\nwhat an official GitHub CLI tool can look like with a fundamentally different design. While both\ntools bring GitHub to the terminal, `hub` behaves as a proxy to `git`, and `gh` is a standalone\ntool. Check out our [more detailed explanation](docs/gh-vs-hub.md) to learn more.\n\n[releases page]: https://github.com/cli/cli/releases/latest\n"
+    },
+    "manifests": [
+      {
+        "path": "go.mod",
+        "sha": "07ea6eb03c90e8156ec6791030943a60a2925367",
+        "source_chars": 9176,
+        "truncated": false,
+        "content": "module github.com/cli/cli/v2\n\ngo 1.26.0\n\ntoolchain go1.26.5\n\nrequire (\n\tcharm.land/bubbles/v2 v2.1.1\n\tcharm.land/bubbletea/v2 v2.0.8\n\tcharm.land/huh/v2 v2.0.3\n\tcharm.land/lipgloss/v2 v2.0.5\n\tgithub.com/AlecAivazis/survey/v2 v2.3.7\n\tgithub.com/MakeNowJust/heredoc v1.0.0\n\tgithub.com/Netflix/go-expect v0.0.0-20220104043353-73e0943537d2\n\tgithub.com/atotto/clipboard v0.1.4\n\tgithub.com/briandowns/spinner v1.23.2\n\tgithub.com/cenkalti/backoff/v4 v4.3.0\n\tgithub.com/cenkalti/backoff/v5 v5.0.3\n\tgithub.com/charmbracelet/glamour v0.10.0\n\tgithub.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834\n\tgithub.com/cli/go-gh/v2 v2.13.0\n\tgithub.com/cli/go-internal v0.0.0-20241025142207-6c48bcd5ce24\n\tgithub.com/cli/oauth v1.2.2\n\tgithub.com/cli/safeexec v1.0.1\n\tgithub.com/cpuguy83/go-md2man/v2 v2.0.7\n\tgithub.com/creack/pty v1.1.24\n\tgithub.com/digitorus/timestamp v0.0.0-20250524132541-c45532741eea\n\tgithub.com/distribution/reference v0.6.0\n\tgithub.com/gabriel-vasile/mimetype v1.4.15\n\tgithub.com/gdamore/tcell/v2 v2.13.10\n\tgithub.com/google/go-cmp v0.7.0\n\tgithub.com/google/go-containerregistry v0.21.8\n\tgithub.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510\n\tgithub.com/google/uuid v1.6.0\n\tgithub.com/gorilla/websocket v1.5.3\n\tgithub.com/hashicorp/go-version v1.9.0\n\tgithub.com/hinshun/vt10x v0.0.0-20220119200601-820417d04eec\n\tgithub.com/in-toto/attestation v1.2.0\n\tgithub.com/joho/godotenv v1.5.1\n\tgithub.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51\n\tgithub.com/klauspost/compress v1.19.1\n\tgithub.com/mattn/go-colorable v0.1.15\n\tgithub.com/mattn/go-isatty v0.0.24\n\tgithub.com/mgutz/ansi v0.0.0-20200706080929-d51e80ef957d\n\tgithub.com/microsoft/dev-tunnels v0.1.27\n\tgithub.com/muhammadmuzzammil1998/jsonc v1.0.0\n\tgithub.com/opentracing/opentracing-go v1.2.0\n\tgithub.com/rivo/tview v0.42.0\n\tgithub.com/shurcooL/githubv4 v0.0.0-20240727222349-48295856cce7\n\tgithub.com/sigstore/protobuf-specs v0.5.1\n\tgithub.com/sigstore/sigstore-go v1.3.0\n\tgithub.com/spf13/cobra v1.10.2\n\tgithub.com/spf13/pflag v1.0.10\n\tgithub.com/stretchr/testify v1.11.1\n\tgithub.com/theupdateframework/go-tuf/v2 v2.4.2\n\tgithub.com/twitchtv/twirp v8.1.3+incompatible\n\tgithub.com/vmihailenco/msgpack/v5 v5.4.1\n\tgithub.com/yuin/goldmark v1.8.5\n\tgithub.com/zalando/go-keyring v0.2.8\n\tgolang.org/x/crypto v0.54.0\n\tgolang.org/x/sync v0.22.0\n\tgolang.org/x/sys v0.47.0\n\tgolang.org/x/term v0.45.0\n\tgolang.org/x/text v0.40.0\n\tgoogle.golang.org/grpc v1.83.0\n\tgoogle.golang.org/protobuf v1.36.11\n\tgopkg.in/h2non/gock.v1 v1.1.2\n\tgopkg.in/yaml.v3 v3.0.1\n)\n\nrequire (\n\tdario.cat/mergo v1.0.2 // indirect\n\tgithub.com/Masterminds/goutils v1.1.1 // indirect\n\tgithub.com/Masterminds/semver/v3 v3.4.0 // indirect\n\tgithub.com/Masterminds/sprig/v3 v3.3.0 // indirect\n\tgithub.com/alecthomas/chroma/v2 v2.19.0 // indirect\n\tgithub.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect\n\tgithub.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect\n\tgithub.com/aymerick/douceur v0.2.0 // indirect\n\tgithub.com/blang/semver v3.5.1+incompatible // indirect\n\tgithub.com/catppuccin/go v0.3.0 // indirect\n\tgithub.com/cespare/xxhash/v2 v2.3.0 // indirect\n\tgithub.com/charmbracelet/colorprofile v0.4.3 // indirect\n\tgithub.com/charmbracelet/ultraviolet v0.0.0-20260703014108-f5a850f9c2b7 // indirect\n\tgithub.com/charmbracelet/x/ansi v0.11.7 // indirect\n\tgithub.com/charmbracelet/x/cellbuf v0.0.15 // indirect\n\tgithub.com/charmbracelet/x/exp/ordered v0.1.0 // indirect\n\tgithub.com/charmbracelet/x/exp/slice v0.0.0-20250630141444-821143405392 // indirect\n\tgithub.com/charmbracelet/x/exp/strings v0.0.0-20250630141444-821143405392 // indirect\n\tgithub.com/charmbracelet/x/term v0.2.2 // indirect\n\tgithub.com/charmbracelet/x/termios v0.1.1 // indirect\n\tgithub.com/charmbracelet/x/windows v0.2.2 // indirect\n\tgithub.com/cli/browser v1.3.0 // indirect\n\tgithub.com/cli/shurcooL-graphql v0.0.4 // indirect\n\tgithub.com/clipperhouse/displaywidth v0.11.0 // indirect\n\tgithub.com/clipperhouse/uax29/v2 v2.7.0 // indirect\n\tgithub.com/cyberphone/json-canonicalization v0.0.0-20241213102144-19d51d7fe467 // indirect\n\tgithub.com/danieljoos/wincred v1.2.3 // indirect\n\tgithub.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect\n\tgithub.com/digitorus/pkcs7 v0.0.0-20230818184609-3a137a874352 // indirect\n\tgithub.com/dlclark/regexp2 v1.11.5 // indirect\n\tgithub.com/docker/cli v29.6.2+incompatible // indirect\n\tgithub.com/docker/docker-credential-helpers v0.9.3 // indirect\n\tgithub.com/dustin/go-humanize v1.0.1 // indirect\n\tgithub.com/fatih/color v1.18.0 // indirect\n\tgithub.com/gdamore/encoding v1.0.1 // indirect\n\tgithub.com/go-logr/logr v1.4.4 // indirect\n\tgithub.com/go-logr/stdr v1.2.2 // indirect\n\tgithub.com/go-openapi/analysis v0.25.5 // indirect\n\tgithub.com/go-openapi/errors v0.22.8 // indirect\n\tgithub.com/go-openapi/jsonpointer v1.0.0 // indirect\n\tgithub.com/go-openapi/jsonreference v1.0.0 // indirect\n\tgithub.com/go-openapi/loads v0.25.0 // indirect\n\tgithub.com/go-openapi/runtime v0.33.0 // indirect\n\tgithub.com/go-openapi/runtime/server-middleware v0.30.0 // indirect\n\tgithub.com/go-openapi/spec v0.22.9 // indirect\n\tgithub.com/go-openapi/strfmt v0.27.0 // indirect\n\tgithub.com/go-openapi/swag v0.26.1 // indirect\n\tgithub.com/go-openapi/swag/cmdutils v0.27.0 // indirect\n\tgithub.com/go-openapi/swag/conv v0.27.3 // indirect\n\tgithub.com/go-openapi/swag/fileutils v0.27.3 // indirect\n\tgithub.com/go-openapi/swag/jsonname v0.26.1 // indirect\n\tgithub.com/go-openapi/swag/jsonutils v0.27.3 // indirect\n\tgithub.com/go-openapi/swag/loading v0.27.3 // indirect\n\tgithub.com/go-openapi/swag/mangling v0.27.3 // indirect\n\tgithub.com/go-openapi/swag/netutils v0.27.0 // indirect\n\tgithub.com/go-openapi/swag/pools v0.27.3 // indirect\n\tgithub.com/go-openapi/swag/stringutils v0.27.3 // indirect\n\tgithub.com/go-openapi/swag/typeutils v0.27.3 // indirect\n\tgithub.com/go-openapi/swag/yamlutils v0.27.3 // indirect\n\tgithub.com/go-openapi/validate v0.26.1 // indirect\n\tgithub.com/go-viper/mapstructure/v2 v2.5.0 // indirect\n\tgithub.com/godbus/dbus/v5 v5.2.2 // indirect\n\tgithub.com/google/certificate-transparency-go v1.3.3 // indirect\n\tgithub.com/gorilla/css v1.0.1 // indirect\n\tgithub.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect\n\tgithub.com/h2non/parth v0.0.0-20190131123155-b4df798d6542 // indirect\n\tgithub.com/henvic/httpretty v0.1.4 // indirect\n\tgithub.com/huandu/xstrings v1.5.0 // indirect\n\tgithub.com/in-toto/in-toto-golang v0.11.0 // indirect\n\tgithub.com/inconshreveable/mousetrap v1.1.0 // indirect\n\tgithub.com/itchyny/gojq v0.12.17 // indirect\n\tgithub.com/itchyny/timefmt-go v0.1.6 // indirect\n\tgithub.com/jedisct1/go-minisign v0.0.0-20241212093149-d2f9f49435c7 // indirect\n\tgithub.com/lucasb-eyer/go-colorful v1.4.0 // indirect\n\tgithub.com/mattn/go-runewidth v0.0.24 // indirect\n\tgithub.com/microcosm-cc/bluemonday v1.0.27 // indirect\n\tgithub.com/mitchellh/copystructure v1.2.0 // indirect\n\tgithub.com/mitchellh/hashstructure/v2 v2.0.2 // indirect\n\tgithub.com/mitchellh/reflectwalk v1.0.2 // indirect\n\tgithub.com/muesli/cancelreader v0.2.2 // indirect\n\tgithub.com/muesli/reflow v0.3.0 // indirect\n\tgithub.com/muesli/termenv v0.16.0 // indirect\n\tgithub.com/oklog/ulid/v2 v2.1.1 // indirect\n\tgithub.com/opencontainers/go-digest v1.0.0 // indirect\n\tgithub.com/opencontainers/image-spec v1.1.1 // indirect\n\tgithub.com/pkg/errors v0.9.1 // indirect\n\tgithub.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect\n\tgithub.com/rivo/uniseg v0.4.7 // indirect\n\tgithub.com/rodaine/table v1.3.0 // indirect\n\tgithub.com/russross/blackfriday/v2 v2.1.0 // indirect\n\tgithub.com/secure-systems-lab/go-securesystemslib v0.11.0 // indirect\n\tgithub.com/shibumi/go-pathspec v1.3.0 // indirect\n\tgithub.com/shopspring/decimal v1.4.0 // indirect\n\tgithub.com/shurcooL/graphql v0.0.0-20230722043721-ed46e5a46466 // indirect\n\tgithub.com/sigstore/rekor v1.5.3 // indirect\n\tgithub.com/sigstore/rekor-tiles/v2 v2.3.0 // indirect\n\tgithub.com/sigstore/sigstore v1.10.8 // indirect\n\tgithub.com/sigstore/timestamp-authority/v2 v2.1.3 // indirect\n\tgithub.com/sirupsen/logrus v1.9.4 // indirect\n\tgithub.com/spf13/cast v1.10.0 // indirect\n\tgithub.com/stretchr/objx v0.5.2 // indirect\n\tgithub.com/thlib/go-timezone-local v0.0.6 // indirect\n\tgithub.com/transparency-dev/formats v0.1.1 // indirect\n\tgithub.com/transparency-dev/merkle v0.0.2 // indirect\n\tgithub.com/vmihailenco/tagparser/v2 v2.0.0 // indirect\n\tgithub.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect\n\tgithub.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect\n\tgithub.com/yuin/goldmark-emoji v1.0.6 // indirect\n\tgo.opentelemetry.io/auto/sdk v1.2.1 // indirect\n\tgo.opentelemetry.io/otel v1.44.0 // indirect\n\tgo.opentelemetry.io/otel/metric v1.44.0 // indirect\n\tgo.opentelemetry.io/otel/trace v1.44.0 // indirect\n\tgo.yaml.in/yaml/v3 v3.0.4 // indirect\n\tgolang.org/x/mod v0.38.0 // indirect\n\tgolang.org/x/net v0.57.0 // indirect\n\tgolang.org/x/tools v0.48.0 // indirect\n\tgoogle.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa // indirect\n\tgoogle.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect\n\tgotest.tools/v3 v3.5.2 // indirect\n\tk8s.io/klog/v2 v2.140.0 // indirect\n)\n"
+      }
+    ]
+  },
+  "capture_coverage": {
+    "files_returned": 4,
+    "files_without_patch": 0,
+    "patch_chars": 18648,
+    "full_changed_sources_captured": false,
+    "note": "Changed-file patches and shallow root context only; no full checkout."
+  }
+}

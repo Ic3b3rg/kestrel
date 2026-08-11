@@ -1,0 +1,518 @@
+{
+  "schema_version": 1,
+  "extractor_version": "recorded-conceptual-pass/0.1",
+  "cases": {
+    "small-behavior": [
+      {
+        "run": "A",
+        "graph_status": "available",
+        "overview": "Adds a gh uptime command that reads GitHub Status without GitHub API authentication, evaluates either the whole service or one component, and reports or waits on that state for humans and scripts.",
+        "intent": {
+          "statement": "Let an Operator or automation observe GitHub service availability even while the authenticated GitHub API is degraded.",
+          "outcomes": [
+            {
+              "text": "Fetch public service status without sending the gh authentication token.",
+              "evidence": ["pr:body", "diff:pkg/cmd/uptime/uptime.go"]
+            },
+            {
+              "text": "Render whole-platform or component status for humans and JSON consumers.",
+              "evidence": ["pr:body", "diff:pkg/cmd/uptime/render.go"]
+            },
+            {
+              "text": "Let automation fail on degradation or wait until recovery.",
+              "evidence": ["pr:body", "diff:pkg/cmd/uptime/uptime.go", "diff:pkg/cmd/uptime/uptime_test.go"]
+            }
+          ]
+        },
+        "concepts": ["CLI command", "GitHub Status summary", "service component", "automation outcome"],
+        "nodes": [
+          {
+            "draft_id": "register",
+            "kind": "behavior",
+            "label": "Expose gh uptime",
+            "description": "The root CLI makes the new standalone command available.",
+            "change": "changed",
+            "certainty": "verified",
+            "evidence": ["diff:pkg/cmd/root/root.go"]
+          },
+          {
+            "draft_id": "configure",
+            "kind": "behavior",
+            "label": "Resolve requested status view",
+            "description": "Flags select all services or one component, JSON output, exit behavior, and optional polling.",
+            "change": "changed",
+            "certainty": "verified",
+            "evidence": ["diff:pkg/cmd/uptime/uptime.go"]
+          },
+          {
+            "draft_id": "fetch",
+            "kind": "behavior",
+            "label": "Fetch public status summary",
+            "description": "A plain timed HTTP client reads the public Statuspage summary endpoint without gh auth injection.",
+            "change": "changed",
+            "certainty": "verified",
+            "evidence": ["diff:pkg/cmd/uptime/uptime.go"]
+          },
+          {
+            "draft_id": "evaluate",
+            "kind": "behavior",
+            "label": "Evaluate target availability",
+            "description": "The command filters non-service rows, finds the requested component, and derives an operational boolean.",
+            "change": "changed",
+            "certainty": "verified",
+            "evidence": ["diff:pkg/cmd/uptime/uptime.go", "diff:pkg/cmd/uptime/uptime_test.go"]
+          },
+          {
+            "draft_id": "wait",
+            "kind": "behavior",
+            "label": "Wait while target is degraded",
+            "description": "Watch mode sleeps and retries until the selected target becomes operational.",
+            "change": "changed",
+            "certainty": "verified",
+            "evidence": ["diff:pkg/cmd/uptime/uptime.go"]
+          },
+          {
+            "draft_id": "report",
+            "kind": "behavior",
+            "label": "Report status to human or automation",
+            "description": "The result is rendered, exported as JSON, and optionally converted into a non-zero exit.",
+            "change": "changed",
+            "certainty": "verified",
+            "evidence": ["diff:pkg/cmd/uptime/uptime.go", "diff:pkg/cmd/uptime/render.go", "diff:pkg/cmd/uptime/uptime_test.go"]
+          }
+        ],
+        "edges": [
+          {"from": "register", "to": "configure", "certainty": "verified", "evidence": ["diff:pkg/cmd/root/root.go", "diff:pkg/cmd/uptime/uptime.go"]},
+          {"from": "configure", "to": "fetch", "certainty": "verified", "evidence": ["diff:pkg/cmd/uptime/uptime.go"]},
+          {"from": "fetch", "to": "evaluate", "certainty": "verified", "evidence": ["diff:pkg/cmd/uptime/uptime.go"]},
+          {"from": "evaluate", "to": "wait", "certainty": "verified", "evidence": ["diff:pkg/cmd/uptime/uptime.go"]},
+          {"from": "evaluate", "to": "report", "certainty": "verified", "evidence": ["diff:pkg/cmd/uptime/uptime.go"]},
+          {"from": "wait", "to": "fetch", "certainty": "verified", "evidence": ["diff:pkg/cmd/uptime/uptime.go"]}
+        ],
+        "claims": [
+          {
+            "kind": "finding",
+            "statement": "Watch mode never rejects an unknown component.",
+            "condition": "The Operator combines --watch with a component name absent from the Statuspage response.",
+            "consequence": "The command treats the target as perpetually non-operational and polls until interrupted instead of reporting the invalid name.",
+            "risk_level": "Low",
+            "basis": "Model Judgment",
+            "evidence_sufficiency": "Sufficient",
+            "node": "wait",
+            "evidence": ["diff:pkg/cmd/uptime/uptime.go", "diff:pkg/cmd/uptime/uptime_test.go"],
+            "limitations": ["Static inspection does not observe a live Statuspage response changing its component set."]
+          },
+          {
+            "kind": "observation",
+            "statement": "The PR contains in-diff unit tests but had no completed provider check runs at capture time.",
+            "node": "report",
+            "evidence": ["diff:pkg/cmd/uptime/uptime_test.go"],
+            "limitations": ["Test source is not evidence that those tests executed for this exact head."]
+          }
+        ],
+        "coverage": {
+          "analysis": "partial",
+          "outcomes": [
+            {"outcome": "Unauthenticated status fetch", "status": "Evidence found", "evidence": ["diff:pkg/cmd/uptime/uptime.go"]},
+            {"outcome": "Human and JSON output", "status": "Evidence found", "evidence": ["diff:pkg/cmd/uptime/render.go", "diff:pkg/cmd/uptime/uptime_test.go"]},
+            {"outcome": "Automation exit and wait", "status": "Evidence found", "evidence": ["diff:pkg/cmd/uptime/uptime.go", "diff:pkg/cmd/uptime/uptime_test.go"]}
+          ],
+          "excluded": ["No full base/head checkout was available.", "No provider check run proves the tests executed on this exact head."]
+        },
+        "limitations": ["The public endpoint's live behavior and rate limits were not exercised.", "Repository context is limited to patches and shallow root metadata."]
+      },
+      {
+        "run": "B",
+        "graph_status": "available",
+        "overview": "Introduces an unauthenticated uptime surface for checking or waiting on GitHub Status, with terminal, JSON, scoped-component, and exit-code outcomes.",
+        "intent": {
+          "statement": "Make GitHub incident state consumable by people and scripts without depending on api.github.com.",
+          "outcomes": [
+            {"text": "Reach Statuspage independently of gh authentication.", "evidence": ["pr:body", "diff:pkg/cmd/uptime/uptime.go"]},
+            {"text": "Expose status as readable output or script control flow.", "evidence": ["pr:body", "diff:pkg/cmd/uptime/render.go", "diff:pkg/cmd/uptime/uptime.go"]}
+          ]
+        },
+        "concepts": ["uptime command", "status target", "polling policy", "output contract"],
+        "nodes": [
+          {
+            "draft_id": "entry",
+            "kind": "behavior",
+            "label": "Invoke and configure uptime check",
+            "description": "The root command resolves component, watch, interval, exit-code, and exporter choices.",
+            "change": "changed",
+            "certainty": "verified",
+            "evidence": ["diff:pkg/cmd/root/root.go", "diff:pkg/cmd/uptime/uptime.go"]
+          },
+          {
+            "draft_id": "read",
+            "kind": "behavior",
+            "label": "Read GitHub Status",
+            "description": "The command fetches and decodes the public summary with a non-gh HTTP client.",
+            "change": "changed",
+            "certainty": "verified",
+            "evidence": ["diff:pkg/cmd/uptime/uptime.go"]
+          },
+          {
+            "draft_id": "interpret",
+            "kind": "behavior",
+            "label": "Interpret platform or component health",
+            "description": "Group and informational rows are discarded before the requested health state is derived.",
+            "change": "changed",
+            "certainty": "verified",
+            "evidence": ["diff:pkg/cmd/uptime/uptime.go", "diff:pkg/cmd/uptime/uptime_test.go"]
+          },
+          {
+            "draft_id": "retry",
+            "kind": "behavior",
+            "label": "Retry degraded target",
+            "description": "Watch mode loops back to the public summary after the configured interval.",
+            "change": "changed",
+            "certainty": "verified",
+            "evidence": ["diff:pkg/cmd/uptime/uptime.go"]
+          },
+          {
+            "draft_id": "deliver",
+            "kind": "behavior",
+            "label": "Deliver status result",
+            "description": "Terminal rendering or JSON export is followed by an optional failure exit for a degraded target.",
+            "change": "changed",
+            "certainty": "verified",
+            "evidence": ["diff:pkg/cmd/uptime/render.go", "diff:pkg/cmd/uptime/uptime.go", "diff:pkg/cmd/uptime/uptime_test.go"]
+          }
+        ],
+        "edges": [
+          {"from": "entry", "to": "read", "certainty": "verified", "evidence": ["diff:pkg/cmd/uptime/uptime.go"]},
+          {"from": "read", "to": "interpret", "certainty": "verified", "evidence": ["diff:pkg/cmd/uptime/uptime.go"]},
+          {"from": "interpret", "to": "retry", "certainty": "verified", "evidence": ["diff:pkg/cmd/uptime/uptime.go"]},
+          {"from": "retry", "to": "read", "certainty": "verified", "evidence": ["diff:pkg/cmd/uptime/uptime.go"]},
+          {"from": "interpret", "to": "deliver", "certainty": "verified", "evidence": ["diff:pkg/cmd/uptime/uptime.go"]}
+        ],
+        "claims": [
+          {
+            "kind": "finding",
+            "statement": "A misspelled watched component cannot reach a terminal validation error.",
+            "condition": "--watch names a component that leafComponents never returns.",
+            "consequence": "targetOperational remains false and the polling loop does not reach render's unknown-component error.",
+            "risk_level": "Low",
+            "basis": "Model Judgment",
+            "evidence_sufficiency": "Sufficient",
+            "node": "retry",
+            "evidence": ["diff:pkg/cmd/uptime/uptime.go"],
+            "limitations": ["No exact-head provider check result was available."]
+          }
+        ],
+        "coverage": {
+          "analysis": "partial",
+          "outcomes": [
+            {"outcome": "Independent service-status read", "status": "Evidence found", "evidence": ["diff:pkg/cmd/uptime/uptime.go"]},
+            {"outcome": "Human and automation result", "status": "Evidence found", "evidence": ["diff:pkg/cmd/uptime/render.go", "diff:pkg/cmd/uptime/uptime_test.go"]}
+          ],
+          "excluded": ["Provider execution evidence was absent.", "Only changed patches and shallow repository context were inspected."]
+        },
+        "limitations": ["Command registration and option resolution are merged into one node, losing one boundary visible in run A."]
+      }
+    ],
+    "large-cross-cutting": [
+      {
+        "run": "A",
+        "graph_status": "available",
+        "overview": "Extends api_host routing across many remaining gh commands by adding a flexible shared request surface, mapping configured API hosts back to credentials, migrating direct HTTP call sites, and exercising the result through a blackhole gateway harness.",
+        "intent": {
+          "statement": "Route nearly all CLI API traffic through each host's configured api_host without losing request-specific behavior or credential selection.",
+          "outcomes": [
+            {"text": "Resolve api_host in both host-to-endpoint and endpoint-to-host directions.", "evidence": ["pr:body", "diff:internal/config/config.go", "diff:internal/gh/gh.go"]},
+            {"text": "Preserve streaming, headers, redirects, scopes, and response access behind a shared API client surface.", "evidence": ["pr:body", "diff:api/client.go"]},
+            {"text": "Move remaining direct request call sites onto host-aware request paths.", "evidence": ["pr:body", "diff:pkg/cmd/api/http.go", "diff:pkg/cmd/release/shared/fetch.go", "diff:pkg/search/searcher.go"]},
+            {"text": "Make routing bypasses observable with a gateway and acceptance subset.", "evidence": ["pr:body", "diff:script/api-host-gateway/gateway/main.go", "diff:script/api-host-gateway/test.sh", "diff:acceptance/acceptance_test.go"]}
+          ]
+        },
+        "concepts": ["canonical host", "API host", "credential resolution", "request surface", "command call site", "gateway evidence"],
+        "nodes": [
+          {
+            "draft_id": "read-map",
+            "kind": "behavior",
+            "label": "Resolve configured API host",
+            "description": "Authentication config maps a canonical host to api_host and can reverse that mapping for later credential lookup.",
+            "change": "changed",
+            "certainty": "verified",
+            "evidence": ["diff:internal/config/config.go", "diff:internal/gh/gh.go"]
+          },
+          {
+            "draft_id": "attach-token",
+            "kind": "behavior",
+            "label": "Attach canonical-host credential",
+            "description": "When the request target has no direct token, the auth transport reverse-resolves api_host and uses the associated host token.",
+            "change": "changed",
+            "certainty": "verified",
+            "evidence": ["diff:api/http_client.go", "diff:internal/config/config.go"]
+          },
+          {
+            "draft_id": "build-request",
+            "kind": "behavior",
+            "label": "Build request with preserved semantics",
+            "description": "The shared client exposes response-returning, context-aware, redirect-sensitive, header, and endpoint-scope options.",
+            "change": "changed",
+            "certainty": "verified",
+            "evidence": ["diff:api/client.go", "diff:api/request_test.go"]
+          },
+          {
+            "draft_id": "route-request",
+            "kind": "behavior",
+            "label": "Route relative API request to api_host",
+            "description": "Command request construction substitutes api_host for REST and GraphQL relative requests while leaving absolute URLs unchanged.",
+            "change": "changed",
+            "certainty": "verified",
+            "evidence": ["diff:pkg/cmd/api/http.go", "diff:pkg/cmd/api/http_test.go"]
+          },
+          {
+            "draft_id": "migrate-callers",
+            "kind": "behavior",
+            "label": "Send command traffic through shared client",
+            "description": "Gist, release, repository, run, search, extension, auth, and other call sites stop bypassing the host-aware request surface.",
+            "change": "changed",
+            "certainty": "inferred",
+            "evidence": ["diff:pkg/cmd/gist/create/create.go", "diff:pkg/cmd/release/shared/fetch.go", "diff:pkg/cmd/repo/delete/http.go", "diff:pkg/cmd/run/view/logs.go", "diff:pkg/search/searcher.go"]
+          },
+          {
+            "draft_id": "record-gateway",
+            "kind": "behavior",
+            "label": "Observe requests at gateway",
+            "description": "A TLS reverse proxy records method, path, target host, auth presence, and outcome while rewriting upstream host references.",
+            "change": "changed",
+            "certainty": "verified",
+            "evidence": ["diff:script/api-host-gateway/gateway/main.go"]
+          },
+          {
+            "draft_id": "prove-route",
+            "kind": "behavior",
+            "label": "Fail acceptance on routing bypass",
+            "description": "The harness blackholes github.com and runs selected acceptance paths through the gateway; provider checks report builds and integration suites passed.",
+            "change": "changed",
+            "certainty": "inferred",
+            "evidence": ["diff:script/api-host-gateway/test.sh", "diff:acceptance/acceptance_test.go", "check:92918382926", "check:92918383332"]
+          }
+        ],
+        "edges": [
+          {"from": "read-map", "to": "route-request", "certainty": "verified", "evidence": ["diff:internal/config/config.go", "diff:pkg/cmd/api/http.go"]},
+          {"from": "read-map", "to": "attach-token", "certainty": "verified", "evidence": ["diff:api/http_client.go"]},
+          {"from": "migrate-callers", "to": "build-request", "certainty": "inferred", "evidence": ["diff:api/client.go", "diff:pkg/cmd/release/shared/fetch.go"]},
+          {"from": "build-request", "to": "route-request", "certainty": "inferred", "evidence": ["diff:api/client.go", "diff:pkg/cmd/api/http.go"]},
+          {"from": "route-request", "to": "attach-token", "certainty": "inferred", "evidence": ["diff:api/http_client.go", "diff:pkg/cmd/api/http.go"]},
+          {"from": "attach-token", "to": "record-gateway", "certainty": "inferred", "evidence": ["diff:script/api-host-gateway/gateway/main.go"]},
+          {"from": "record-gateway", "to": "prove-route", "certainty": "verified", "evidence": ["diff:script/api-host-gateway/test.sh", "diff:acceptance/acceptance_test.go"]}
+        ],
+        "claims": [
+          {
+            "kind": "finding",
+            "statement": "A shared api_host can select the wrong canonical-host credential.",
+            "condition": "Two configured hosts point to the same api_host and a request reaches that API host without a directly configured token.",
+            "consequence": "Reverse lookup chooses the first host in Hosts order, so the transport can attach that host's token to traffic intended for the other host.",
+            "risk_level": "High",
+            "basis": "Model Judgment",
+            "evidence_sufficiency": "Limited",
+            "node": "attach-token",
+            "evidence": ["diff:internal/config/config.go", "diff:api/http_client.go"],
+            "limitations": ["The fixture does not establish whether sharing one api_host is supported or prevented elsewhere.", "No runtime fixture exercises two canonical hosts behind one gateway."]
+          },
+          {
+            "kind": "observation",
+            "statement": "A review comment identifies a mismatch between swapURLHost documentation and implementation, but no adverse behavior is established.",
+            "node": "route-request",
+            "evidence": ["review-comment:3737047652", "diff:pkg/cmd/api/http.go"],
+            "limitations": ["Whether replacing the original port is intended is not resolved by this snapshot."]
+          }
+        ],
+        "coverage": {
+          "analysis": "partial",
+          "outcomes": [
+            {"outcome": "Bidirectional host mapping", "status": "Evidence found", "evidence": ["diff:internal/config/config.go", "diff:internal/gh/gh.go"]},
+            {"outcome": "Flexible shared request surface", "status": "Evidence found", "evidence": ["diff:api/client.go", "diff:api/request_test.go"]},
+            {"outcome": "Remaining call-site migration", "status": "Unclear", "evidence": ["diff:pkg/cmd/release/shared/fetch.go", "diff:pkg/search/searcher.go"]},
+            {"outcome": "Gateway-backed routing proof", "status": "Unclear", "evidence": ["diff:script/api-host-gateway/test.sh", "check:92918383332"]}
+          ],
+          "excluded": ["Only a sample of 66 changed files informed the conceptual pass.", "Check summaries do not reveal which gateway scenarios ran.", "Codespaces is explicitly left outside the PR's implementation."]
+        },
+        "limitations": ["The 205k-character diff exceeds the prototype's 120k input budget.", "The head is a draft and may change.", "Full unchanged call context was not captured."]
+      },
+      {
+        "run": "B",
+        "graph_status": "available",
+        "overview": "Centralizes previously direct HTTP flows so configured api_host routing and authentication can apply across most gh commands, backed by a purpose-built proxy harness.",
+        "intent": {
+          "statement": "Make api_host effective beyond existing client abstractions while retaining specialized request behavior.",
+          "outcomes": [
+            {"text": "Resolve endpoint routing and credentials from host configuration.", "evidence": ["pr:body", "diff:internal/config/config.go", "diff:api/http_client.go"]},
+            {"text": "Offer one request path broad enough for migrated commands.", "evidence": ["pr:body", "diff:api/client.go"]},
+            {"text": "Detect direct github.com traffic through an acceptance gateway.", "evidence": ["pr:body", "diff:script/api-host-gateway/gateway/main.go", "diff:script/api-host-gateway/test.sh"]}
+          ]
+        },
+        "concepts": ["endpoint resolution", "auth transport", "request adapter", "migrated feature", "blackhole harness"],
+        "nodes": [
+          {
+            "draft_id": "resolve-endpoint",
+            "kind": "behavior",
+            "label": "Resolve configured endpoint",
+            "description": "Host config and gh api request construction replace the canonical API host for relative REST and GraphQL calls.",
+            "change": "changed",
+            "certainty": "verified",
+            "evidence": ["diff:internal/config/config.go", "diff:pkg/cmd/api/http.go"]
+          },
+          {
+            "draft_id": "resolve-credential",
+            "kind": "behavior",
+            "label": "Resolve credential behind endpoint",
+            "description": "The auth layer maps an API host back to a canonical host before attaching a token.",
+            "change": "changed",
+            "certainty": "verified",
+            "evidence": ["diff:internal/config/config.go", "diff:api/http_client.go"]
+          },
+          {
+            "draft_id": "adapt-request",
+            "kind": "behavior",
+            "label": "Adapt specialized HTTP request",
+            "description": "Callers choose Request, RequestWithContext, or DoRequest to preserve response access, redirect rules, headers, and error semantics.",
+            "change": "changed",
+            "certainty": "verified",
+            "evidence": ["diff:api/client.go", "diff:api/request_test.go"]
+          },
+          {
+            "draft_id": "send-features",
+            "kind": "behavior",
+            "label": "Send migrated feature traffic",
+            "description": "Multiple command domains delegate their API calls to the adapted request surface.",
+            "change": "changed",
+            "certainty": "inferred",
+            "evidence": ["diff:pkg/cmd/gist/create/create.go", "diff:pkg/cmd/release/shared/fetch.go", "diff:pkg/cmd/repo/delete/http.go", "diff:pkg/cmd/run/view/logs.go", "diff:pkg/search/searcher.go"]
+          },
+          {
+            "draft_id": "exercise-gateway",
+            "kind": "behavior",
+            "label": "Exercise traffic through blackhole gateway",
+            "description": "The harness proxies, records, and rewrites requests while direct traffic to github.com is blocked.",
+            "change": "changed",
+            "certainty": "verified",
+            "evidence": ["diff:script/api-host-gateway/gateway/main.go", "diff:script/api-host-gateway/test.sh", "diff:acceptance/acceptance_test.go"]
+          }
+        ],
+        "edges": [
+          {"from": "send-features", "to": "adapt-request", "certainty": "inferred", "evidence": ["diff:api/client.go", "diff:pkg/cmd/release/shared/fetch.go"]},
+          {"from": "adapt-request", "to": "resolve-endpoint", "certainty": "inferred", "evidence": ["diff:pkg/cmd/api/http.go"]},
+          {"from": "resolve-endpoint", "to": "resolve-credential", "certainty": "inferred", "evidence": ["diff:api/http_client.go"]},
+          {"from": "resolve-credential", "to": "exercise-gateway", "certainty": "inferred", "evidence": ["diff:script/api-host-gateway/gateway/main.go"]}
+        ],
+        "claims": [
+          {
+            "kind": "finding",
+            "statement": "Credential identity becomes ambiguous when several hosts share one API endpoint.",
+            "condition": "HostForAPIHost finds multiple canonical hosts for one api_host.",
+            "consequence": "Its first-match rule can feed AddAuthTokenHeader a token unrelated to the originating canonical host.",
+            "risk_level": "High",
+            "basis": "Model Judgment",
+            "evidence_sufficiency": "Limited",
+            "node": "resolve-credential",
+            "evidence": ["diff:internal/config/config.go", "diff:api/http_client.go"],
+            "limitations": ["Supported configuration cardinality is not established by the captured context."]
+          }
+        ],
+        "coverage": {
+          "analysis": "partial",
+          "outcomes": [
+            {"outcome": "Endpoint and credential resolution", "status": "Evidence found", "evidence": ["diff:internal/config/config.go", "diff:api/http_client.go", "diff:pkg/cmd/api/http.go"]},
+            {"outcome": "Specialized request preservation", "status": "Evidence found", "evidence": ["diff:api/client.go", "diff:api/request_test.go"]},
+            {"outcome": "All remaining feature migrations", "status": "Unclear", "evidence": ["diff:pkg/cmd/gist/create/create.go", "diff:pkg/search/searcher.go"]},
+            {"outcome": "Blackhole acceptance proof", "status": "Unclear", "evidence": ["diff:script/api-host-gateway/test.sh", "check:92918383332"]}
+          ],
+          "excluded": ["The extraction sampled selected call sites rather than all 66 files.", "No check log was captured.", "No full repository snapshot was available to trace unchanged callers."]
+        },
+        "limitations": ["This pass merges endpoint construction and host configuration, obscuring their separate lifecycle boundaries.", "The large diff produces plausible but non-unique graph decompositions."]
+      }
+    ],
+    "docs-only": [
+      {
+        "run": "A",
+        "graph_status": "no_behavioral_delta",
+        "overview": "Removes one unrelated rebase-strategy reference from dependency-update documentation to avoid misleading readers; no executable behavior changes.",
+        "intent": {
+          "statement": "Keep the dependency-update documentation focused on controls that belong to the documented feature.",
+          "outcomes": [
+            {"text": "Remove the unrelated rebase-strategy mention.", "evidence": ["pr:body", "diff:content/code-security/how-tos/secure-your-supply-chain/manage-your-dependency-security/controlling-dependencies-updated.md"]}
+          ]
+        },
+        "concepts": ["dependency update guidance", "rebase strategy reference"],
+        "nodes": [],
+        "edges": [],
+        "claims": [
+          {
+            "kind": "observation",
+            "statement": "The exact revision changes documentation only and supplies no source-code evidence for a behavioral Graph delta.",
+            "node": null,
+            "evidence": ["diff:content/code-security/how-tos/secure-your-supply-chain/manage-your-dependency-security/controlling-dependencies-updated.md"],
+            "limitations": ["Static review does not measure whether reader confusion actually decreases."]
+          }
+        ],
+        "coverage": {
+          "analysis": "completed",
+          "outcomes": [
+            {"outcome": "Remove unrelated guidance", "status": "Evidence found", "evidence": ["diff:content/code-security/how-tos/secure-your-supply-chain/manage-your-dependency-security/controlling-dependencies-updated.md", "check:93009072201"]}
+          ],
+          "excluded": ["Behavioral Graph extraction is not applicable because no executable source changed."]
+        },
+        "limitations": ["Successful CI indicates the named jobs completed; it does not prove the editorial outcome."]
+      },
+      {
+        "run": "B",
+        "graph_status": "available",
+        "overview": "Simplifies a dependency-security article by removing a distracting configuration reference.",
+        "intent": {
+          "statement": "Reduce reader confusion in dependency-security guidance.",
+          "outcomes": [
+            {"text": "Readers no longer encounter the unrelated rebase-strategy option.", "evidence": ["pr:body", "diff:content/code-security/how-tos/secure-your-supply-chain/manage-your-dependency-security/controlling-dependencies-updated.md"]}
+          ]
+        },
+        "concepts": ["reader", "dependency guidance"],
+        "nodes": [
+          {
+            "draft_id": "open-guide",
+            "kind": "behavior",
+            "label": "Reader opens dependency guidance",
+            "description": "A reader consults the article while configuring dependency updates.",
+            "change": "context",
+            "certainty": "inferred",
+            "evidence": ["diff:content/code-security/how-tos/secure-your-supply-chain/manage-your-dependency-security/controlling-dependencies-updated.md"]
+          },
+          {
+            "draft_id": "avoid-confusion",
+            "kind": "behavior",
+            "label": "Reader avoids unrelated rebase choice",
+            "description": "Removing the reference prevents the reader from considering an irrelevant control.",
+            "change": "changed",
+            "certainty": "inferred",
+            "evidence": ["diff:content/code-security/how-tos/secure-your-supply-chain/manage-your-dependency-security/controlling-dependencies-updated.md", "check:93009070862"]
+          }
+        ],
+        "edges": [
+          {"from": "open-guide", "to": "avoid-confusion", "certainty": "inferred", "evidence": ["diff:content/code-security/how-tos/secure-your-supply-chain/manage-your-dependency-security/controlling-dependencies-updated.md"]}
+        ],
+        "claims": [
+          {
+            "kind": "review_claim",
+            "statement": "Readers will no longer be confused by rebase-strategy.",
+            "node": "avoid-confusion",
+            "basis": "Model Judgment",
+            "evidence_sufficiency": "Limited",
+            "evidence": ["diff:content/code-security/how-tos/secure-your-supply-chain/manage-your-dependency-security/controlling-dependencies-updated.md", "check:93009070862"],
+            "limitations": ["No reader evidence exists; CI does not observe comprehension."]
+          }
+        ],
+        "coverage": {
+          "analysis": "completed",
+          "outcomes": [
+            {"outcome": "Reduce reader confusion", "status": "Evidence found", "evidence": ["check:93009070862", "check:93009070995"]}
+          ],
+          "excluded": []
+        },
+        "limitations": ["The graph describes an imagined reader outcome rather than behavior derived from executable source."]
+      }
+    ]
+  }
+}
