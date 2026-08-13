@@ -2,7 +2,9 @@
   "evidence_version": "kestrel.model-provider-conformance-evidence/1",
   "generated_at": "2026-08-13T11:03:07.481570+00:00",
   "capture": {
-    "synthetic_model_calls": 1,
+    "published_isolated_model_calls": 1,
+    "prior_development_model_calls": 1,
+    "total_model_calls_during_development": 2,
     "postprocessed_with_current_sanitizer": true,
     "model_reinvoked_for_display_only_sanitization": false
   },

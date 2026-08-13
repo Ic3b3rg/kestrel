@@ -17,6 +17,8 @@ class CodexEvidenceSanitizationTests(unittest.TestCase):
         profile = json.loads((root / "fixtures" / "profiles" / "openai_codex_subscription.json").read_text())
 
         self.assertEqual("chatgpt", evidence["authentication"]["type"])
+        self.assertEqual(2, evidence["capture"]["total_model_calls_during_development"])
+        self.assertEqual(1, evidence["capture"]["published_isolated_model_calls"])
         self.assertEqual("succeeded", evidence["normalized_result"]["terminal_state"])
         self.assertTrue(evidence["normalized_result"]["validation"]["local_schema_valid"])
         self.assertEqual(1, evidence["normalized_result"]["attempts"][0]["physical_completions_observed"])

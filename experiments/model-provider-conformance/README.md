@@ -8,7 +8,7 @@
 
 ## Result
 
-Kestrel can use an existing ChatGPT subscription programmatically through Codex App Server and ChatGPT OAuth. The live probe authenticated as a ChatGPT account, selected `gpt-5.6-sol` from the subscription catalog, requested native structured output, received one valid result and one upstream OpenAI response ID, and independently validated the JSON.
+Kestrel can use an existing ChatGPT subscription programmatically through Codex App Server and ChatGPT OAuth. The final live probe authenticated as a ChatGPT account, selected `gpt-5.6-sol` from the subscription catalog, requested native structured output, received one valid result and one upstream OpenAI response ID, and independently validated the JSON.
 
 That proves the access path. It does **not** make this exact surface eligible for the current strict Review First V1 profile. Codex App Server is an agent runtime, not the public OpenAI Platform Responses API. Its documented boundary does not currently prove that all tools were absent from the upstream request, expose control over built-in OpenAI retries, attest upstream `store=false`, expose account training/retention/residency settings, or report a monetary amount for one subscription-backed call. Exact per-completion usage and the response ID were observable only after requesting an experimental raw-event stream whose generated schema labels the completion notification internal-only.
 
@@ -32,7 +32,7 @@ For Kestrel obtaining subscription-backed model access, the relevant official su
 
 ## What ran
 
-The probe used only the public synthetic fixture in `fixtures/review_request.json`.
+Two model calls used only the public synthetic fixture in `fixtures/review_request.json`: an initial development probe exposed ambient global runtime configuration, then the final probe reran in the isolated configuration below. Only the final isolated call is retained as published evidence.
 
 - one fresh, ephemeral thread;
 - a fresh empty working directory;
