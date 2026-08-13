@@ -1,0 +1,15 @@
+{
+  "evidence_version": "kestrel.model-provider-conformance-preflight/1",
+  "generated_on": "2026-08-13",
+  "surface": "amazon-bedrock-runtime-converse",
+  "live_request_sent": false,
+  "local_discovery": {
+    "aws_cli_available": false,
+    "aws_shared_directory_present": false,
+    "boto3_available": false,
+    "botocore_available": false,
+    "recognized_credential_environment_names_present": []
+  },
+  "status": "awaiting_disposable_aws_role_or_profile_and_local_sdk",
+  "secrets_or_values_recorded": false
+}

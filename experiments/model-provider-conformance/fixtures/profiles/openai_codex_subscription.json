@@ -1,0 +1,33 @@
+{
+  "profile_id": "openai-codex-subscription-evidence",
+  "adapter_version": "codex-app-server/0.146.0",
+  "connection": {
+    "auth_kind": "chatgpt_oauth_subscription",
+    "credential_source": "codex-managed-local-session"
+  },
+  "surface": {
+    "api_family": "codex-app-server-v2",
+    "local_transport": "stdio",
+    "upstream_family": "chatgpt-codex"
+  },
+  "target": {
+    "requested_id": "gpt-5.6-sol",
+    "version_policy": "subscription-catalog-id"
+  },
+  "route": {
+    "service_tier": "subscription"
+  },
+  "limits": {
+    "logical_attempts": 1,
+    "max_output_tokens": 256,
+    "timeout_seconds": 120
+  },
+  "known_limitations": [
+    "app_server_is_an_agent_runtime_not_the_public_responses_api",
+    "tools_not_disableable_by_documented_thread_configuration",
+    "built_in_openai_retries_not_disableable",
+    "provider_application_storage_not_attested_by_ephemeral_local_thread",
+    "per_call_money_not_reported_for_subscription_quota",
+    "personal_workspace_data_policy_requires_separate_operator_attestation"
+  ]
+}

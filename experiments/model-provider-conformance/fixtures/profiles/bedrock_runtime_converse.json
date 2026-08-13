@@ -1,0 +1,41 @@
+{
+  "profile_id": "bedrock-runtime-converse-evidence",
+  "adapter_version": "boto3-converse/evidence-v1",
+  "connection": {
+    "auth_kind": "aws_sigv4_default_chain",
+    "credential_requirement": "disposable-role-scoped-to-bedrock-inference"
+  },
+  "surface": {
+    "api_family": "bedrock-runtime-converse",
+    "https_origin": "https://bedrock-runtime.eu-west-1.amazonaws.com"
+  },
+  "target": {
+    "requested_id": "eu.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    "version_policy": "dated-model-through-eu-geographic-inference-profile"
+  },
+  "route": {
+    "request_region": "eu-west-1",
+    "approved_processing_regions": [
+      "eu-central-1",
+      "eu-north-1",
+      "eu-south-1",
+      "eu-south-2",
+      "eu-west-1",
+      "eu-west-3"
+    ],
+    "service_tier": "standard"
+  },
+  "limits": {
+    "logical_attempts": 1,
+    "physical_attempts": 1,
+    "max_output_tokens": 256,
+    "timeout_seconds": 120,
+    "reserved_cost": "0.10",
+    "currency": "USD"
+  },
+  "known_limitations": [
+    "live_account_entitlement_and_model_access_must_be_attested",
+    "converse_does_not_report_the_selected_cross_region_destination",
+    "account_data_policy_requires_separate_aws_configuration_evidence"
+  ]
+}

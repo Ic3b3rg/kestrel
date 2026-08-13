@@ -1,0 +1,267 @@
+{
+  "evidence_version": "kestrel.model-provider-conformance-evidence/1",
+  "generated_at": "2026-08-13T11:03:07.481570+00:00",
+  "capture": {
+    "synthetic_model_calls": 1,
+    "postprocessed_with_current_sanitizer": true,
+    "model_reinvoked_for_display_only_sanitization": false
+  },
+  "surface": {
+    "kind": "codex_app_server_chatgpt_subscription",
+    "cli_version": "codex-cli 0.146.0",
+    "app_server": {
+      "platform_family": "unix",
+      "platform_os": "macos",
+      "user_agent_present": true,
+      "local_paths_removed": true
+    },
+    "synthetic_input_only": true,
+    "empty_ephemeral_working_directory": true,
+    "isolated_codex_home": true,
+    "global_config_plugins_hooks_and_history_copied": false
+  },
+  "authentication": {
+    "authenticated": true,
+    "identity_fields_removed": true,
+    "plan_type_present": true,
+    "requires_openai_auth": true,
+    "type": "chatgpt"
+  },
+  "selected_model": {
+    "default_reasoning_effort": "low",
+    "hidden": false,
+    "id": "gpt-5.6-sol",
+    "input_modalities": [
+      "text",
+      "image"
+    ],
+    "is_default": true,
+    "model": "gpt-5.6-sol"
+  },
+  "thread_controls": {
+    "approval_policy": "never",
+    "dynamic_tools_count": 0,
+    "environments_count": 0,
+    "ephemeral": true,
+    "experimental_raw_events_requested": true,
+    "provider_fallback_allowed": false,
+    "sandbox": "read-only",
+    "selected_capability_roots_count": 0,
+    "server_requests_denied": []
+  },
+  "event_summary": {
+    "ambient_runtime_activity": {
+      "hook_event_count": 0,
+      "mcp_startup_status_event_count": 3,
+      "observed": true,
+      "remote_control_status_event_count": 1
+    },
+    "item_type_counts": {
+      "agentMessage": 1,
+      "userMessage": 1
+    },
+    "method_counts": {
+      "account/rateLimits/updated": 1,
+      "item/agentMessage/delta": 41,
+      "item/completed": 2,
+      "item/started": 2,
+      "mcpServer/startupStatus/updated": 3,
+      "rawResponse/completed": 1,
+      "rawResponseItem/completed": 6,
+      "remoteControl/status/changed": 1,
+      "thread/settings/updated": 1,
+      "thread/started": 1,
+      "thread/status/changed": 2,
+      "thread/tokenUsage/updated": 1,
+      "turn/completed": 1,
+      "turn/started": 1
+    },
+    "payloads_removed": true,
+    "raw_response_completion_observed": true,
+    "terminal_turn_status": "completed",
+    "total": 64
+  },
+  "quota_shape": {
+    "rate_limit_buckets": [
+      {
+        "has_credit_balance": true,
+        "limit_id": "codex",
+        "limit_name": null,
+        "plan_type_present": true,
+        "primary": {
+          "has_reset_timestamp": true,
+          "has_usage_percentage": true,
+          "window_duration_minutes": 10080
+        },
+        "rate_limit_reached_type": null,
+        "secondary": null
+      },
+      {
+        "has_credit_balance": true,
+        "limit_id": "codex_bengalfox",
+        "limit_name": "GPT-5.3-Codex-Spark",
+        "plan_type_present": true,
+        "primary": {
+          "has_reset_timestamp": true,
+          "has_usage_percentage": true,
+          "window_duration_minutes": 10080
+        },
+        "rate_limit_reached_type": null,
+        "secondary": null
+      }
+    ],
+    "rate_limits": {
+      "has_credit_balance": true,
+      "limit_id": "codex",
+      "limit_name": null,
+      "plan_type_present": true,
+      "primary": {
+        "has_reset_timestamp": true,
+        "has_usage_percentage": true,
+        "window_duration_minutes": 10080
+      },
+      "rate_limit_reached_type": null,
+      "secondary": null
+    },
+    "reset_credit_details_exposed": true,
+    "reset_credits_available_count_exposed": true
+  },
+  "normalized_result": {
+    "adapter_version": "codex-app-server/0.146.0",
+    "attempts": [
+      {
+        "attempt": 1,
+        "delivery": "possibly_accepted",
+        "physical_completions_observed": 1,
+        "physical_deliveries_proven": false,
+        "sdk_retries_controlled": false
+      }
+    ],
+    "contract_version": "kestrel.model-inference/v1",
+    "error": null,
+    "limitations": [
+      "app_server_is_an_agent_runtime_not_the_public_responses_api",
+      "tools_not_disableable_by_documented_thread_configuration",
+      "built_in_openai_retries_not_disableable",
+      "provider_application_storage_not_attested_by_ephemeral_local_thread",
+      "per_call_money_not_reported_for_subscription_quota",
+      "personal_workspace_data_policy_requires_separate_operator_attestation"
+    ],
+    "model_call_id": "00000000-0000-4000-8000-000000000021",
+    "output_blocks": [
+      {
+        "text": "{\"summary\":\"Boundary probe\",\"risk_level\":\"low\",\"score\":1.5,\"finding_count\":0,\"reviewable\":true,\"concepts\":[{\"name\":\"retry policy\",\"changed\":true}]}",
+        "type": "structured_text"
+      }
+    ],
+    "profile_snapshot": {
+      "digest": "sha256:372092be6e19c4c4978bd44c5d9bb85bf17ec0326948d38affa5617a5983a889",
+      "profile_id": "openai-codex-subscription-evidence"
+    },
+    "provider_request_ids": [
+      {
+        "name": "openai.response_id",
+        "value": "resp_0f87d10720a098d0016a7da4696ff88191a4cc3c66919f151c"
+      }
+    ],
+    "request_digest": "sha256:ae35cfbe0c1c035b4ab4a8194e99ff7ec11b2ef82ffa43d083be8f0463493307",
+    "requested_target": {
+      "requested_id": "gpt-5.6-sol",
+      "version_policy": "subscription-catalog-id"
+    },
+    "resolved_target": {
+      "model": "gpt-5.6-sol",
+      "model_provider": "openai",
+      "service_tier": null
+    },
+    "stop": {
+      "category": "end_turn",
+      "raw": "completed"
+    },
+    "structured_value": {
+      "concepts": [
+        {
+          "changed": true,
+          "name": "retry policy"
+        }
+      ],
+      "finding_count": 0,
+      "reviewable": true,
+      "risk_level": "low",
+      "score": 1.5,
+      "summary": "Boundary probe"
+    },
+    "terminal_state": "succeeded",
+    "usage": {
+      "cache_write_tokens": 0,
+      "cached_input_read_tokens": 0,
+      "count_source": "provider_reported",
+      "input_tokens": 13684,
+      "output_tokens": 51,
+      "reasoning_output_tokens": 0,
+      "reconciliation_status": "provider_reported",
+      "total_tokens": 13735
+    },
+    "validation": {
+      "forbidden_item_types": [],
+      "forbidden_tool_absent": true,
+      "local_schema_valid": true,
+      "native_output_schema_requested": true,
+      "schema_errors": []
+    }
+  },
+  "conformance_matrix": {
+    "surface_identified_as_codex_not_platform_api": {
+      "pass": true,
+      "evidence": "The profile records codex-app-server-v2 and chatgpt-codex as distinct surface facts."
+    },
+    "chatgpt_subscription_auth": {
+      "pass": true,
+      "evidence": "account/read reported type=chatgpt and a subscription plan type was present; identity and tier were removed."
+    },
+    "ephemeral_local_thread": {
+      "pass": true,
+      "evidence": "thread/start used ephemeral=true; this proves local non-persistence only."
+    },
+    "live_structured_output_and_local_validation": {
+      "pass": true,
+      "evidence": "turn/start used outputSchema and the completed JSON passed independent local validation."
+    },
+    "no_forbidden_tool_activity_observed": {
+      "pass": true,
+      "evidence": "No command, file-change, MCP tool call, dynamic-tool call, multi-agent call, or web-search item appeared."
+    },
+    "provider_request_id_exposed": {
+      "pass": true,
+      "evidence": "One upstream OpenAI response identifier was emitted."
+    },
+    "provider_request_id_and_usage_on_supported_contract": {
+      "pass": false,
+      "evidence": "Exact response IDs and per-completion usage required experimentalRawEvents; the generated protocol marks rawResponse/completed internal-only."
+    },
+    "tools_disabled_at_request_boundary": {
+      "pass": false,
+      "evidence": "The documented App Server thread/turn API has no all-tools-disabled control; absence of a tool call is not absence of tool schemas."
+    },
+    "sdk_retries_disabled_or_fully_debited": {
+      "pass": false,
+      "evidence": "The built-in OpenAI provider retry policy cannot be overridden, and App Server does not prove every delivery to this client."
+    },
+    "provider_application_state_disabled": {
+      "pass": false,
+      "evidence": "ephemeral=true controls local thread materialization; it is not a documented upstream store=false guarantee."
+    },
+    "per_call_money_reconciled": {
+      "pass": false,
+      "evidence": "ChatGPT subscription quota exposes windows and token activity, not a provider-reported monetary amount for this call."
+    },
+    "account_data_policy_attested": {
+      "pass": false,
+      "evidence": "account/read does not expose training, retention, residency, or human-review settings."
+    },
+    "overall": {
+      "pass": false,
+      "evidence": "A successful subscription-backed model turn does not satisfy every hard Review First profile control."
+    }
+  }
+}
