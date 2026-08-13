@@ -76,6 +76,16 @@ The candidate evidence profile uses the dated EU geographic inference ID `eu.ant
 
 No Bedrock call was sent because this machine currently has no AWS CLI, Boto3/Botocore, shared AWS directory, or recognized AWS credential/profile environment variable. The live leg requires a disposable role/profile limited to the exact inference profile and Bedrock inference action. No dependency was installed and no credential was requested or invented.
 
+## GitHub substitution check
+
+GitHub can supply subscription-backed AI access, but it cannot replace the managed-cloud leg of this exact Review First experiment.
+
+GitHub Models would previously have been structurally suitable: its inference API accepted GitHub credentials and exposed native JSON Schema output. It is no longer an available surface. GitHub retired the playground, model catalog, inference API, and BYOK endpoints for every customer on 2026-07-30. A direct catalog preflight on 2026-08-13 returned HTTP `410` with error code `github_models_retirement_brownout`; no model call was attempted.
+
+GitHub Copilot SDK remains a supported subscription route. GitHub documents OAuth user tokens, per-user Copilot subscription billing, an `empty` mode with explicitly bounded tools, and token/cost usage events. It is nevertheless an agent runtime in public preview: the SDK delegates an agent loop to Copilot CLI and exposes no native response-schema field in its documented session contract or current public SDK source. Prompting for JSON plus local validation would not satisfy `structured_output.native`, and a second agent runtime would not prove the issue's required direct-versus-managed-cloud portability boundary.
+
+The result is therefore a bounded negative preflight, not a credential blocker and not a reason to consume the Operator's Copilot quota. GitHub Copilot remains relevant to a future Agent Run Model Provider Profile, where tools and state are expected and independently governed. No AWS credential is needed to establish this GitHub conclusion; a conforming managed-cloud surface is still needed only if issue #21 is to meet its current acceptance criteria.
+
 ## Reproduce
 
 Deterministic tests, which send no network request:
@@ -112,6 +122,9 @@ The live runner prints sanitized evidence to standard output. It intentionally h
 | External tools use the subscription route in practice while separating it from direct API access. | [OpenClaw OpenAI provider](https://github.com/openclaw/openclaw/blob/main/docs/providers/openai.md), [OpenClaw Codex runtime](https://github.com/openclaw/openclaw/blob/main/docs/plugins/codex-harness-runtime.md), [Hermes providers](https://github.com/hermes-agent-org/hermes/blob/main/website/docs/integrations/providers.md) | High for those projects' behavior |
 | Built-in OpenAI retry behavior cannot currently satisfy Kestrel-owned delivery accounting. | [OpenAI Codex provider source](https://github.com/openai/codex/blob/main/codex-rs/model-provider-info/src/lib.rs), [closed retry report](https://github.com/openai/codex/issues/3026), [current retry request](https://github.com/openai/codex/issues/34053) | Medium; source and observed API lack agree, but this is not a stable product guarantee |
 | Personal subscription data policy cannot be inferred from authentication alone. | [OpenAI data-use policy](https://help.openai.com/en/articles/5722486-how-your-data-is-used-), [consumer data FAQ](https://help.openai.com/en/articles/7039943-chatgpt-data-usage-faq), [business data commitments](https://openai.com/business-data/) | High |
+| GitHub Models cannot serve as the second surface because all inference and catalog endpoints were retired on 2026-07-30. | [GitHub Models retirement](https://github.blog/changelog/2026-07-01-github-models-is-being-fully-retired-on-july-30-2026/) | High |
+| GitHub Copilot SDK can use a user's GitHub OAuth token and Copilot subscription without exposing model API keys. | [GitHub OAuth setup](https://docs.github.com/en/copilot/how-tos/copilot-sdk/setup/github-oauth) | High |
+| Copilot SDK is an agent-runtime surface, currently in public preview, and its public session contract does not offer native response-schema enforcement. | [Copilot agent loop](https://docs.github.com/en/copilot/how-tos/copilot-sdk/features/agent-loop), [SDK compatibility](https://docs.github.com/en/copilot/how-tos/copilot-sdk/troubleshooting/compatibility), [public SDK source](https://github.com/github/copilot-sdk) | High for the current surface; time-sensitive |
 | Bedrock Converse provides native JSON Schema output and rejects unsupported schemas. | [AWS structured outputs](https://docs.aws.amazon.com/bedrock/latest/userguide/structured-output.html) | High |
 | The chosen dated model supports Converse and an EU geographic inference route. | [AWS Claude Sonnet 4.5 model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-5.html) | High, time-sensitive |
 
