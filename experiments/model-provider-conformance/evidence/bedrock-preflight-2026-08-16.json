@@ -1,0 +1,47 @@
+{
+  "evidence_version": "kestrel.model-provider-conformance-preflight/1",
+  "generated_on": "2026-08-16",
+  "surface": "amazon-bedrock-runtime-converse",
+  "live_request_sent": false,
+  "synthetic_request_digest": "sha256:ae35cfbe0c1c035b4ab4a8194e99ff7ec11b2ef82ffa43d083be8f0463493307",
+  "profile_digest": "sha256:1245d5c0e5904ba5b8609b01c66f850d04490302d15646acefad3dd6feb41710",
+  "mapped_request_digest": "sha256:0fbd178ced1a6aacb5bc0232eb57b027ed0921572039e54128ec0867c7ea35d1",
+  "static_controls": {
+    "request_region": "eu-west-1",
+    "runtime_origin": "https://bedrock-runtime.eu-west-1.amazonaws.com",
+    "control_origin": "https://bedrock.eu-west-1.amazonaws.com",
+    "ambient_endpoint_overrides_ignored": true,
+    "ambient_proxies_disabled": true,
+    "tools_omitted": true,
+    "cache_points_omitted": true,
+    "native_json_schema": true,
+    "local_schema_validation": true,
+    "sdk_total_max_attempts": 1,
+    "live_logging_configuration_check_required": true,
+    "live_inference_profile_route_check_required": true
+  },
+  "preflight_cost": {
+    "status": "within_cap",
+    "currency": "USD",
+    "worst_case_reserved": "0.00742800",
+    "hard_cap": "0.10000000",
+    "input_token_upper_bound": 1196,
+    "output_token_limit": 256,
+    "price_snapshot_digest": "sha256:0c9d815bd058069c7321940926c5451f1ca7b12c3189ccec394d7717ad756f9f"
+  },
+  "local_discovery": {
+    "aws_cli_available": false,
+    "aws_shared_directory_present": false,
+    "boto3_available": false,
+    "botocore_available": false,
+    "recognized_credential_or_scope_environment_names_present": []
+  },
+  "required_read_only_preflight_actions": [
+    "sts:GetCallerIdentity",
+    "bedrock:GetInferenceProfile",
+    "bedrock:GetModelInvocationLoggingConfiguration"
+  ],
+  "required_model_action": "bedrock:InvokeModel",
+  "status": "awaiting_disposable_aws_role_and_local_boto3_botocore",
+  "secrets_or_values_recorded": false
+}
