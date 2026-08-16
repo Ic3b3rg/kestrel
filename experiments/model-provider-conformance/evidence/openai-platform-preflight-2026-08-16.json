@@ -1,0 +1,39 @@
+{
+  "evidence_version": "kestrel.model-provider-conformance-preflight/1",
+  "generated_on": "2026-08-16",
+  "surface": "openai-platform-responses",
+  "live_request_sent": false,
+  "synthetic_request_digest": "sha256:ae35cfbe0c1c035b4ab4a8194e99ff7ec11b2ef82ffa43d083be8f0463493307",
+  "profile_digest": "sha256:867f045f1069b871a6d409552c4c4735481257c7c80c88f86a8921404f403ee1",
+  "mapped_request_digest": "sha256:19c1062dca43d2484e9d5f99b5ddf6986f8b0854996b88e182d7657e699b1276",
+  "static_controls": {
+    "exact_origin": "https://api.openai.com",
+    "exact_path": "/v1/responses",
+    "redirects_disabled": true,
+    "ambient_proxies_disabled": true,
+    "store": false,
+    "background": false,
+    "stream": false,
+    "tools_count": 0,
+    "tool_choice": "none",
+    "implicit_prompt_cache_disabled": true,
+    "native_json_schema": true,
+    "local_schema_validation": true,
+    "automatic_retries": 0
+  },
+  "preflight_cost": {
+    "status": "within_cap",
+    "currency": "USD",
+    "worst_case_reserved": "0.00057220",
+    "hard_cap": "0.10000000",
+    "input_token_upper_bound": 1325,
+    "output_token_limit": 256,
+    "price_snapshot_digest": "sha256:f3f55f8a2d8dd65796346d9a1368a3fc08e9931e754ac86bc4ecf4249712d133"
+  },
+  "local_discovery": {
+    "recognized_openai_credential_environment_names_present": [],
+    "recognized_project_or_attestation_environment_names_present": []
+  },
+  "status": "awaiting_disposable_openai_project_service_account_and_account_policy_attestation",
+  "secrets_or_values_recorded": false
+}
