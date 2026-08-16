@@ -1,0 +1,68 @@
+{
+  "profile_id": "openai-platform-responses-evidence",
+  "adapter_version": "stdlib-http-responses/evidence-v1",
+  "connection": {
+    "auth_kind": "project_service_account_api_key",
+    "credential_requirement": "disposable-openai-project-service-account"
+  },
+  "surface": {
+    "api_family": "openai-responses",
+    "https_origin": "https://api.openai.com",
+    "path": "/v1/responses"
+  },
+  "target": {
+    "requested_id": "gpt-5.6-luna",
+    "version_policy": "exact-snapshot-id"
+  },
+  "route": {
+    "service_tier": "default"
+  },
+  "features": {
+    "privileged_instruction_channel": "instructions",
+    "structured_output": "native_strict_json_schema",
+    "response_storage": "disabled",
+    "prompt_cache": "explicit_mode_without_breakpoints",
+    "tools": "forbidden"
+  },
+  "data_policy": {
+    "status": "requires_operator_account_attestation",
+    "input_class": "synthetic_public_only_until_attested"
+  },
+  "generation": {
+    "reasoning_effort": "low"
+  },
+  "limits": {
+    "logical_attempts": 1,
+    "physical_attempts": 1,
+    "context_window_tokens": 1050000,
+    "max_input_tokens": 922000,
+    "model_max_output_tokens": 128000,
+    "max_output_tokens": 256,
+    "timeout_seconds": 120,
+    "max_response_bytes": 1048576,
+    "reserved_cost": "0.10",
+    "currency": "USD"
+  },
+  "pricing": {
+    "currency": "USD",
+    "input_per_million_tokens": "0.20",
+    "cached_input_per_million_tokens": "0.02",
+    "cache_write_per_million_tokens": "0.25",
+    "output_per_million_tokens": "1.20",
+    "long_context_threshold_input_tokens": 272000,
+    "long_context_input_multiplier": "2.0",
+    "long_context_output_multiplier": "1.5",
+    "source": "https://developers.openai.com/api/docs/pricing",
+    "retrieved_on": "2026-08-16"
+  },
+  "attestation": {
+    "observed_on": "2026-08-16",
+    "expires_on": "2026-09-15",
+    "status": "awaiting_live_conformance"
+  },
+  "known_limitations": [
+    "live_project_identity_and_service_account_scope_require_operator_attestation",
+    "account_data_policy_requires_separate_attestation",
+    "provider_billing_reconciliation_is_not_returned_by_the_inference_response"
+  ]
+}

@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 import harness
+import openai_responses_adapter as openai_adapter
 
 
 HERE = Path(__file__).resolve().parent
@@ -91,6 +92,221 @@ class NeutralBoundaryTests(unittest.TestCase):
 
         self.assertEqual([], harness.validate_model_request(request))
         self.assertEqual(harness.sha256_json(request), harness.sha256_json(copy.deepcopy(request)))
+
+
+class OpenAIResponsesAdapterTests(unittest.TestCase):
+    def setUp(self):
+        self.request = load_request()
+        self.profile = {
+            "profile_id": "openai-platform-responses-evidence",
+            "adapter_version": "stdlib-http-responses/evidence-v1",
+            "surface": {
+                "api_family": "openai-responses",
+                "https_origin": "https://api.openai.com",
+                "path": "/v1/responses",
+            },
+            "target": {"requested_id": "gpt-5.6-luna", "version_policy": "exact-snapshot-id"},
+            "route": {"service_tier": "default"},
+            "generation": {"reasoning_effort": "low"},
+            "known_limitations": ["account_data_policy_requires_separate_attestation"],
+        }
+
+    def test_maps_the_neutral_request_to_stateless_tool_free_native_schema_output(self):
+        mapped = openai_adapter.build_request(self.request, self.profile)
+
+        self.assertEqual("gpt-5.6-luna", mapped["model"])
+        self.assertEqual(self.request["policy_instruction"]["text"], mapped["instructions"])
+        self.assertEqual(
+            [{"role": "user", "content": [{"type": "input_text", "text": self.request["input_blocks"][0]["text"]}]}],
+            mapped["input"],
+        )
+        self.assertFalse(mapped["store"])
+        self.assertFalse(mapped["background"])
+        self.assertFalse(mapped["stream"])
+        self.assertEqual([], mapped["tools"])
+        self.assertEqual("none", mapped["tool_choice"])
+        self.assertFalse(mapped["parallel_tool_calls"])
+        self.assertEqual({"mode": "explicit"}, mapped["prompt_cache_options"])
+        self.assertEqual("disabled", mapped["truncation"])
+        self.assertEqual("low", mapped["reasoning"]["effort"])
+        self.assertEqual("default", mapped["service_tier"])
+        output_format = mapped["text"]["format"]
+        self.assertEqual("json_schema", output_format["type"])
+        self.assertTrue(output_format["strict"])
+        self.assertEqual(self.request["output_schema"]["schema"], output_format["schema"])
+        for forbidden in ("previous_response_id", "metadata", "include", "prompt", "user"):
+            self.assertNotIn(forbidden, mapped)
+
+    def test_normalizes_success_request_identity_usage_and_local_validation(self):
+        response = {
+            "id": "resp_test",
+            "status": "completed",
+            "model": "gpt-5.6-luna",
+            "service_tier": "default",
+            "output": [
+                {"type": "reasoning", "id": "rs_test", "summary": []},
+                {
+                    "type": "message",
+                    "status": "completed",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": json.dumps(valid_value()), "annotations": []}],
+                },
+            ],
+            "usage": {
+                "input_tokens": 31,
+                "output_tokens": 19,
+                "total_tokens": 50,
+                "input_tokens_details": {"cached_tokens": 3, "cache_write_tokens": 2},
+                "output_tokens_details": {"reasoning_tokens": 4},
+            },
+        }
+
+        result = openai_adapter.normalize_response(self.request, self.profile, response, request_id="req_header")
+
+        self.assertEqual("succeeded", result["terminal_state"])
+        self.assertEqual(valid_value(), result["structured_value"])
+        self.assertEqual(
+            [
+                {"name": "openai.response_id", "value": "resp_test"},
+                {"name": "openai.x_request_id", "value": "req_header"},
+            ],
+            result["provider_request_ids"],
+        )
+        self.assertEqual("gpt-5.6-luna", result["resolved_target"]["model"])
+        self.assertEqual(3, result["usage"]["cached_input_read_tokens"])
+        self.assertEqual(2, result["usage"]["cache_write_tokens"])
+        self.assertEqual(4, result["usage"]["reasoning_output_tokens"])
+        self.assertEqual(1, result["attempts"][0]["physical_deliveries"])
+        self.assertTrue(result["attempts"][0]["sdk_retries_controlled"])
+
+    def test_rejects_resolved_model_or_service_tier_drift(self):
+        response = {
+            "id": "resp_drift",
+            "status": "completed",
+            "model": "gpt-5.6-luna-unexpected",
+            "service_tier": "priority",
+            "output": [],
+        }
+
+        result = openai_adapter.normalize_response(self.request, self.profile, response)
+
+        self.assertEqual("failed", result["terminal_state"])
+        self.assertEqual("attestation_stale", result["error"]["category"])
+        self.assertFalse(result["validation"]["target_and_route_match_profile"])
+
+    def test_normalizes_refusal_filter_truncation_and_missing_usage(self):
+        refusal_response = {
+            "id": "resp_refusal",
+            "status": "completed",
+            "model": "gpt-5.6-luna",
+            "service_tier": "default",
+            "output": [
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "refusal", "refusal": "Cannot comply"}],
+                }
+            ],
+        }
+        filtered_response = {
+            "id": "resp_filtered",
+            "status": "incomplete",
+            "incomplete_details": {"reason": "content_filter"},
+            "model": "gpt-5.6-luna",
+            "service_tier": "default",
+            "output": [],
+        }
+        truncated_response = {
+            "id": "resp_truncated",
+            "status": "incomplete",
+            "incomplete_details": {"reason": "max_output_tokens"},
+            "model": "gpt-5.6-luna",
+            "service_tier": "default",
+            "output": [],
+        }
+
+        refused = openai_adapter.normalize_response(self.request, self.profile, refusal_response)
+        filtered = openai_adapter.normalize_response(self.request, self.profile, filtered_response)
+        truncated = openai_adapter.normalize_response(self.request, self.profile, truncated_response)
+
+        self.assertEqual("refused", refused["terminal_state"])
+        self.assertEqual("filtered", filtered["terminal_state"])
+        self.assertEqual("incomplete", truncated["terminal_state"])
+        self.assertEqual("unavailable", refused["usage"]["count_source"])
+
+    def test_rejects_malformed_json_and_unexpected_tool_output(self):
+        malformed_response = {
+            "id": "resp_malformed",
+            "status": "completed",
+            "model": "gpt-5.6-luna",
+            "service_tier": "default",
+            "output": [
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "not-json"}],
+                }
+            ],
+        }
+        tool_response = {
+            "id": "resp_tool",
+            "status": "completed",
+            "model": "gpt-5.6-luna",
+            "service_tier": "default",
+            "output": [{"type": "web_search_call", "status": "completed"}],
+        }
+
+        malformed = openai_adapter.normalize_response(self.request, self.profile, malformed_response)
+        tool = openai_adapter.normalize_response(self.request, self.profile, tool_response)
+
+        self.assertEqual("malformed_response", malformed["error"]["category"])
+        self.assertEqual("policy_denied", tool["error"]["category"])
+        self.assertFalse(tool["validation"]["forbidden_tool_absent"])
+
+    def test_post_delivery_interruption_is_outcome_unknown_and_never_retried(self):
+        result = openai_adapter.normalize_transport_failure(
+            self.request,
+            self.profile,
+            delivered=True,
+            message="Connection closed after request delivery",
+        )
+
+        self.assertEqual("outcome_unknown", result["terminal_state"])
+        self.assertEqual("stream_interrupted", result["error"]["category"])
+        self.assertEqual("possibly_accepted", result["error"]["delivery"])
+        self.assertEqual("never", result["error"]["retryability"])
+        self.assertEqual(1, result["attempts"][0]["physical_deliveries"])
+
+    def test_classifies_direct_api_capacity_quota_and_auth_errors(self):
+        rate_limited = openai_adapter.normalize_http_error(
+            self.request, self.profile, 429, {"error": {"code": "rate_limit_exceeded"}}
+        )
+        quota = openai_adapter.normalize_http_error(
+            self.request, self.profile, 429, {"error": {"code": "insufficient_quota"}}
+        )
+        overloaded = openai_adapter.normalize_http_error(
+            self.request, self.profile, 503, {"error": {"code": "server_error"}}
+        )
+        auth = openai_adapter.normalize_http_error(
+            self.request, self.profile, 401, {"error": {"code": "invalid_api_key"}}
+        )
+
+        self.assertEqual("rate_limited", rate_limited["error"]["category"])
+        self.assertEqual("quota_exhausted", quota["error"]["category"])
+        self.assertEqual("overloaded", overloaded["error"]["category"])
+        self.assertEqual("auth", auth["error"]["category"])
+
+    def test_bounds_untrusted_openai_error_metadata(self):
+        result = openai_adapter.normalize_http_error(
+            self.request,
+            self.profile,
+            400,
+            {"error": {"code": "x" * 1000}},
+            request_id="y" * 1000,
+        )
+
+        self.assertLessEqual(len(result["error"]["provider"]["code"]), 128)
+        self.assertLessEqual(len(result["provider_request_ids"][0]["value"]), 256)
 
 
 class CodexAppServerAdapterTests(unittest.TestCase):
@@ -320,6 +536,68 @@ class BedrockConverseAdapterTests(unittest.TestCase):
         self.assertEqual("incomplete", truncated["terminal_state"])
         self.assertEqual("failed", tool_use["terminal_state"])
         self.assertEqual("policy_denied", tool_use["error"]["category"])
+
+    def test_maps_malformed_model_output_and_preserves_missing_usage(self):
+        response = {
+            "output": {"message": {"role": "assistant", "content": []}},
+            "stopReason": "malformed_model_output",
+            "ResponseMetadata": {"RequestId": "req", "RetryAttempts": 0},
+        }
+
+        result = harness.normalize_bedrock_response(self.request, self.profile, response)
+
+        self.assertEqual("failed", result["terminal_state"])
+        self.assertEqual("malformed_response", result["error"]["category"])
+        self.assertEqual("unavailable", result["usage"]["count_source"])
+
+    def test_rejects_tool_content_even_if_bedrock_reports_end_turn(self):
+        response = {
+            "output": {
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {"toolUse": {"toolUseId": "tool_1", "name": "unexpected", "input": {}}},
+                        {"text": json.dumps(valid_value())},
+                    ],
+                }
+            },
+            "stopReason": "end_turn",
+            "usage": {"inputTokens": 10, "outputTokens": 10, "totalTokens": 20},
+            "ResponseMetadata": {"RequestId": "req", "RetryAttempts": 0},
+        }
+
+        result = harness.normalize_bedrock_response(self.request, self.profile, response)
+
+        self.assertEqual("failed", result["terminal_state"])
+        self.assertEqual("policy_denied", result["error"]["category"])
+        self.assertFalse(result["validation"]["forbidden_tool_absent"])
+
+    def test_classifies_bedrock_service_and_transport_failures_without_retrying(self):
+        throttled = harness.normalize_bedrock_service_error(
+            self.request,
+            self.profile,
+            code="ThrottlingException",
+            status=429,
+            request_id="aws_req",
+            retry_attempts=0,
+        )
+        quota = harness.normalize_bedrock_service_error(
+            self.request,
+            self.profile,
+            code="ServiceQuotaExceededException",
+            status=400,
+            request_id=None,
+            retry_attempts=0,
+        )
+        interrupted = harness.normalize_bedrock_transport_failure(
+            self.request, self.profile, delivered=True, message="Connection closed"
+        )
+
+        self.assertEqual("rate_limited", throttled["error"]["category"])
+        self.assertEqual("quota_exhausted", quota["error"]["category"])
+        self.assertEqual([{"name": "aws.request_id", "value": "aws_req"}], throttled["provider_request_ids"])
+        self.assertEqual("outcome_unknown", interrupted["terminal_state"])
+        self.assertEqual("never", interrupted["error"]["retryability"])
 
     def test_boto_client_config_disables_automatic_retries(self):
         self.assertEqual(

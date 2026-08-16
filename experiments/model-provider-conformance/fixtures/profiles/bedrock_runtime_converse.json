@@ -25,13 +25,41 @@
     ],
     "service_tier": "standard"
   },
+  "features": {
+    "privileged_instruction_channel": "system",
+    "structured_output": "native_json_schema",
+    "provider_application_state": "none_requested",
+    "prompt_cache": "no_cache_points",
+    "tools": "forbidden"
+  },
+  "data_policy": {
+    "status": "requires_operator_account_attestation",
+    "required_model_invocation_logging": "disabled",
+    "input_class": "synthetic_public_only_until_attested"
+  },
   "limits": {
     "logical_attempts": 1,
     "physical_attempts": 1,
+    "context_window_tokens": 200000,
+    "model_max_output_tokens": 64000,
     "max_output_tokens": 256,
     "timeout_seconds": 120,
     "reserved_cost": "0.10",
     "currency": "USD"
+  },
+  "pricing": {
+    "currency": "USD",
+    "input_per_million_tokens": "3.00",
+    "cached_input_per_million_tokens": "0.30",
+    "cache_write_per_million_tokens": "3.75",
+    "output_per_million_tokens": "15.00",
+    "source": "https://aws.amazon.com/bedrock/pricing/",
+    "retrieved_on": "2026-08-16"
+  },
+  "attestation": {
+    "observed_on": "2026-08-16",
+    "expires_on": "2026-09-28",
+    "status": "awaiting_live_conformance"
   },
   "known_limitations": [
     "live_account_entitlement_and_model_access_must_be_attested",

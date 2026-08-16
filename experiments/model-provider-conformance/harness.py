@@ -236,6 +236,38 @@ def validate_model_request(request: Any) -> list[str]:
     return errors
 
 
+def require_valid_model_request(request: dict[str, Any]) -> None:
+    """Raise when a provider adapter receives an invalid neutral request."""
+
+    _raise_for_invalid_request(request)
+
+
+def new_model_result(request: dict[str, Any], profile: dict[str, Any]) -> dict[str, Any]:
+    """Create the common loss-aware result envelope for an adapter."""
+
+    return _base_result(request, profile)
+
+
+def finish_structured_result(
+    result: dict[str, Any], request: dict[str, Any], text: str
+) -> dict[str, Any]:
+    """Parse and locally validate one provider-native structured text block."""
+
+    return _finish_structured_result(result, request, text)
+
+
+def empty_usage() -> dict[str, Any]:
+    """Create a usage record that explicitly preserves missing provider data."""
+
+    return _empty_usage()
+
+
+def model_error(category: str, phase: str, delivery: str, retryability: str, message: str) -> dict[str, Any]:
+    """Create the stable, bounded error envelope shared by adapters."""
+
+    return _error(category, phase, delivery, retryability, message)
+
+
 def build_codex_thread_start(request: dict[str, Any], profile: dict[str, Any], cwd: str) -> dict[str, Any]:
     """Map a neutral request to Codex App Server thread configuration.
 
@@ -414,7 +446,7 @@ def normalize_bedrock_response(
     retries = retries if isinstance(retries, int) and retries >= 0 else 0
     request_id = metadata.get("RequestId")
     result["provider_request_ids"] = (
-        [{"name": "aws.request_id", "value": request_id}] if isinstance(request_id, str) else []
+        [{"name": "aws.request_id", "value": request_id[:256]}] if isinstance(request_id, str) else []
     )
     result["usage"] = _normalize_bedrock_usage(response.get("usage"))
     result["attempts"] = [
@@ -450,19 +482,121 @@ def normalize_bedrock_response(
         result["validation"]["forbidden_item_types"] = [str(stop_reason)]
         result["error"] = _error("policy_denied", "validation", "accepted", "never", "Bedrock returned forbidden tool activity")
         return result
+    if stop_reason == "malformed_model_output":
+        result["terminal_state"] = "failed"
+        result["error"] = _error(
+            "malformed_response", "validation", "accepted", "never", "Bedrock reported malformed model output"
+        )
+        return result
     if stop_reason not in {"end_turn", "stop_sequence"}:
         result["terminal_state"] = "failed"
         result["error"] = _error("unknown", "validation", "accepted", "never", "Unknown Bedrock stop reason")
         return result
 
-    text_blocks = _bedrock_text_blocks(response)
-    if len(text_blocks) != 1:
+    content_blocks = _bedrock_content_blocks(response)
+    forbidden_content = sorted(
+        {
+            key
+            for block in content_blocks
+            if isinstance(block, dict)
+            for key in block
+            if key in {"toolUse", "toolResult"}
+        }
+    )
+    if forbidden_content:
+        result["terminal_state"] = "failed"
+        result["validation"]["forbidden_tool_absent"] = False
+        result["validation"]["forbidden_item_types"] = forbidden_content
+        result["error"] = _error(
+            "policy_denied", "validation", "accepted", "never", "Bedrock returned forbidden tool content"
+        )
+        return result
+    if (
+        len(content_blocks) != 1
+        or not isinstance(content_blocks[0], dict)
+        or set(content_blocks[0]) != {"text"}
+        or not isinstance(content_blocks[0].get("text"), str)
+    ):
         result["terminal_state"] = "failed"
         result["error"] = _error(
             "malformed_response", "validation", "accepted", "never", "Expected exactly one Bedrock text block"
         )
         return result
-    return _finish_structured_result(result, request, text_blocks[0])
+    return _finish_structured_result(result, request, content_blocks[0]["text"])
+
+
+def normalize_bedrock_service_error(
+    request: dict[str, Any],
+    profile: dict[str, Any],
+    *,
+    code: str,
+    status: int | None,
+    request_id: str | None,
+    retry_attempts: int,
+) -> dict[str, Any]:
+    """Normalize a Bedrock service exception and expose any hidden SDK attempts."""
+
+    _raise_for_invalid_request(request)
+    result = _base_result(request, profile)
+    retry_attempts = retry_attempts if isinstance(retry_attempts, int) and retry_attempts >= 0 else 0
+    result["provider_request_ids"] = (
+        [{"name": "aws.request_id", "value": request_id[:256]}] if isinstance(request_id, str) else []
+    )
+    possibly_accepted = code in {"InternalServerException", "ModelErrorException", "ModelTimeoutException"}
+    delivery = "possibly_accepted" if possibly_accepted else "rejected_before_inference"
+    category = _bedrock_error_category(code, status)
+    result["attempts"] = [
+        {
+            "attempt": 1,
+            "delivery": delivery,
+            "physical_deliveries": 1 + retry_attempts,
+            "sdk_retry_attempts": retry_attempts,
+            "sdk_retries_controlled": retry_attempts == 0,
+        }
+    ]
+    result["terminal_state"] = "outcome_unknown" if possibly_accepted else "failed"
+    if possibly_accepted:
+        retryability = "never"
+    elif category in {"rate_limited", "overloaded", "provider_internal", "target_unavailable"}:
+        retryability = "operator_only"
+    else:
+        retryability = "never"
+    result["error"] = _error(
+        category,
+        "response_headers",
+        delivery,
+        retryability,
+        "Bedrock returned a typed service error",
+    )
+    result["error"]["provider"] = {"http_status": status, "code": code[:128]}
+    return result
+
+
+def normalize_bedrock_transport_failure(
+    request: dict[str, Any], profile: dict[str, Any], *, delivered: bool, message: str
+) -> dict[str, Any]:
+    """Record a Bedrock transport failure without replaying an ambiguous call."""
+
+    _raise_for_invalid_request(request)
+    result = _base_result(request, profile)
+    result["attempts"] = [
+        {
+            "attempt": 1,
+            "delivery": "possibly_accepted" if delivered else "not_sent",
+            "physical_deliveries": 1 if delivered else 0,
+            "sdk_retry_attempts": 0,
+            "sdk_retries_controlled": True,
+        }
+    ]
+    result["terminal_state"] = "outcome_unknown" if delivered else "failed"
+    result["error"] = _error(
+        "stream_interrupted" if delivered else "transport",
+        "response_headers" if delivered else "connect",
+        "possibly_accepted" if delivered else "not_sent",
+        "never" if delivered else "safe_automatic",
+        message,
+    )
+    return result
 
 
 def bedrock_botocore_options() -> dict[str, Any]:
@@ -710,13 +844,11 @@ def _empty_usage() -> dict[str, Any]:
     }
 
 
-def _bedrock_text_blocks(response: dict[str, Any]) -> list[str]:
+def _bedrock_content_blocks(response: dict[str, Any]) -> list[Any]:
     output = response.get("output")
     message = output.get("message") if isinstance(output, dict) else None
     content = message.get("content") if isinstance(message, dict) else None
-    if not isinstance(content, list):
-        return []
-    return [block["text"] for block in content if isinstance(block, dict) and isinstance(block.get("text"), str)]
+    return content if isinstance(content, list) else []
 
 
 def _bedrock_stop_category(stop_reason: Any) -> str:
@@ -729,7 +861,39 @@ def _bedrock_stop_category(stop_reason: Any) -> str:
         "guardrail_intervened": "filter",
         "tool_use": "forbidden_tool",
         "malformed_tool_use": "forbidden_tool",
+        "malformed_model_output": "malformed_response",
     }.get(stop_reason, "unknown")
+
+
+def _bedrock_error_category(code: str, status: int | None) -> str:
+    mapped = {
+        "AccessDeniedException": "permission",
+        "ExpiredTokenException": "auth",
+        "IncompleteSignature": "auth",
+        "InternalFailure": "provider_internal",
+        "InternalServerException": "provider_internal",
+        "InvalidAction": "invalid_request",
+        "InvalidClientTokenId": "auth",
+        "InvalidSignatureException": "auth",
+        "ModelErrorException": "provider_internal",
+        "ModelNotReadyException": "target_unavailable",
+        "ModelTimeoutException": "timeout",
+        "ResourceNotFoundException": "target_unavailable",
+        "ServiceQuotaExceededException": "quota_exhausted",
+        "ServiceUnavailableException": "overloaded",
+        "ThrottlingException": "rate_limited",
+        "UnrecognizedClientException": "auth",
+        "ValidationException": "invalid_request",
+    }.get(code)
+    if mapped is not None:
+        return mapped
+    if status == 429:
+        return "rate_limited"
+    if status in {502, 503}:
+        return "overloaded"
+    if isinstance(status, int) and status >= 500:
+        return "provider_internal"
+    return "unknown"
 
 
 def _error(category: str, phase: str, delivery: str, retryability: str, message: str) -> dict[str, Any]:
@@ -739,5 +903,5 @@ def _error(category: str, phase: str, delivery: str, retryability: str, message:
         "delivery": delivery,
         "retryability": retryability,
         "retry_after": None,
-        "message_safe": message,
+        "message_safe": str(message)[:240],
     }
