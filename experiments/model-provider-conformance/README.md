@@ -1,10 +1,17 @@
 # Model Provider conformance evidence
 
-**Status:** two-surface harness complete; live direct/API and managed-cloud captures blocked on disposable credentials
+**Status:** archived scope experiment; the published OAuth evidence remains relevant
 
 **Checked:** 2026-08-16
 
-**Scope:** disposable evidence only; no production adapter decision
+**Scope:** historical disposable evidence; no production adapter decision
+
+> **Scope update — 2026-08-16:** Review First's initial route is now limited to
+> OpenAI through ChatGPT OAuth/subscription. A direct OpenAI API key, a second
+> provider, and AWS or another managed-cloud surface are not required. The
+> unexecuted direct/API and managed-cloud legs below remain reproducible research,
+> but they are no longer blockers. The remaining decision is tracked by
+> [Reconcile OAuth-only OpenAI access with the Review First trust boundary](https://github.com/Ic3b3rg/kestrel/issues/26).
 
 ## Result
 
@@ -69,7 +76,10 @@ Three `mcpServer/startupStatus/updated` notifications and one remote-control sta
 
 The personal-versus-business distinction is material. OpenAI says individual ChatGPT and Codex content may be used for training unless the user opts out, with separate Codex controls for full environments; business offerings are not used for training by default. The RPC used here proves neither setting. Only synthetic data was sent.
 
-## Direct OpenAI Platform leg
+## Archived direct OpenAI Platform leg
+
+This leg was prepared for the former two-surface task. It is outside the current
+initial route and requires no credential provisioning.
 
 The same neutral fixture now maps to one non-streaming OpenAI Responses request using the exact current `gpt-5.6-luna` snapshot. The adapter uses `instructions` separately from user text, native strict `text.format` JSON Schema, `store=false`, `background=false`, `tools=[]`, `tool_choice=none`, and `truncation=disabled`. GPT-5.6 enables an implicit prompt-cache breakpoint by default, so the adapter additionally sends `prompt_cache_options.mode=explicit` and no breakpoint; the official contract says this disables cache reads, writes, and cache-write charges for the request.
 
@@ -77,7 +87,7 @@ The standard-library runner disables redirects and ambient proxies, accepts no c
 
 No Platform call was sent. This machine has no `OPENAI_API_KEY`, project identifier, service-account attestation, account-policy evidence digest, or explicit probe cost cap. The missing ChatGPT OAuth session is intentionally not reused: it authenticates the unlike Codex agent-runtime surface, not this Platform API profile.
 
-## Two-surface conformance matrix
+## Archived two-surface conformance matrix
 
 Both columns below use the identical `kestrel.model-inference/v1` request digest. “STATIC PASS” proves adapter and preflight behavior only; it is not presented as live provider evidence.
 
@@ -97,7 +107,10 @@ Both columns below use the identical `kestrel.model-inference/v1` request digest
 
 The machine-readable matrix is `evidence/two-surface-matrix-2026-08-16.json`. A live runner emits a stricter per-capture matrix whose `overall.pass` becomes true only when the same capture has a successful validated result, one physical delivery, native IDs and usage, post-call cost accounting, exact target/route, and a bound data-policy attestation digest.
 
-## Bedrock managed-cloud leg
+## Archived Bedrock managed-cloud leg
+
+This leg was prepared for the former two-surface task. AWS is not part of the
+current initial route and is neither a dependency nor a credential blocker.
 
 The neutral fixture maps to Amazon Bedrock Runtime Converse without a caller-supplied provider, model, URL, tool, header, or retry field. The adapter requests `outputConfig.textFormat.type=json_schema`, supplies the schema as a JSON string, omits tools and cache points, validates locally, preserves Bedrock stop reasons, request ID, cache/token dimensions, and reads `ResponseMetadata.RetryAttempts`. It also fails closed if tool content appears despite an `end_turn` stop reason.
 
@@ -105,7 +118,7 @@ The evidence profile uses the dated EU geographic inference ID `eu.anthropic.cla
 
 No Bedrock call was sent because this machine currently has no AWS CLI, Boto3/Botocore, shared AWS directory, or recognized AWS credential/profile environment variable. The live leg requires a disposable assumed role with `bedrock:InvokeModel` on the exact inference profile and read access to `bedrock:GetInferenceProfile` and `bedrock:GetModelInvocationLoggingConfiguration`; `sts:GetCallerIdentity` binds the capture to the expected account and role. No dependency was installed and no credential was requested or invented.
 
-## GitHub substitution check
+## Historical GitHub substitution check
 
 GitHub can supply subscription-backed AI access, but it cannot replace the managed-cloud leg of this exact Review First experiment.
 
@@ -113,7 +126,12 @@ GitHub Models would previously have been structurally suitable: its inference AP
 
 GitHub Copilot SDK remains a supported subscription route. GitHub documents OAuth user tokens, per-user Copilot subscription billing, an `empty` mode with explicitly bounded tools, and token/cost usage events. It is nevertheless an agent runtime in public preview: the SDK delegates an agent loop to Copilot CLI and exposes no native response-schema field in its documented session contract or current public SDK source. Prompting for JSON plus local validation would not satisfy `structured_output.native`, and a second agent runtime would not prove the issue's required direct-versus-managed-cloud portability boundary.
 
-The result is therefore a bounded negative preflight, not a credential blocker and not a reason to consume the Operator's Copilot quota. GitHub Copilot remains relevant to a future Agent Run Model Provider Profile, where tools and state are expected and independently governed. No AWS credential is needed to establish this GitHub conclusion; a conforming managed-cloud surface is still needed only if issue #21 is to meet its current acceptance criteria.
+The result is therefore a bounded negative preflight, not a credential blocker
+and not a reason to consume the Operator's Copilot quota. GitHub Copilot remains
+relevant to a future Agent Run profile, where tools and state are expected and
+independently governed. No AWS credential is needed for this historical
+comparison, and the managed-cloud comparison is no longer a current release
+requirement.
 
 ## Reproduce
 
@@ -131,7 +149,9 @@ python3 experiments/model-provider-conformance/live_codex_probe.py
 
 The live runner prints sanitized evidence to standard output. It intentionally has no API-key argument and never prints or persists OAuth tokens.
 
-The two strict runners are inert unless `--execute` is present. Configure their named environment variables through an external secret mechanism; do not put values in arguments or the repository.
+The two archived strict runners are inert unless `--execute` is present. They
+are retained only to make the earlier experiment reproducible; the current
+route does not require either command or either credential set.
 
 ```bash
 # Requires OPENAI_API_KEY, OPENAI_PROJECT_ID,
@@ -152,8 +172,8 @@ Each command prints only sanitized JSON. Capture review and publication remain e
 - `openai_responses_adapter.py`: isolated direct OpenAI request mapping and normalization.
 - `probe_support.py`: shared attestation-expiry, hard-cost, post-call accounting, and strict-matrix logic.
 - `live_codex_probe.py`: bounded JSON-line App Server transport and isolated OAuth probe.
-- `live_openai_probe.py`: one-shot, redirect-free OpenAI Platform Responses transport.
-- `live_bedrock_probe.py`: one-shot Bedrock transport with role, route, endpoint, logging, and retry preflight.
+- `live_openai_probe.py`: archived one-shot, redirect-free OpenAI Platform Responses transport.
+- `live_bedrock_probe.py`: archived one-shot Bedrock transport with role, route, endpoint, logging, and retry preflight.
 - `fixtures/review_request.json`: provider-neutral synthetic request and schema.
 - `fixtures/profiles/openai_codex_subscription.json`: distinct subscription/App Server profile.
 - `fixtures/profiles/openai_platform_responses.json`: strict direct-API evidence profile.
@@ -182,8 +202,15 @@ Each command prints only sanitized JSON. Capture review and publication remain e
 | `GetInferenceProfile` exposes status and routed model ARNs so the fixed EU destination set can be checked before inference. | [AWS GetInferenceProfile](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_GetInferenceProfile.html), [AWS inference-profile support](https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-support.html) | High |
 | Bedrock invocation logging can retain full request/response data, is disabled by default, and is inspectable before inference. | [AWS model invocation logging](https://docs.aws.amazon.com/bedrock/latest/userguide/model-invocation-logging.html), [AWS GetModelInvocationLoggingConfiguration](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_GetModelInvocationLoggingConfiguration.html) | High |
 
-## Remaining human inputs
+## Current scope and remaining decision
 
-The architecture decision is now explicit: **do not weaken Review First** to admit an agent runtime. Retain the ChatGPT subscription profile as a first-class Codex/Agent Run access path and prove strict Review First through separately conforming inference profiles.
+The initial route uses only OpenAI through ChatGPT OAuth/subscription. No OpenAI
+API key, second provider, AWS account, or additional live call is needed to
+retire [Prove the Review First Model Provider boundary across unlike live surfaces](https://github.com/Ic3b3rg/kestrel/issues/21)
+as out of scope; the historical static matrices are not a release gate.
 
-The [Prove the Review First Model Provider boundary across unlike live surfaces](https://github.com/Ic3b3rg/kestrel/issues/21) ticket must remain open until an Operator supplies both disposable scopes, reviews and hashes the two account data-policy attestations, authorizes the `$0.10` per-probe caps, and the two sanitized live outputs pass their complete matrices. Credentials themselves must never be posted to GitHub or committed.
+The retained OAuth capture proves access, but not every control required by the
+current strict Review First boundary. The Operator decision about that mismatch
+belongs to [Reconcile OAuth-only OpenAI access with the Review First trust boundary](https://github.com/Ic3b3rg/kestrel/issues/26).
+Any future multi-provider or managed-cloud certification must begin as a new
+scoped effort rather than silently reviving this requirement.

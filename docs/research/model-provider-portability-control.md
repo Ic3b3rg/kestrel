@@ -1,5 +1,14 @@
 # Model Provider portability and control
 
+> **Scope update — 2026-08-16:** The initial Review First route has been narrowed
+> to OpenAI through ChatGPT OAuth/subscription. Direct OpenAI API-key access, a
+> second provider, and a managed-cloud conformance proof are outside the current
+> scope. The neutral boundary below remains the decision record from
+> [Define Model Provider portability and control](https://github.com/Ic3b3rg/kestrel/issues/6),
+> while its original two-surface follow-on was retired rather than treated as a
+> release blocker. The OAuth-specific trust decision is tracked in
+> [Reconcile OAuth-only OpenAI access with the Review First trust boundary](https://github.com/Ic3b3rg/kestrel/issues/26).
+
 **Status:** recommended Review First V1 contract
 
 **Date:** 2026-08-10
@@ -505,26 +514,35 @@ Kestrel owns bounded retries and SDK-attempt accounting, never retries an outcom
 
 ## What still needs evidence or a downstream decision
 
-### Empirical validation: one new AFK ticket
+### Empirical validation: superseded follow-on
 
-Create exactly one `wayfinder:task`:
+The original resolution created one `wayfinder:task`:
 
 **Title:** `Prove the Review First Model Provider boundary across unlike live surfaces`
 
 **Task:** Implement a disposable contract harness for two unlike current surfaces—one direct API and one managed-cloud API, with direct OpenAI Responses plus Bedrock Runtime Converse as the recommended pair—and run only synthetic/public Review First fixtures. Demonstrate exact request mapping, the Kestrel schema subset, local validation, refusal/filter/truncation, streaming assembly, request IDs, usage/cache dimensions, token preflight, rate/error classification, disabled SDK retries, outcome-unknown interruption, cost reconciliation, profile drift, and account data-policy attestation. Record adapter/profile/schema digests and redacted evidence; use disposable Project/workspace/role-scoped credentials, no tools, no private source, and no production adapter commitment. If credentials or entitlement make that pair unavailable, substitute direct Anthropic Messages or Vertex `generateContent` while preserving one direct and one managed-cloud surface, and record why.
 
-**Dependencies:** the new task depends on [Define Model Provider portability and control](https://github.com/Ic3b3rg/kestrel/issues/6). It may run in parallel with [Validate conceptual change extraction on real pull requests](https://github.com/Ic3b3rg/kestrel/issues/9), which tests conceptual extraction usefulness rather than the transport/security boundary. Both tasks block [Lock the Review First product and technical specification](https://github.com/Ic3b3rg/kestrel/issues/10). The new task does not block unrelated downstream Agent Run research.
+**Original dependencies:** the task depended on [Define Model Provider portability and control](https://github.com/Ic3b3rg/kestrel/issues/6). It could run in parallel with [Validate conceptual change extraction on real pull requests](https://github.com/Ic3b3rg/kestrel/issues/9), which tests conceptual extraction usefulness rather than this transport/security boundary, and originally blocked [Lock the Review First product and technical specification](https://github.com/Ic3b3rg/kestrel/issues/10).
 
-This is genuinely separate from [Validate conceptual change extraction on real pull requests](https://github.com/Ic3b3rg/kestrel/issues/9): a good conceptual review can hide adapter retries, identity drift, weak schema enforcement, or incorrect accounting. It is also separate from [Lock the Review First product and technical specification](https://github.com/Ic3b3rg/kestrel/issues/10): the final spec should consume evidence, not perform live provider experiments during a HITL integration decision.
+That distinction remains technically valid, but the Operator removed the
+multi-provider proof from the initial route on 2026-08-16. The task was closed
+as out of scope, not passed, and its direct/API and Bedrock artifacts remain
+historical research only. No credential provisioning or additional live call is
+required.
 
-### Initial profile selection: no new HITL ticket
+### OAuth-only initial access decision
 
-Do **not** create a separate “choose the initial provider/profile” grilling ticket. There are two different choices:
+The initial access choice is now fixed to OpenAI through ChatGPT
+OAuth/subscription. The retained live evidence shows that the current Codex App
+Server path is an Agent Runtime surface and does not attest every control in the
+strict Model Provider boundary. Resolving that mismatch is not a second provider
+selection: it is the HITL question in
+[Reconcile OAuth-only OpenAI access with the Review First trust boundary](https://github.com/Ic3b3rg/kestrel/issues/26),
+which now informs [Lock the Review First product and technical specification](https://github.com/Ic3b3rg/kestrel/issues/10).
 
-1. At runtime, each Operator explicitly approves and selects a Project profile; that product behavior is fixed here.
-2. At release planning, Kestrel decides which adapter/profile combinations are certified for Review First. That decision needs the live boundary task plus the quality evidence from [Validate conceptual change extraction on real pull requests](https://github.com/Ic3b3rg/kestrel/issues/9) and belongs in the existing HITL [Lock the Review First product and technical specification](https://github.com/Ic3b3rg/kestrel/issues/10).
-
-A new human ticket now would either guess before evidence or duplicate [Lock the Review First product and technical specification](https://github.com/Ic3b3rg/kestrel/issues/10). That ticket must name the initially certified surface(s), schema bundle, minimum quality/evaluation evidence, default Project-profile onboarding, and any deployment prerequisites. Supporting additional production adapters remains expansion, not a hidden V1 promise.
+At runtime, each Operator still explicitly approves the applicable Project
+profile. Supporting additional production Model Providers remains expansion,
+not a hidden V1 promise.
 
 ### Existing fog
 
@@ -538,13 +556,19 @@ No separate tickets are justified now for caching, streaming, tools, stateful se
 - A pinned model ID does not guarantee bit-for-bit deterministic output or unchanged safety/routing infrastructure.
 - Preflight token counts and prices may differ from billed usage; ambiguous network outcomes can remain permanently unreconciled. Transport abort is not proven provider cancellation, and V1 has no portable exactly-once inference guarantee.
 - Native structured output controls shape, not truth, source grounding, completeness, or evidence validity.
-- The small schema subset is a research decision pending the two-surface live test; narrowing is allowed before [Lock the Review First product and technical specification](https://github.com/Ic3b3rg/kestrel/issues/10), while later expansion requires new conformance.
+- The small schema subset remains a research decision pending the OAuth-specific trust decision and [Lock the Review First product and technical specification](https://github.com/Ic3b3rg/kestrel/issues/10); later provider expansion requires new conformance.
 - This contract does not select the best model for conceptual review quality or define evaluation thresholds; [Validate conceptual change extraction on real pull requests](https://github.com/Ic3b3rg/kestrel/issues/9) and [Lock the Review First product and technical specification](https://github.com/Ic3b3rg/kestrel/issues/10) own those decisions.
 - Self-hosted local/open-weight inference can implement this boundary later, but model artifact trust, hardware scheduling, sandboxing, and local data policy require separate evidence.
 - Pricing examples were intentionally omitted because exact prices are volatile; only dimensions and snapshot requirements are fixed.
 
 ## Downstream handoff
 
-The final Review First spec should import this boundary by reference and lock only five remaining release facts after evidence: initially certified profile(s), exact `kestrel.review-json-schema/1` bundle, profile onboarding/approval UI, quality threshold from [Validate conceptual change extraction on real pull requests](https://github.com/Ic3b3rg/kestrel/issues/9), and deployment prerequisites. Implementers can then build one adapter without coupling callers to it, while the live conformance harness proves that a second unlike adapter fits the same typed boundary.
+The final Review First spec should import this boundary by reference, reconcile
+it with the sole OAuth/subscription access path, and lock the exact initial
+profile, accepted controls, `kestrel.review-json-schema/1` bundle, profile
+onboarding/approval UI, quality threshold from
+[Validate conceptual change extraction on real pull requests](https://github.com/Ic3b3rg/kestrel/issues/9),
+and deployment prerequisites. Implementers can then build the one initial
+integration without claiming that a second provider has been certified.
 
 The enduring rule is concise: **Kestrel selects and approves an exact profile, sends a typed stateless request through a credentialed broker, accepts only a terminal locally validated result, records every attempt and cost, and fails closed on uncertainty or drift.**
