@@ -3,6 +3,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiErrorSchema } from "@kestrel/contracts";
 
 import { buildApp } from "./app.js";
+import { createSessionToken, SESSION_COOKIE_NAME } from "./session.js";
+
+const sessionSigningKey = Buffer.alloc(32, 7);
+const sessionToken = createSessionToken(
+  {
+    id: "018f0f89-949a-75a8-8f61-6df78a843b1e",
+    username: "operator",
+  },
+  sessionSigningKey,
+).token;
+const authenticatedHeaders = { cookie: `${SESSION_COOKIE_NAME}=${sessionToken}` };
 
 describe("web error and readiness boundaries", () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
@@ -16,6 +27,7 @@ describe("web error and readiness boundaries", () => {
       eventRetentionLimit: 1_000,
       logger: false,
       pool: pool as never,
+      sessionSigningKey,
     });
   });
 
@@ -25,7 +37,7 @@ describe("web error and readiness boundaries", () => {
 
   it("returns a versioned invalid-request error for malformed JSON", async () => {
     const response = await app.inject({
-      headers: { "content-type": "application/json" },
+      headers: { ...authenticatedHeaders, "content-type": "application/json" },
       method: "POST",
       payload: "{",
       url: "/api/v1/installation/diagnostics",
@@ -37,7 +49,7 @@ describe("web error and readiness boundaries", () => {
 
   it("preserves payload-too-large status in the versioned error", async () => {
     const response = await app.inject({
-      headers: { "content-type": "application/json" },
+      headers: { ...authenticatedHeaders, "content-type": "application/json" },
       method: "POST",
       payload: JSON.stringify({ value: "x".repeat(1_048_576) }),
       url: "/api/v1/installation/diagnostics",
@@ -49,7 +61,7 @@ describe("web error and readiness boundaries", () => {
 
   it("preserves unsupported-media-type status in the versioned error", async () => {
     const response = await app.inject({
-      headers: { "content-type": "application/xml" },
+      headers: { ...authenticatedHeaders, "content-type": "application/xml" },
       method: "POST",
       payload: "<diagnostic />",
       url: "/api/v1/installation/diagnostics",
@@ -68,14 +80,22 @@ describe("web error and readiness boundaries", () => {
       throw error;
     });
 
-    const response = await app.inject({ method: "GET", url: "/api/v1/rate-limited-test" });
+    const response = await app.inject({
+      headers: authenticatedHeaders,
+      method: "GET",
+      url: "/api/v1/rate-limited-test",
+    });
 
     expect(response.statusCode).toBe(429);
     expect(ApiErrorSchema.parse(response.json())).toMatchObject({ code: "REQUEST_REJECTED" });
   });
 
   it("returns a versioned not-found error for an unknown API route", async () => {
-    const response = await app.inject({ method: "GET", url: "/api/v1/missing" });
+    const response = await app.inject({
+      headers: authenticatedHeaders,
+      method: "GET",
+      url: "/api/v1/missing",
+    });
 
     expect(response.statusCode).toBe(404);
     expect(ApiErrorSchema.parse(response.json())).toMatchObject({ code: "NOT_FOUND" });
@@ -83,7 +103,7 @@ describe("web error and readiness boundaries", () => {
 
   it("reports an unavailable diagnostic dependency without exposing internals", async () => {
     const response = await app.inject({
-      headers: { "content-type": "application/json" },
+      headers: { ...authenticatedHeaders, "content-type": "application/json" },
       method: "POST",
       payload: {},
       url: "/api/v1/installation/diagnostics",

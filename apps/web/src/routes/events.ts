@@ -49,6 +49,7 @@ export function registerEventRoutes(app: FastifyInstance, pool: DatabasePool): v
         },
         response: {
           400: jsonSchemaForEmbedding(apiErrorJsonSchema),
+          401: jsonSchemaForEmbedding(apiErrorJsonSchema),
           409: jsonSchemaForEmbedding(apiErrorJsonSchema),
           500: jsonSchemaForEmbedding(apiErrorJsonSchema),
         },

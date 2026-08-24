@@ -143,6 +143,14 @@ describe("V1 public contracts", () => {
         "/api/v1/events": {},
       },
     });
+    expect(openApiDocument).toMatchObject({
+      paths: {
+        "/api/v1/events": { get: { responses: { "401": {} } } },
+        "/api/v1/installation": { get: { responses: { "401": {} } } },
+        "/api/v1/installation/diagnostics": { post: { responses: { "401": {} } } },
+        "/api/v1/session": { get: { responses: { "401": {} } } },
+      },
+    });
 
     const first = serializeJson(openApiDocument);
     expect(serializeJson(openApiDocument)).toBe(first);

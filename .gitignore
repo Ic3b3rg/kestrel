@@ -7,5 +7,6 @@ test-results/
 .env.*
 !.env.example
 *.pem
+*.key
 *.log
 .DS_Store

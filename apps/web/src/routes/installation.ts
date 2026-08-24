@@ -15,6 +15,7 @@ export function registerInstallationRoutes(app: FastifyInstance, pool: DatabaseP
       schema: {
         response: {
           200: jsonSchemaForEmbedding(installationSnapshotJsonSchema),
+          401: jsonSchemaForEmbedding(apiErrorJsonSchema),
           503: jsonSchemaForEmbedding(apiErrorJsonSchema),
         },
       },

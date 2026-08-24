@@ -4,6 +4,7 @@ import { InstallationEventSchema, type InstallationEvent } from "@kestrel/contra
 
 export interface CollectInstallationEventsOptions {
   after?: string;
+  cookie: string;
   count: number;
   lastEventId?: string;
   timeoutMs?: number;
@@ -18,7 +19,10 @@ export async function collectInstallationEvents(
     () => controller.abort(new Error("Timed out collecting SSE events")),
     options.timeoutMs ?? 15_000,
   );
-  const headers: Record<string, string> = { Accept: "text/event-stream" };
+  const headers: Record<string, string> = {
+    Accept: "text/event-stream",
+    Cookie: options.cookie,
+  };
   if (options.lastEventId !== undefined) {
     headers["Last-Event-ID"] = options.lastEventId;
   }

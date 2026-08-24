@@ -589,6 +589,16 @@
             },
             "description": "Invalid or future event cursor"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Operator authentication is required"
+          },
           "409": {
             "content": {
               "application/json": {
@@ -625,6 +635,16 @@
               }
             },
             "description": "Current authoritative Installation snapshot"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Operator authentication is required"
           },
           "503": {
             "content": {
@@ -673,6 +693,16 @@
               }
             },
             "description": "Invalid command"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Operator authentication is required"
           },
           "409": {
             "content": {

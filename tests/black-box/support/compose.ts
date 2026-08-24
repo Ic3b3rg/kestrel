@@ -1,5 +1,5 @@
-import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { execFile, spawn } from "node:child_process";
+import { randomBytes, randomUUID } from "node:crypto";
 import { access } from "node:fs/promises";
 import { dirname } from "node:path";
 import { promisify } from "node:util";
@@ -9,12 +9,59 @@ const MAC_DOCKER = "/Applications/Docker.app/Contents/Resources/bin/docker";
 
 export interface RunningStack {
   apiUrl: string;
+  authenticateOperator(credentials?: OperatorTestCredentials): Promise<void>;
+  bootstrapOperator(credentials: OperatorTestCredentials): Promise<string>;
   pwaUrl: string;
   close(): Promise<void>;
   executeSql(sql: string): Promise<void>;
+  fetchApi(path: string, init?: RequestInit): Promise<Response>;
+  readonly sessionCookie: string;
   restart(...services: string[]): Promise<void>;
   start(...services: string[]): Promise<void>;
   stop(...services: string[]): Promise<void>;
+}
+
+export interface OperatorTestCredentials {
+  password: string;
+  username: string;
+}
+
+export const TEST_OPERATOR_CREDENTIALS: OperatorTestCredentials = {
+  password: "correct horse battery staple",
+  username: "operator",
+};
+
+export interface StartStackOptions {
+  sessionSigningKey?: string;
+}
+
+function executeWithInput(
+  command: string,
+  args: string[],
+  input: string,
+  environment: NodeJS.ProcessEnv,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { env: environment, stdio: ["pipe", "pipe", "pipe"] });
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
+    child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
+    child.once("error", reject);
+    child.once("close", (code) => {
+      const output = Buffer.concat(stdout).toString("utf8");
+      if (code === 0) {
+        resolve(output);
+      } else {
+        reject(
+          new Error(
+            `Host command failed with exit code ${String(code)}: ${Buffer.concat(stderr).toString("utf8")}`,
+          ),
+        );
+      }
+    });
+    child.stdin.end(input);
+  });
 }
 
 async function resolveDocker(): Promise<string> {
@@ -64,11 +111,14 @@ function dockerEnvironment(docker: string): NodeJS.ProcessEnv {
   };
 }
 
-export async function startStack(): Promise<RunningStack> {
+export async function startStack(options: StartStackOptions = {}): Promise<RunningStack> {
   const docker = await resolveDocker();
   const project = `kestrel-black-box-${randomUUID().slice(0, 8)}`;
   const composeArgs = ["compose", "-p", project, "-f", "compose.yaml", "-f", "compose.test.yaml"];
-  const environment = dockerEnvironment(docker);
+  const environment = {
+    ...dockerEnvironment(docker),
+    SESSION_SIGNING_KEY: options.sessionSigningKey ?? randomBytes(32).toString("base64url"),
+  };
 
   async function close(): Promise<void> {
     if (!project.startsWith("kestrel-black-box-")) {
@@ -100,6 +150,15 @@ export async function startStack(): Promise<RunningStack> {
     return `http://127.0.0.1:${port}`;
   }
 
+  async function bootstrapOperator(credentials: OperatorTestCredentials): Promise<string> {
+    return executeWithInput(
+      docker,
+      [...composeArgs, "exec", "--no-TTY", "web", "npm", "run", "bootstrap", "-w", "@kestrel/web"],
+      `${credentials.username}\n${credentials.password}\n${credentials.password}\n`,
+      environment,
+    );
+  }
+
   try {
     await execFileAsync(docker, [...composeArgs, "up", "--build", "--detach", "--wait"], {
       env: environment,
@@ -108,6 +167,7 @@ export async function startStack(): Promise<RunningStack> {
 
     let apiUrl = await resolvePublishedUrl("web", "3000");
     let pwaUrl = await resolvePublishedUrl("pwa", "5173");
+    let sessionCookie: string | null = null;
     await waitForJson(`${apiUrl}/health/ready`);
     await waitForJson(pwaUrl);
 
@@ -118,6 +178,27 @@ export async function startStack(): Promise<RunningStack> {
       get pwaUrl() {
         return pwaUrl;
       },
+      get sessionCookie() {
+        if (sessionCookie === null) {
+          throw new Error("The test stack has no authenticated Operator session");
+        }
+        return sessionCookie;
+      },
+      async authenticateOperator(credentials = TEST_OPERATOR_CREDENTIALS) {
+        await bootstrapOperator(credentials);
+        const response = await fetch(`${apiUrl}/api/v1/session`, {
+          body: JSON.stringify(credentials),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        });
+        await response.arrayBuffer();
+        const cookie = response.headers.get("set-cookie")?.split(";", 1)[0];
+        if (!response.ok || !cookie) {
+          throw new Error(`Operator test login failed with status ${String(response.status)}`);
+        }
+        sessionCookie = cookie;
+      },
+      bootstrapOperator,
       close,
       async executeSql(sql) {
         await execFileAsync(
@@ -139,6 +220,14 @@ export async function startStack(): Promise<RunningStack> {
           ],
           { env: environment },
         );
+      },
+      async fetchApi(path, init = {}) {
+        if (sessionCookie === null) {
+          throw new Error("The test stack has no authenticated Operator session");
+        }
+        const headers = new Headers(init.headers);
+        headers.set("Cookie", sessionCookie);
+        return fetch(new URL(path, apiUrl), { ...init, headers });
       },
       async restart(...services) {
         await execFileAsync(docker, [...composeArgs, "restart", ...services], {

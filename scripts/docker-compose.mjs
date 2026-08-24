@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { dirname } from "node:path";
 
@@ -22,10 +23,14 @@ function resolveDockerBinary() {
 }
 
 const docker = resolveDockerBinary();
-const environment =
+const dockerEnvironment =
   docker === MAC_DOCKER
     ? { ...process.env, PATH: `${dirname(docker)}:${process.env.PATH ?? ""}` }
     : process.env;
+const environment = {
+  ...dockerEnvironment,
+  SESSION_SIGNING_KEY: process.env.SESSION_SIGNING_KEY ?? randomBytes(32).toString("base64url"),
+};
 const composeArguments = ["compose", "-f", "compose.yaml", ...process.argv.slice(2)];
 const result = spawnSync(docker, composeArguments, {
   env: environment,

@@ -132,6 +132,12 @@ export const openApiDocument = sortJson({
             },
             description: "Invalid or future event cursor",
           },
+          "401": {
+            content: {
+              "application/json": { schema: schemaReference("ApiError") },
+            },
+            description: "Operator authentication is required",
+          },
           "409": {
             content: {
               "application/json": { schema: schemaReference("ApiError") },
@@ -156,6 +162,12 @@ export const openApiDocument = sortJson({
               "application/json": { schema: schemaReference("InstallationSnapshot") },
             },
             description: "Current authoritative Installation snapshot",
+          },
+          "401": {
+            content: {
+              "application/json": { schema: schemaReference("ApiError") },
+            },
+            description: "Operator authentication is required",
           },
           "503": {
             content: {
@@ -189,6 +201,12 @@ export const openApiDocument = sortJson({
               "application/json": { schema: schemaReference("ApiError") },
             },
             description: "Invalid command",
+          },
+          "401": {
+            content: {
+              "application/json": { schema: schemaReference("ApiError") },
+            },
+            description: "Operator authentication is required",
           },
           "409": {
             content: {

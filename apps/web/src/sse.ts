@@ -18,6 +18,11 @@ export function encodeSseEvent(event: InstallationEvent): string {
   return `id: ${event.eventId}\nevent: ${event.eventType}\ndata: ${JSON.stringify(event)}\n\n`;
 }
 
+export function millisecondsUntilSessionExpiry(expiresAt: string, now = new Date()): number {
+  const expiry = Date.parse(expiresAt);
+  return Number.isFinite(expiry) ? Math.max(0, expiry - now.getTime()) : 0;
+}
+
 function encodeResetRequired(correlationId: string, firstAvailableEventId: string): string {
   const error = ApiErrorSchema.parse({
     schemaVersion: 1,
@@ -46,6 +51,10 @@ export async function startInstallationEventStream({
   reply,
   request,
 }: StartEventStreamOptions): Promise<EventStreamStartResult> {
+  const session = request.operatorSession;
+  if (session === null) {
+    throw new Error("An authenticated Operator session is required for event streaming");
+  }
   const client = await pool.connect();
   let transferred = false;
 
@@ -91,6 +100,7 @@ export async function startInstallationEventStream({
         streamAbort.abort();
         clearInterval(heartbeatTimer);
         clearInterval(pollTimer);
+        clearTimeout(sessionExpiryTimer);
         request.raw.removeListener("close", onRequestClose);
         client.removeListener("error", onDatabaseError);
         client.removeListener("notification", onNotification);
@@ -155,6 +165,10 @@ export async function startInstallationEventStream({
     const heartbeatTimer = setInterval(() => {
       enqueue(async () => writeChunk(": keep-alive\n\n"));
     }, HEARTBEAT_INTERVAL_MS);
+    const sessionExpiryTimer = setTimeout(() => {
+      request.log.info({ event: "events.session_expired", operatorId: session.operator.id });
+      void cleanup(true);
+    }, millisecondsUntilSessionExpiry(session.expiresAt));
     request.raw.once("close", onRequestClose);
     client.on("error", onDatabaseError);
     client.on("notification", onNotification);
