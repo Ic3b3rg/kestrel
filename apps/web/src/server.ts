@@ -1,3 +1,5 @@
+import { resolve } from "node:path";
+
 import { buildApp } from "./app.js";
 
 import {
@@ -25,6 +27,7 @@ const app = await buildApp({
   boss,
   eventRetentionLimit: readEventRetentionLimit(),
   pool,
+  pwaRoot: process.env.PWA_ROOT ?? resolve(import.meta.dirname, "../../pwa/dist"),
 });
 boss.on("error", (error) => {
   app.log.error({ err: error, event: "pgboss.error" });

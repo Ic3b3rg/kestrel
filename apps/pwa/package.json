@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@kestrel/contracts": "0.0.0",
     "eventsource-parser": "4.1.0",
     "react": "19.2.8",
     "react-dom": "19.2.8"

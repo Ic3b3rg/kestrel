@@ -1,6 +1,9 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
+import { App } from "./App.js";
+import "./styles.css";
+
 const root = document.querySelector<HTMLDivElement>("#root");
 if (!root) {
   throw new Error("Missing PWA root element");
@@ -8,9 +11,6 @@ if (!root) {
 
 createRoot(root).render(
   <StrictMode>
-    <main>
-      <h1>Kestrel</h1>
-      <p>Starting the Installation view…</p>
-    </main>
+    <App />
   </StrictMode>,
 );

@@ -9,6 +9,7 @@ const MAC_DOCKER = "/Applications/Docker.app/Contents/Resources/bin/docker";
 
 export interface RunningStack {
   apiUrl: string;
+  pwaUrl: string;
   close(): Promise<void>;
   restart(...services: string[]): Promise<void>;
   start(...services: string[]): Promise<void>;
@@ -105,11 +106,16 @@ export async function startStack(): Promise<RunningStack> {
     });
 
     let apiUrl = await resolvePublishedUrl("web", "3000");
+    let pwaUrl = await resolvePublishedUrl("pwa", "5173");
     await waitForJson(`${apiUrl}/health/ready`);
+    await waitForJson(pwaUrl);
 
     return {
       get apiUrl() {
         return apiUrl;
+      },
+      get pwaUrl() {
+        return pwaUrl;
       },
       close,
       async restart(...services) {
@@ -119,7 +125,11 @@ export async function startStack(): Promise<RunningStack> {
         if (services.includes("web")) {
           apiUrl = await resolvePublishedUrl("web", "3000");
         }
+        if (services.includes("pwa")) {
+          pwaUrl = await resolvePublishedUrl("pwa", "5173");
+        }
         await waitForJson(`${apiUrl}/health/ready`);
+        await waitForJson(pwaUrl);
       },
       async start(...services) {
         await execFileAsync(docker, [...composeArgs, "start", ...services], {
@@ -128,6 +138,10 @@ export async function startStack(): Promise<RunningStack> {
         if (services.includes("web")) {
           apiUrl = await resolvePublishedUrl("web", "3000");
           await waitForJson(`${apiUrl}/health/ready`);
+        }
+        if (services.includes("pwa")) {
+          pwaUrl = await resolvePublishedUrl("pwa", "5173");
+          await waitForJson(pwaUrl);
         }
       },
       async stop(...services) {

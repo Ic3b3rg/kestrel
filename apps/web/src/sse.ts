@@ -159,7 +159,10 @@ export async function startInstallationEventStream({
     request.raw.once("close", onRequestClose);
     client.on("error", onDatabaseError);
     client.on("notification", onNotification);
-    scheduleDrain();
+    enqueue(async () => {
+      await writeChunk(": connected\n\n");
+      await drain();
+    });
 
     transferred = true;
     return { streaming: true };

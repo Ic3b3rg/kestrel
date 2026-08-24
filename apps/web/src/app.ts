@@ -9,12 +9,14 @@ import { registerEventRoutes } from "./routes/events.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerInstallationRoutes } from "./routes/installation.js";
 import { registerOpenApiRoute } from "./routes/openapi.js";
+import { registerPwaRoutes } from "./routes/pwa.js";
 
 export interface BuildAppOptions {
   boss: DiagnosticJobSender;
   eventRetentionLimit: number;
   logger?: boolean;
   pool: DatabasePool;
+  pwaRoot?: string;
 }
 
 export async function buildApp({
@@ -22,11 +24,19 @@ export async function buildApp({
   eventRetentionLimit,
   logger = true,
   pool,
+  pwaRoot,
 }: BuildAppOptions): Promise<FastifyInstance> {
   const app = Fastify({
     ajv: { customOptions: { removeAdditional: false } },
     genReqId: () => randomUUID(),
     logger,
+  });
+
+  app.addHook("onSend", (request, reply, payload, done) => {
+    if (request.url.startsWith("/api/")) {
+      reply.header("Cache-Control", "no-store");
+    }
+    done(null, payload);
   });
 
   app.setErrorHandler((error, request, reply) => {
@@ -52,6 +62,9 @@ export async function buildApp({
   registerHealthRoutes(app, pool);
   registerInstallationRoutes(app, pool);
   registerOpenApiRoute(app);
+  if (pwaRoot !== undefined) {
+    await registerPwaRoutes(app, pwaRoot);
+  }
 
   return app;
 }
