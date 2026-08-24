@@ -103,7 +103,7 @@ export async function buildApp({
   });
 
   app.addHook("onSend", (request, reply, payload, done) => {
-    if (request.url.startsWith("/api/")) {
+    if (request.url.startsWith("/api/") || request.url.startsWith("/auth/")) {
       reply.header("Cache-Control", "no-store");
     }
     done(null, payload);

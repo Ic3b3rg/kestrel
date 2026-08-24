@@ -186,7 +186,7 @@ export async function startStack(options: StartStackOptions = {}): Promise<Runni
       },
       async authenticateOperator(credentials = TEST_OPERATOR_CREDENTIALS) {
         await bootstrapOperator(credentials);
-        const response = await fetch(`${apiUrl}/api/v1/session`, {
+        const response = await fetch(`${apiUrl}/auth/login`, {
           body: JSON.stringify(credentials),
           headers: { "Content-Type": "application/json" },
           method: "POST",

@@ -241,24 +241,7 @@ export const openApiDocument = sortJson({
         },
       },
     },
-    "/api/v1/session": {
-      get: {
-        operationId: "readOperatorSession",
-        responses: {
-          "200": {
-            content: {
-              "application/json": { schema: schemaReference("Session") },
-            },
-            description: "Current authenticated Operator session",
-          },
-          "401": {
-            content: {
-              "application/json": { schema: schemaReference("ApiError") },
-            },
-            description: "Operator authentication is required",
-          },
-        },
-      },
+    "/auth/login": {
       post: {
         operationId: "createOperatorSession",
         requestBody: {
@@ -307,6 +290,25 @@ export const openApiDocument = sortJson({
         },
       },
     },
+    "/api/v1/session": {
+      get: {
+        operationId: "readOperatorSession",
+        responses: {
+          "200": {
+            content: {
+              "application/json": { schema: schemaReference("Session") },
+            },
+            description: "Current authenticated Operator session",
+          },
+          "401": {
+            content: {
+              "application/json": { schema: schemaReference("ApiError") },
+            },
+            description: "Operator authentication is required",
+          },
+        },
+      },
+    },
     "/api/v1/openapi.json": {
       get: {
         operationId: "readOpenApiDocument",
@@ -316,6 +318,12 @@ export const openApiDocument = sortJson({
               "application/json": { schema: { type: "object" } },
             },
             description: "Generated OpenAPI document",
+          },
+          "401": {
+            content: {
+              "application/json": { schema: schemaReference("ApiError") },
+            },
+            description: "Operator authentication is required",
           },
         },
       },

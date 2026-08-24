@@ -19,6 +19,10 @@ import {
 import { InstallationView, type PwaConnectionState } from "./InstallationView.js";
 import { LoginView } from "./LoginView.js";
 
+const INSTALLATION_ERROR_MESSAGE =
+  "Kestrel could not read authoritative Installation data. Try again.";
+const SESSION_ERROR_MESSAGE = "Kestrel could not verify the Operator session. Try again.";
+
 function newerSnapshot(
   current: InstallationSnapshot | null,
   candidate: InstallationSnapshot,
@@ -43,18 +47,11 @@ function eventAnnouncement(event: InstallationEvent): string {
   }
 }
 
-function errorMessage(error: unknown): string {
+function errorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiClientError) {
     return `${error.details.message} Reference: ${error.details.correlationId}`;
   }
-  return "Kestrel could not read authoritative Installation data. Try again.";
-}
-
-function authenticationErrorMessage(error: unknown): string {
-  if (error instanceof ApiClientError) {
-    return `${error.details.message} Reference: ${error.details.correlationId}`;
-  }
-  return "Kestrel could not verify the Operator session. Try again.";
+  return fallback;
 }
 
 function requiresAuthentication(error: unknown): boolean {
@@ -90,6 +87,17 @@ export function App() {
     setConnection("disconnected");
     setLoginError(message);
   }, []);
+
+  const handleAuthenticationBoundaryError = useCallback(
+    (error: unknown): boolean => {
+      if (!requiresAuthentication(error)) {
+        return false;
+      }
+      requireAuthentication("The Operator session expired. Sign in again.");
+      return true;
+    },
+    [requireAuthentication],
+  );
 
   useEffect(() => {
     const handleOnline = () => {
@@ -135,7 +143,7 @@ export function App() {
         }
         setSession(null);
         if (!requiresAuthentication(error)) {
-          setLoginError(authenticationErrorMessage(error));
+          setLoginError(errorMessage(error, SESSION_ERROR_MESSAGE));
         }
       },
     );
@@ -177,10 +185,8 @@ export function App() {
         })
         .catch((error: unknown) => {
           if (active && !controller.signal.aborted) {
-            if (requiresAuthentication(error)) {
-              requireAuthentication("The Operator session expired. Sign in again.");
-            } else {
-              setRequestError(errorMessage(error));
+            if (!handleAuthenticationBoundaryError(error)) {
+              setRequestError(errorMessage(error, INSTALLATION_ERROR_MESSAGE));
             }
           }
         });
@@ -230,11 +236,9 @@ export function App() {
         });
       } catch (error) {
         if (active && !controller.signal.aborted) {
-          if (requiresAuthentication(error)) {
-            requireAuthentication("The Operator session expired. Sign in again.");
-          } else {
+          if (!handleAuthenticationBoundaryError(error)) {
             setConnection("disconnected");
-            setRequestError(errorMessage(error));
+            setRequestError(errorMessage(error, INSTALLATION_ERROR_MESSAGE));
           }
         }
       }
@@ -245,7 +249,7 @@ export function App() {
       active = false;
       controller.abort();
     };
-  }, [online, reloadGeneration, requireAuthentication, session]);
+  }, [handleAuthenticationBoundaryError, online, reloadGeneration, session]);
 
   const handleLogin = async (command: LoginCommand): Promise<void> => {
     const controller = new AbortController();
@@ -259,7 +263,7 @@ export function App() {
       setAnnouncement("Operator authenticated. Reading the Kestrel Installation.");
     } catch (error) {
       if (!controller.signal.aborted) {
-        setLoginError(authenticationErrorMessage(error));
+        setLoginError(errorMessage(error, SESSION_ERROR_MESSAGE));
       }
     } finally {
       if (loginController.current === controller) {
@@ -282,10 +286,8 @@ export function App() {
       setAnnouncement("Diagnostic queued.");
     } catch (error) {
       if (!controller.signal.aborted) {
-        if (requiresAuthentication(error)) {
-          requireAuthentication("The Operator session expired. Sign in again.");
-        } else {
-          setRequestError(errorMessage(error));
+        if (!handleAuthenticationBoundaryError(error)) {
+          setRequestError(errorMessage(error, INSTALLATION_ERROR_MESSAGE));
           setAnnouncement("The diagnostic request failed.");
         }
       }

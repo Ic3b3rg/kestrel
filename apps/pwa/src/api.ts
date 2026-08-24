@@ -105,7 +105,7 @@ export async function fetchSession(signal?: AbortSignal): Promise<Session> {
 
 export async function loginOperator(command: LoginCommand, signal?: AbortSignal): Promise<Session> {
   const validated = LoginCommandSchema.parse(command);
-  const response = await fetch("/api/v1/session", {
+  const response = await fetch("/auth/login", {
     body: JSON.stringify(validated),
     credentials: "same-origin",
     headers: {

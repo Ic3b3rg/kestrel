@@ -134,7 +134,7 @@ describe("PWA API client", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      "/api/v1/session",
+      "/auth/login",
       expect.objectContaining({
         body: JSON.stringify({
           username: "operator",

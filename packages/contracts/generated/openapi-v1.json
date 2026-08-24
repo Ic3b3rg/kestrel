@@ -770,6 +770,16 @@
               }
             },
             "description": "Generated OpenAPI document"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Operator authentication is required"
           }
         }
       }
@@ -799,7 +809,9 @@
             "description": "Operator authentication is required"
           }
         }
-      },
+      }
+    },
+    "/auth/login": {
       "post": {
         "operationId": "createOperatorSession",
         "requestBody": {

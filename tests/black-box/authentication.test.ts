@@ -17,7 +17,7 @@ async function login(
   stack: RunningStack,
   command: { password: string; username: string },
 ): Promise<Response> {
-  return fetch(`${stack.apiUrl}/api/v1/session`, {
+  return fetch(`${stack.apiUrl}/auth/login`, {
     body: JSON.stringify(command),
     headers: { "Content-Type": "application/json" },
     method: "POST",
@@ -90,12 +90,14 @@ describe("sole Operator authentication", () => {
     `);
   });
 
-  it("keeps only the documented health, contract, and PWA surfaces public", async () => {
+  it("keeps only the documented login, health, and PWA surfaces public", async () => {
     expect(stack).toBeDefined();
     const runningStack = stack as RunningStack;
     const protectedResponses = await Promise.all([
       fetch(`${runningStack.apiUrl}/api/v1/session`),
       fetch(`${runningStack.apiUrl}/api/v1/installation`),
+      fetch(`${runningStack.apiUrl}/api/v1/openapi.json`),
+      fetch(`${runningStack.apiUrl}/future-product`),
       fetch(`${runningStack.apiUrl}/api/v1/events`, {
         headers: { Accept: "text/event-stream" },
       }),
@@ -108,6 +110,7 @@ describe("sole Operator authentication", () => {
 
     for (const response of protectedResponses) {
       expect(response.status).toBe(401);
+      expect(response.headers.get("cache-control")).toBe("no-store");
       expect(ApiErrorSchema.parse(await response.json())).toMatchObject({
         code: "AUTHENTICATION_REQUIRED",
       });
@@ -115,10 +118,18 @@ describe("sole Operator authentication", () => {
 
     const publicResponses = await Promise.all([
       fetch(`${runningStack.apiUrl}/health/live`),
-      fetch(`${runningStack.apiUrl}/api/v1/openapi.json`),
+      fetch(`${runningStack.apiUrl}/`),
+      fetch(`${runningStack.apiUrl}/favicon.svg`),
       fetch(runningStack.pwaUrl),
     ]);
-    expect(publicResponses.map((response) => response.status)).toEqual([200, 200, 200]);
+    expect(publicResponses.map((response) => response.status)).toEqual([200, 200, 200, 200]);
+
+    const publicLogin = await login(runningStack, credentials);
+    expect(publicLogin.status).toBe(401);
+    expect(publicLogin.headers.get("cache-control")).toBe("no-store");
+    expect(ApiErrorSchema.parse(await publicLogin.json())).toMatchObject({
+      code: "AUTHENTICATION_FAILED",
+    });
   });
 
   it("bootstraps once on the host and authenticates through a host-only cookie", async () => {

@@ -32,7 +32,7 @@ export function registerSessionRoutes(
   );
 
   app.post(
-    "/api/v1/session",
+    "/auth/login",
     {
       schema: {
         body: jsonSchemaForEmbedding(loginCommandJsonSchema),

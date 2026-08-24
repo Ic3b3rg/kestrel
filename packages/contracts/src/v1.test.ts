@@ -137,6 +137,7 @@ describe("V1 public contracts", () => {
     expect(openApiDocument).toMatchObject({
       openapi: "3.1.1",
       paths: {
+        "/auth/login": {},
         "/api/v1/session": {},
         "/api/v1/installation": {},
         "/api/v1/installation/diagnostics": {},
@@ -148,9 +149,16 @@ describe("V1 public contracts", () => {
         "/api/v1/events": { get: { responses: { "401": {} } } },
         "/api/v1/installation": { get: { responses: { "401": {} } } },
         "/api/v1/installation/diagnostics": { post: { responses: { "401": {} } } },
+        "/api/v1/openapi.json": { get: { responses: { "401": {} } } },
         "/api/v1/session": { get: { responses: { "401": {} } } },
       },
     });
+    const paths = openApiDocument["paths"];
+    if (typeof paths !== "object" || paths === null || Array.isArray(paths)) {
+      throw new Error("OpenAPI paths must be an object");
+    }
+    expect(paths["/auth/login"]).toHaveProperty("post");
+    expect(paths["/api/v1/session"]).not.toHaveProperty("post");
 
     const first = serializeJson(openApiDocument);
     expect(serializeJson(openApiDocument)).toBe(first);

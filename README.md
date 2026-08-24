@@ -70,15 +70,16 @@ Useful endpoints on port 3000:
 
 - `/health/live` — process liveness;
 - `/health/ready` — database-backed readiness;
-- `/api/v1/session` — Operator login and current session;
+- `/auth/login` — Operator login;
+- `/api/v1/session` — current authenticated session;
 - `/api/v1/installation` — authoritative snapshot;
 - `/api/v1/events` — replayable SSE stream;
 - `/api/v1/openapi.json` — generated OpenAPI 3.1 contract.
 
-Health checks, the OpenAPI document, and the PWA shell are public; all other API reads and commands
-require the Operator session. Application and worker logs are structured JSON. Installation,
-diagnostic, and successful-login Operator identifiers appear in logs; passwords, session tokens,
-database credentials, and request bodies do not.
+Health checks, the login endpoint, and the PWA shell are public; all API reads and commands,
+including the OpenAPI document, require the Operator session. Application and worker logs are
+structured JSON. Installation, diagnostic, and successful-login Operator identifiers appear in logs;
+passwords, session tokens, database credentials, and request bodies do not.
 
 ## Verification
 

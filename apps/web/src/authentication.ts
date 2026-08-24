@@ -10,13 +10,31 @@ declare module "fastify" {
   }
 }
 
+const PUBLIC_READ_PATHS = new Set([
+  "/",
+  "/favicon.svg",
+  "/health/live",
+  "/health/ready",
+  "/icon-192.svg",
+  "/icon-512.svg",
+  "/index.html",
+  "/manifest.webmanifest",
+  "/maskable-icon.svg",
+  "/registerSW.js",
+  "/sw.js",
+]);
+const HASHED_PWA_ASSET_PATH = /^\/assets\/[A-Za-z0-9][A-Za-z0-9._-]*$/u;
+const WORKBOX_ASSET_PATH = /^\/workbox-[A-Za-z0-9_-]+\.js$/u;
+
 function isPublicRequest(method: string, url: string): boolean {
-  if (!url.startsWith("/api/")) {
+  if (method === "POST" && url === "/auth/login") {
     return true;
   }
+  if (method !== "GET" && method !== "HEAD") {
+    return false;
+  }
   return (
-    (method === "POST" && url === "/api/v1/session") ||
-    (method === "GET" && url === "/api/v1/openapi.json")
+    PUBLIC_READ_PATHS.has(url) || HASHED_PWA_ASSET_PATH.test(url) || WORKBOX_ASSET_PATH.test(url)
   );
 }
 
@@ -39,13 +57,16 @@ export function registerAuthentication(app: FastifyInstance, signingKey: Buffer)
         // Invalid, tampered, and expired tokens all share the same public response.
       }
     }
-    void reply.code(401).send(
-      ApiErrorSchema.parse({
-        schemaVersion: 1,
-        code: "AUTHENTICATION_REQUIRED",
-        message: "Operator authentication is required",
-        correlationId: request.id,
-      }),
-    );
+    void reply
+      .header("Cache-Control", "no-store")
+      .code(401)
+      .send(
+        ApiErrorSchema.parse({
+          schemaVersion: 1,
+          code: "AUTHENTICATION_REQUIRED",
+          message: "Operator authentication is required",
+          correlationId: request.id,
+        }),
+      );
   });
 }

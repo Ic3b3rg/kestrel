@@ -47,6 +47,27 @@ describe("web error and readiness boundaries", () => {
     expect(ApiErrorSchema.parse(response.json())).toMatchObject({ code: "INVALID_REQUEST" });
   });
 
+  it("limits anonymous access to the specified login route", async () => {
+    const login = await app.inject({
+      method: "POST",
+      payload: { password: "correct horse battery staple", username: "operator" },
+      url: "/auth/login",
+    });
+    const openApi = await app.inject({ method: "GET", url: "/api/v1/openapi.json" });
+    const unknownProductRoute = await app.inject({ method: "GET", url: "/future-product" });
+
+    expect(login.statusCode).toBe(503);
+    expect(ApiErrorSchema.parse(login.json())).toMatchObject({ code: "SERVICE_UNAVAILABLE" });
+    expect(openApi.statusCode).toBe(401);
+    expect(ApiErrorSchema.parse(openApi.json())).toMatchObject({
+      code: "AUTHENTICATION_REQUIRED",
+    });
+    expect(unknownProductRoute.statusCode).toBe(401);
+    expect(ApiErrorSchema.parse(unknownProductRoute.json())).toMatchObject({
+      code: "AUTHENTICATION_REQUIRED",
+    });
+  });
+
   it("preserves payload-too-large status in the versioned error", async () => {
     const response = await app.inject({
       headers: { ...authenticatedHeaders, "content-type": "application/json" },
