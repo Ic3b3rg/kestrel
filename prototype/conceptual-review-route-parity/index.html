@@ -1,0 +1,872 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kestrel — prototipo di parità del Conceptual Review</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f7f5ef;
+      --panel: #fffefa;
+      --ink: #17211e;
+      --muted: #5d6a66;
+      --line: #d8ddd7;
+      --accent: #0e6a55;
+      --accent-soft: #dceee8;
+      --warn: #8a5800;
+      --warn-soft: #fff0c7;
+      --danger: #9b2c2c;
+      --danger-soft: #fde2df;
+      --info: #285f89;
+      --info-soft: #e2eef8;
+      --shadow: 0 14px 38px rgba(28, 41, 36, 0.08);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      line-height: 1.5;
+    }
+
+    button, select { font: inherit; }
+
+    button {
+      min-height: 44px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--panel);
+      color: var(--ink);
+      padding: 0.65rem 0.9rem;
+      cursor: pointer;
+      text-align: left;
+    }
+
+    button:hover:not(:disabled) { border-color: var(--accent); }
+    button:focus-visible, select:focus-visible {
+      outline: 3px solid rgba(14, 106, 85, 0.26);
+      outline-offset: 2px;
+    }
+    button:disabled { cursor: not-allowed; opacity: 0.48; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: white; }
+    button.soft { background: var(--accent-soft); border-color: #b7d8ce; }
+    button.warning { background: var(--warn-soft); border-color: #e1c277; }
+    button.danger { background: var(--danger-soft); border-color: #e7aca6; }
+
+    .shell { width: min(1440px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0 64px; }
+    .eyebrow {
+      color: var(--accent);
+      font-size: 0.77rem;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+    h1 { max-width: 900px; margin: 0.45rem 0 0.8rem; font-size: clamp(2rem, 5vw, 4.2rem); line-height: 1.02; }
+    h2 { margin: 0; font-size: 1.3rem; }
+    h3 { margin: 0; font-size: 1rem; }
+    p { margin: 0.5rem 0; }
+    .lede { max-width: 1000px; font-size: 1.06rem; color: #34413d; }
+    .scope-note {
+      margin-top: 18px;
+      padding: 14px 16px;
+      border-left: 4px solid var(--warn);
+      border-radius: 0 10px 10px 0;
+      background: var(--warn-soft);
+      max-width: 1100px;
+    }
+
+    .layout { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 20px; margin-top: 26px; align-items: start; }
+    .stack { display: grid; gap: 18px; }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      padding: 18px;
+    }
+    .panel-head { display: flex; align-items: start; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+    .panel-head p { color: var(--muted); font-size: 0.92rem; }
+
+    .verdict {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 12px;
+      align-items: center;
+      padding: 14px;
+      border-radius: 12px;
+      background: var(--info-soft);
+      border: 1px solid #bdd4e5;
+    }
+    .verdict[data-tone="success"] { background: var(--accent-soft); border-color: #b7d8ce; }
+    .verdict[data-tone="warning"] { background: var(--warn-soft); border-color: #e1c277; }
+    .verdict[data-tone="danger"] { background: var(--danger-soft); border-color: #e7aca6; }
+    .verdict-mark { font-size: 1.5rem; line-height: 1; }
+    .verdict strong { display: block; }
+    .verdict small { display: block; color: #47534f; margin-top: 2px; }
+
+    .revision-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .revision-card { min-height: 122px; }
+    .revision-card[aria-pressed="true"] { border: 2px solid var(--accent); background: var(--accent-soft); }
+    .revision-card strong, .revision-card small { display: block; }
+    .revision-card small { margin-top: 5px; color: var(--muted); }
+    .revision-meta { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 14px; color: var(--muted); font-size: 0.88rem; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.9em; }
+
+    .route-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .route-card { border: 1px solid var(--line); border-radius: 14px; padding: 15px; background: #fff; min-width: 0; }
+    .route-head { display: flex; align-items: start; justify-content: space-between; gap: 10px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+    .route-head p { color: var(--muted); font-size: 0.85rem; }
+    .badge { display: inline-flex; align-items: center; min-height: 28px; border-radius: 999px; padding: 3px 9px; font-size: 0.76rem; font-weight: 750; background: #eef1ef; white-space: nowrap; }
+    .badge.success { background: var(--accent-soft); color: #075340; }
+    .badge.warning { background: var(--warn-soft); color: #6f4500; }
+    .badge.danger { background: var(--danger-soft); color: #812121; }
+    .badge.info { background: var(--info-soft); color: #244f70; }
+
+    .facts { display: grid; grid-template-columns: 118px 1fr; gap: 7px 10px; margin: 13px 0; font-size: 0.87rem; }
+    .facts dt { color: var(--muted); }
+    .facts dd { margin: 0; overflow-wrap: anywhere; }
+    .check-list { display: grid; gap: 7px; margin: 12px 0 0; padding: 0; list-style: none; }
+    .check-list li { display: grid; grid-template-columns: 22px 1fr auto; gap: 7px; align-items: start; font-size: 0.86rem; }
+    .check-list .detail { color: var(--muted); font-size: 0.78rem; text-align: right; }
+    .empty { color: var(--muted); padding: 16px 0 6px; font-size: 0.9rem; }
+    .limitation { margin-top: 11px; padding: 10px; border-radius: 9px; background: #f2f3f1; font-size: 0.82rem; color: #46524e; }
+
+    .matrix { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+    .matrix th, .matrix td { padding: 9px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    .matrix th { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .matrix td:not(:first-child), .matrix th:not(:first-child) { text-align: center; }
+
+    .controls { position: sticky; top: 14px; }
+    .control-group + .control-group { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
+    .control-group h3 { margin-bottom: 8px; }
+    .control-group p { color: var(--muted); font-size: 0.82rem; }
+    .button-stack { display: grid; gap: 7px; }
+    .button-row { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+
+    .guide-tabs { display: flex; gap: 7px; flex-wrap: wrap; border-bottom: 1px solid var(--line); padding-bottom: 12px; }
+    .guide-tabs button { min-height: 38px; padding: 0.5rem 0.75rem; }
+    .guide-tabs button[aria-selected="true"] { background: var(--ink); color: white; border-color: var(--ink); }
+    .guide-copy { margin: 14px 0; color: #34413d; }
+    .steps { display: grid; gap: 8px; counter-reset: guide-step; }
+    .step { display: grid; grid-template-columns: 30px 1fr auto; gap: 10px; align-items: center; width: 100%; }
+    .step::before { counter-increment: guide-step; content: counter(guide-step); display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: #e9ece9; font-weight: 750; }
+    .step.done { background: var(--accent-soft); }
+    .step.done::before { content: "✓"; background: var(--accent); color: white; }
+    .step.current { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+    .step small { color: var(--muted); }
+
+    .log { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+    .log li { padding: 9px 10px; border-radius: 9px; background: #f2f3f1; font-size: 0.83rem; }
+    .log strong { display: block; font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+
+    .decision-box { border: 2px solid var(--accent); background: #f1faf7; }
+    .decision-box ol { margin: 10px 0 0; padding-left: 1.3rem; }
+    .decision-box li + li { margin-top: 7px; }
+    footer { margin-top: 24px; color: var(--muted); font-size: 0.82rem; }
+
+    @media (max-width: 1060px) {
+      .layout { grid-template-columns: 1fr; }
+      .controls { position: static; }
+      .control-columns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+      .control-group + .control-group { margin: 0; padding: 0; border: 0; }
+    }
+    @media (max-width: 760px) {
+      .shell { width: min(100% - 20px, 1440px); padding-top: 20px; }
+      .revision-grid, .route-grid, .control-columns { grid-template-columns: 1fr; }
+      .panel { padding: 14px; border-radius: 13px; }
+      .route-grid { gap: 10px; }
+      .facts { grid-template-columns: 96px 1fr; }
+      .matrix { font-size: 0.78rem; }
+      .matrix th, .matrix td { padding: 8px 4px; }
+      .step { grid-template-columns: 28px 1fr; }
+      .step small { grid-column: 2; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div class="eyebrow">Prototipo logico usa-e-getta · Wayfinder</div>
+      <h1>Una review, due vie d’accesso</h1>
+      <p class="lede"><strong>Domanda:</strong> subscription-backed ACP e accesso API diretto possono produrre lo stesso contratto minimo di Conceptual Review—Intent, Graph, Evidence, Coverage, Findings, provenienza e contenimento—senza nascondere capacità perse? Se no, quale esatto profilo deve risultare indisponibile?</p>
+      <div class="scope-note"><strong>Confine della prova.</strong> I tre PR e le revisioni base/head sono reali; contenuti, conteggi e risultati di review qui sotto sono dati illustrativi per esercitare il contratto. Questo file non esegue modelli e non certifica alcun profilo. Lo snapshot “evidenza attuale” riflette invece i limiti già documentati nel repository.</div>
+    </header>
+
+    <div class="layout">
+      <div class="stack">
+        <section class="panel" aria-labelledby="revision-title">
+          <div class="panel-head">
+            <div>
+              <h2 id="revision-title">1. Scegli una Review Revision esatta</h2>
+              <p>Ogni cambio di caso azzera le esecuzioni: una review non può essere ritargettata.</p>
+            </div>
+            <span class="badge info" id="revision-kind">—</span>
+          </div>
+          <div class="revision-grid" id="revision-cards"></div>
+          <div class="revision-meta" id="revision-meta"></div>
+        </section>
+
+        <section class="panel" aria-labelledby="state-title">
+          <div class="panel-head">
+            <div>
+              <h2 id="state-title">2. Stato completo del confronto</h2>
+              <p>Le due route possono produrre testi diversi; ciò che deve coincidere è il contratto e la soglia di fiducia.</p>
+            </div>
+          </div>
+          <div class="verdict" id="verdict" data-tone="info" role="status" aria-live="polite"></div>
+          <div class="route-grid" id="route-grid" style="margin-top: 14px"></div>
+        </section>
+
+        <section class="panel" aria-labelledby="matrix-title">
+          <div class="panel-head">
+            <div>
+              <h2 id="matrix-title">3. Matrice del contratto pubblicabile</h2>
+              <p>“Presente” non basta: ogni parte deve essere validata e legata alla revisione congelata.</p>
+            </div>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="matrix">
+              <thead><tr><th>Obbligo</th><th>Subscription ACP</th><th>API diretta</th><th>Parità</th></tr></thead>
+              <tbody id="matrix-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel" aria-labelledby="guide-title">
+          <div class="panel-head">
+            <div>
+              <h2 id="guide-title">Walkthrough guidati</h2>
+              <p>Ogni percorso riparte da uno stato noto e usa le stesse azioni del gioco libero.</p>
+            </div>
+          </div>
+          <div class="guide-tabs" id="guide-tabs" role="tablist" aria-label="Scenari guidati"></div>
+          <div id="guide-content"></div>
+        </section>
+
+        <section class="panel decision-box" aria-labelledby="decision-title">
+          <h2 id="decision-title">Decisioni che il prototipo deve far emergere</h2>
+          <ol>
+            <li>Parità significa stesso <em>contratto semantico e di fiducia</em>, non testo, Graph o Finding identici?</li>
+            <li>Un gap di capability opzionale, nominato in Coverage, può produrre una review Partial senza rompere la parità?</li>
+            <li>Un fallimento di identità, provenienza, Evidence minima o contenimento deve rendere indisponibile l’esatto profilo, senza fallback?</li>
+            <li>I due percorsi restano entrambi nel V1 come obiettivi release-gated, anche se lo snapshot attuale non certifica ancora nessuno dei due profili?</li>
+          </ol>
+        </section>
+
+        <section class="panel" aria-labelledby="log-title">
+          <div class="panel-head"><div><h2 id="log-title">Ultimi cambiamenti di stato</h2><p>Le azioni fuori sequenza sono rifiutate esplicitamente.</p></div></div>
+          <ul class="log" id="event-log"></ul>
+        </section>
+      </div>
+
+      <aside class="panel controls" aria-labelledby="controls-title">
+        <div class="panel-head"><div><h2 id="controls-title">Gioco libero</h2><p>Premi i comandi in qualunque ordine.</p></div></div>
+        <div class="control-columns">
+          <div class="control-group">
+            <h3>Flusso</h3>
+            <div class="button-stack">
+              <button class="primary" data-action="PREPARE_BOTH">Congela input e prepara</button>
+              <div class="button-row">
+                <button data-action="RUN_ROUTE" data-route="subscription">Analizza con ACP</button>
+                <button data-action="RUN_ROUTE" data-route="api">Analizza con API</button>
+              </div>
+              <button class="soft" data-action="VALIDATE_BOTH">Valida entrambi i contratti</button>
+              <button class="soft" data-action="PUBLISH_BOTH">Tenta pubblicazione atomica</button>
+              <button class="primary" data-action="COMPARE">Confronta le route</button>
+              <button data-action="RESET">Azzera il caso</button>
+            </div>
+          </div>
+          <div class="control-group">
+            <h3>Gap dichiarabili</h3>
+            <p>Non eliminano parti del contratto minimo.</p>
+            <div class="button-stack">
+              <button class="warning" data-action="SET_FAULT" data-route="api" data-fault="optional_verification">API: analisi simbolica extra assente</button>
+              <button class="warning" data-action="SET_FAULT" data-route="subscription" data-fault="usage_limit">ACP: quota esaurita</button>
+            </div>
+          </div>
+          <div class="control-group">
+            <h3>Perdite non ammesse</h3>
+            <p>Devono fallire chiuso, anche se il modello ha risposto.</p>
+            <div class="button-stack">
+              <button class="danger" data-action="SET_FAULT" data-route="subscription" data-fault="unknown_containment">ACP: contenimento non provato</button>
+              <button class="danger" data-action="SET_FAULT" data-route="api" data-fault="missing_provenance">API: provenienza incompleta</button>
+              <button class="danger" data-action="LOAD_CURRENT_EVIDENCE">Carica evidenza attuale</button>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <footer>Artefatto di pianificazione, non codice di prodotto. Nessuna persistenza, rete, credenziale o chiamata modello.</footer>
+  </main>
+
+  <script>
+    const ContractModel = (() => {
+      const ROUTES = {
+        subscription: {
+          name: "Subscription ACP",
+          short: "ACP",
+          profile: "ACP v1 → codex-acp 1.6.2 → App Server 0.148.0",
+          access: "ChatGPT OAuth/subscription",
+        },
+        api: {
+          name: "API diretta",
+          short: "API",
+          profile: "kestrel.model-inference/v1 → OpenAI Responses",
+          access: "Project-scoped API key",
+        },
+      };
+
+      const REVISIONS = {
+        small: {
+          name: "Comportamento compatto",
+          repo: "cli/cli",
+          number: 14094,
+          title: "Add `gh uptime` to report GitHub service status",
+          base: "83c6321b8faba2ec6202af70b1cc0e2ed936495e",
+          head: "e5c604576acb2c4991fe22329f28dc52d8cfee3d",
+          stats: "4 file · +575 / −0",
+          graphSteps: 4,
+          evidenceCount: 12,
+          outcomes: { mapped: 3, total: 3 },
+          findingCount: 0,
+          concernCount: 1,
+          emptyGraphEstablished: false,
+        },
+        large: {
+          name: "Cambio trasversale",
+          repo: "cli/cli",
+          number: 14104,
+          title: "Honour api_host across the CLI",
+          base: "9fc0f70e0ef97446de9166febce546e955675bc3",
+          head: "9869df6e5acdab29cecbaae887f57afb51d7c3cf",
+          stats: "66 file · +3620 / −491",
+          graphSteps: 7,
+          evidenceCount: 31,
+          outcomes: { mapped: 4, total: 6 },
+          findingCount: 1,
+          concernCount: 2,
+          emptyGraphEstablished: false,
+        },
+        docs: {
+          name: "Solo documentazione",
+          repo: "github/docs",
+          number: 40756,
+          title: "Remove reference to rebase-strategy",
+          base: "e0202dab8cb4eae6bb0cb94e148f6cfe5bbba79d",
+          head: "78e0b56299562ca375d8ce1fe29edafb1d3db9d4",
+          stats: "1 file · +0 / −1",
+          graphSteps: 0,
+          evidenceCount: 3,
+          outcomes: { mapped: 1, total: 1 },
+          findingCount: 0,
+          concernCount: 0,
+          emptyGraphEstablished: true,
+        },
+      };
+
+      const CONTRACT = [
+        { key: "revision", label: "Review Revision esatta" },
+        { key: "intent", label: "Change Intent congelato" },
+        { key: "graph", label: "Graph o astensione provata" },
+        { key: "evidence", label: "Evidence risolvibile" },
+        { key: "coverage", label: "Coverage e gap" },
+        { key: "findings", label: "Findings / concerns" },
+        { key: "provenance", label: "Provenienza completa" },
+        { key: "containment", label: "Contenimento verificato" },
+        { key: "noFallback", label: "Route congelata, nessun fallback" },
+      ];
+
+      const routeInitial = () => ({
+        phase: "non avviata",
+        availability: "da verificare",
+        fault: null,
+        artifact: null,
+        validation: null,
+        outcome: null,
+        published: false,
+      });
+
+      const initialState = (revisionKey = "small") => ({
+        revisionKey,
+        frozen: false,
+        routes: { subscription: routeInitial(), api: routeInitial() },
+        comparison: {
+          code: "not_run",
+          title: "Confronto non ancora eseguito",
+          detail: "Congela gli input, percorri entrambe le route, valida e tenta la pubblicazione.",
+          tone: "info",
+        },
+        currentEvidenceLoaded: false,
+        history: [{ kind: "stato", message: "Caso iniziale caricato; nessun input congelato." }],
+      });
+
+      const clone = value => JSON.parse(JSON.stringify(value));
+      const log = (state, kind, message) => {
+        state.history.unshift({ kind, message });
+        state.history = state.history.slice(0, 8);
+      };
+      const reject = (state, message) => {
+        log(state, "rifiutata", message);
+        return state;
+      };
+      const clearRuns = state => {
+        state.frozen = false;
+        for (const routeKey of Object.keys(ROUTES)) {
+          const fault = state.routes[routeKey].fault;
+          state.routes[routeKey] = routeInitial();
+          state.routes[routeKey].fault = fault;
+        }
+        state.comparison = initialState(state.revisionKey).comparison;
+      };
+
+      const buildArtifact = (revision, routeKey, fault) => {
+        const optionalGap = fault?.kind === "optional_verification";
+        const containmentUnknown = fault?.kind === "unknown_containment";
+        const missingProvenance = fault?.kind === "missing_provenance";
+        const profileEvidenceMissing = fault?.kind === "profile_evidence_missing";
+        const baseGap = revision.outcomes.mapped < revision.outcomes.total;
+        const gaps = [];
+        if (baseGap) gaps.push(`${revision.outcomes.total - revision.outcomes.mapped} esiti di Intent restano Unclear`);
+        if (optionalGap) gaps.push("Analisi simbolica approfondita opzionale non disponibile su questa route");
+        return {
+          revision: { ok: true, detail: `${revision.base.slice(0, 7)} → ${revision.head.slice(0, 7)}` },
+          intent: { ok: true, detail: "versione 3 · fonte + conferma Operator" },
+          graph: {
+            ok: revision.graphSteps > 0 || revision.emptyGraphEstablished,
+            detail: revision.graphSteps > 0 ? `${revision.graphSteps} Behavioral Steps` : "vuoto: no behavioral delta provato",
+          },
+          evidence: { ok: true, detail: `${revision.evidenceCount} riferimenti exact-revision` },
+          coverage: {
+            ok: true,
+            detail: gaps.length ? `Partial · ${gaps.join("; ")}` : `Complete · ${revision.outcomes.mapped}/${revision.outcomes.total} esiti tracciati`,
+            gaps,
+          },
+          findings: {
+            ok: true,
+            detail: `${revision.findingCount} Finding · ${revision.concernCount} Unverified Concern`,
+          },
+          provenance: {
+            ok: !missingProvenance && !profileEvidenceMissing,
+            detail: missingProvenance || profileEvidenceMissing ? "profilo/call chain non dimostrato" : `${ROUTES[routeKey].short} · capability + request lineage`,
+          },
+          containment: {
+            ok: !containmentUnknown && !profileEvidenceMissing,
+            detail: containmentUnknown || profileEvidenceMissing ? "autorità effettiva non dimostrata" : "revision read-only · credenziali confinate · egress negato",
+          },
+          noFallback: { ok: true, detail: `${ROUTES[routeKey].short} resta la route congelata` },
+          contentVariant: routeKey === "subscription" ? "narrazione agent-runtime" : "sintesi orchestrata a capability",
+          optionalGap,
+        };
+      };
+
+      const validateRoute = (route, routeKey) => {
+        if (!route.artifact) return { route, changed: false, message: `${ROUTES[routeKey].short}: nessun output da validare.` };
+        const missing = CONTRACT.filter(item => !route.artifact[item.key]?.ok).map(item => item.label);
+        if (missing.length) {
+          route.validation = { pass: false, missing };
+          route.availability = "profilo indisponibile";
+          route.phase = "validazione fallita";
+          route.outcome = "nessuna review";
+          return { route, changed: true, message: `${ROUTES[routeKey].short}: fallimento chiuso (${missing.join(", ")}).` };
+        }
+        route.validation = { pass: true, missing: [] };
+        route.availability = "eleggibile";
+        route.phase = "validata";
+        route.outcome = route.artifact.coverage.gaps.length ? "Partial" : "Complete";
+        return { route, changed: true, message: `${ROUTES[routeKey].short}: contratto valido, esito ${route.outcome}.` };
+      };
+
+      const compare = state => {
+        const a = state.routes.subscription;
+        const b = state.routes.api;
+        if (a.availability === "limite raggiunto") {
+          return {
+            code: "waiting_no_fallback", tone: "warning",
+            title: "La subscription è sospesa; nessun fallback automatico",
+            detail: "La route API non prende il posto di ACP. Serve recupero sulla stessa route o una nuova scelta esplicita dell’Operator.",
+          };
+        }
+        const unavailable = Object.entries(state.routes).filter(([, route]) => route.availability === "profilo indisponibile");
+        if (unavailable.length) {
+          return {
+            code: "profile_unavailable", tone: "danger",
+            title: `${unavailable.map(([key]) => ROUTES[key].name).join(" e ")}: profilo indisponibile`,
+            detail: "Un output generato non può essere pubblicato quando manca un obbligo minimo. L’altra route non viene selezionata silenziosamente.",
+          };
+        }
+        if (!a.published || !b.published) {
+          return {
+            code: "incomplete", tone: "info",
+            title: "Confronto incompleto",
+            detail: "Entrambe le route devono arrivare a una pubblicazione valida, oppure a un’indisponibilità esplicita.",
+          };
+        }
+        const allContractEqual = CONTRACT.every(item => a.artifact[item.key].ok === b.artifact[item.key].ok);
+        if (!allContractEqual) {
+          return { code: "contract_mismatch", tone: "danger", title: "Contratto non equivalente", detail: "Una route ha perso una parte obbligatoria: il suo profilo deve essere indisponibile." };
+        }
+        const hasPartial = a.outcome === "Partial" || b.outcome === "Partial";
+        return hasPartial
+          ? { code: "parity_disclosed_gap", tone: "success", title: "Stesso contratto, Coverage onestamente diversa", detail: "Il gap opzionale è nominato e il nucleo pubblicabile resta integro. La parità semantica regge; l’esito è Partial dove necessario." }
+          : { code: "parity", tone: "success", title: "Parità del contratto raggiunta", detail: "Le formulazioni possono differire, ma artifact, trust gate e semantica pubblicabile sono equivalenti." };
+      };
+
+      const transition = (current, action) => {
+        if (action.type === "RESET") return initialState(current.revisionKey);
+        if (action.type === "LOAD_SCENARIO") {
+          const next = initialState(action.revisionKey);
+          for (const [routeKey, fault] of Object.entries(action.faults || {})) next.routes[routeKey].fault = fault;
+          next.currentEvidenceLoaded = Boolean(action.currentEvidenceLoaded);
+          next.history = [{ kind: "scenario", message: action.message || "Scenario guidato caricato." }];
+          return next;
+        }
+
+        const state = clone(current);
+        if (action.type === "SELECT_REVISION") {
+          if (!REVISIONS[action.revisionKey]) return reject(state, "Revisione sconosciuta.");
+          const faults = {
+            subscription: state.routes.subscription.fault,
+            api: state.routes.api.fault,
+          };
+          const next = initialState(action.revisionKey);
+          next.routes.subscription.fault = faults.subscription;
+          next.routes.api.fault = faults.api;
+          log(next, "revisione", `Selezionata ${REVISIONS[action.revisionKey].repo}#${REVISIONS[action.revisionKey].number}; esecuzioni azzerate.`);
+          return next;
+        }
+        if (action.type === "SET_FAULT") {
+          if (state.frozen || Object.values(state.routes).some(route => route.artifact)) return reject(state, "Il profilo è già congelato: azzera prima di cambiare le condizioni.");
+          state.routes[action.route].fault = { kind: action.fault, label: action.label || action.fault };
+          log(state, "condizione", `${ROUTES[action.route].short}: impostato ${action.fault}.`);
+          return state;
+        }
+        if (action.type === "LOAD_CURRENT_EVIDENCE") {
+          if (state.frozen || Object.values(state.routes).some(route => route.artifact)) return reject(state, "Azzera prima di caricare un altro snapshot di profilo.");
+          state.routes.subscription.fault = {
+            kind: "profile_evidence_missing",
+            label: "App Server: tool boundary, retry, storage upstream e data policy non provati sul contratto stabile",
+          };
+          state.routes.api.fault = {
+            kind: "profile_evidence_missing",
+            label: "Responses API: prova live full-review, service account e data-policy attestation mancanti",
+          };
+          state.currentEvidenceLoaded = true;
+          log(state, "evidenza", "Caricato lo snapshot documentato: entrambi i profili candidati hanno gate di certificazione mancanti.");
+          return state;
+        }
+        if (action.type === "PREPARE_BOTH") {
+          if (state.frozen) return reject(state, "Gli input sono già congelati.");
+          state.frozen = true;
+          for (const route of Object.values(state.routes)) {
+            route.phase = "preparata";
+            route.availability = "in valutazione";
+          }
+          log(state, "freeze", "Congelati Review Revision, Change Intent v3, Analysis Configuration e route esplicite.");
+          return state;
+        }
+        if (action.type === "RUN_ROUTE") {
+          const route = state.routes[action.route];
+          if (!state.frozen) return reject(state, "Congela prima gli input del workflow.");
+          if (route.phase !== "preparata") return reject(state, `${ROUTES[action.route].short}: analisi consentita solo dallo stato preparata.`);
+          if (route.fault?.kind === "usage_limit") {
+            route.phase = "in attesa di azione";
+            route.availability = "limite raggiunto";
+            route.outcome = "sospesa";
+            log(state, "attesa", `${ROUTES[action.route].short}: quota esaurita; risorse rilasciate, nessun fallback API.`);
+            return state;
+          }
+          route.phase = "analizzata";
+          route.availability = "da validare";
+          route.artifact = buildArtifact(REVISIONS[state.revisionKey], action.route, route.fault);
+          log(state, "analisi", `${ROUTES[action.route].short}: output illustrativo prodotto; non è ancora pubblicabile.`);
+          return state;
+        }
+        if (action.type === "VALIDATE_BOTH") {
+          let changed = false;
+          for (const routeKey of Object.keys(ROUTES)) {
+            const result = validateRoute(state.routes[routeKey], routeKey);
+            state.routes[routeKey] = result.route;
+            if (result.changed) {
+              changed = true;
+              log(state, "validazione", result.message);
+            }
+          }
+          if (!changed) reject(state, "Nessuna route ha un output analizzato da validare.");
+          return state;
+        }
+        if (action.type === "PUBLISH_BOTH") {
+          let changed = false;
+          for (const routeKey of Object.keys(ROUTES)) {
+            const route = state.routes[routeKey];
+            if (route.validation?.pass && !route.published) {
+              route.published = true;
+              route.phase = "pubblicata";
+              changed = true;
+              log(state, "pubblicazione", `${ROUTES[routeKey].short}: ${route.outcome} pubblicata atomicamente.`);
+            }
+          }
+          if (!changed) reject(state, "Nessuna route validata è pronta per la pubblicazione.");
+          return state;
+        }
+        if (action.type === "COMPARE") {
+          state.comparison = compare(state);
+          log(state, "confronto", state.comparison.title);
+          return state;
+        }
+        return reject(state, `Azione sconosciuta: ${action.type}`);
+      };
+
+      return { ROUTES, REVISIONS, CONTRACT, initialState, transition };
+    })();
+
+    const GUIDES = {
+      parity: {
+        label: "Parità completa",
+        description: "Due profili ipoteticamente certificati analizzano la modifica compatta. Verifica che contenuto non identico possa rispettare lo stesso contratto.",
+        revisionKey: "small",
+        faults: {},
+        steps: [
+          ["Congela gli stessi input", { type: "PREPARE_BOTH" }],
+          ["Esegui la route subscription", { type: "RUN_ROUTE", route: "subscription" }],
+          ["Esegui la route API", { type: "RUN_ROUTE", route: "api" }],
+          ["Valida i contratti", { type: "VALIDATE_BOTH" }],
+          ["Pubblica atomicamente", { type: "PUBLISH_BOTH" }],
+          ["Confronta la semantica", { type: "COMPARE" }],
+        ],
+      },
+      partial: {
+        label: "Partial onesta",
+        description: "Sul cambio trasversale, la route API non offre un’analisi simbolica aggiuntiva oltre il minimo. Il gap deve restare visibile senza cancellare Graph, Evidence o Coverage.",
+        revisionKey: "large",
+        faults: { api: { kind: "optional_verification", label: "Analisi simbolica approfondita opzionale non disponibile" } },
+        steps: [
+          ["Congela gli stessi input", { type: "PREPARE_BOTH" }],
+          ["Esegui entrambe le route", { type: "RUN_ROUTE", route: "subscription" }],
+          ["Esegui la route con gap", { type: "RUN_ROUTE", route: "api" }],
+          ["Valida senza nascondere il gap", { type: "VALIDATE_BOTH" }],
+          ["Pubblica gli esiti", { type: "PUBLISH_BOTH" }],
+          ["Confronta contratto e Coverage", { type: "COMPARE" }],
+        ],
+      },
+      unavailable: {
+        label: "Fail closed",
+        description: "ACP genera un output, ma il contenimento effettivo non è provato. La validazione deve scartarlo e non trasferire automaticamente il lavoro all’API.",
+        revisionKey: "small",
+        faults: { subscription: { kind: "unknown_containment", label: "Contenimento non provato" } },
+        steps: [
+          ["Congela gli stessi input", { type: "PREPARE_BOTH" }],
+          ["Ottieni output da ACP", { type: "RUN_ROUTE", route: "subscription" }],
+          ["Ottieni output dall’API", { type: "RUN_ROUTE", route: "api" }],
+          ["Applica i trust gate", { type: "VALIDATE_BOTH" }],
+          ["Pubblica solo ciò che è eleggibile", { type: "PUBLISH_BOTH" }],
+          ["Conferma l’indisponibilità", { type: "COMPARE" }],
+        ],
+      },
+      abstain: {
+        label: "Graph vuoto valido",
+        description: "Una modifica solo documentale non deve indurre nessuna route a inventare comportamento. Il Graph vuoto è valido solo perché l’astensione è supportata da Evidence.",
+        revisionKey: "docs",
+        faults: {},
+        steps: [
+          ["Congela la revisione documentale", { type: "PREPARE_BOTH" }],
+          ["Analizza con ACP", { type: "RUN_ROUTE", route: "subscription" }],
+          ["Analizza con API", { type: "RUN_ROUTE", route: "api" }],
+          ["Valida l’astensione", { type: "VALIDATE_BOTH" }],
+          ["Pubblica senza Findings inventati", { type: "PUBLISH_BOTH" }],
+          ["Confronta le route", { type: "COMPARE" }],
+        ],
+      },
+      evidence: {
+        label: "Evidenza attuale",
+        description: "Usa i limiti già registrati: l’accesso subscription ha hard control non dimostrati sul contratto stabile; l’API diretta non ha ancora prova live e attestazioni. Generare output non basta.",
+        revisionKey: "small",
+        currentEvidenceLoaded: true,
+        faults: {
+          subscription: { kind: "profile_evidence_missing", label: "Hard control subscription non tutti dimostrati" },
+          api: { kind: "profile_evidence_missing", label: "Live capture e attestazioni API mancanti" },
+        },
+        steps: [
+          ["Congela i profili candidati", { type: "PREPARE_BOTH" }],
+          ["Prova la route subscription", { type: "RUN_ROUTE", route: "subscription" }],
+          ["Prova la route API", { type: "RUN_ROUTE", route: "api" }],
+          ["Applica la certificazione", { type: "VALIDATE_BOTH" }],
+          ["Verifica che nulla sia pubblicato", { type: "PUBLISH_BOTH" }],
+          ["Mostra il verdetto", { type: "COMPARE" }],
+        ],
+      },
+    };
+
+    let state = ContractModel.initialState();
+    let activeGuide = "parity";
+    let guideStep = -1;
+
+    const iconFor = value => value === true ? "✓" : value === false ? "×" : "·";
+    const toneForRoute = route => {
+      if (route.availability === "profilo indisponibile") return "danger";
+      if (route.availability === "limite raggiunto" || route.outcome === "Partial") return "warning";
+      if (route.published || route.validation?.pass) return "success";
+      return "info";
+    };
+    const statusForContract = (route, key) => {
+      if (!route.artifact) return { mark: "·", label: "non prodotto", ok: null };
+      const part = route.artifact[key];
+      return { mark: iconFor(part.ok), label: part.detail, ok: part.ok };
+    };
+
+    function renderRevisions() {
+      const revisions = ContractModel.REVISIONS;
+      document.getElementById("revision-cards").innerHTML = Object.entries(revisions).map(([key, revision]) => `
+        <button class="revision-card" data-revision="${key}" aria-pressed="${state.revisionKey === key}">
+          <strong>${revision.name}</strong>
+          <span>${revision.repo}#${revision.number}</span>
+          <small>${revision.title}</small>
+        </button>`).join("");
+      const current = revisions[state.revisionKey];
+      document.getElementById("revision-kind").textContent = current.name;
+      document.getElementById("revision-meta").innerHTML = `
+        <span><strong>Base</strong> <code>${current.base}</code></span>
+        <span><strong>Head</strong> <code>${current.head}</code></span>
+        <span><strong>Dimensione</strong> ${current.stats}</span>
+        <span><strong>Input</strong> ${state.frozen ? "congelati" : "non congelati"}</span>`;
+    }
+
+    function renderRoute(routeKey) {
+      const info = ContractModel.ROUTES[routeKey];
+      const route = state.routes[routeKey];
+      const tone = toneForRoute(route);
+      const fault = route.fault ? `<div class="limitation"><strong>Condizione:</strong> ${route.fault.label}</div>` : "";
+      const contract = route.artifact
+        ? `<ul class="check-list">${ContractModel.CONTRACT.map(item => {
+            const status = statusForContract(route, item.key);
+            return `<li><strong aria-hidden="true">${status.mark}</strong><span>${item.label}</span><span class="detail">${status.label}</span></li>`;
+          }).join("")}</ul>
+          <div class="limitation"><strong>Variante di contenuto:</strong> ${route.artifact.contentVariant}. La parità non richiede uguaglianza byte-per-byte.</div>`
+        : `<div class="empty">Nessun artifact prodotto. La generazione precede sempre la validazione locale e i trust gate.</div>`;
+      return `
+        <article class="route-card">
+          <div class="route-head">
+            <div><h3>${info.name}</h3><p>${info.access}</p></div>
+            <span class="badge ${tone}">${route.phase}</span>
+          </div>
+          <dl class="facts">
+            <dt>Profilo</dt><dd>${info.profile}</dd>
+            <dt>Disponibilità</dt><dd>${route.availability}</dd>
+            <dt>Esito</dt><dd>${route.outcome || "—"}</dd>
+            <dt>Pubblicato</dt><dd>${route.published ? "sì, atomicamente" : "no"}</dd>
+          </dl>
+          ${fault}
+          ${contract}
+        </article>`;
+    }
+
+    function renderState() {
+      const verdict = state.comparison;
+      document.getElementById("verdict").dataset.tone = verdict.tone;
+      document.getElementById("verdict").innerHTML = `<span class="verdict-mark" aria-hidden="true">${verdict.tone === "success" ? "✓" : verdict.tone === "danger" ? "×" : verdict.tone === "warning" ? "!" : "i"}</span><div><strong>${verdict.title}</strong><small>${verdict.detail}</small></div>`;
+      document.getElementById("route-grid").innerHTML = renderRoute("subscription") + renderRoute("api");
+    }
+
+    function renderMatrix() {
+      const a = state.routes.subscription;
+      const b = state.routes.api;
+      document.getElementById("matrix-body").innerHTML = ContractModel.CONTRACT.map(item => {
+        const left = statusForContract(a, item.key);
+        const right = statusForContract(b, item.key);
+        const comparable = left.ok !== null && right.ok !== null;
+        const sameAndValid = comparable ? left.ok === true && right.ok === true : null;
+        const parityMark = !comparable ? "—" : sameAndValid ? "✓" : left.ok !== right.ok ? "≠" : "×";
+        return `<tr>
+          <td>${item.label}</td>
+          <td title="${left.label}">${left.mark}</td>
+          <td title="${right.label}">${right.mark}</td>
+          <td title="✓ = comune e valido; × = perdita comune; ≠ = perdita nascosta su una sola route">${parityMark}</td>
+        </tr>`;
+      }).join("");
+    }
+
+    function renderGuide() {
+      document.getElementById("guide-tabs").innerHTML = Object.entries(GUIDES).map(([key, guide]) => `
+        <button role="tab" data-guide="${key}" aria-selected="${activeGuide === key}">${guide.label}</button>`).join("");
+      const guide = GUIDES[activeGuide];
+      document.getElementById("guide-content").innerHTML = `
+        <p class="guide-copy">${guide.description}</p>
+        <button class="soft" data-start-guide="${activeGuide}">${guideStep < 0 ? "Avvia questo walkthrough" : "Ricomincia da capo"}</button>
+        <div class="steps" style="margin-top: 12px">
+          ${guide.steps.map(([label], index) => {
+            const done = guideStep > index;
+            const current = guideStep === index;
+            return `<button class="step ${done ? "done" : ""} ${current ? "current" : ""}" data-guide-step="${index}" ${current ? "" : "disabled"}>
+              <span><strong>${label}</strong></span><small>${done ? "completato" : current ? "prossima azione" : "in attesa"}</small>
+            </button>`;
+          }).join("")}
+        </div>`;
+    }
+
+    function renderLog() {
+      document.getElementById("event-log").innerHTML = state.history.map(event => `<li><strong>${event.kind}</strong>${event.message}</li>`).join("");
+    }
+
+    function bindEvents() {
+      document.querySelectorAll("[data-revision]").forEach(button => button.addEventListener("click", () => dispatch({ type: "SELECT_REVISION", revisionKey: button.dataset.revision })));
+      document.querySelectorAll("[data-action]").forEach(button => button.addEventListener("click", () => {
+        const action = { type: button.dataset.action };
+        if (button.dataset.route) action.route = button.dataset.route;
+        if (button.dataset.fault) {
+          action.fault = button.dataset.fault;
+          action.label = button.textContent.trim();
+        }
+        dispatch(action);
+      }));
+      document.querySelectorAll("[data-guide]").forEach(button => button.addEventListener("click", () => {
+        activeGuide = button.dataset.guide;
+        guideStep = -1;
+        render();
+      }));
+      document.querySelectorAll("[data-start-guide]").forEach(button => button.addEventListener("click", () => startGuide(button.dataset.startGuide)));
+      document.querySelectorAll("[data-guide-step]").forEach(button => button.addEventListener("click", () => {
+        const index = Number(button.dataset.guideStep);
+        const action = GUIDES[activeGuide].steps[index][1];
+        state = ContractModel.transition(state, action);
+        guideStep += 1;
+        render();
+      }));
+    }
+
+    function startGuide(key) {
+      const guide = GUIDES[key];
+      activeGuide = key;
+      guideStep = 0;
+      state = ContractModel.transition(state, {
+        type: "LOAD_SCENARIO",
+        revisionKey: guide.revisionKey,
+        faults: guide.faults,
+        currentEvidenceLoaded: guide.currentEvidenceLoaded,
+        message: `Walkthrough “${guide.label}” avviato da uno stato noto.`,
+      });
+      render();
+    }
+
+    function dispatch(action) {
+      state = ContractModel.transition(state, action);
+      guideStep = -1;
+      render();
+    }
+
+    function render() {
+      renderRevisions();
+      renderState();
+      renderMatrix();
+      renderGuide();
+      renderLog();
+      bindEvents();
+    }
+
+    render();
+  </script>
+</body>
+</html>
