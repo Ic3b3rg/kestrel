@@ -118,11 +118,23 @@ export const openApiDocument = sortJson({
             },
             description: "Ordered Installation event stream",
           },
+          "400": {
+            content: {
+              "application/json": { schema: schemaReference("ApiError") },
+            },
+            description: "Invalid or future event cursor",
+          },
           "409": {
             content: {
               "application/json": { schema: schemaReference("ApiError") },
             },
             description: "The requested event cursor is outside retention",
+          },
+          "500": {
+            content: {
+              "application/json": { schema: schemaReference("ApiError") },
+            },
+            description: "The event stream could not be opened",
           },
         },
       },

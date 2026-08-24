@@ -1,4 +1,5 @@
 import {
+  EventCursorSchema,
   InstallationEventSchema,
   type InstallationEvent,
   type InstallationEventType,
@@ -16,6 +17,18 @@ interface InstallationEventRow {
   payload: unknown;
 }
 
+interface EventStreamMetadataRow {
+  first_available_event_id: string;
+  latest_event_id: string;
+}
+
+type EventQueryClient = Pick<PoolClient, "query">;
+const MAX_POSTGRES_BIGINT = 9_223_372_036_854_775_807n;
+
+export class InvalidEventCursorError extends Error {}
+
+export type EventCursorValidation = { valid: true } | { firstAvailable: string; valid: false };
+
 export interface AppendInstallationEventInput {
   aggregateId: string;
   aggregateVersion: string;
@@ -31,7 +44,15 @@ function assertRetentionLimit(retentionLimit: number): void {
   }
 }
 
-function mapInstallationEvent(row: InstallationEventRow): InstallationEvent {
+export function parseEventCursor(value: unknown): string {
+  const parsed = EventCursorSchema.safeParse(value);
+  if (!parsed.success || BigInt(parsed.data) > MAX_POSTGRES_BIGINT) {
+    throw new InvalidEventCursorError("Event cursor must be a canonical PostgreSQL bigint string");
+  }
+  return parsed.data;
+}
+
+export function mapInstallationEvent(row: InstallationEventRow): InstallationEvent {
   return InstallationEventSchema.parse({
     schemaVersion: 1,
     eventId: row.id,
@@ -44,6 +65,63 @@ function mapInstallationEvent(row: InstallationEventRow): InstallationEvent {
     causationId: row.causation_id,
     locator: row.payload,
   });
+}
+
+async function readEventStreamMetadata(
+  database: EventQueryClient,
+): Promise<EventStreamMetadataRow> {
+  const result = await database.query<EventStreamMetadataRow>(`
+    SELECT first_available_event_id, latest_event_id
+    FROM event_streams
+    WHERE stream_name = 'installation'
+  `);
+  const metadata = result.rows[0];
+  if (result.rowCount !== 1 || !metadata) {
+    throw new Error("Installation event stream metadata is missing");
+  }
+  return metadata;
+}
+
+export async function validateCursor(
+  database: EventQueryClient,
+  cursor: string,
+): Promise<EventCursorValidation> {
+  const canonicalCursor = parseEventCursor(cursor);
+  const metadata = await readEventStreamMetadata(database);
+  const numericCursor = BigInt(canonicalCursor);
+  const latest = BigInt(metadata.latest_event_id);
+  if (numericCursor > latest) {
+    throw new InvalidEventCursorError("Event cursor is newer than the committed stream");
+  }
+
+  const earliestReplayableCursor = BigInt(metadata.first_available_event_id) - 1n;
+  if (numericCursor < earliestReplayableCursor) {
+    return { firstAvailable: metadata.first_available_event_id, valid: false };
+  }
+  return { valid: true };
+}
+
+export async function readEventsAfter(
+  database: EventQueryClient,
+  cursor: string,
+  limit: number,
+): Promise<InstallationEvent[]> {
+  const canonicalCursor = parseEventCursor(cursor);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 1_000) {
+    throw new Error("Event read limit must be an integer between 1 and 1000");
+  }
+  const result = await database.query<InstallationEventRow>(
+    `
+      SELECT id, event_type, aggregate_id, aggregate_version,
+             correlation_id, causation_id, payload, created_at
+      FROM installation_events
+      WHERE id > $1
+      ORDER BY id ASC
+      LIMIT $2
+    `,
+    [canonicalCursor, limit],
+  );
+  return result.rows.map(mapInstallationEvent);
 }
 
 export async function appendInstallationEvent(

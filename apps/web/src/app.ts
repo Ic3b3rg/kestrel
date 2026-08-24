@@ -5,6 +5,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import type { DatabasePool, DiagnosticJobSender } from "@kestrel/database";
 
 import { registerDiagnosticRoutes } from "./routes/diagnostics.js";
+import { registerEventRoutes } from "./routes/events.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerInstallationRoutes } from "./routes/installation.js";
 import { registerOpenApiRoute } from "./routes/openapi.js";
@@ -47,6 +48,7 @@ export async function buildApp({
   });
 
   registerDiagnosticRoutes(app, pool, boss, eventRetentionLimit);
+  registerEventRoutes(app, pool);
   registerHealthRoutes(app, pool);
   registerInstallationRoutes(app, pool);
   registerOpenApiRoute(app);
