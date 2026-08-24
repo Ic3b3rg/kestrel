@@ -28,13 +28,22 @@ export function registerDiagnosticRoutes(
           202: jsonSchemaForEmbedding(diagnosticAcceptedJsonSchema),
           400: jsonSchemaForEmbedding(apiErrorJsonSchema),
           409: jsonSchemaForEmbedding(apiErrorJsonSchema),
+          413: jsonSchemaForEmbedding(apiErrorJsonSchema),
+          415: jsonSchemaForEmbedding(apiErrorJsonSchema),
           500: jsonSchemaForEmbedding(apiErrorJsonSchema),
+          503: jsonSchemaForEmbedding(apiErrorJsonSchema),
         },
       },
     },
     async (request, reply) => {
       try {
         const accepted = await enqueueDiagnostic(pool, boss, retentionLimit, request.id);
+        request.log.info({
+          correlationId: request.id,
+          diagnosticId: accepted.diagnostic.id,
+          event: "diagnostic.queued",
+          installationId: accepted.installation.id,
+        });
         reply.code(202);
         return accepted;
       } catch (error) {
@@ -47,7 +56,14 @@ export function registerDiagnosticRoutes(
             correlationId: request.id,
           };
         }
-        throw error;
+        request.log.error({ err: error, event: "diagnostic.enqueue_failed" });
+        reply.code(503);
+        return {
+          schemaVersion: 1,
+          code: "SERVICE_UNAVAILABLE",
+          message: "The diagnostic service is unavailable",
+          correlationId: request.id,
+        };
       }
     },
   );

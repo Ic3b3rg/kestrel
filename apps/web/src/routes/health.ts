@@ -5,7 +5,7 @@ import {
   healthStatusJsonSchema,
   jsonSchemaForEmbedding,
 } from "@kestrel/contracts";
-import type { DatabasePool } from "@kestrel/database";
+import { verifyDatabaseReadiness, type DatabasePool } from "@kestrel/database";
 
 export function registerHealthRoutes(app: FastifyInstance, pool: DatabasePool): void {
   app.get(
@@ -26,7 +26,7 @@ export function registerHealthRoutes(app: FastifyInstance, pool: DatabasePool): 
     },
     async (request, reply) => {
       try {
-        await pool.query("SELECT 1");
+        await verifyDatabaseReadiness(pool);
         return { status: "ready" };
       } catch {
         return reply.code(503).send({

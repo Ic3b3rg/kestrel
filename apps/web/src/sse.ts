@@ -4,7 +4,7 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 
 import { ApiErrorSchema, type InstallationEvent } from "@kestrel/contracts";
 import {
-  readEventsAfter,
+  readEventReplayBatch,
   validateCursor,
   type DatabasePool,
   type EventCursorValidation,
@@ -121,19 +121,18 @@ export async function startInstallationEventStream({
 
     async function drain(): Promise<void> {
       while (!closed) {
-        const currentValidation = await validateCursor(client, cursor);
-        if (!currentValidation.valid) {
-          await writeChunk(encodeResetRequired(request.id, currentValidation.firstAvailable));
+        const batch = await readEventReplayBatch(client, cursor, EVENT_BATCH_SIZE);
+        if (!batch.valid) {
+          await writeChunk(encodeResetRequired(request.id, batch.firstAvailable));
           await cleanup(true);
           return;
         }
 
-        const events = await readEventsAfter(client, cursor, EVENT_BATCH_SIZE);
-        for (const event of events) {
+        for (const event of batch.events) {
           await writeChunk(encodeSseEvent(event));
           cursor = event.eventId;
         }
-        if (events.length < EVENT_BATCH_SIZE) {
+        if (batch.events.length < EVENT_BATCH_SIZE) {
           return;
         }
       }

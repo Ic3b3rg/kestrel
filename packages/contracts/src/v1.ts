@@ -77,6 +77,10 @@ const StandardApiErrorSchema = z.strictObject({
   schemaVersion: SchemaVersionSchema,
   code: z.enum([
     "INVALID_REQUEST",
+    "PAYLOAD_TOO_LARGE",
+    "UNSUPPORTED_MEDIA_TYPE",
+    "REQUEST_REJECTED",
+    "NOT_FOUND",
     "INSTALLATION_TRANSITION_CONFLICT",
     "SERVICE_UNAVAILABLE",
     "INTERNAL_ERROR",

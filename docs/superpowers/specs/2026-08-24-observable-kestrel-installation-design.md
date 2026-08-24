@@ -126,8 +126,12 @@ again when read.
 
 ### `event_streams`
 
-One row records the stream's first available event ID and latest committed event ID. It makes cursor
-expiry unambiguous even when pruning removes every event that a client names.
+One row records the stream's first available event ID, latest committed event ID, and the highest
+event ID actually removed by retention. The explicit retention floor makes cursor expiry unambiguous
+without assuming PostgreSQL identity values are gap-free after transaction rollbacks. When schema
+002 is upgraded after pruning, the replay-metadata migration conservatively backfills the floor from
+the first retained event; an intact aggregate version one keeps a zero floor so an identity gap
+caused only by rollback does not force a false reset.
 
 The development release profile retains the latest 1,000 events. The black-box fixture profile uses
 a limit of eight so expiry can be tested without private database access. Retention is an internal
@@ -177,12 +181,16 @@ The endpoint:
 2. returns `409 EVENT_CURSOR_EXPIRED` with `refetch: "/api/v1/installation"` when the cursor
    predates retention;
 3. subscribes to PostgreSQL notification wake-ups;
-4. reads all retained events after the cursor in ascending ID order;
+4. validates retention and reads retained events after the cursor in ascending ID order from one
+   database snapshot;
 5. queries again after each notification and on a bounded poll interval;
 6. sends comment heartbeats that do not advance the event cursor.
 
 Notifications carry no authoritative event data. Querying the event table by the last emitted ID
 closes notification races and recovers from missed notifications.
+
+Long-lived listeners and their replay queries use a dedicated bounded database pool, so connected
+browser tabs cannot consume the connections reserved for health, snapshots, and commands.
 
 The PWA consumes the SSE response with `fetch` rather than the native `EventSource` interface so it
 can set `Last-Event-ID`, inspect the typed `409` response, and perform the required full refetch.
@@ -191,7 +199,8 @@ The wire format remains standard SSE.
 ### Health and generated contracts
 
 - `GET /health/live` proves that the web process can respond.
-- `GET /health/ready` proves that required database state and migrations are available.
+- `GET /health/ready` verifies required migration checksums, the Installation snapshot/event stream,
+  and the diagnostic pg-boss queue.
 - `GET /api/v1/openapi.json` serves the generated OpenAPI document.
 - the build generates committed JSON Schema artifacts from the same Zod source contracts.
 

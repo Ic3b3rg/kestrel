@@ -82,7 +82,19 @@ function eventStreamResponse(event: InstallationEvent): Response {
   );
 }
 
+function emptyEventStreamResponse(): Response {
+  return new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.close();
+      },
+    }),
+    { headers: { "content-type": "text/event-stream; charset=utf-8" } },
+  );
+}
+
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -124,10 +136,11 @@ describe("PWA API client", () => {
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(jsonResponse(expired, 409))
+      .mockResolvedValueOnce(jsonResponse({ ...snapshot, eventCursor: "9" }))
       .mockResolvedValueOnce(eventStreamResponse(succeededEvent));
     vi.stubGlobal("fetch", fetchMock);
     const controller = new AbortController();
-    const onCursorExpired = vi.fn().mockResolvedValue("9");
+    const onCursorExpired = vi.fn(async () => (await fetchInstallation()).eventCursor);
     const received: InstallationEvent[] = [];
 
     await streamInstallationEvents({
@@ -144,7 +157,34 @@ describe("PWA API client", () => {
     expect(received).toEqual([succeededEvent]);
     expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/v1/events");
     expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("Last-Event-ID")).toBe("1");
-    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/v1/events");
-    expect(new Headers(fetchMock.mock.calls[1]?.[1]?.headers).get("Last-Event-ID")).toBe("9");
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/v1/installation");
+    expect(fetchMock.mock.calls[2]?.[0]).toBe("/api/v1/events");
+    expect(new Headers(fetchMock.mock.calls[2]?.[1]?.headers).get("Last-Event-ID")).toBe("9");
+  });
+
+  it("increases reconnect backoff when accepted streams close before becoming stable", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const controller = new AbortController();
+    const attemptTimes: number[] = [];
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(() => {
+      attemptTimes.push(Date.now());
+      if (attemptTimes.length === 4) {
+        controller.abort();
+      }
+      return Promise.resolve(emptyEventStreamResponse());
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const streaming = streamInstallationEvents({
+      after: "0",
+      signal: controller.signal,
+      onCursorExpired: () => "0",
+      onEvent: vi.fn(),
+    });
+    await vi.runAllTimersAsync();
+    await streaming;
+
+    expect(attemptTimes).toEqual([0, 250, 750, 1_750]);
   });
 });

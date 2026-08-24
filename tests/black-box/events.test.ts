@@ -94,5 +94,51 @@ describe("replayable Installation events", () => {
       code: "EVENT_CURSOR_EXPIRED",
       refetch: "/api/v1/installation",
     });
+
+    const refetchedResponse = await fetch(`${runningStack.apiUrl}/api/v1/installation`);
+    const refetched = InstallationSnapshotSchema.parse(await refetchedResponse.json());
+    const resumedPromise = collectInstallationEvents(runningStack.apiUrl, {
+      after: refetched.eventCursor,
+      count: 3,
+    });
+    await runDiagnostic(runningStack.apiUrl);
+    expect((await resumedPromise).map((event) => event.eventId)).toEqual(["13", "14", "15"]);
   }, 60_000);
+
+  it("keeps Installation queries available while the SSE listener pool is full", async () => {
+    expect(stack).toBeDefined();
+    const runningStack = stack as RunningStack;
+    const snapshotResponse = await fetch(`${runningStack.apiUrl}/api/v1/installation`);
+    const snapshot = InstallationSnapshotSchema.parse(await snapshotResponse.json());
+    const controllers = Array.from({ length: 10 }, () => new AbortController());
+    const streams: Response[] = [];
+
+    try {
+      streams.push(
+        ...(await Promise.all(
+          controllers.map((controller) =>
+            fetch(`${runningStack.apiUrl}/api/v1/events`, {
+              headers: {
+                Accept: "text/event-stream",
+                "Last-Event-ID": snapshot.eventCursor,
+              },
+              signal: controller.signal,
+            }),
+          ),
+        )),
+      );
+      expect(streams.every((response) => response.status === 200)).toBe(true);
+
+      const controlResponse = await fetch(`${runningStack.apiUrl}/api/v1/installation`, {
+        signal: AbortSignal.timeout(3_000),
+      });
+      expect(controlResponse.status).toBe(200);
+      InstallationSnapshotSchema.parse(await controlResponse.json());
+    } finally {
+      controllers.forEach((controller) => controller.abort());
+      await Promise.all(
+        streams.map(async (response) => response.body?.cancel().catch(() => undefined)),
+      );
+    }
+  }, 30_000);
 });

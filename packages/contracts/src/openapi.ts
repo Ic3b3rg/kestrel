@@ -188,11 +188,29 @@ export const openApiDocument = sortJson({
             },
             description: "The Installation cannot accept this transition",
           },
+          "413": {
+            content: {
+              "application/json": { schema: schemaReference("ApiError") },
+            },
+            description: "The command payload is too large",
+          },
+          "415": {
+            content: {
+              "application/json": { schema: schemaReference("ApiError") },
+            },
+            description: "The command media type is unsupported",
+          },
           "500": {
             content: {
               "application/json": { schema: schemaReference("ApiError") },
             },
             description: "The diagnostic could not be accepted atomically",
+          },
+          "503": {
+            content: {
+              "application/json": { schema: schemaReference("ApiError") },
+            },
+            description: "The diagnostic dependency is unavailable",
           },
         },
       },

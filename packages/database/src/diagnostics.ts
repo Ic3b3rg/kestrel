@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  CorrelationIdSchema,
   DiagnosticAcceptedSchema,
+  KestrelIdSchema,
   type Diagnostic,
   type DiagnosticAccepted,
   type InstallationEvent,
@@ -17,6 +19,12 @@ type DiagnosticStatus = Diagnostic["status"];
 export type DiagnosticNextStatus = Exclude<DiagnosticStatus, "queued">;
 export type DiagnosticTransitionDecision = "already_applied" | "apply" | "invalid";
 export type DiagnosticJobSender = Pick<PgBoss, "send">;
+
+export interface DiagnosticLogContext {
+  correlationId: string;
+  diagnosticId: string;
+  installationId: string;
+}
 
 interface DiagnosticDatabaseRow {
   completed_at: Date | null;
@@ -149,6 +157,32 @@ export async function enqueueDiagnostic(
   } finally {
     client.release();
   }
+}
+
+export async function readDiagnosticLogContext(
+  pool: DatabasePool,
+  diagnosticId: string,
+): Promise<DiagnosticLogContext> {
+  const selected = await pool.query<
+    Pick<DiagnosticDatabaseRow, "correlation_id" | "id" | "installation_id">
+  >(
+    `
+      SELECT id, installation_id, correlation_id
+      FROM diagnostics
+      WHERE id = $1
+    `,
+    [diagnosticId],
+  );
+  const diagnostic = selected.rows[0];
+  if (!diagnostic) {
+    throw new Error(`Diagnostic does not exist: ${diagnosticId}`);
+  }
+
+  return {
+    correlationId: CorrelationIdSchema.parse(diagnostic.correlation_id),
+    diagnosticId: KestrelIdSchema.parse(diagnostic.id),
+    installationId: KestrelIdSchema.parse(diagnostic.installation_id),
+  };
 }
 
 export async function transitionDiagnostic(

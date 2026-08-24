@@ -14,6 +14,7 @@ import {
 } from "@kestrel/contracts";
 
 const RECONNECT_DELAYS_MS = [250, 500, 1_000, 2_000, 5_000] as const;
+const STABLE_STREAM_MS = 10_000;
 
 interface Parser<T> {
   parse(value: unknown): T;
@@ -244,13 +245,15 @@ export async function streamInstallationEvents(
       }
 
       options.onConnectionState?.("connected");
-      reconnectAttempt = 0;
+      const connectedAt = Date.now();
+      const cursorAtConnection = cursor;
       const stream = await readEventStream(response, cursor, options);
       cursor = stream.cursor;
       if (stream.result.kind === "aborted" || isSignalAborted(options.signal)) {
         return;
       }
       if (stream.result.kind === "cursor-expired") {
+        reconnectAttempt = 0;
         options.onConnectionState?.("cursor-expired");
         cursor = parseServerValue(
           EventCursorSchema,
@@ -259,6 +262,9 @@ export async function streamInstallationEvents(
         );
         options.onConnectionState?.("connecting");
         continue;
+      }
+      if (cursor !== cursorAtConnection || Date.now() - connectedAt >= STABLE_STREAM_MS) {
+        reconnectAttempt = 0;
       }
       throw new Error("The event stream disconnected");
     } catch (error) {

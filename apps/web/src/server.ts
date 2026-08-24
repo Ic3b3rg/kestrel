@@ -19,12 +19,17 @@ function readPort(value: string | undefined): number {
 
 const config = readDatabaseConfig();
 const pool = createPool(config.databaseUrl, "kestrel-web");
+const eventPool = createPool(config.databaseUrl, "kestrel-web-events", {
+  connectionTimeoutMillis: 2_000,
+  max: 10,
+});
 const boss = createPgBoss({
   applicationName: "kestrel-web-pgboss",
   databaseUrl: config.databaseUrl,
 });
 const app = await buildApp({
   boss,
+  eventPool,
   eventRetentionLimit: readEventRetentionLimit(),
   pool,
   pwaRoot: process.env.PWA_ROOT ?? resolve(import.meta.dirname, "../../pwa/dist"),
@@ -42,6 +47,7 @@ async function shutdown(signal: string): Promise<void> {
   app.log.info({ event: "web.stopping", signal });
   await app.close();
   await boss.stop();
+  await eventPool.end();
   await pool.end();
 }
 
@@ -65,6 +71,7 @@ try {
   app.log.error({ err: error, event: "web.start_failed" });
   await app.close();
   await boss.stop({ graceful: false });
+  await eventPool.end();
   await pool.end();
   process.exitCode = 1;
 }

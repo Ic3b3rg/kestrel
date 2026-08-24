@@ -4,14 +4,68 @@ import { readdir, readFile } from "node:fs/promises";
 import type { DatabasePool } from "./pool.js";
 
 const MIGRATION_FILE = /^[0-9]{3}_[a-z0-9_]+\.sql$/;
+const DEFAULT_MIGRATIONS_DIRECTORY = new URL("../migrations/", import.meta.url);
+
+export interface MigrationRecord {
+  checksum: string;
+  name: string;
+}
+
+interface MigrationDefinition extends MigrationRecord {
+  contents: string;
+}
 
 function checksum(contents: string): string {
   return createHash("sha256").update(contents).digest("hex");
 }
 
+async function readMigrationDefinitions(migrationsDirectory: URL): Promise<MigrationDefinition[]> {
+  const fileNames = (await readdir(migrationsDirectory))
+    .filter((fileName) => MIGRATION_FILE.test(fileName))
+    .sort();
+  return Promise.all(
+    fileNames.map(async (name) => {
+      const contents = await readFile(new URL(name, migrationsDirectory), "utf8");
+      return { checksum: checksum(contents), contents, name };
+    }),
+  );
+}
+
+export function assertAppliedMigrations(
+  expected: readonly MigrationRecord[],
+  applied: readonly MigrationRecord[],
+): void {
+  const appliedByName = new Map(applied.map((migration) => [migration.name, migration.checksum]));
+  for (const migration of expected) {
+    const appliedChecksum = appliedByName.get(migration.name);
+    if (appliedChecksum === undefined) {
+      throw new Error(`Required migration is not applied: ${migration.name}`);
+    }
+    if (appliedChecksum !== migration.checksum) {
+      throw new Error(`Applied migration checksum changed: ${migration.name}`);
+    }
+  }
+}
+
+export async function verifyAppliedMigrations(
+  pool: DatabasePool,
+  migrationsDirectory = DEFAULT_MIGRATIONS_DIRECTORY,
+): Promise<void> {
+  const expected = await readMigrationDefinitions(migrationsDirectory);
+  const result = await pool.query<MigrationRecord>(
+    `
+      SELECT name, checksum
+      FROM schema_migrations
+      WHERE name = ANY($1::text[])
+    `,
+    [expected.map((migration) => migration.name)],
+  );
+  assertAppliedMigrations(expected, result.rows);
+}
+
 export async function migrate(
   pool: DatabasePool,
-  migrationsDirectory = new URL("../migrations/", import.meta.url),
+  migrationsDirectory = DEFAULT_MIGRATIONS_DIRECTORY,
 ): Promise<void> {
   const client = await pool.connect();
 
@@ -28,29 +82,25 @@ export async function migrate(
       )
     `);
 
-    const fileNames = (await readdir(migrationsDirectory))
-      .filter((fileName) => MIGRATION_FILE.test(fileName))
-      .sort();
+    const migrations = await readMigrationDefinitions(migrationsDirectory);
 
-    for (const fileName of fileNames) {
-      const contents = await readFile(new URL(fileName, migrationsDirectory), "utf8");
-      const expectedChecksum = checksum(contents);
+    for (const migration of migrations) {
       const applied = await client.query<{ checksum: string }>(
         "SELECT checksum FROM schema_migrations WHERE name = $1",
-        [fileName],
+        [migration.name],
       );
 
       if (applied.rowCount === 1) {
-        if (applied.rows[0]?.checksum !== expectedChecksum) {
-          throw new Error(`Applied migration checksum changed: ${fileName}`);
+        if (applied.rows[0]?.checksum !== migration.checksum) {
+          throw new Error(`Applied migration checksum changed: ${migration.name}`);
         }
         continue;
       }
 
-      await client.query(contents);
+      await client.query(migration.contents);
       await client.query("INSERT INTO schema_migrations (name, checksum) VALUES ($1, $2)", [
-        fileName,
-        expectedChecksum,
+        migration.name,
+        migration.checksum,
       ]);
     }
 

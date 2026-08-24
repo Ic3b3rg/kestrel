@@ -9,6 +9,7 @@ export {
   type InstallationSnapshot,
   type InstallationState,
 } from "./installation.js";
-export { migrate } from "./migrate.js";
+export { migrate, verifyAppliedMigrations } from "./migrate.js";
 export * from "./pg-boss.js";
-export { createPool, type DatabasePool } from "./pool.js";
+export { createPool, type CreatePoolOptions, type DatabasePool } from "./pool.js";
+export { verifyDatabaseReadiness } from "./readiness.js";

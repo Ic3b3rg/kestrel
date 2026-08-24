@@ -9,6 +9,10 @@
               "code": {
                 "enum": [
                   "INVALID_REQUEST",
+                  "PAYLOAD_TOO_LARGE",
+                  "UNSUPPORTED_MEDIA_TYPE",
+                  "REQUEST_REJECTED",
+                  "NOT_FOUND",
                   "INSTALLATION_TRANSITION_CONFLICT",
                   "SERVICE_UNAVAILABLE",
                   "INTERNAL_ERROR"
@@ -610,6 +614,26 @@
             },
             "description": "The Installation cannot accept this transition"
           },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The command payload is too large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The command media type is unsupported"
+          },
           "500": {
             "content": {
               "application/json": {
@@ -619,6 +643,16 @@
               }
             },
             "description": "The diagnostic could not be accepted atomically"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The diagnostic dependency is unavailable"
           }
         }
       }

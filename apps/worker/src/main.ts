@@ -3,10 +3,11 @@ import {
   createPool,
   DIAGNOSTIC_QUEUE,
   readDatabaseConfig,
+  readDiagnosticLogContext,
   readEventRetentionLimit,
 } from "@kestrel/database";
 
-import { processDiagnostic } from "./process-diagnostic.js";
+import { parseDiagnosticJobData, processDiagnostic } from "./process-diagnostic.js";
 
 function log(level: "error" | "info", event: string, fields: Record<string, unknown> = {}): void {
   const entry = JSON.stringify({
@@ -52,9 +53,14 @@ try {
       if (!job) {
         return;
       }
-      log("info", "diagnostic.started", { diagnosticId: job.id });
-      await processDiagnostic(pool, job.data, retentionLimit, job.signal);
-      log("info", "diagnostic.succeeded", { diagnosticId: job.id });
+      const diagnostic = parseDiagnosticJobData(job.data);
+      if (job.id !== diagnostic.diagnosticId) {
+        throw new Error("Diagnostic job identifier does not match its payload");
+      }
+      const logContext = await readDiagnosticLogContext(pool, diagnostic.diagnosticId);
+      log("info", "diagnostic.started", { ...logContext });
+      await processDiagnostic(pool, diagnostic, retentionLimit, job.signal);
+      log("info", "diagnostic.succeeded", { ...logContext });
     },
   );
   log("info", "worker.started");

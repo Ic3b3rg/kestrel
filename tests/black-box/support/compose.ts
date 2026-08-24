@@ -11,6 +11,7 @@ export interface RunningStack {
   apiUrl: string;
   pwaUrl: string;
   close(): Promise<void>;
+  executeSql(sql: string): Promise<void>;
   restart(...services: string[]): Promise<void>;
   start(...services: string[]): Promise<void>;
   stop(...services: string[]): Promise<void>;
@@ -118,6 +119,27 @@ export async function startStack(): Promise<RunningStack> {
         return pwaUrl;
       },
       close,
+      async executeSql(sql) {
+        await execFileAsync(
+          docker,
+          [
+            ...composeArgs,
+            "exec",
+            "--no-TTY",
+            "postgres",
+            "psql",
+            "--username",
+            "kestrel",
+            "--dbname",
+            "kestrel",
+            "--set",
+            "ON_ERROR_STOP=1",
+            "--command",
+            sql,
+          ],
+          { env: environment },
+        );
+      },
       async restart(...services) {
         await execFileAsync(docker, [...composeArgs, "restart", ...services], {
           env: environment,
