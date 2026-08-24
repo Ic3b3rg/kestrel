@@ -1,13 +1,14 @@
 import { AxeBuilder } from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-import { startStack, type RunningStack } from "./support/compose.js";
+import { startStack, TEST_OPERATOR_CREDENTIALS, type RunningStack } from "./support/compose.js";
 
 test.describe("observable Installation PWA", () => {
   let stack: RunningStack | undefined;
 
   test.beforeAll(async () => {
     stack = await startStack();
+    await stack.bootstrapOperator(TEST_OPERATOR_CREDENTIALS);
   });
 
   test.afterAll(async () => {
@@ -18,15 +19,47 @@ test.describe("observable Installation PWA", () => {
     expect(stack).toBeDefined();
     const runningStack = stack as RunningStack;
     const browserErrors: string[] = [];
+    let expectedUnauthorizedResponses = 2;
     page.on("console", (message) => {
       if (message.type() === "error" || message.type() === "warning") {
-        browserErrors.push(message.text());
+        const text = message.text();
+        if (
+          expectedUnauthorizedResponses > 0 &&
+          text ===
+            "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+        ) {
+          expectedUnauthorizedResponses -= 1;
+        } else {
+          browserErrors.push(text);
+        }
       }
     });
     page.on("pageerror", (error) => browserErrors.push(error.message));
 
     await page.goto(runningStack.pwaUrl);
+    await expect(page.getByRole("heading", { name: "Sign in to Kestrel" })).toBeVisible();
+    await page.keyboard.press("Tab");
+    await expect(page.getByRole("link", { name: "Skip to sign in" })).toBeFocused();
+    const loginAccessibility = await new AxeBuilder({ page }).analyze();
+    expect(loginAccessibility.violations).toEqual([]);
+    await page.getByLabel("Username").fill(TEST_OPERATOR_CREDENTIALS.username);
+    const passwordInput = page.getByLabel("Password");
+    await passwordInput.fill("not the Operator password");
+    await page.getByRole("button", { name: "Sign in" }).click();
+    const loginError = page.getByRole("alert");
+    await expect(loginError).toContainText("The Operator credentials are invalid");
+    await expect(loginError).toBeFocused();
+    await expect(passwordInput).toHaveValue("");
+    await passwordInput.fill(TEST_OPERATOR_CREDENTIALS.password);
+    await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page.getByRole("heading", { name: "Kestrel Installation" })).toBeVisible();
+    expectedUnauthorizedResponses = 0;
+    await expect(
+      page.getByText(`Signed in as ${TEST_OPERATOR_CREDENTIALS.username}`, { exact: true }),
+    ).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "Kestrel Installation" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Sign in to Kestrel" })).toHaveCount(0);
     const diagnosticButton = page.getByRole("button", { name: "Run diagnostic" });
     await expect(diagnosticButton).toBeEnabled();
     await page.keyboard.press("Tab");

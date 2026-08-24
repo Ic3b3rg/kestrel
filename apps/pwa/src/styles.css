@@ -129,6 +129,18 @@ footer {
   letter-spacing: 0;
 }
 
+.auth-boundary {
+  margin: 0;
+  color: #d5d8d4;
+  font:
+    0.6875rem/1.2 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .connection {
   display: grid;
   grid-template-columns: auto auto;
@@ -178,6 +190,75 @@ main {
   min-height: calc(100vh - 7rem);
   margin: 0 auto;
   padding: 2rem 1rem 3rem;
+}
+
+.login-main {
+  display: grid;
+  align-items: center;
+}
+
+.login-layout {
+  display: grid;
+  gap: 2rem;
+  padding: 1rem 0 2rem;
+  border-bottom: 0.25rem solid var(--ink);
+}
+
+.login-intro,
+.login-form {
+  min-width: 0;
+}
+
+.login-form {
+  display: grid;
+  gap: 1rem;
+  padding: 1.5rem;
+  border: 1px solid var(--ink);
+  background: var(--surface);
+}
+
+.form-field {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.form-field label {
+  color: var(--muted);
+  font:
+    700 0.6875rem/1.2 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.form-field input {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--ink);
+  border-radius: 0.125rem;
+  color: var(--ink);
+  background: white;
+  font: inherit;
+}
+
+.login-error {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.75rem;
+  border-left: 0.25rem solid var(--danger);
+  background: #f9e9e3;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.form-help {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.5;
 }
 
 .intro {
@@ -468,6 +549,12 @@ footer {
   .intro {
     grid-template-columns: minmax(0, 1fr) 18rem;
     padding-bottom: 3rem;
+  }
+
+  .login-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(20rem, 0.72fr);
+    align-items: center;
+    padding: 3rem 0;
   }
 
   .record-layout {
