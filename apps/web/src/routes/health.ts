@@ -1,16 +1,29 @@
 import type { FastifyInstance } from "fastify";
 
-import { apiErrorJsonSchema, healthStatusJsonSchema } from "@kestrel/contracts";
+import {
+  apiErrorJsonSchema,
+  healthStatusJsonSchema,
+  jsonSchemaForEmbedding,
+} from "@kestrel/contracts";
 import type { DatabasePool } from "@kestrel/database";
 
 export function registerHealthRoutes(app: FastifyInstance, pool: DatabasePool): void {
-  app.get("/health/live", { schema: { response: { 200: healthStatusJsonSchema } } }, () => ({
-    status: "live",
-  }));
+  app.get(
+    "/health/live",
+    { schema: { response: { 200: jsonSchemaForEmbedding(healthStatusJsonSchema) } } },
+    () => ({ status: "live" }),
+  );
 
   app.get(
     "/health/ready",
-    { schema: { response: { 200: healthStatusJsonSchema, 503: apiErrorJsonSchema } } },
+    {
+      schema: {
+        response: {
+          200: jsonSchemaForEmbedding(healthStatusJsonSchema),
+          503: jsonSchemaForEmbedding(apiErrorJsonSchema),
+        },
+      },
+    },
     async (request, reply) => {
       try {
         await pool.query("SELECT 1");

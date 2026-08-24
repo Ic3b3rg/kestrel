@@ -110,5 +110,6 @@ export type DiagnosticCommand = z.infer<typeof DiagnosticCommandSchema>;
 export type EventCursor = z.infer<typeof EventCursorSchema>;
 export type Installation = z.infer<typeof InstallationSchema>;
 export type InstallationEvent = z.infer<typeof InstallationEventSchema>;
+export type InstallationEventType = z.infer<typeof InstallationEventTypeSchema>;
 export type InstallationSnapshot = z.infer<typeof InstallationSnapshotSchema>;
 export type InstallationState = z.infer<typeof InstallationStateSchema>;

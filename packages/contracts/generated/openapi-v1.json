@@ -589,6 +589,16 @@
               }
             },
             "description": "The Installation cannot accept this transition"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The diagnostic could not be accepted atomically"
           }
         }
       }

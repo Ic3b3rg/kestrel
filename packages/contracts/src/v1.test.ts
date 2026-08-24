@@ -4,6 +4,7 @@ import {
   apiErrorJsonSchema,
   diagnosticAcceptedJsonSchema,
   installationSnapshotJsonSchema,
+  jsonSchemaForEmbedding,
   openApiDocument,
   serializeJson,
 } from "./openapi.js";
@@ -98,6 +99,7 @@ describe("V1 public contracts", () => {
       additionalProperties: false,
     });
     expect(diagnosticAcceptedJsonSchema).toMatchObject({ additionalProperties: false });
+    expect(jsonSchemaForEmbedding(diagnosticAcceptedJsonSchema)).not.toHaveProperty("$schema");
     expect(apiErrorJsonSchema).toHaveProperty("oneOf");
     expect(openApiDocument).toMatchObject({
       openapi: "3.1.1",

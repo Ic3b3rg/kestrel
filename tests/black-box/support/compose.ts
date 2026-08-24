@@ -11,6 +11,8 @@ export interface RunningStack {
   apiUrl: string;
   close(): Promise<void>;
   restart(...services: string[]): Promise<void>;
+  start(...services: string[]): Promise<void>;
+  stop(...services: string[]): Promise<void>;
 }
 
 async function resolveDocker(): Promise<string> {
@@ -118,6 +120,20 @@ export async function startStack(): Promise<RunningStack> {
           apiUrl = await resolvePublishedUrl("web", "3000");
         }
         await waitForJson(`${apiUrl}/health/ready`);
+      },
+      async start(...services) {
+        await execFileAsync(docker, [...composeArgs, "start", ...services], {
+          env: environment,
+        });
+        if (services.includes("web")) {
+          apiUrl = await resolvePublishedUrl("web", "3000");
+          await waitForJson(`${apiUrl}/health/ready`);
+        }
+      },
+      async stop(...services) {
+        await execFileAsync(docker, [...composeArgs, "stop", ...services], {
+          env: environment,
+        });
       },
     };
   } catch (error) {

@@ -2,19 +2,28 @@ import { randomUUID } from "node:crypto";
 
 import Fastify, { type FastifyInstance } from "fastify";
 
-import type { DatabasePool } from "@kestrel/database";
+import type { DatabasePool, DiagnosticJobSender } from "@kestrel/database";
 
+import { registerDiagnosticRoutes } from "./routes/diagnostics.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerInstallationRoutes } from "./routes/installation.js";
 import { registerOpenApiRoute } from "./routes/openapi.js";
 
 export interface BuildAppOptions {
+  boss: DiagnosticJobSender;
+  eventRetentionLimit: number;
   logger?: boolean;
   pool: DatabasePool;
 }
 
-export async function buildApp({ logger = true, pool }: BuildAppOptions): Promise<FastifyInstance> {
+export async function buildApp({
+  boss,
+  eventRetentionLimit,
+  logger = true,
+  pool,
+}: BuildAppOptions): Promise<FastifyInstance> {
   const app = Fastify({
+    ajv: { customOptions: { removeAdditional: false } },
     genReqId: () => randomUUID(),
     logger,
   });
@@ -37,6 +46,7 @@ export async function buildApp({ logger = true, pool }: BuildAppOptions): Promis
     });
   });
 
+  registerDiagnosticRoutes(app, pool, boss, eventRetentionLimit);
   registerHealthRoutes(app, pool);
   registerInstallationRoutes(app, pool);
   registerOpenApiRoute(app);

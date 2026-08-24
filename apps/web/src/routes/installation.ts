@@ -4,6 +4,7 @@ import {
   apiErrorJsonSchema,
   InstallationSnapshotSchema,
   installationSnapshotJsonSchema,
+  jsonSchemaForEmbedding,
 } from "@kestrel/contracts";
 import { readInstallationSnapshot, type DatabasePool } from "@kestrel/database";
 
@@ -12,7 +13,10 @@ export function registerInstallationRoutes(app: FastifyInstance, pool: DatabaseP
     "/api/v1/installation",
     {
       schema: {
-        response: { 200: installationSnapshotJsonSchema, 503: apiErrorJsonSchema },
+        response: {
+          200: jsonSchemaForEmbedding(installationSnapshotJsonSchema),
+          503: jsonSchemaForEmbedding(apiErrorJsonSchema),
+        },
       },
     },
     async (request, reply) => {

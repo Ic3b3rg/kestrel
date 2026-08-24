@@ -1,6 +1,11 @@
 import { buildApp } from "./app.js";
 
-import { createPool, readDatabaseConfig } from "@kestrel/database";
+import {
+  createPgBoss,
+  createPool,
+  readDatabaseConfig,
+  readEventRetentionLimit,
+} from "@kestrel/database";
 
 function readPort(value: string | undefined): number {
   const port = Number(value ?? "3000");
@@ -12,7 +17,18 @@ function readPort(value: string | undefined): number {
 
 const config = readDatabaseConfig();
 const pool = createPool(config.databaseUrl, "kestrel-web");
-const app = await buildApp({ pool });
+const boss = createPgBoss({
+  applicationName: "kestrel-web-pgboss",
+  databaseUrl: config.databaseUrl,
+});
+const app = await buildApp({
+  boss,
+  eventRetentionLimit: readEventRetentionLimit(),
+  pool,
+});
+boss.on("error", (error) => {
+  app.log.error({ err: error, event: "pgboss.error" });
+});
 let shuttingDown = false;
 
 async function shutdown(signal: string): Promise<void> {
@@ -22,6 +38,7 @@ async function shutdown(signal: string): Promise<void> {
   shuttingDown = true;
   app.log.info({ event: "web.stopping", signal });
   await app.close();
+  await boss.stop();
   await pool.end();
 }
 
@@ -35,6 +52,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 }
 
 try {
+  await boss.start();
   await app.listen({
     host: process.env.HOST ?? "0.0.0.0",
     port: readPort(process.env.PORT),
@@ -42,6 +60,8 @@ try {
   app.log.info({ event: "web.started" });
 } catch (error) {
   app.log.error({ err: error, event: "web.start_failed" });
+  await app.close();
+  await boss.stop({ graceful: false });
   await pool.end();
   process.exitCode = 1;
 }

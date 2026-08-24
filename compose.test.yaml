@@ -3,11 +3,15 @@ services:
     restart: "no"
 
   web:
+    environment:
+      EVENT_RETENTION_LIMIT: 8
     ports: !override
       - "127.0.0.1::3000"
     restart: "no"
 
   worker:
+    environment:
+      EVENT_RETENTION_LIMIT: 8
     restart: "no"
 
   pwa:

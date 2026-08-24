@@ -24,6 +24,10 @@ function asComponentSchema(schema: JsonObject): JsonObject {
   return component;
 }
 
+export function jsonSchemaForEmbedding(schema: JsonObject): JsonObject {
+  return asComponentSchema(schema);
+}
+
 export function sortJson(value: JsonValue): JsonValue {
   if (Array.isArray(value)) {
     return value.map(sortJson);
@@ -171,6 +175,12 @@ export const openApiDocument = sortJson({
               "application/json": { schema: schemaReference("ApiError") },
             },
             description: "The Installation cannot accept this transition",
+          },
+          "500": {
+            content: {
+              "application/json": { schema: schemaReference("ApiError") },
+            },
+            description: "The diagnostic could not be accepted atomically",
           },
         },
       },

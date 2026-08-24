@@ -4,6 +4,7 @@ x-kestrel-app: &kestrel-app
   image: kestrel-dev:local
   environment: &database-environment
     DATABASE_URL: postgres://kestrel:kestrel_dev@postgres:5432/kestrel
+    EVENT_RETENTION_LIMIT: 1000
 
 services:
   postgres:
