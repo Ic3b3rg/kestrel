@@ -1,0 +1,12 @@
+AGENTS.md
+CONTEXT.md
+docs/agents/
+docs/research/
+experiments/
+node_modules/
+**/dist/
+**/generated/
+coverage/
+playwright-report/
+test-results/
+apps/pwa/public/*.svg

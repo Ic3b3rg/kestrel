@@ -1,0 +1,118 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  apiErrorJsonSchema,
+  diagnosticAcceptedJsonSchema,
+  installationSnapshotJsonSchema,
+  jsonSchemaForEmbedding,
+  openApiDocument,
+  serializeJson,
+} from "./openapi.js";
+import {
+  DiagnosticAcceptedSchema,
+  EventCursorSchema,
+  InstallationEventSchema,
+  InstallationSnapshotSchema,
+} from "./v1.js";
+
+const installation = {
+  id: "018f0f89-8f75-7cc4-9860-3fda5f75d697",
+  state: "ready",
+  currentDiagnosticId: null,
+  revision: "0",
+  createdAt: "2026-08-24T12:00:00.000Z",
+  updatedAt: "2026-08-24T12:00:00.000Z",
+} as const;
+
+const diagnostic = {
+  id: "018f0f89-9192-755f-aa96-f72094c734dd",
+  status: "queued",
+  requestedAt: "2026-08-24T12:01:00.000Z",
+  startedAt: null,
+  completedAt: null,
+} as const;
+
+describe("V1 public contracts", () => {
+  it("accepts a canonical Installation snapshot", () => {
+    const snapshot = {
+      schemaVersion: 1,
+      installation,
+      diagnostic: null,
+      eventCursor: "0",
+    } as const;
+
+    expect(InstallationSnapshotSchema.parse(snapshot)).toEqual(snapshot);
+  });
+
+  it("rejects unsafe cursor representations and unknown snapshot fields", () => {
+    expect(() => EventCursorSchema.parse(Number.MAX_SAFE_INTEGER + 1)).toThrow();
+    expect(() => EventCursorSchema.parse("01")).toThrow();
+    expect(() => EventCursorSchema.parse("10000000000000000000")).toThrow();
+    expect(() =>
+      InstallationSnapshotSchema.parse({
+        schemaVersion: 1,
+        installation,
+        diagnostic: null,
+        eventCursor: "0",
+        extra: true,
+      }),
+    ).toThrow();
+  });
+
+  it("shares one diagnostic shape between command responses and events", () => {
+    expect(
+      DiagnosticAcceptedSchema.parse({
+        schemaVersion: 1,
+        installation: {
+          ...installation,
+          state: "diagnostic_queued",
+          currentDiagnosticId: diagnostic.id,
+          revision: "1",
+        },
+        diagnostic,
+        eventCursor: "1",
+      }),
+    ).toBeDefined();
+
+    expect(
+      InstallationEventSchema.parse({
+        schemaVersion: 1,
+        eventId: "1",
+        aggregateType: "installation",
+        aggregateId: installation.id,
+        aggregateVersion: "1",
+        eventType: "installation.diagnostic.queued",
+        occurredAt: diagnostic.requestedAt,
+        correlationId: "018f0f89-949a-75a8-8f61-6df78a843b1e",
+        causationId: null,
+        locator: {
+          installationId: installation.id,
+          diagnosticId: diagnostic.id,
+        },
+      }),
+    ).toBeDefined();
+  });
+
+  it("generates strict JSON Schema and a deterministic OpenAPI 3.1 document", () => {
+    expect(installationSnapshotJsonSchema).toMatchObject({
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      additionalProperties: false,
+    });
+    expect(diagnosticAcceptedJsonSchema).toMatchObject({ additionalProperties: false });
+    expect(jsonSchemaForEmbedding(diagnosticAcceptedJsonSchema)).not.toHaveProperty("$schema");
+    expect(apiErrorJsonSchema).toHaveProperty("oneOf");
+    expect(openApiDocument).toMatchObject({
+      openapi: "3.1.1",
+      paths: {
+        "/api/v1/installation": {},
+        "/api/v1/installation/diagnostics": {},
+        "/api/v1/events": {},
+      },
+    });
+
+    const first = serializeJson(openApiDocument);
+    expect(serializeJson(openApiDocument)).toBe(first);
+    expect(first).not.toContain("generatedAt");
+    expect(first.endsWith("\n")).toBe(true);
+  });
+});

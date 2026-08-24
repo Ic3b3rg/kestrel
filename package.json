@@ -1,0 +1,45 @@
+{
+  "name": "kestrel",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@11.6.2",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "tests/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @kestrel/contracts && npm run build -w @kestrel/database && npm run build -w @kestrel/pwa && npm run build -w @kestrel/web && npm run build -w @kestrel/worker",
+    "contracts:check": "npm run check -w @kestrel/contracts",
+    "contracts:generate": "npm run generate -w @kestrel/contracts",
+    "dev": "node scripts/docker-compose.mjs up --build --detach --wait",
+    "dev:down": "node scripts/docker-compose.mjs down",
+    "dev:logs": "node scripts/docker-compose.mjs logs --follow",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "test": "vitest run --passWithNoTests --exclude 'tests/black-box/**'",
+    "test:black-box": "vitest run --config vitest.black-box.config.ts",
+    "test:browser": "playwright test",
+    "typecheck": "tsc --noEmit && npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.62.1",
+    "@types/node": "24.13.3",
+    "eslint": "10.9.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "eslint-plugin-react-refresh": "0.5.4",
+    "globals": "17.11.0",
+    "prettier": "3.9.6",
+    "tsx": "4.23.12",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.67.0",
+    "vitest": "4.1.11"
+  }
+}
