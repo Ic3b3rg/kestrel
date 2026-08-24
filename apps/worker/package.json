@@ -1,0 +1,15 @@
+{
+  "name": "@kestrel/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@kestrel/database": "0.0.0",
+    "pg-boss": "12.28.0"
+  }
+}

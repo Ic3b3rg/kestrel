@@ -1,0 +1,16 @@
+services:
+  postgres:
+    restart: "no"
+
+  web:
+    ports: !override
+      - "127.0.0.1::3000"
+    restart: "no"
+
+  worker:
+    restart: "no"
+
+  pwa:
+    ports: !override
+      - "127.0.0.1::5173"
+    restart: "no"
