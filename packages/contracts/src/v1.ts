@@ -8,6 +8,28 @@ export const EventCursorSchema = z
 export const KestrelIdSchema = z.uuidv7();
 export const CorrelationIdSchema = z.uuid();
 export const UtcDateTimeSchema = z.iso.datetime({ offset: false });
+export const OperatorUsernameSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/u);
+
+export const OperatorSchema = z.strictObject({
+  id: KestrelIdSchema,
+  username: OperatorUsernameSchema,
+});
+
+export const LoginCommandSchema = z.strictObject({
+  username: OperatorUsernameSchema,
+  password: z.string().min(1).max(128),
+});
+
+export const SessionSchema = z.strictObject({
+  schemaVersion: SchemaVersionSchema,
+  operator: OperatorSchema,
+  issuedAt: UtcDateTimeSchema,
+  expiresAt: UtcDateTimeSchema,
+});
 
 export const InstallationStateSchema = z.enum([
   "ready",
@@ -77,6 +99,8 @@ const StandardApiErrorSchema = z.strictObject({
   schemaVersion: SchemaVersionSchema,
   code: z.enum([
     "INVALID_REQUEST",
+    "AUTHENTICATION_FAILED",
+    "AUTHENTICATION_REQUIRED",
     "PAYLOAD_TOO_LARGE",
     "UNSUPPORTED_MEDIA_TYPE",
     "REQUEST_REJECTED",
@@ -117,3 +141,7 @@ export type InstallationEvent = z.infer<typeof InstallationEventSchema>;
 export type InstallationEventType = z.infer<typeof InstallationEventTypeSchema>;
 export type InstallationSnapshot = z.infer<typeof InstallationSnapshotSchema>;
 export type InstallationState = z.infer<typeof InstallationStateSchema>;
+export type LoginCommand = z.infer<typeof LoginCommandSchema>;
+export type Operator = z.infer<typeof OperatorSchema>;
+export type OperatorUsername = z.infer<typeof OperatorUsernameSchema>;
+export type Session = z.infer<typeof SessionSchema>;
