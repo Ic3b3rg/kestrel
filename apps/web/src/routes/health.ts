@@ -7,16 +7,22 @@ import {
 } from "@kestrel/contracts";
 import { verifyDatabaseReadiness, type DatabasePool } from "@kestrel/database";
 
+import { PUBLIC_ROUTE_CONFIG } from "../authentication.js";
+
 export function registerHealthRoutes(app: FastifyInstance, pool: DatabasePool): void {
   app.get(
     "/health/live",
-    { schema: { response: { 200: jsonSchemaForEmbedding(healthStatusJsonSchema) } } },
+    {
+      config: PUBLIC_ROUTE_CONFIG,
+      schema: { response: { 200: jsonSchemaForEmbedding(healthStatusJsonSchema) } },
+    },
     () => ({ status: "live" }),
   );
 
   app.get(
     "/health/ready",
     {
+      config: PUBLIC_ROUTE_CONFIG,
       schema: {
         response: {
           200: jsonSchemaForEmbedding(healthStatusJsonSchema),

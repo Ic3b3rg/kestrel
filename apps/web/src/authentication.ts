@@ -1,48 +1,29 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 
 import { ApiErrorSchema, type Session } from "@kestrel/contracts";
 
 import { readSessionCookie, verifySessionToken } from "./session.js";
 
 declare module "fastify" {
+  interface FastifyContextConfig {
+    authentication?: "public";
+  }
+
   interface FastifyRequest {
     operatorSession: Session | null;
   }
 }
 
-const PUBLIC_READ_PATHS = new Set([
-  "/",
-  "/favicon.svg",
-  "/health/live",
-  "/health/ready",
-  "/icon-192.svg",
-  "/icon-512.svg",
-  "/index.html",
-  "/manifest.webmanifest",
-  "/maskable-icon.svg",
-  "/registerSW.js",
-  "/sw.js",
-]);
-const HASHED_PWA_ASSET_PATH = /^\/assets\/[A-Za-z0-9][A-Za-z0-9._-]*$/u;
-const WORKBOX_ASSET_PATH = /^\/workbox-[A-Za-z0-9_-]+\.js$/u;
+export const PUBLIC_ROUTE_CONFIG = { authentication: "public" } as const;
 
-function isPublicRequest(method: string, url: string): boolean {
-  if (method === "POST" && url === "/auth/login") {
-    return true;
-  }
-  if (method !== "GET" && method !== "HEAD") {
-    return false;
-  }
-  return (
-    PUBLIC_READ_PATHS.has(url) || HASHED_PWA_ASSET_PATH.test(url) || WORKBOX_ASSET_PATH.test(url)
-  );
+function isPublicRequest(request: FastifyRequest): boolean {
+  return request.routeOptions.config.authentication === "public";
 }
 
 export function registerAuthentication(app: FastifyInstance, signingKey: Buffer): void {
   app.decorateRequest("operatorSession", null);
   app.addHook("onRequest", (request, reply, done) => {
-    const path = request.url.split("?", 1)[0] ?? request.url;
-    if (isPublicRequest(request.method, path)) {
+    if (isPublicRequest(request)) {
       done();
       return;
     }

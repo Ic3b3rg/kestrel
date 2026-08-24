@@ -12,6 +12,7 @@ import { readOperatorCredentials, type DatabasePool } from "@kestrel/database";
 
 import { verifyPassword } from "../password.js";
 import { createSessionToken, serializeSessionCookie } from "../session.js";
+import { PUBLIC_ROUTE_CONFIG } from "../authentication.js";
 
 export function registerSessionRoutes(
   app: FastifyInstance,
@@ -34,6 +35,7 @@ export function registerSessionRoutes(
   app.post(
     "/auth/login",
     {
+      config: PUBLIC_ROUTE_CONFIG,
       schema: {
         body: jsonSchemaForEmbedding(loginCommandJsonSchema),
         response: {
