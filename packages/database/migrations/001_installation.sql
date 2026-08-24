@@ -1,5 +1,3 @@
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
 CREATE TABLE IF NOT EXISTS schema_migrations (
   name text PRIMARY KEY,
   checksum text NOT NULL,
@@ -7,7 +5,7 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 );
 
 CREATE TABLE installations (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  id uuid PRIMARY KEY DEFAULT uuidv7(),
   state text NOT NULL DEFAULT 'ready' CHECK (
     state IN (
       'ready',

@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { InstallationSnapshotSchema } from "@kestrel/contracts";
+
 import { startStack, type RunningStack } from "./support/compose.js";
 
 async function getJson(url: string): Promise<unknown> {
@@ -23,10 +25,28 @@ describe("observable Kestrel Installation", () => {
     expect(stack).toBeDefined();
     const runningStack = stack as RunningStack;
 
-    const before = await getJson(`${runningStack.apiUrl}/api/v1/installation`);
+    const before = InstallationSnapshotSchema.parse(
+      await getJson(`${runningStack.apiUrl}/api/v1/installation`),
+    );
     await runningStack.restart("web");
-    const after = await getJson(`${runningStack.apiUrl}/api/v1/installation`);
+    const after = InstallationSnapshotSchema.parse(
+      await getJson(`${runningStack.apiUrl}/api/v1/installation`),
+    );
 
     expect(after).toEqual(before);
   }, 60_000);
+
+  it("serves the generated OpenAPI contract", async () => {
+    expect(stack).toBeDefined();
+    const document = await getJson(`${(stack as RunningStack).apiUrl}/api/v1/openapi.json`);
+
+    expect(document).toMatchObject({
+      openapi: "3.1.1",
+      paths: {
+        "/api/v1/events": {},
+        "/api/v1/installation": {},
+        "/api/v1/installation/diagnostics": {},
+      },
+    });
+  });
 });
