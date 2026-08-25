@@ -5,8 +5,8 @@ import { InstallationSnapshotSchema } from "@kestrel/contracts";
 
 import { startStack, type RunningStack } from "./support/compose.js";
 
-async function getJson(url: string): Promise<unknown> {
-  const response = await fetch(url);
+async function getJson(stack: RunningStack, path: string): Promise<unknown> {
+  const response = await stack.fetchApi(path);
   expect(response.status).toBe(200);
   expect(response.headers.get("cache-control")).toBe("no-store");
   return response.json();
@@ -17,6 +17,7 @@ describe("observable Kestrel Installation", () => {
 
   beforeAll(async () => {
     stack = await startStack();
+    await stack.authenticateOperator();
   });
 
   afterAll(async () => {
@@ -28,11 +29,11 @@ describe("observable Kestrel Installation", () => {
     const runningStack = stack as RunningStack;
 
     const before = InstallationSnapshotSchema.parse(
-      await getJson(`${runningStack.apiUrl}/api/v1/installation`),
+      await getJson(runningStack, "/api/v1/installation"),
     );
     await runningStack.restart("web");
     const after = InstallationSnapshotSchema.parse(
-      await getJson(`${runningStack.apiUrl}/api/v1/installation`),
+      await getJson(runningStack, "/api/v1/installation"),
     );
 
     expect(after).toEqual(before);
@@ -40,7 +41,7 @@ describe("observable Kestrel Installation", () => {
 
   it("serves the generated OpenAPI contract", async () => {
     expect(stack).toBeDefined();
-    const document = await getJson(`${(stack as RunningStack).apiUrl}/api/v1/openapi.json`);
+    const document = await getJson(stack as RunningStack, "/api/v1/openapi.json");
 
     expect(document).toMatchObject({
       openapi: "3.1.1",

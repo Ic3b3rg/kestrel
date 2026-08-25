@@ -1,15 +1,27 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { InstallationEvent, InstallationSnapshot } from "@kestrel/contracts";
+import type {
+  InstallationEvent,
+  InstallationSnapshot,
+  LoginCommand,
+  Session,
+} from "@kestrel/contracts";
 
 import {
   ApiClientError,
   fetchInstallation,
+  fetchSession,
+  loginOperator,
   runDiagnostic,
   streamInstallationEvents,
   type EventConnectionState,
 } from "./api.js";
 import { InstallationView, type PwaConnectionState } from "./InstallationView.js";
+import { LoginView } from "./LoginView.js";
+
+const INSTALLATION_ERROR_MESSAGE =
+  "Kestrel could not read authoritative Installation data. Try again.";
+const SESSION_ERROR_MESSAGE = "Kestrel could not verify the Operator session. Try again.";
 
 function newerSnapshot(
   current: InstallationSnapshot | null,
@@ -35,15 +47,26 @@ function eventAnnouncement(event: InstallationEvent): string {
   }
 }
 
-function errorMessage(error: unknown): string {
+function errorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiClientError) {
     return `${error.details.message} Reference: ${error.details.correlationId}`;
   }
-  return "Kestrel could not read authoritative Installation data. Try again.";
+  return fallback;
+}
+
+function requiresAuthentication(error: unknown): boolean {
+  return (
+    error instanceof ApiClientError &&
+    (error.details.code === "AUTHENTICATION_FAILED" ||
+      error.details.code === "AUTHENTICATION_REQUIRED")
+  );
 }
 
 export function App() {
   const [online, setOnline] = useState(() => navigator.onLine);
+  const [session, setSession] = useState<Session | null | undefined>(undefined);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [loginPending, setLoginPending] = useState(false);
   const [synchronized, setSynchronized] = useState(false);
   const [snapshot, setSnapshot] = useState<InstallationSnapshot | null>(null);
   const [connection, setConnection] = useState<PwaConnectionState>(() =>
@@ -54,6 +77,27 @@ export function App() {
   const [commandPending, setCommandPending] = useState(false);
   const [reloadGeneration, setReloadGeneration] = useState(0);
   const commandController = useRef<AbortController | null>(null);
+  const loginController = useRef<AbortController | null>(null);
+
+  const requireAuthentication = useCallback((message: string) => {
+    commandController.current?.abort();
+    setSession(null);
+    setSnapshot(null);
+    setSynchronized(false);
+    setConnection("disconnected");
+    setLoginError(message);
+  }, []);
+
+  const handleAuthenticationBoundaryError = useCallback(
+    (error: unknown): boolean => {
+      if (!requiresAuthentication(error)) {
+        return false;
+      }
+      requireAuthentication("The Operator session expired. Sign in again.");
+      return true;
+    },
+    [requireAuthentication],
+  );
 
   useEffect(() => {
     const handleOnline = () => {
@@ -62,6 +106,7 @@ export function App() {
     };
     const handleOffline = () => {
       commandController.current?.abort();
+      loginController.current?.abort();
       setOnline(false);
       setSynchronized(false);
       setConnection("offline");
@@ -73,11 +118,43 @@ export function App() {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
       commandController.current?.abort();
+      loginController.current?.abort();
     };
   }, []);
 
   useEffect(() => {
     if (!online) {
+      return;
+    }
+    const controller = new AbortController();
+    let active = true;
+    setSession(undefined);
+    setLoginError(null);
+
+    void fetchSession(controller.signal).then(
+      (currentSession) => {
+        if (active) {
+          setSession(currentSession);
+        }
+      },
+      (error: unknown) => {
+        if (!active || controller.signal.aborted) {
+          return;
+        }
+        setSession(null);
+        if (!requiresAuthentication(error)) {
+          setLoginError(errorMessage(error, SESSION_ERROR_MESSAGE));
+        }
+      },
+    );
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [online]);
+
+  useEffect(() => {
+    if (!online || session === null || session === undefined) {
       return;
     }
 
@@ -108,7 +185,9 @@ export function App() {
         })
         .catch((error: unknown) => {
           if (active && !controller.signal.aborted) {
-            setRequestError(errorMessage(error));
+            if (!handleAuthenticationBoundaryError(error)) {
+              setRequestError(errorMessage(error, INSTALLATION_ERROR_MESSAGE));
+            }
           }
         });
     };
@@ -157,8 +236,10 @@ export function App() {
         });
       } catch (error) {
         if (active && !controller.signal.aborted) {
-          setConnection("disconnected");
-          setRequestError(errorMessage(error));
+          if (!handleAuthenticationBoundaryError(error)) {
+            setConnection("disconnected");
+            setRequestError(errorMessage(error, INSTALLATION_ERROR_MESSAGE));
+          }
         }
       }
     };
@@ -168,7 +249,29 @@ export function App() {
       active = false;
       controller.abort();
     };
-  }, [online, reloadGeneration]);
+  }, [handleAuthenticationBoundaryError, online, reloadGeneration, session]);
+
+  const handleLogin = async (command: LoginCommand): Promise<void> => {
+    const controller = new AbortController();
+    loginController.current?.abort();
+    loginController.current = controller;
+    setLoginPending(true);
+    setLoginError(null);
+    try {
+      const created = await loginOperator(command, controller.signal);
+      setSession(created);
+      setAnnouncement("Operator authenticated. Reading the Kestrel Installation.");
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        setLoginError(errorMessage(error, SESSION_ERROR_MESSAGE));
+      }
+    } finally {
+      if (loginController.current === controller) {
+        loginController.current = null;
+        setLoginPending(false);
+      }
+    }
+  };
 
   const handleRunDiagnostic = async () => {
     const controller = new AbortController();
@@ -183,8 +286,10 @@ export function App() {
       setAnnouncement("Diagnostic queued.");
     } catch (error) {
       if (!controller.signal.aborted) {
-        setRequestError(errorMessage(error));
-        setAnnouncement("The diagnostic request failed.");
+        if (!handleAuthenticationBoundaryError(error)) {
+          setRequestError(errorMessage(error, INSTALLATION_ERROR_MESSAGE));
+          setAnnouncement("The diagnostic request failed.");
+        }
       }
     } finally {
       if (commandController.current === controller) {
@@ -194,6 +299,18 @@ export function App() {
     }
   };
 
+  if (session === null || session === undefined) {
+    return (
+      <LoginView
+        checking={session === undefined}
+        error={loginError}
+        online={online}
+        pending={loginPending}
+        onSubmit={handleLogin}
+      />
+    );
+  }
+
   return (
     <InstallationView
       announcement={announcement}
@@ -201,6 +318,7 @@ export function App() {
       connection={connection}
       loading={online && !synchronized && requestError === null}
       online={online}
+      operatorUsername={session.operator.username}
       requestError={requestError}
       showData={online && synchronized}
       snapshot={snapshot}

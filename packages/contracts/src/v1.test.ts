@@ -13,6 +13,8 @@ import {
   EventCursorSchema,
   InstallationEventSchema,
   InstallationSnapshotSchema,
+  LoginCommandSchema,
+  SessionSchema,
 } from "./v1.js";
 
 const installation = {
@@ -93,6 +95,37 @@ describe("V1 public contracts", () => {
     ).toBeDefined();
   });
 
+  it("defines a password-only login command and a secret-free Operator session", () => {
+    expect(
+      LoginCommandSchema.parse({
+        username: "operator",
+        password: "correct horse battery staple",
+      }),
+    ).toEqual({
+      username: "operator",
+      password: "correct horse battery staple",
+    });
+
+    expect(
+      SessionSchema.parse({
+        schemaVersion: 1,
+        operator: {
+          id: "018f0f89-949a-75a8-8f61-6df78a843b1e",
+          username: "operator",
+        },
+        issuedAt: "2026-08-24T12:00:00.000Z",
+        expiresAt: "2026-08-31T12:00:00.000Z",
+      }),
+    ).not.toHaveProperty("password");
+    expect(() =>
+      LoginCommandSchema.parse({
+        username: "operator",
+        password: "correct horse battery staple",
+        rememberMe: true,
+      }),
+    ).toThrow();
+  });
+
   it("generates strict JSON Schema and a deterministic OpenAPI 3.1 document", () => {
     expect(installationSnapshotJsonSchema).toMatchObject({
       $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -104,11 +137,28 @@ describe("V1 public contracts", () => {
     expect(openApiDocument).toMatchObject({
       openapi: "3.1.1",
       paths: {
+        "/auth/login": {},
+        "/api/v1/session": {},
         "/api/v1/installation": {},
         "/api/v1/installation/diagnostics": {},
         "/api/v1/events": {},
       },
     });
+    expect(openApiDocument).toMatchObject({
+      paths: {
+        "/api/v1/events": { get: { responses: { "401": {} } } },
+        "/api/v1/installation": { get: { responses: { "401": {} } } },
+        "/api/v1/installation/diagnostics": { post: { responses: { "401": {} } } },
+        "/api/v1/openapi.json": { get: { responses: { "401": {} } } },
+        "/api/v1/session": { get: { responses: { "401": {} } } },
+      },
+    });
+    const paths = openApiDocument["paths"];
+    if (typeof paths !== "object" || paths === null || Array.isArray(paths)) {
+      throw new Error("OpenAPI paths must be an object");
+    }
+    expect(paths["/auth/login"]).toHaveProperty("post");
+    expect(paths["/api/v1/session"]).not.toHaveProperty("post");
 
     const first = serializeJson(openApiDocument);
     expect(serializeJson(openApiDocument)).toBe(first);

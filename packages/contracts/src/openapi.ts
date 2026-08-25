@@ -8,6 +8,8 @@ import {
   HealthStatusSchema,
   InstallationEventSchema,
   InstallationSnapshotSchema,
+  LoginCommandSchema,
+  SessionSchema,
 } from "./v1.js";
 
 type JsonPrimitive = boolean | null | number | string;
@@ -55,6 +57,8 @@ export const installationEventJsonSchema = asJsonSchema(InstallationEventSchema)
 export const apiErrorJsonSchema = asJsonSchema(ApiErrorSchema);
 export const healthStatusJsonSchema = asJsonSchema(HealthStatusSchema);
 export const eventCursorJsonSchema = asJsonSchema(EventCursorSchema);
+export const loginCommandJsonSchema = asJsonSchema(LoginCommandSchema);
+export const sessionJsonSchema = asJsonSchema(SessionSchema);
 
 export const contractBundle = sortJson({
   $defs: {
@@ -63,6 +67,8 @@ export const contractBundle = sortJson({
     DiagnosticCommand: asComponentSchema(diagnosticCommandJsonSchema),
     InstallationEvent: asComponentSchema(installationEventJsonSchema),
     InstallationSnapshot: asComponentSchema(installationSnapshotJsonSchema),
+    LoginCommand: asComponentSchema(loginCommandJsonSchema),
+    Session: asComponentSchema(sessionJsonSchema),
   },
   $id: "https://kestrel.local/schemas/v1.json",
   $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -83,6 +89,8 @@ export const openApiDocument = sortJson({
       HealthStatus: asComponentSchema(healthStatusJsonSchema),
       InstallationEvent: asComponentSchema(installationEventJsonSchema),
       InstallationSnapshot: asComponentSchema(installationSnapshotJsonSchema),
+      LoginCommand: asComponentSchema(loginCommandJsonSchema),
+      Session: asComponentSchema(sessionJsonSchema),
     },
   },
   info: {
@@ -124,6 +132,12 @@ export const openApiDocument = sortJson({
             },
             description: "Invalid or future event cursor",
           },
+          "401": {
+            content: {
+              "application/json": { schema: schemaReference("ApiError") },
+            },
+            description: "Operator authentication is required",
+          },
           "409": {
             content: {
               "application/json": { schema: schemaReference("ApiError") },
@@ -148,6 +162,12 @@ export const openApiDocument = sortJson({
               "application/json": { schema: schemaReference("InstallationSnapshot") },
             },
             description: "Current authoritative Installation snapshot",
+          },
+          "401": {
+            content: {
+              "application/json": { schema: schemaReference("ApiError") },
+            },
+            description: "Operator authentication is required",
           },
           "503": {
             content: {
@@ -182,6 +202,12 @@ export const openApiDocument = sortJson({
             },
             description: "Invalid command",
           },
+          "401": {
+            content: {
+              "application/json": { schema: schemaReference("ApiError") },
+            },
+            description: "Operator authentication is required",
+          },
           "409": {
             content: {
               "application/json": { schema: schemaReference("ApiError") },
@@ -215,6 +241,74 @@ export const openApiDocument = sortJson({
         },
       },
     },
+    "/auth/login": {
+      post: {
+        operationId: "createOperatorSession",
+        requestBody: {
+          content: {
+            "application/json": { schema: schemaReference("LoginCommand") },
+          },
+          required: true,
+        },
+        responses: {
+          "200": {
+            content: {
+              "application/json": { schema: schemaReference("Session") },
+            },
+            description: "Operator authenticated for seven days",
+          },
+          "400": {
+            content: {
+              "application/json": { schema: schemaReference("ApiError") },
+            },
+            description: "Invalid login request",
+          },
+          "401": {
+            content: {
+              "application/json": { schema: schemaReference("ApiError") },
+            },
+            description: "Invalid Operator credentials",
+          },
+          "413": {
+            content: {
+              "application/json": { schema: schemaReference("ApiError") },
+            },
+            description: "The login request is too large",
+          },
+          "415": {
+            content: {
+              "application/json": { schema: schemaReference("ApiError") },
+            },
+            description: "The login media type is unsupported",
+          },
+          "503": {
+            content: {
+              "application/json": { schema: schemaReference("ApiError") },
+            },
+            description: "Operator authentication is unavailable",
+          },
+        },
+      },
+    },
+    "/api/v1/session": {
+      get: {
+        operationId: "readOperatorSession",
+        responses: {
+          "200": {
+            content: {
+              "application/json": { schema: schemaReference("Session") },
+            },
+            description: "Current authenticated Operator session",
+          },
+          "401": {
+            content: {
+              "application/json": { schema: schemaReference("ApiError") },
+            },
+            description: "Operator authentication is required",
+          },
+        },
+      },
+    },
     "/api/v1/openapi.json": {
       get: {
         operationId: "readOpenApiDocument",
@@ -224,6 +318,12 @@ export const openApiDocument = sortJson({
               "application/json": { schema: { type: "object" } },
             },
             description: "Generated OpenAPI document",
+          },
+          "401": {
+            content: {
+              "application/json": { schema: schemaReference("ApiError") },
+            },
+            description: "Operator authentication is required",
           },
         },
       },

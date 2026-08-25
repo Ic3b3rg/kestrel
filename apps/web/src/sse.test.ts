@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { InstallationEvent } from "@kestrel/contracts";
 
-import { encodeSseEvent } from "./sse.js";
+import { encodeSseEvent, millisecondsUntilSessionExpiry } from "./sse.js";
 
 describe("SSE encoding", () => {
   it("writes one standard SSE record with an authoritative cursor", () => {
@@ -25,5 +25,15 @@ describe("SSE encoding", () => {
     expect(encodeSseEvent(event)).toBe(
       `id: 42\nevent: installation.diagnostic.running\ndata: ${JSON.stringify(event)}\n\n`,
     );
+  });
+
+  it("clamps the remaining session lifetime at the absolute expiry", () => {
+    const expiresAt = "2026-08-31T12:00:00.000Z";
+
+    expect(millisecondsUntilSessionExpiry(expiresAt, new Date("2026-08-31T11:59:59.250Z"))).toBe(
+      750,
+    );
+    expect(millisecondsUntilSessionExpiry(expiresAt, new Date("2026-08-31T12:00:00.000Z"))).toBe(0);
+    expect(millisecondsUntilSessionExpiry(expiresAt, new Date("2026-08-31T12:00:01.000Z"))).toBe(0);
   });
 });

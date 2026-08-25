@@ -11,6 +11,7 @@ interface InstallationViewProps {
   connection: PwaConnectionState;
   loading: boolean;
   online: boolean;
+  operatorUsername: string;
   onRetry: () => void;
   onRunDiagnostic: () => void;
   requestError: string | null;
@@ -258,7 +259,7 @@ export function InstallationView(props: InstallationViewProps) {
 
       <footer>
         <span>Kestrel V1</span>
-        <span>PostgreSQL is authoritative</span>
+        <span>Signed in as {props.operatorUsername}</span>
       </footer>
     </>
   );

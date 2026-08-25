@@ -11,6 +11,8 @@ import { registerHealthRoutes } from "./routes/health.js";
 import { registerInstallationRoutes } from "./routes/installation.js";
 import { registerOpenApiRoute } from "./routes/openapi.js";
 import { registerPwaRoutes } from "./routes/pwa.js";
+import { registerSessionRoutes } from "./routes/session.js";
+import { registerAuthentication } from "./authentication.js";
 
 export interface BuildAppOptions {
   boss: DiagnosticJobSender;
@@ -19,6 +21,7 @@ export interface BuildAppOptions {
   logger?: boolean;
   pool: DatabasePool;
   pwaRoot?: string;
+  sessionSigningKey: Buffer;
 }
 
 interface ClassifiedApiError {
@@ -91,6 +94,7 @@ export async function buildApp({
   pool,
   eventPool = pool,
   pwaRoot,
+  sessionSigningKey,
 }: BuildAppOptions): Promise<FastifyInstance> {
   const app = Fastify({
     ajv: { customOptions: { removeAdditional: false } },
@@ -99,7 +103,7 @@ export async function buildApp({
   });
 
   app.addHook("onSend", (request, reply, payload, done) => {
-    if (request.url.startsWith("/api/")) {
+    if (request.url.startsWith("/api/") || request.url.startsWith("/auth/")) {
       reply.header("Cache-Control", "no-store");
     }
     done(null, payload);
@@ -132,6 +136,9 @@ export async function buildApp({
     }
     return reply.code(404).type("text/plain").send("Not Found");
   });
+
+  registerAuthentication(app, sessionSigningKey);
+  registerSessionRoutes(app, pool, sessionSigningKey);
 
   registerDiagnosticRoutes(app, pool, boss, eventRetentionLimit);
   registerEventRoutes(app, eventPool);

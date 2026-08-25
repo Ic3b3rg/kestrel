@@ -32,7 +32,7 @@ export default defineConfig({
       workbox: {
         cleanupOutdatedCaches: true,
         globPatterns: ["**/*.{css,html,js}"],
-        navigateFallbackDenylist: [/^\/api\//, /^\/health\//],
+        navigateFallbackDenylist: [/^\/api\//, /^\/auth\//, /^\/health\//],
         runtimeCaching: [],
       },
     }),
@@ -43,6 +43,7 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       "/api": process.env.VITE_API_PROXY ?? "http://127.0.0.1:3000",
+      "/auth": process.env.VITE_API_PROXY ?? "http://127.0.0.1:3000",
       "/health": process.env.VITE_API_PROXY ?? "http://127.0.0.1:3000",
     },
   },

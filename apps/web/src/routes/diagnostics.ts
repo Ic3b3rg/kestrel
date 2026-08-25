@@ -27,6 +27,7 @@ export function registerDiagnosticRoutes(
         response: {
           202: jsonSchemaForEmbedding(diagnosticAcceptedJsonSchema),
           400: jsonSchemaForEmbedding(apiErrorJsonSchema),
+          401: jsonSchemaForEmbedding(apiErrorJsonSchema),
           409: jsonSchemaForEmbedding(apiErrorJsonSchema),
           413: jsonSchemaForEmbedding(apiErrorJsonSchema),
           415: jsonSchemaForEmbedding(apiErrorJsonSchema),

@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 
 import { buildApp } from "./app.js";
+import { readSessionSigningKey } from "./session.js";
 
 import {
   createPgBoss,
@@ -33,6 +34,7 @@ const app = await buildApp({
   eventRetentionLimit: readEventRetentionLimit(),
   pool,
   pwaRoot: process.env.PWA_ROOT ?? resolve(import.meta.dirname, "../../pwa/dist"),
+  sessionSigningKey: readSessionSigningKey(),
 });
 boss.on("error", (error) => {
   app.log.error({ err: error, event: "pgboss.error" });

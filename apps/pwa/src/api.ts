@@ -6,11 +6,15 @@ import {
   EventCursorSchema,
   InstallationEventSchema,
   InstallationSnapshotSchema,
+  LoginCommandSchema,
+  SessionSchema,
   type ApiError,
   type DiagnosticAccepted,
   type EventCursor,
   type InstallationEvent,
   type InstallationSnapshot,
+  type LoginCommand,
+  type Session,
 } from "@kestrel/contracts";
 
 const RECONNECT_DELAYS_MS = [250, 500, 1_000, 2_000, 5_000] as const;
@@ -81,6 +85,7 @@ async function requireJson<T>(
 
 export async function fetchInstallation(signal?: AbortSignal): Promise<InstallationSnapshot> {
   const response = await fetch("/api/v1/installation", {
+    credentials: "same-origin",
     headers: { Accept: "application/json" },
     method: "GET",
     signal: signal ?? null,
@@ -88,9 +93,35 @@ export async function fetchInstallation(signal?: AbortSignal): Promise<Installat
   return requireJson(response, InstallationSnapshotSchema, "Installation snapshot");
 }
 
+export async function fetchSession(signal?: AbortSignal): Promise<Session> {
+  const response = await fetch("/api/v1/session", {
+    credentials: "same-origin",
+    headers: { Accept: "application/json" },
+    method: "GET",
+    signal: signal ?? null,
+  });
+  return requireJson(response, SessionSchema, "Operator session");
+}
+
+export async function loginOperator(command: LoginCommand, signal?: AbortSignal): Promise<Session> {
+  const validated = LoginCommandSchema.parse(command);
+  const response = await fetch("/auth/login", {
+    body: JSON.stringify(validated),
+    credentials: "same-origin",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+    signal: signal ?? null,
+  });
+  return requireJson(response, SessionSchema, "Operator session");
+}
+
 export async function runDiagnostic(signal?: AbortSignal): Promise<DiagnosticAccepted> {
   const response = await fetch("/api/v1/installation/diagnostics", {
     body: "{}",
+    credentials: "same-origin",
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
@@ -220,6 +251,7 @@ export async function streamInstallationEvents(
   while (!options.signal.aborted) {
     try {
       const response = await fetch("/api/v1/events", {
+        credentials: "same-origin",
         headers: {
           Accept: "text/event-stream",
           "Last-Event-ID": cursor,

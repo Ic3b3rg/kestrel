@@ -9,8 +9,8 @@ import {
 import { startStack, type RunningStack } from "./support/compose.js";
 import { collectInstallationEvents } from "./support/sse.js";
 
-async function readSnapshot(apiUrl: string) {
-  const response = await fetch(`${apiUrl}/api/v1/installation`);
+async function readSnapshot(stack: RunningStack) {
+  const response = await stack.fetchApi("/api/v1/installation");
   expect(response.status).toBe(200);
   return InstallationSnapshotSchema.parse(await response.json());
 }
@@ -20,6 +20,7 @@ describe("durable Installation diagnostic", () => {
 
   beforeAll(async () => {
     stack = await startStack();
+    await stack.authenticateOperator();
   });
 
   afterAll(async () => {
@@ -29,7 +30,7 @@ describe("durable Installation diagnostic", () => {
   it("rolls back domain state when transactional job enqueue fails", async () => {
     expect(stack).toBeDefined();
     const runningStack = stack as RunningStack;
-    const before = await readSnapshot(runningStack.apiUrl);
+    const before = await readSnapshot(runningStack);
     const rejectJobSql = `
       CREATE FUNCTION public.kestrel_test_reject_job()
       RETURNS trigger
@@ -52,7 +53,7 @@ describe("durable Installation diagnostic", () => {
 
     await runningStack.executeSql(rejectJobSql);
     try {
-      const failed = await fetch(`${runningStack.apiUrl}/api/v1/installation/diagnostics`, {
+      const failed = await runningStack.fetchApi("/api/v1/installation/diagnostics", {
         body: "{}",
         headers: { "content-type": "application/json" },
         method: "POST",
@@ -61,16 +62,17 @@ describe("durable Installation diagnostic", () => {
       expect(ApiErrorSchema.parse(await failed.json())).toMatchObject({
         code: "SERVICE_UNAVAILABLE",
       });
-      expect(await readSnapshot(runningStack.apiUrl)).toEqual(before);
+      expect(await readSnapshot(runningStack)).toEqual(before);
     } finally {
       await runningStack.executeSql(restoreJobSql);
     }
 
     const streamedPromise = collectInstallationEvents(runningStack.apiUrl, {
       after: before.eventCursor,
+      cookie: runningStack.sessionCookie,
       count: 3,
     });
-    const acceptedResponse = await fetch(`${runningStack.apiUrl}/api/v1/installation/diagnostics`, {
+    const acceptedResponse = await runningStack.fetchApi("/api/v1/installation/diagnostics", {
       body: "{}",
       headers: { "content-type": "application/json" },
       method: "POST",
@@ -78,7 +80,7 @@ describe("durable Installation diagnostic", () => {
     expect(acceptedResponse.status).toBe(202);
     DiagnosticAcceptedSchema.parse(await acceptedResponse.json());
     await expect
-      .poll(async () => (await readSnapshot(runningStack.apiUrl)).diagnostic?.status, {
+      .poll(async () => (await readSnapshot(runningStack)).diagnostic?.status, {
         interval: 250,
         timeout: 20_000,
       })
@@ -91,7 +93,7 @@ describe("durable Installation diagnostic", () => {
     const runningStack = stack as RunningStack;
     await runningStack.stop("worker");
 
-    const response = await fetch(`${runningStack.apiUrl}/api/v1/installation/diagnostics`, {
+    const response = await runningStack.fetchApi("/api/v1/installation/diagnostics", {
       body: "{}",
       headers: { "content-type": "application/json" },
       method: "POST",
@@ -100,12 +102,12 @@ describe("durable Installation diagnostic", () => {
     const accepted = DiagnosticAcceptedSchema.parse(await response.json());
     expect(accepted.diagnostic.status).toBe("queued");
 
-    expect(await readSnapshot(runningStack.apiUrl)).toMatchObject({
+    expect(await readSnapshot(runningStack)).toMatchObject({
       diagnostic: { id: accepted.diagnostic.id, status: "queued" },
       installation: { state: "diagnostic_queued" },
     });
 
-    const conflictResponse = await fetch(`${runningStack.apiUrl}/api/v1/installation/diagnostics`, {
+    const conflictResponse = await runningStack.fetchApi("/api/v1/installation/diagnostics", {
       body: "{}",
       headers: { "content-type": "application/json" },
       method: "POST",
@@ -115,7 +117,7 @@ describe("durable Installation diagnostic", () => {
       code: "INSTALLATION_TRANSITION_CONFLICT",
     });
 
-    const invalidResponse = await fetch(`${runningStack.apiUrl}/api/v1/installation/diagnostics`, {
+    const invalidResponse = await runningStack.fetchApi("/api/v1/installation/diagnostics", {
       body: JSON.stringify({ unexpected: true }),
       headers: { "content-type": "application/json" },
       method: "POST",
@@ -127,14 +129,14 @@ describe("durable Installation diagnostic", () => {
 
     await runningStack.start("worker");
     await expect
-      .poll(async () => (await readSnapshot(runningStack.apiUrl)).diagnostic?.status, {
+      .poll(async () => (await readSnapshot(runningStack)).diagnostic?.status, {
         interval: 250,
         timeout: 20_000,
       })
       .toBe("succeeded");
 
-    const completed = await readSnapshot(runningStack.apiUrl);
+    const completed = await readSnapshot(runningStack);
     await runningStack.restart("web", "worker");
-    expect(await readSnapshot(runningStack.apiUrl)).toEqual(completed);
+    expect(await readSnapshot(runningStack)).toEqual(completed);
   }, 60_000);
 });

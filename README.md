@@ -1,8 +1,8 @@
 # Kestrel
 
-This repository currently contains the first observable Kestrel Installation path: one persisted
-Installation, a durable diagnostic command, ordered server-sent events, and a React PWA that shows
-the result. PostgreSQL is the only durable authority.
+This repository currently contains the first authenticated, observable Kestrel Installation path:
+one local Operator, one persisted Installation, a durable diagnostic command, ordered server-sent
+events, and a React PWA that shows the result. PostgreSQL is the only durable authority.
 
 ## Start the development Installation
 
@@ -24,11 +24,19 @@ command. It returns after the required services are ready and leaves them runnin
 npm run dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173). The API and the production-shaped compiled PWA
-are also available at [http://localhost:3000](http://localhost:3000).
+Create the first Operator from the trusted host. The password prompts are hidden, and rerunning the
+command leaves the existing Operator unchanged:
 
-The Compose ports bind only to loopback. This slice intentionally has no authentication or TLS, so
-do not expose it to an untrusted network.
+```sh
+npm run bootstrap
+```
+
+Open [http://localhost:5173](http://localhost:5173) and sign in. The API and the production-shaped
+compiled PWA are also available at [http://localhost:3000](http://localhost:3000).
+
+The Compose ports bind only to loopback. Operator sessions use a signed, host-only, secure cookie
+with an absolute seven-day lifetime. TLS termination is still a later delivery, so do not expose
+this development stack to an untrusted network.
 
 Follow their logs when needed:
 
@@ -52,22 +60,26 @@ deliberately resetting all local Kestrel data.
 
 ## Observable path
 
-The PWA reads `GET /api/v1/installation`, opens `GET /api/v1/events`, and submits
-`POST /api/v1/installation/diagnostics`. A successful command commits the Installation transition,
-durable event, and pg-boss job in one PostgreSQL transaction. The worker advances the diagnostic
-monotonically from queued to running to succeeded. The PWA reconnects from its last confirmed event
-cursor and performs a full snapshot refetch when retained history has expired.
+After authentication, the PWA reads `GET /api/v1/installation`, opens `GET /api/v1/events`, and
+submits `POST /api/v1/installation/diagnostics`. A successful command commits the Installation
+transition, durable event, and pg-boss job in one PostgreSQL transaction. The worker advances the
+diagnostic monotonically from queued to running to succeeded. The PWA reconnects from its last
+confirmed event cursor and performs a full snapshot refetch when retained history has expired.
 
 Useful endpoints on port 3000:
 
 - `/health/live` — process liveness;
 - `/health/ready` — database-backed readiness;
+- `/auth/login` — Operator login;
+- `/api/v1/session` — current authenticated session;
 - `/api/v1/installation` — authoritative snapshot;
 - `/api/v1/events` — replayable SSE stream;
 - `/api/v1/openapi.json` — generated OpenAPI 3.1 contract.
 
-Application and worker logs are structured JSON. Installation and diagnostic identifiers appear in
-transition logs; database credentials and request bodies do not.
+Health checks, the login endpoint, and the PWA shell are public; all API reads and commands,
+including the OpenAPI document, require the Operator session. Application and worker logs are
+structured JSON. Installation, diagnostic, and successful-login Operator identifiers appear in logs;
+passwords, session tokens, database credentials, and request bodies do not.
 
 ## Verification
 
@@ -107,5 +119,5 @@ npm run contracts:check
 - `packages/contracts` owns versioned Zod, JSON Schema, and OpenAPI contracts.
 - `packages/database` owns SQL migrations and node-postgres queries; there is no ORM.
 
-Authentication, TLS/Caddy, repository-provider connections, Projects, Change Proposals, and review
-workflows are delivered by later issues rather than this tracer bullet.
+TLS/Caddy, session hardening beyond this first login boundary, repository-provider connections,
+Projects, Change Proposals, and review workflows are delivered by later issues.

@@ -5,9 +5,16 @@ import type {
   DiagnosticAccepted,
   InstallationEvent,
   InstallationSnapshot,
+  Session,
 } from "@kestrel/contracts";
 
-import { fetchInstallation, runDiagnostic, streamInstallationEvents } from "./api.js";
+import {
+  fetchInstallation,
+  fetchSession,
+  loginOperator,
+  runDiagnostic,
+  streamInstallationEvents,
+} from "./api.js";
 
 const installationId = "018f0f89-8f75-7cc4-9860-3fda5f75d697";
 const diagnosticId = "018f0f89-9192-755f-aa96-f72094c734dd";
@@ -58,6 +65,16 @@ const succeededEvent: InstallationEvent = {
   locator: { diagnosticId, installationId },
 };
 
+const session: Session = {
+  schemaVersion: 1,
+  operator: {
+    id: "018f0f89-949a-75a8-8f61-6df78a843b1e",
+    username: "operator",
+  },
+  issuedAt: "2026-08-24T12:00:00.000Z",
+  expiresAt: "2026-08-31T12:00:00.000Z",
+};
+
 function jsonResponse(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), {
     headers: { "content-type": "application/json" },
@@ -99,6 +116,37 @@ afterEach(() => {
 });
 
 describe("PWA API client", () => {
+  it("reads and creates the Operator session without exposing a token", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(session))
+      .mockResolvedValueOnce(jsonResponse(session));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchSession()).resolves.toEqual(session);
+    await expect(
+      loginOperator({ username: "operator", password: "correct horse battery staple" }),
+    ).resolves.toEqual(session);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/v1/session",
+      expect.objectContaining({ credentials: "same-origin", method: "GET" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/auth/login",
+      expect.objectContaining({
+        body: JSON.stringify({
+          username: "operator",
+          password: "correct horse battery staple",
+        }),
+        credentials: "same-origin",
+        method: "POST",
+      }),
+    );
+    expect(session).not.toHaveProperty("token");
+  });
+
   it("parses the authoritative Installation snapshot", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(snapshot));
     vi.stubGlobal("fetch", fetchMock);
