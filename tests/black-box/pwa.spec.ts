@@ -57,6 +57,7 @@ test.describe("observable Installation PWA", () => {
     await expect(
       page.getByText(`Signed in as ${TEST_OPERATOR_CREDENTIALS.username}`, { exact: true }),
     ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Operator security" })).toBeVisible();
     await page.reload();
     await expect(page.getByRole("heading", { name: "Kestrel Installation" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Sign in to Kestrel" })).toHaveCount(0);
@@ -126,6 +127,27 @@ test.describe("observable Installation PWA", () => {
       const accessibility = await new AxeBuilder({ page }).analyze();
       expect(accessibility.violations, `axe violations at ${String(width)}px`).toEqual([]);
     }
+
+    const updatedCredentials = {
+      username: "operator-renamed",
+      password: "a newly selected correct horse battery staple",
+    };
+    await page.getByLabel("Current password").fill(TEST_OPERATOR_CREDENTIALS.password);
+    await page.getByLabel("Operator username").fill(updatedCredentials.username);
+    await page.getByLabel("New password", { exact: true }).fill(updatedCredentials.password);
+    await page.getByLabel("Confirm new password").fill(updatedCredentials.password);
+    await page.getByRole("button", { name: "Change credentials and sign out" }).click();
+    await expect(page.getByRole("heading", { name: "Sign in to Kestrel" })).toBeVisible();
+
+    await page.getByLabel("Username").fill(updatedCredentials.username);
+    await page.getByLabel("Password").fill(updatedCredentials.password);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page.getByRole("heading", { name: "Kestrel Installation" })).toBeVisible();
+    await expect(
+      page.getByText(`Signed in as ${updatedCredentials.username}`, { exact: true }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Sign out", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Sign in to Kestrel" })).toBeVisible();
 
     expect(browserErrors).toEqual([]);
   });

@@ -44,9 +44,10 @@ The command accepts the new password only through hidden prompts (or stdin for a
 the username, and invalidates every existing session. Kestrel deliberately exposes no remote
 password-recovery endpoint.
 
-The Compose ports bind only to loopback. Operator sessions use a signed, host-only, secure cookie
-with an absolute seven-day lifetime. TLS termination is still a later delivery, so do not expose
-this development stack to an untrusted network.
+The Compose ports bind only to loopback. Operator sessions use signed, host-only, secure cookies
+with an absolute seven-day lifetime. Every browser mutation requires an exact same-origin request;
+authenticated mutations also require the session-bound CSRF header. TLS termination is still a later
+delivery, so do not expose this development stack to an untrusted network.
 
 Follow their logs when needed:
 
@@ -81,7 +82,10 @@ Useful endpoints on port 3000:
 - `/health/live` — process liveness;
 - `/health/ready` — database-backed readiness;
 - `/auth/login` — Operator login;
+- `/auth/logout` — clear the current browser cookies;
+- `/auth/step-up` — create a five-minute, one-command proof from the current password;
 - `/api/v1/session` — current authenticated session;
+- `/api/v1/operator/credentials` — step-up-protected username/password change;
 - `/api/v1/installation` — authoritative snapshot;
 - `/api/v1/events` — replayable SSE stream;
 - `/api/v1/openapi.json` — generated OpenAPI 3.1 contract.
@@ -89,7 +93,13 @@ Useful endpoints on port 3000:
 Health checks, the login endpoint, and the PWA shell are public; all API reads and commands,
 including the OpenAPI document, require the Operator session. Application and worker logs are
 structured JSON. Installation, diagnostic, and successful-login Operator identifiers appear in logs;
-passwords, session tokens, database credentials, and request bodies do not.
+passwords, session tokens, step-up proofs, database credentials, and request bodies do not. Security
+events are appended to a hash-chained Installation Audit in PostgreSQL.
+
+Changing credentials requires the current password and an opaque proof bound to the Operator,
+action, target, and canonical request digest. A proof expires within five minutes and is consumed on
+its first presentation, including a mismatched or expired presentation. A successful credential
+change rotates the credential and signing generations, invalidating every existing session.
 
 ## Verification
 
@@ -107,9 +117,9 @@ npm run build
 ```
 
 `npm run test:black-box` creates isolated Compose projects on random loopback ports and deletes
-their test volumes afterward. `npm run test:browser` drives the diagnostic through Chromium, checks
-keyboard and offline behavior, audits accessibility with axe, and verifies 320, 768, 1024, and 1440
-CSS-pixel viewports.
+their test volumes afterward. `npm run test:browser` drives the diagnostic and Operator security
+controls through Chromium, checks keyboard and offline behavior, audits accessibility with axe, and
+verifies 320, 768, 1024, and 1440 CSS-pixel viewports.
 
 The authored Zod schemas live in `packages/contracts/src`. Regenerate committed JSON Schema and
 OpenAPI artifacts after an intentional contract change:
@@ -129,5 +139,5 @@ npm run contracts:check
 - `packages/contracts` owns versioned Zod, JSON Schema, and OpenAPI contracts.
 - `packages/database` owns SQL migrations and node-postgres queries; there is no ORM.
 
-TLS/Caddy, session hardening beyond this first login boundary, repository-provider connections,
-Projects, Change Proposals, and review workflows are delivered by later issues.
+TLS/Caddy, repository-provider connections, Projects, Change Proposals, and review workflows are
+delivered by later issues.
