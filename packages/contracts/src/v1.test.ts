@@ -15,6 +15,8 @@ import {
   InstallationEventSchema,
   InstallationSnapshotSchema,
   LoginCommandSchema,
+  OpenPublicGitHubPullRequestCommandSchema,
+  ProjectInboxSchema,
   SessionSchema,
   StepUpCommandSchema,
   StepUpProofSchema,
@@ -160,6 +162,68 @@ describe("V1 public contracts", () => {
     expect(() => CredentialChangeCommandSchema.parse({ ...command, unexpected: true })).toThrow();
   });
 
+  it("accepts only canonical public GitHub pull-request URLs", () => {
+    expect(
+      OpenPublicGitHubPullRequestCommandSchema.parse({
+        url: "https://github.com/openai/openai-node/pull/1234",
+      }),
+    ).toEqual({ url: "https://github.com/openai/openai-node/pull/1234" });
+
+    for (const url of [
+      "http://github.com/openai/openai-node/pull/1234",
+      "https://github.com.evil.example/openai/openai-node/pull/1234",
+      "https://github.com/openai/openai-node/pull/1234/",
+      "https://github.com/openai/openai-node/pull/01234",
+      "https://github.com/openai/openai-node/pull/1234?diff=split",
+      "https://github.com/openai/openai-node/issues/1234",
+    ]) {
+      expect(() => OpenPublicGitHubPullRequestCommandSchema.parse({ url })).toThrow();
+    }
+  });
+
+  it("represents public source, provider context, synchronization, and model access separately", () => {
+    expect(
+      ProjectInboxSchema.parse({
+        schemaVersion: 1,
+        projects: [
+          {
+            id: "018f0f89-949a-75a8-8f61-6df78a843b1e",
+            repositoryAccess: {
+              authentication: "none",
+              kind: "public_github",
+              synchronization: "manual",
+            },
+            repository: {
+              canonicalUrl: "https://github.com/openai/openai-node",
+              name: "openai-node",
+              owner: "openai",
+              providerId: "R_kgDOGx",
+            },
+            sourceAvailability: "available",
+            providerContext: "public_pull_request",
+            modelAccess: "not_configured",
+            createdAt: "2026-08-24T12:00:00.000Z",
+            updatedAt: "2026-08-24T12:01:00.000Z",
+            changeProposals: [
+              {
+                id: "018f0f89-9192-755f-aa96-f72094c734dd",
+                providerId: "PR_kwDOGx",
+                number: 1234,
+                title: "Keep repository access explicit",
+                canonicalUrl: "https://github.com/openai/openai-node/pull/1234",
+                proposalState: "open",
+                base: { objectId: "a".repeat(40), ref: "main" },
+                head: { objectId: "b".repeat(40), ref: "repository-access" },
+                author: { login: "octocat", providerId: "U_kgDOA" },
+                observedAt: "2026-08-24T12:01:00.000Z",
+              },
+            ],
+          },
+        ],
+      }),
+    ).toBeDefined();
+  });
+
   it("generates strict JSON Schema and a deterministic OpenAPI 3.1 document", () => {
     expect(installationSnapshotJsonSchema).toMatchObject({
       $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -176,6 +240,7 @@ describe("V1 public contracts", () => {
         "/auth/step-up": {},
         "/api/v1/session": {},
         "/api/v1/operator/credentials": {},
+        "/api/v1/projects": {},
         "/api/v1/installation": {},
         "/api/v1/installation/diagnostics": {},
         "/api/v1/events": {},
@@ -198,6 +263,25 @@ describe("V1 public contracts", () => {
               { in: "header", name: "X-Kestrel-CSRF", required: true },
             ],
             responses: { "401": {}, "403": {} },
+          },
+        },
+        "/api/v1/projects": {
+          get: { responses: { "200": {}, "401": {}, "503": {} } },
+          post: {
+            parameters: [
+              { in: "header", name: "Origin", required: true },
+              { in: "header", name: "X-Kestrel-CSRF", required: true },
+            ],
+            responses: {
+              "200": {},
+              "400": {},
+              "401": {},
+              "404": {},
+              "413": {},
+              "415": {},
+              "429": {},
+              "503": {},
+            },
           },
         },
         "/api/v1/openapi.json": { get: { responses: { "401": {} } } },
