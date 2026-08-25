@@ -1,15 +1,22 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CSRF_COOKIE_NAME,
+  createCsrfToken,
   createSessionToken,
   readSessionCookie,
+  serializeClearedAuthenticationCookies,
+  serializeCsrfCookie,
   serializeSessionCookie,
+  verifyCsrfToken,
   verifySessionToken,
 } from "./session.js";
 
 const signingKey = Buffer.from("f5e8bbcc7d8f6355687264a9bff1eaab", "utf8");
 const operator = {
+  credentialVersion: "7",
   id: "018f0f89-949a-75a8-8f61-6df78a843b1e",
+  sessionGeneration: "3",
   username: "operator",
 } as const;
 const issuedAt = new Date("2026-08-24T12:00:00.000Z");
@@ -19,10 +26,14 @@ describe("Operator session token", () => {
     const created = createSessionToken(operator, signingKey, issuedAt);
 
     expect(verifySessionToken(created.token, signingKey, issuedAt)).toEqual({
-      schemaVersion: 1,
-      operator,
-      issuedAt: "2026-08-24T12:00:00.000Z",
-      expiresAt: "2026-08-31T12:00:00.000Z",
+      session: {
+        schemaVersion: 1,
+        operator: { id: operator.id, username: operator.username },
+        credentialVersion: "7",
+        issuedAt: "2026-08-24T12:00:00.000Z",
+        expiresAt: "2026-08-31T12:00:00.000Z",
+      },
+      sessionGeneration: "3",
     });
     expect(() =>
       verifySessionToken(created.token, signingKey, new Date("2026-08-31T12:00:00.000Z")),
@@ -42,5 +53,43 @@ describe("Operator session token", () => {
     expect(cookie).not.toContain("Domain=");
     expect(readSessionCookie(cookie)).toBe(created.token);
     expect(readSessionCookie(`${cookie}; __Host-kestrel-session=duplicate`)).toBeNull();
+  });
+
+  it("binds a script-readable CSRF cookie to the signed session and clears both cookies", () => {
+    const created = createSessionToken(operator, signingKey, issuedAt);
+    const csrfToken = createCsrfToken(created.token, signingKey, Buffer.alloc(32, 9));
+    const cookie = serializeCsrfCookie(csrfToken, created.session.expiresAt);
+
+    expect(cookie).toContain(`${CSRF_COOKIE_NAME}=`);
+    expect(cookie).toContain("Secure");
+    expect(cookie).toContain("SameSite=Strict");
+    expect(cookie).not.toContain("HttpOnly");
+    expect(
+      verifyCsrfToken(
+        {
+          cookieToken: csrfToken,
+          headerToken: csrfToken,
+          sessionToken: created.token,
+        },
+        signingKey,
+      ),
+    ).toBe(true);
+    expect(
+      verifyCsrfToken(
+        {
+          cookieToken: csrfToken,
+          headerToken: `${csrfToken}x`,
+          sessionToken: created.token,
+        },
+        signingKey,
+      ),
+    ).toBe(false);
+
+    const cleared = serializeClearedAuthenticationCookies();
+    expect(cleared).toHaveLength(2);
+    for (const value of cleared) {
+      expect(value).toContain("Max-Age=0");
+      expect(value).toContain("Expires=Thu, 01 Jan 1970 00:00:00 GMT");
+    }
   });
 });

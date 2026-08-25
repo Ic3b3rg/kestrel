@@ -9,12 +9,16 @@ import {
   serializeJson,
 } from "./openapi.js";
 import {
+  CredentialChangeCommandSchema,
   DiagnosticAcceptedSchema,
   EventCursorSchema,
   InstallationEventSchema,
   InstallationSnapshotSchema,
   LoginCommandSchema,
   SessionSchema,
+  StepUpCommandSchema,
+  StepUpProofSchema,
+  serializeCredentialChangeCommand,
 } from "./v1.js";
 
 const installation = {
@@ -113,6 +117,7 @@ describe("V1 public contracts", () => {
           id: "018f0f89-949a-75a8-8f61-6df78a843b1e",
           username: "operator",
         },
+        credentialVersion: "1",
         issuedAt: "2026-08-24T12:00:00.000Z",
         expiresAt: "2026-08-31T12:00:00.000Z",
       }),
@@ -126,6 +131,35 @@ describe("V1 public contracts", () => {
     ).toThrow();
   });
 
+  it("binds one step-up proof to the canonical sensitive credential command", () => {
+    const command = CredentialChangeCommandSchema.parse({
+      expectedVersion: "7",
+      newPassword: "a newly chosen correct horse battery staple",
+      username: "operator-renamed",
+    });
+    const requestDigest = "4".repeat(64);
+
+    expect(serializeCredentialChangeCommand(command)).toBe(
+      '{"expectedVersion":"7","newPassword":"a newly chosen correct horse battery staple","username":"operator-renamed"}',
+    );
+    expect(
+      StepUpCommandSchema.parse({
+        action: "operator_credentials_change",
+        password: "current correct horse battery staple",
+        requestDigest,
+        targetId: "018f0f89-949a-75a8-8f61-6df78a843b1e",
+      }),
+    ).not.toHaveProperty("newPassword");
+    expect(
+      StepUpProofSchema.parse({
+        schemaVersion: 1,
+        expiresAt: "2026-08-24T12:05:00.000Z",
+        proof: "A".repeat(43),
+      }),
+    ).toBeDefined();
+    expect(() => CredentialChangeCommandSchema.parse({ ...command, unexpected: true })).toThrow();
+  });
+
   it("generates strict JSON Schema and a deterministic OpenAPI 3.1 document", () => {
     expect(installationSnapshotJsonSchema).toMatchObject({
       $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -137,8 +171,11 @@ describe("V1 public contracts", () => {
     expect(openApiDocument).toMatchObject({
       openapi: "3.1.1",
       paths: {
+        "/auth/logout": {},
         "/auth/login": {},
+        "/auth/step-up": {},
         "/api/v1/session": {},
+        "/api/v1/operator/credentials": {},
         "/api/v1/installation": {},
         "/api/v1/installation/diagnostics": {},
         "/api/v1/events": {},
@@ -158,7 +195,11 @@ describe("V1 public contracts", () => {
       throw new Error("OpenAPI paths must be an object");
     }
     expect(paths["/auth/login"]).toHaveProperty("post");
+    expect(paths["/auth/logout"]).toHaveProperty("post");
+    expect(paths["/auth/step-up"]).toHaveProperty("post");
+    expect(paths["/api/v1/operator/credentials"]).toHaveProperty("post");
     expect(paths["/api/v1/session"]).not.toHaveProperty("post");
+    expect(paths).not.toHaveProperty("/auth/reset");
 
     const first = serializeJson(openApiDocument);
     expect(serializeJson(openApiDocument)).toBe(first);

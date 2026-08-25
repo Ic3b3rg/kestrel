@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 
 import { ApiErrorSchema, type Session } from "@kestrel/contracts";
+import { readOperatorSessionState, type DatabasePool } from "@kestrel/database";
 
 import { readSessionCookie, verifySessionToken } from "./session.js";
 
@@ -20,25 +21,36 @@ function isPublicRequest(request: FastifyRequest): boolean {
   return request.routeOptions.config.authentication === "public";
 }
 
-export function registerAuthentication(app: FastifyInstance, signingKey: Buffer): void {
+export function registerAuthentication(
+  app: FastifyInstance,
+  pool: DatabasePool,
+  signingKey: Buffer,
+): void {
   app.decorateRequest("operatorSession", null);
-  app.addHook("onRequest", (request, reply, done) => {
+  app.addHook("onRequest", async (request, reply) => {
     if (isPublicRequest(request)) {
-      done();
       return;
     }
 
     const token = readSessionCookie(request.headers.cookie);
     if (token !== null) {
       try {
-        request.operatorSession = verifySessionToken(token, signingKey);
-        done();
-        return;
+        const verified = verifySessionToken(token, signingKey);
+        const current = await readOperatorSessionState(pool, verified.session.operator.id);
+        if (
+          current !== null &&
+          current.username === verified.session.operator.username &&
+          current.credentialVersion === verified.session.credentialVersion &&
+          current.sessionGeneration === verified.sessionGeneration
+        ) {
+          request.operatorSession = verified.session;
+          return;
+        }
       } catch {
         // Invalid, tampered, and expired tokens all share the same public response.
       }
     }
-    void reply
+    return reply
       .header("Cache-Control", "no-store")
       .code(401)
       .send(

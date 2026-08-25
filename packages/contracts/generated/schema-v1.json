@@ -84,6 +84,33 @@
         }
       ]
     },
+    "CredentialChangeCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "expectedVersion": {
+          "maxLength": 19,
+          "pattern": "^[1-9][0-9]*$",
+          "type": "string"
+        },
+        "newPassword": {
+          "maxLength": 128,
+          "minLength": 12,
+          "type": "string"
+        },
+        "username": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "expectedVersion",
+        "newPassword",
+        "username"
+      ],
+      "type": "object"
+    },
     "DiagnosticAccepted": {
       "additionalProperties": false,
       "properties": {
@@ -470,9 +497,19 @@
       ],
       "type": "object"
     },
+    "LogoutCommand": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
     "Session": {
       "additionalProperties": false,
       "properties": {
+        "credentialVersion": {
+          "maxLength": 19,
+          "pattern": "^[1-9][0-9]*$",
+          "type": "string"
+        },
         "expiresAt": {
           "format": "date-time",
           "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
@@ -512,8 +549,71 @@
       "required": [
         "schemaVersion",
         "operator",
+        "credentialVersion",
         "issuedAt",
         "expiresAt"
+      ],
+      "type": "object"
+    },
+    "StepUpCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "operator_credentials_change",
+            "provider_connect",
+            "provider_disconnect",
+            "provider_replace",
+            "model_credentials_change",
+            "project_delete",
+            "installation_update"
+          ],
+          "type": "string"
+        },
+        "password": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "requestDigest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "targetId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "password",
+        "requestDigest",
+        "targetId"
+      ],
+      "type": "object"
+    },
+    "StepUpProof": {
+      "additionalProperties": false,
+      "properties": {
+        "expiresAt": {
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+          "type": "string"
+        },
+        "proof": {
+          "pattern": "^[A-Za-z0-9_-]{43}$",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "type": "number"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "expiresAt",
+        "proof"
       ],
       "type": "object"
     }

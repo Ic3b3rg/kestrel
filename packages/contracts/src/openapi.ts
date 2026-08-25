@@ -2,6 +2,7 @@ import { z, type ZodType } from "zod";
 
 import {
   ApiErrorSchema,
+  CredentialChangeCommandSchema,
   DiagnosticAcceptedSchema,
   DiagnosticCommandSchema,
   EventCursorSchema,
@@ -9,7 +10,10 @@ import {
   InstallationEventSchema,
   InstallationSnapshotSchema,
   LoginCommandSchema,
+  LogoutCommandSchema,
   SessionSchema,
+  StepUpCommandSchema,
+  StepUpProofSchema,
 } from "./v1.js";
 
 type JsonPrimitive = boolean | null | number | string;
@@ -58,7 +62,11 @@ export const apiErrorJsonSchema = asJsonSchema(ApiErrorSchema);
 export const healthStatusJsonSchema = asJsonSchema(HealthStatusSchema);
 export const eventCursorJsonSchema = asJsonSchema(EventCursorSchema);
 export const loginCommandJsonSchema = asJsonSchema(LoginCommandSchema);
+export const logoutCommandJsonSchema = asJsonSchema(LogoutCommandSchema);
 export const sessionJsonSchema = asJsonSchema(SessionSchema);
+export const stepUpCommandJsonSchema = asJsonSchema(StepUpCommandSchema);
+export const stepUpProofJsonSchema = asJsonSchema(StepUpProofSchema);
+export const credentialChangeCommandJsonSchema = asJsonSchema(CredentialChangeCommandSchema);
 
 export const contractBundle = sortJson({
   $defs: {
@@ -67,8 +75,12 @@ export const contractBundle = sortJson({
     DiagnosticCommand: asComponentSchema(diagnosticCommandJsonSchema),
     InstallationEvent: asComponentSchema(installationEventJsonSchema),
     InstallationSnapshot: asComponentSchema(installationSnapshotJsonSchema),
+    CredentialChangeCommand: asComponentSchema(credentialChangeCommandJsonSchema),
     LoginCommand: asComponentSchema(loginCommandJsonSchema),
+    LogoutCommand: asComponentSchema(logoutCommandJsonSchema),
     Session: asComponentSchema(sessionJsonSchema),
+    StepUpCommand: asComponentSchema(stepUpCommandJsonSchema),
+    StepUpProof: asComponentSchema(stepUpProofJsonSchema),
   },
   $id: "https://kestrel.local/schemas/v1.json",
   $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -80,6 +92,32 @@ const schemaReference = (name: string): JsonObject => ({
   $ref: `#/components/schemas/${name}`,
 });
 
+function authenticatedMutationHeaders(includeStepUp: boolean): JsonValue[] {
+  const headers: JsonValue[] = [
+    {
+      in: "header",
+      name: "Origin",
+      required: true,
+      schema: { format: "uri", type: "string" },
+    },
+    {
+      in: "header",
+      name: "X-Kestrel-CSRF",
+      required: true,
+      schema: { minLength: 1, type: "string" },
+    },
+  ];
+  if (includeStepUp) {
+    headers.push({
+      in: "header",
+      name: "X-Kestrel-Step-Up",
+      required: true,
+      schema: { pattern: "^[A-Za-z0-9_-]{43}$", type: "string" },
+    });
+  }
+  return headers;
+}
+
 export const openApiDocument = sortJson({
   components: {
     schemas: {
@@ -89,8 +127,12 @@ export const openApiDocument = sortJson({
       HealthStatus: asComponentSchema(healthStatusJsonSchema),
       InstallationEvent: asComponentSchema(installationEventJsonSchema),
       InstallationSnapshot: asComponentSchema(installationSnapshotJsonSchema),
+      CredentialChangeCommand: asComponentSchema(credentialChangeCommandJsonSchema),
       LoginCommand: asComponentSchema(loginCommandJsonSchema),
+      LogoutCommand: asComponentSchema(logoutCommandJsonSchema),
       Session: asComponentSchema(sessionJsonSchema),
+      StepUpCommand: asComponentSchema(stepUpCommandJsonSchema),
+      StepUpProof: asComponentSchema(stepUpProofJsonSchema),
     },
   },
   info: {
@@ -286,6 +328,122 @@ export const openApiDocument = sortJson({
               "application/json": { schema: schemaReference("ApiError") },
             },
             description: "Operator authentication is unavailable",
+          },
+        },
+      },
+    },
+    "/auth/logout": {
+      post: {
+        operationId: "deleteOperatorSessionCookie",
+        parameters: authenticatedMutationHeaders(false),
+        requestBody: {
+          content: {
+            "application/json": { schema: schemaReference("LogoutCommand") },
+          },
+          required: true,
+        },
+        responses: {
+          "204": { description: "Current browser cookies cleared" },
+          "400": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Invalid logout request",
+          },
+          "401": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Operator authentication is required",
+          },
+          "403": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Origin or CSRF validation failed",
+          },
+          "413": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "The logout request is too large",
+          },
+          "415": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "The logout media type is unsupported",
+          },
+        },
+      },
+    },
+    "/auth/step-up": {
+      post: {
+        operationId: "createOperatorStepUpProof",
+        parameters: authenticatedMutationHeaders(false),
+        requestBody: {
+          content: {
+            "application/json": { schema: schemaReference("StepUpCommand") },
+          },
+          required: true,
+        },
+        responses: {
+          "200": {
+            content: { "application/json": { schema: schemaReference("StepUpProof") } },
+            description: "One-command step-up proof created",
+          },
+          "400": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Invalid step-up request",
+          },
+          "401": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Operator authentication is required",
+          },
+          "403": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Step-up credentials, Origin, or CSRF validation failed",
+          },
+          "429": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "The release-fixed step-up limit was reached",
+          },
+          "503": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Step-up authentication is unavailable",
+          },
+        },
+      },
+    },
+    "/api/v1/operator/credentials": {
+      post: {
+        operationId: "changeOperatorCredentials",
+        parameters: authenticatedMutationHeaders(true),
+        requestBody: {
+          content: {
+            "application/json": { schema: schemaReference("CredentialChangeCommand") },
+          },
+          required: true,
+        },
+        responses: {
+          "204": { description: "Credentials changed and all browser cookies cleared" },
+          "400": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Invalid credential change request",
+          },
+          "401": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Operator authentication is required",
+          },
+          "403": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Step-up proof, Origin, or CSRF validation failed",
+          },
+          "409": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Credential version conflict",
+          },
+          "413": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "The credential change request is too large",
+          },
+          "415": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "The credential change media type is unsupported",
+          },
+          "503": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Credential storage is unavailable",
           },
         },
       },

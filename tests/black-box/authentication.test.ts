@@ -230,9 +230,11 @@ describe("sole Operator authentication", () => {
     const expiredAt = Math.floor(Date.now() / 1_000) - 1;
     const expiredToken = signSession({
       aud: "kestrel-pwa",
+      cv: "1",
       exp: expiredAt,
       iat: expiredAt - 7 * 24 * 60 * 60,
       iss: "kestrel",
+      sg: "1",
       sub: session.operator.id,
       username: session.operator.username,
       v: 1,
@@ -254,9 +256,11 @@ describe("sole Operator authentication", () => {
     const shortlyExpiresAt = Math.floor(Date.now() / 1_000) + 2;
     const shortLivedToken = signSession({
       aud: "kestrel-pwa",
+      cv: "1",
       exp: shortlyExpiresAt,
       iat: shortlyExpiresAt - 7 * 24 * 60 * 60,
       iss: "kestrel",
+      sg: "1",
       sub: session.operator.id,
       username: session.operator.username,
       v: 1,
@@ -269,6 +273,32 @@ describe("sole Operator authentication", () => {
     });
     expect(stream.status).toBe(200);
     await waitForStreamEnd(stream);
+  });
+
+  it("rejects every session from an earlier signing generation", async () => {
+    expect(stack).toBeDefined();
+    const runningStack = stack as RunningStack;
+    await runningStack.bootstrapOperator(credentials);
+    const loginResponse = await login(runningStack, credentials);
+    const cookie = cookiePair(loginResponse);
+
+    const beforeRotation = await fetch(`${runningStack.apiUrl}/api/v1/session`, {
+      headers: { Cookie: cookie },
+    });
+    expect(beforeRotation.status).toBe(200);
+
+    await runningStack.executeSql(`
+      UPDATE operators
+      SET jwt_signing_generation = jwt_signing_generation + 1;
+    `);
+
+    const afterRotation = await fetch(`${runningStack.apiUrl}/api/v1/session`, {
+      headers: { Cookie: cookie },
+    });
+    expect(afterRotation.status).toBe(401);
+    expect(ApiErrorSchema.parse(await afterRotation.json())).toMatchObject({
+      code: "AUTHENTICATION_REQUIRED",
+    });
   });
 
   it("serializes concurrent bootstrap attempts into one Operator", async () => {

@@ -67,6 +67,7 @@ const succeededEvent: InstallationEvent = {
 
 const session: Session = {
   schemaVersion: 1,
+  credentialVersion: "1",
   operator: {
     id: "018f0f89-949a-75a8-8f61-6df78a843b1e",
     username: "operator",

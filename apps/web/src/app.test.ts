@@ -8,7 +8,9 @@ import { createSessionToken, SESSION_COOKIE_NAME } from "./session.js";
 const sessionSigningKey = Buffer.alloc(32, 7);
 const sessionToken = createSessionToken(
   {
+    credentialVersion: "1",
     id: "018f0f89-949a-75a8-8f61-6df78a843b1e",
+    sessionGeneration: "1",
     username: "operator",
   },
   sessionSigningKey,
@@ -20,7 +22,24 @@ describe("web error and readiness boundaries", () => {
 
   beforeEach(async () => {
     const pool = {
-      query: vi.fn().mockRejectedValue(new Error("required database state is unavailable")),
+      query: vi.fn().mockImplementation((statement: string) => {
+        if (statement.includes("FROM operators")) {
+          return Promise.resolve({
+            rowCount: 1,
+            rows: [
+              {
+                credential_version: "1",
+                created_at: new Date("2026-08-24T12:00:00.000Z"),
+                id: "018f0f89-949a-75a8-8f61-6df78a843b1e",
+                jwt_signing_generation: "1",
+                password_hash: "invalid-test-hash",
+                username: "operator",
+              },
+            ],
+          });
+        }
+        return Promise.reject(new Error("required database state is unavailable"));
+      }),
     };
     app = await buildApp({
       boss: { send: vi.fn() },

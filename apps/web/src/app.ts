@@ -137,7 +137,7 @@ export async function buildApp({
     return reply.code(404).type("text/plain").send("Not Found");
   });
 
-  registerAuthentication(app, sessionSigningKey);
+  registerAuthentication(app, pool, sessionSigningKey);
   registerSessionRoutes(app, pool, sessionSigningKey);
 
   registerDiagnosticRoutes(app, pool, boss, eventRetentionLimit);
