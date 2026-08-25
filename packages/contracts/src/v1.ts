@@ -7,7 +7,7 @@ export const EventCursorSchema = z
   .regex(/^(0|[1-9][0-9]*)$/u);
 export const CredentialVersionSchema = z
   .string()
-  .max(19)
+  .max(18)
   .regex(/^[1-9][0-9]*$/u);
 export const KestrelIdSchema = z.uuidv7();
 export const CorrelationIdSchema = z.uuid();
@@ -47,6 +47,7 @@ export const StepUpActionSchema = z.enum([
 ]);
 
 export const RequestDigestSchema = z.string().regex(/^[a-f0-9]{64}$/u);
+export const StepUpProofTokenSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/u);
 
 export const StepUpCommandSchema = z.strictObject({
   action: StepUpActionSchema,
@@ -58,7 +59,7 @@ export const StepUpCommandSchema = z.strictObject({
 export const StepUpProofSchema = z.strictObject({
   schemaVersion: SchemaVersionSchema,
   expiresAt: UtcDateTimeSchema,
-  proof: z.string().regex(/^[A-Za-z0-9_-]{43}$/u),
+  proof: StepUpProofTokenSchema,
 });
 
 export const CredentialChangeCommandSchema = z.strictObject({
@@ -154,6 +155,7 @@ const StandardApiErrorSchema = z.strictObject({
     "REQUEST_REJECTED",
     "NOT_FOUND",
     "INSTALLATION_TRANSITION_CONFLICT",
+    "OPERATOR_VERSION_CONFLICT",
     "SERVICE_UNAVAILABLE",
     "INTERNAL_ERROR",
   ]),
@@ -199,3 +201,4 @@ export type Session = z.infer<typeof SessionSchema>;
 export type StepUpAction = z.infer<typeof StepUpActionSchema>;
 export type StepUpCommand = z.infer<typeof StepUpCommandSchema>;
 export type StepUpProof = z.infer<typeof StepUpProofSchema>;
+export type StepUpProofToken = z.infer<typeof StepUpProofTokenSchema>;

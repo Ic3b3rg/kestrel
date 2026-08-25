@@ -17,6 +17,7 @@
                   "REQUEST_REJECTED",
                   "NOT_FOUND",
                   "INSTALLATION_TRANSITION_CONFLICT",
+                  "OPERATOR_VERSION_CONFLICT",
                   "SERVICE_UNAVAILABLE",
                   "INTERNAL_ERROR"
                 ],
@@ -90,7 +91,7 @@
         "additionalProperties": false,
         "properties": {
           "expectedVersion": {
-            "maxLength": 19,
+            "maxLength": 18,
             "pattern": "^[1-9][0-9]*$",
             "type": "string"
           },
@@ -524,7 +525,7 @@
         "additionalProperties": false,
         "properties": {
           "credentialVersion": {
-            "maxLength": 19,
+            "maxLength": 18,
             "pattern": "^[1-9][0-9]*$",
             "type": "string"
           },
@@ -1204,6 +1205,16 @@
               }
             },
             "description": "The logout media type is unsupported"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The logout audit dependency is unavailable"
           }
         }
       }
@@ -1281,6 +1292,26 @@
               }
             },
             "description": "Step-up credentials, Origin, or CSRF validation failed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The step-up request is too large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The step-up media type is unsupported"
           },
           "429": {
             "content": {

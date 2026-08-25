@@ -10,6 +10,7 @@ import { registerEventRoutes } from "./routes/events.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerInstallationRoutes } from "./routes/installation.js";
 import { registerOpenApiRoute } from "./routes/openapi.js";
+import { registerOperatorSecurityRoutes } from "./routes/operator-security.js";
 import { registerPwaRoutes } from "./routes/pwa.js";
 import { registerSessionRoutes } from "./routes/session.js";
 import { registerAuthentication } from "./authentication.js";
@@ -142,6 +143,7 @@ export async function buildApp({
 
   registerAuthentication(app, pool, sessionSigningKey);
   registerSessionRoutes(app, pool, sessionSigningKey);
+  registerOperatorSecurityRoutes(app, pool);
 
   registerDiagnosticRoutes(app, pool, boss, eventRetentionLimit);
   registerEventRoutes(app, eventPool);

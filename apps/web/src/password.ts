@@ -9,6 +9,9 @@ const TAG_LENGTH = 32;
 const PHC_PATTERN =
   /^\$argon2id\$v=([0-9]+)\$m=([0-9]+),t=([0-9]+),p=([0-9]+)\$([A-Za-z0-9+/]+)\$([A-Za-z0-9+/]+)$/u;
 
+export const ARGON2ID_DUMMY_HASH =
+  "$argon2id$v=19$m=19456,t=2,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
 export class InvalidPasswordHashError extends Error {}
 
 function encodePhcPart(value: Buffer): string {

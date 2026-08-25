@@ -19,7 +19,7 @@ import {
   type DatabasePool,
 } from "@kestrel/database";
 
-import { verifyPassword } from "../password.js";
+import { ARGON2ID_DUMMY_HASH, verifyPassword } from "../password.js";
 import {
   createCsrfToken,
   createSessionToken,
@@ -35,8 +35,6 @@ import {
 const LOGIN_RATE_LIMIT_WINDOW_SECONDS = 15 * 60;
 const LOGIN_PRINCIPAL_LIMIT = 10;
 const LOGIN_SOURCE_LIMIT = 50;
-const DUMMY_PASSWORD_HASH =
-  "$argon2id$v=19$m=19456,t=2,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
 function authenticationSubjectDigest(scope: string, subject: string): string {
   return createHash("sha256").update(`${scope}\0${subject}`, "utf8").digest("hex");
@@ -129,7 +127,7 @@ export function registerSessionRoutes(
         const credentials = await readOperatorCredentials(pool, command.username);
         const passwordMatches = await verifyPassword(
           command.password,
-          credentials?.passwordHash ?? DUMMY_PASSWORD_HASH,
+          credentials?.passwordHash ?? ARGON2ID_DUMMY_HASH,
         );
         if (!credentials || !passwordMatches) {
           await appendAuditRecord(pool, {
@@ -207,15 +205,44 @@ export function registerSessionRoutes(
           403: jsonSchemaForEmbedding(apiErrorJsonSchema),
           413: jsonSchemaForEmbedding(apiErrorJsonSchema),
           415: jsonSchemaForEmbedding(apiErrorJsonSchema),
+          503: jsonSchemaForEmbedding(apiErrorJsonSchema),
         },
       },
     },
-    (request, reply) => {
+    async (request, reply) => {
       LogoutCommandSchema.parse(request.body);
       for (const cookie of serializeClearedAuthenticationCookies()) {
         reply.header("Set-Cookie", cookie);
       }
-      return reply.code(204).send();
+      try {
+        const session = request.operatorSession;
+        if (session === null) {
+          throw new Error("Authenticated logout route has no session");
+        }
+        await appendAuditRecord(pool, {
+          actorId: session.operator.id,
+          actorType: "operator",
+          causationId: null,
+          correlationId: request.id,
+          denialReason: null,
+          eventType: "operator.logout.succeeded",
+          facts: {},
+          outcome: "succeeded",
+          targetId: session.operator.id,
+          targetType: "operator",
+        });
+        return await reply.code(204).send();
+      } catch (error) {
+        request.log.error({ err: error, event: "operator.logout_audit_unavailable" });
+        return await reply.code(503).send(
+          ApiErrorSchema.parse({
+            schemaVersion: 1,
+            code: "SERVICE_UNAVAILABLE",
+            message: "Operator logout audit is unavailable",
+            correlationId: request.id,
+          }),
+        );
+      }
     },
   );
 }

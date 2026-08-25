@@ -16,6 +16,7 @@
                 "REQUEST_REJECTED",
                 "NOT_FOUND",
                 "INSTALLATION_TRANSITION_CONFLICT",
+                "OPERATOR_VERSION_CONFLICT",
                 "SERVICE_UNAVAILABLE",
                 "INTERNAL_ERROR"
               ],
@@ -89,7 +90,7 @@
       "additionalProperties": false,
       "properties": {
         "expectedVersion": {
-          "maxLength": 19,
+          "maxLength": 18,
           "pattern": "^[1-9][0-9]*$",
           "type": "string"
         },
@@ -507,7 +508,7 @@
       "additionalProperties": false,
       "properties": {
         "credentialVersion": {
-          "maxLength": 19,
+          "maxLength": 18,
           "pattern": "^[1-9][0-9]*$",
           "type": "string"
         },

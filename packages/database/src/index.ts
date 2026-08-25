@@ -11,6 +11,7 @@ export {
 } from "./installation.js";
 export { migrate, verifyAppliedMigrations } from "./migrate.js";
 export * from "./operators.js";
+export * from "./operator-security.js";
 export * from "./audit.js";
 export * from "./rate-limits.js";
 export * from "./pg-boss.js";

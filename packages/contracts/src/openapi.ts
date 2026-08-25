@@ -370,6 +370,10 @@ export const openApiDocument = sortJson({
             content: { "application/json": { schema: schemaReference("ApiError") } },
             description: "The logout media type is unsupported",
           },
+          "503": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "The logout audit dependency is unavailable",
+          },
         },
       },
     },
@@ -403,6 +407,14 @@ export const openApiDocument = sortJson({
           "429": {
             content: { "application/json": { schema: schemaReference("ApiError") } },
             description: "The release-fixed step-up limit was reached",
+          },
+          "413": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "The step-up request is too large",
+          },
+          "415": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "The step-up media type is unsupported",
           },
           "503": {
             content: { "application/json": { schema: schemaReference("ApiError") } },

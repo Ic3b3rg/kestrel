@@ -1,8 +1,15 @@
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { ApiErrorSchema, SessionSchema } from "@kestrel/contracts";
+import {
+  ApiErrorSchema,
+  serializeCredentialChangeCommand,
+  SessionSchema,
+  StepUpProofSchema,
+  type CredentialChangeCommand,
+  type StepUpCommand,
+} from "@kestrel/contracts";
 
 import { startStack, type RunningStack } from "./support/compose.js";
 
@@ -53,6 +60,49 @@ function namedCookie(response: Response, name: string): string {
   return cookie;
 }
 
+function authenticatedMutationHeaders(
+  loginResponse: Response,
+  extra: Record<string, string> = {},
+): Record<string, string> {
+  const csrfCookie = namedCookie(loginResponse, "__Host-kestrel-csrf");
+  return {
+    "Content-Type": "application/json",
+    Cookie: cookiePair(loginResponse),
+    Origin: new URL(loginResponse.url).origin,
+    "X-Kestrel-CSRF": csrfCookie.slice(csrfCookie.indexOf("=") + 1),
+    ...extra,
+  };
+}
+
+function credentialCommandDigest(command: CredentialChangeCommand): string {
+  return createHash("sha256").update(serializeCredentialChangeCommand(command)).digest("hex");
+}
+
+async function requestStepUp(
+  stack: RunningStack,
+  loginResponse: Response,
+  command: StepUpCommand,
+): Promise<Response> {
+  return fetch(`${stack.apiUrl}/auth/step-up`, {
+    body: JSON.stringify(command),
+    headers: authenticatedMutationHeaders(loginResponse),
+    method: "POST",
+  });
+}
+
+async function changeCredentials(
+  stack: RunningStack,
+  loginResponse: Response,
+  command: CredentialChangeCommand,
+  proof: string,
+): Promise<Response> {
+  return fetch(`${stack.apiUrl}/api/v1/operator/credentials`, {
+    body: JSON.stringify(command),
+    headers: authenticatedMutationHeaders(loginResponse, { "X-Kestrel-Step-Up": proof }),
+    method: "POST",
+  });
+}
+
 async function waitForStreamEnd(response: Response, timeoutMs = 5_000): Promise<void> {
   if (response.body === null) {
     throw new Error("Event stream did not return a response body");
@@ -96,7 +146,7 @@ describe("sole Operator authentication", () => {
     await stack?.executeSql(`
       DROP TRIGGER IF EXISTS kestrel_test_reject_operator ON operators;
       DROP FUNCTION IF EXISTS public.kestrel_test_reject_operator();
-      TRUNCATE authentication_rate_limits, installation_audit_records;
+      TRUNCATE operator_step_up_proofs, authentication_rate_limits, installation_audit_records;
       DELETE FROM operators;
       CREATE UNIQUE INDEX IF NOT EXISTS operators_singleton ON operators ((true));
     `);
@@ -254,6 +304,18 @@ describe("sole Operator authentication", () => {
     for (const value of logout.headers.getSetCookie()) {
       expect(value).toContain("Max-Age=0");
     }
+    await runningStack.executeSql(`
+      DO $$
+      BEGIN
+        IF (
+          SELECT count(*) FROM installation_audit_records
+          WHERE event_type = 'operator.logout.succeeded' AND outcome = 'succeeded'
+        ) <> 1 THEN
+          RAISE EXCEPTION 'expected one successful logout audit record';
+        END IF;
+      END;
+      $$;
+    `);
 
     const copiedJwt = await fetch(`${runningStack.apiUrl}/api/v1/session`, {
       headers: { Cookie: sessionCookie },
@@ -373,6 +435,261 @@ describe("sole Operator authentication", () => {
     expect(ApiErrorSchema.parse(await limited.json())).toMatchObject({
       code: "RATE_LIMITED",
     });
+  });
+
+  it("binds a one-command step-up proof and invalidates every session on credential change", async () => {
+    expect(stack).toBeDefined();
+    const runningStack = stack as RunningStack;
+    await runningStack.bootstrapOperator(credentials);
+    const loginResponse = await login(runningStack, credentials);
+    expect(loginResponse.status).toBe(200);
+    const session = SessionSchema.parse(await loginResponse.clone().json());
+    const command: CredentialChangeCommand = {
+      expectedVersion: session.credentialVersion,
+      newPassword: "a newly chosen correct horse battery staple",
+      username: "operator-renamed",
+    };
+    const requestDigest = credentialCommandDigest(command);
+    const baseStepUp: StepUpCommand = {
+      action: "operator_credentials_change",
+      password: credentials.password,
+      requestDigest,
+      targetId: session.operator.id,
+    };
+
+    const wrongTargetResponse = await requestStepUp(runningStack, loginResponse, {
+      ...baseStepUp,
+      targetId: "018f0f89-949a-75a8-8f61-6df78a843b1f",
+    });
+    const wrongTargetProof = StepUpProofSchema.parse(await wrongTargetResponse.json()).proof;
+    const wrongTarget = await changeCredentials(
+      runningStack,
+      loginResponse,
+      command,
+      wrongTargetProof,
+    );
+    expect(wrongTarget.status).toBe(403);
+
+    const wrongActionResponse = await requestStepUp(runningStack, loginResponse, {
+      ...baseStepUp,
+      action: "project_delete",
+    });
+    const wrongActionProof = StepUpProofSchema.parse(await wrongActionResponse.json()).proof;
+    const wrongAction = await changeCredentials(
+      runningStack,
+      loginResponse,
+      command,
+      wrongActionProof,
+    );
+    expect(wrongAction.status).toBe(403);
+
+    const wrongDigestResponse = await requestStepUp(runningStack, loginResponse, baseStepUp);
+    const wrongDigestProof = StepUpProofSchema.parse(await wrongDigestResponse.json()).proof;
+    const alteredCommand = { ...command, username: "unexpected-operator-name" };
+    const wrongDigest = await changeCredentials(
+      runningStack,
+      loginResponse,
+      alteredCommand,
+      wrongDigestProof,
+    );
+    expect(wrongDigest.status).toBe(403);
+
+    const expiredResponse = await requestStepUp(runningStack, loginResponse, baseStepUp);
+    const expiredProof = StepUpProofSchema.parse(await expiredResponse.json());
+    expect(Date.parse(expiredProof.expiresAt)).toBeGreaterThan(Date.now());
+    expect(Date.parse(expiredProof.expiresAt)).toBeLessThanOrEqual(Date.now() + 5 * 60 * 1_000);
+    const expiredDigest = createHash("sha256").update(expiredProof.proof).digest("hex");
+    await runningStack.executeSql(`
+      UPDATE operator_step_up_proofs
+      SET issued_at = statement_timestamp() - interval '6 minutes',
+          expires_at = statement_timestamp() - interval '1 minute'
+      WHERE proof_digest = '${expiredDigest}';
+    `);
+    const expired = await changeCredentials(
+      runningStack,
+      loginResponse,
+      command,
+      expiredProof.proof,
+    );
+    expect(expired.status).toBe(403);
+
+    const acceptedResponse = await requestStepUp(runningStack, loginResponse, baseStepUp);
+    expect(acceptedResponse.status).toBe(200);
+    const acceptedProof = StepUpProofSchema.parse(await acceptedResponse.json());
+    const changed = await changeCredentials(
+      runningStack,
+      loginResponse,
+      command,
+      acceptedProof.proof,
+    );
+    expect(changed.status).toBe(204);
+    expect(changed.headers.getSetCookie()).toHaveLength(2);
+
+    const oldSession = await fetch(`${runningStack.apiUrl}/api/v1/session`, {
+      headers: { Cookie: cookiePair(loginResponse) },
+    });
+    expect(oldSession.status).toBe(401);
+    expect((await login(runningStack, credentials)).status).toBe(401);
+
+    const renamedCredentials = {
+      username: command.username,
+      password: command.newPassword,
+    };
+    const newLogin = await login(runningStack, renamedCredentials);
+    expect(newLogin.status).toBe(200);
+    expect(SessionSchema.parse(await newLogin.clone().json())).toMatchObject({
+      credentialVersion: "2",
+      operator: { id: session.operator.id, username: command.username },
+    });
+
+    const replay = await changeCredentials(runningStack, newLogin, command, acceptedProof.proof);
+    expect(replay.status).toBe(403);
+
+    await runningStack.executeSql(`
+      DO $$
+      BEGIN
+        IF (
+          SELECT count(*) FROM operator_step_up_proofs
+          WHERE consumed_at IS NOT NULL
+        ) <> 5 THEN
+          RAISE EXCEPTION 'expected every presented proof to be consumed once';
+        END IF;
+        IF (
+          SELECT count(*) FROM installation_audit_records
+          WHERE event_type = 'operator.credentials_change.succeeded'
+        ) <> 1 THEN
+          RAISE EXCEPTION 'expected one successful credential-change audit record';
+        END IF;
+        IF (
+          SELECT count(*) FROM installation_audit_records
+          WHERE event_type = 'operator.credentials_change.denied'
+        ) <> 5 THEN
+          RAISE EXCEPTION 'expected five denied credential-change audit records';
+        END IF;
+        IF (
+          SELECT count(*) FROM installation_audit_records
+          WHERE event_type = 'operator.step_up.issued'
+        ) <> 5 THEN
+          RAISE EXCEPTION 'expected five issued step-up audit records';
+        END IF;
+        IF EXISTS (
+          SELECT 1 FROM installation_audit_records
+          WHERE facts::text LIKE '%${credentials.password}%'
+             OR facts::text LIKE '%${command.newPassword}%'
+             OR facts::text LIKE '%${acceptedProof.proof}%'
+        ) THEN
+          RAISE EXCEPTION 'step-up audit retained authentication secrets';
+        END IF;
+      END;
+      $$;
+    `);
+  });
+
+  it("applies a release-fixed limit to failed step-up authentication", async () => {
+    expect(stack).toBeDefined();
+    const runningStack = stack as RunningStack;
+    await runningStack.bootstrapOperator(credentials);
+    const loginResponse = await login(runningStack, credentials);
+    const session = SessionSchema.parse(await loginResponse.clone().json());
+    const command: CredentialChangeCommand = {
+      expectedVersion: session.credentialVersion,
+      newPassword: "a newly chosen correct horse battery staple",
+      username: credentials.username,
+    };
+    const stepUp: StepUpCommand = {
+      action: "operator_credentials_change",
+      password: "the wrong current password",
+      requestDigest: credentialCommandDigest(command),
+      targetId: session.operator.id,
+    };
+
+    const denials: number[] = [];
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      denials.push((await requestStepUp(runningStack, loginResponse, stepUp)).status);
+    }
+    expect(denials).toEqual(Array(5).fill(403));
+
+    const limited = await requestStepUp(runningStack, loginResponse, stepUp);
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("retry-after")).toMatch(/^[1-9][0-9]*$/u);
+    expect(ApiErrorSchema.parse(await limited.json())).toMatchObject({ code: "RATE_LIMITED" });
+    await runningStack.executeSql(`
+      DO $$
+      BEGIN
+        IF (
+          SELECT count(*) FROM installation_audit_records
+          WHERE event_type = 'operator.step_up.denied' AND outcome = 'denied'
+        ) <> 5 THEN
+          RAISE EXCEPTION 'expected five denied step-up audit records';
+        END IF;
+        IF (
+          SELECT count(*) FROM installation_audit_records
+          WHERE event_type = 'operator.step_up.rate_limited' AND outcome = 'denied'
+        ) <> 1 THEN
+          RAISE EXCEPTION 'expected one rate-limited step-up audit record';
+        END IF;
+      END;
+      $$;
+    `);
+  });
+
+  it("consumes a valid step-up proof when the credential version is stale", async () => {
+    expect(stack).toBeDefined();
+    const runningStack = stack as RunningStack;
+    await runningStack.bootstrapOperator(credentials);
+    const loginResponse = await login(runningStack, credentials);
+    const session = SessionSchema.parse(await loginResponse.clone().json());
+    const staleCommand: CredentialChangeCommand = {
+      expectedVersion: "2",
+      newPassword: "a newly chosen correct horse battery staple",
+      username: credentials.username,
+    };
+    const missingProof = await fetch(`${runningStack.apiUrl}/api/v1/operator/credentials`, {
+      body: JSON.stringify(staleCommand),
+      headers: authenticatedMutationHeaders(loginResponse),
+      method: "POST",
+    });
+    expect(missingProof.status).toBe(403);
+
+    const proofResponse = await requestStepUp(runningStack, loginResponse, {
+      action: "operator_credentials_change",
+      password: credentials.password,
+      requestDigest: credentialCommandDigest(staleCommand),
+      targetId: session.operator.id,
+    });
+    const proof = StepUpProofSchema.parse(await proofResponse.json()).proof;
+
+    const conflict = await changeCredentials(runningStack, loginResponse, staleCommand, proof);
+    expect(conflict.status).toBe(409);
+    expect(ApiErrorSchema.parse(await conflict.json())).toMatchObject({
+      code: "OPERATOR_VERSION_CONFLICT",
+    });
+    expect(
+      (
+        await fetch(`${runningStack.apiUrl}/api/v1/session`, {
+          headers: { Cookie: cookiePair(loginResponse) },
+        })
+      ).status,
+    ).toBe(200);
+    expect((await changeCredentials(runningStack, loginResponse, staleCommand, proof)).status).toBe(
+      403,
+    );
+
+    await runningStack.executeSql(`
+      DO $$
+      BEGIN
+        IF (SELECT credential_version FROM operators) <> 1 THEN
+          RAISE EXCEPTION 'stale command changed the Operator';
+        END IF;
+        IF (
+          SELECT count(*) FROM operator_step_up_proofs
+          WHERE consumed_at IS NOT NULL
+        ) <> 1 THEN
+          RAISE EXCEPTION 'stale command did not consume its proof';
+        END IF;
+      END;
+      $$;
+    `);
   });
 
   it("does not refresh a session and rejects expired, tampered, or duplicate cookies", async () => {
