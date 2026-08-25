@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import type { InstallationSnapshot } from "@kestrel/contracts";
 
 import type { EventConnectionState } from "./api.js";
@@ -12,6 +14,7 @@ interface InstallationViewProps {
   loading: boolean;
   online: boolean;
   operatorUsername: string;
+  operatorControls: ReactNode;
   onRetry: () => void;
   onRunDiagnostic: () => void;
   requestError: string | null;
@@ -250,6 +253,8 @@ export function InstallationView(props: InstallationViewProps) {
         ) : props.showData && props.snapshot ? (
           <InstallationRecord snapshot={props.snapshot} />
         ) : null}
+
+        {props.operatorControls}
 
         <p className="activity-line" role="status" aria-live="polite" aria-atomic="true">
           <span>Activity</span>

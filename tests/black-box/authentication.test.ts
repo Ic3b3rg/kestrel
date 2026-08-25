@@ -1,8 +1,15 @@
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { ApiErrorSchema, SessionSchema } from "@kestrel/contracts";
+import {
+  ApiErrorSchema,
+  serializeCredentialChangeCommand,
+  SessionSchema,
+  StepUpProofSchema,
+  type CredentialChangeCommand,
+  type StepUpCommand,
+} from "@kestrel/contracts";
 
 import { startStack, type RunningStack } from "./support/compose.js";
 
@@ -19,7 +26,7 @@ async function login(
 ): Promise<Response> {
   return fetch(`${stack.apiUrl}/auth/login`, {
     body: JSON.stringify(command),
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Origin: stack.apiUrl },
     method: "POST",
   });
 }
@@ -35,11 +42,65 @@ function signSession(payload: Record<string, unknown>): string {
 }
 
 function cookiePair(response: Response): string {
-  const cookie = response.headers.get("set-cookie")?.split(";", 1)[0];
-  if (!cookie) {
+  const cookies = response.headers.getSetCookie().map((value) => value.split(";", 1)[0]);
+  if (cookies.length === 0 || cookies.some((cookie) => !cookie)) {
     throw new Error("Login did not set a session cookie");
   }
+  return cookies.join("; ");
+}
+
+function namedCookie(response: Response, name: string): string {
+  const cookie = response.headers
+    .getSetCookie()
+    .map((value) => value.split(";", 1)[0])
+    .find((value) => value?.startsWith(`${name}=`));
+  if (!cookie) {
+    throw new Error(`Response did not set ${name}`);
+  }
   return cookie;
+}
+
+function authenticatedMutationHeaders(
+  loginResponse: Response,
+  extra: Record<string, string> = {},
+): Record<string, string> {
+  const csrfCookie = namedCookie(loginResponse, "__Host-kestrel-csrf");
+  return {
+    "Content-Type": "application/json",
+    Cookie: cookiePair(loginResponse),
+    Origin: new URL(loginResponse.url).origin,
+    "X-Kestrel-CSRF": csrfCookie.slice(csrfCookie.indexOf("=") + 1),
+    ...extra,
+  };
+}
+
+function credentialCommandDigest(command: CredentialChangeCommand): string {
+  return createHash("sha256").update(serializeCredentialChangeCommand(command)).digest("hex");
+}
+
+async function requestStepUp(
+  stack: RunningStack,
+  loginResponse: Response,
+  command: StepUpCommand,
+): Promise<Response> {
+  return fetch(`${stack.apiUrl}/auth/step-up`, {
+    body: JSON.stringify(command),
+    headers: authenticatedMutationHeaders(loginResponse),
+    method: "POST",
+  });
+}
+
+async function changeCredentials(
+  stack: RunningStack,
+  loginResponse: Response,
+  command: CredentialChangeCommand,
+  proof: string,
+): Promise<Response> {
+  return fetch(`${stack.apiUrl}/api/v1/operator/credentials`, {
+    body: JSON.stringify(command),
+    headers: authenticatedMutationHeaders(loginResponse, { "X-Kestrel-Step-Up": proof }),
+    method: "POST",
+  });
 }
 
 async function waitForStreamEnd(response: Response, timeoutMs = 5_000): Promise<void> {
@@ -57,7 +118,7 @@ async function waitForStreamEnd(response: Response, timeoutMs = 5_000): Promise<
       })(),
       new Promise<never>((_resolve, reject) => {
         timeout = setTimeout(
-          () => reject(new Error("Event stream remained open beyond session expiry")),
+          () => reject(new Error("Event stream remained open beyond its security deadline")),
           timeoutMs,
         );
       }),
@@ -85,6 +146,11 @@ describe("sole Operator authentication", () => {
     await stack?.executeSql(`
       DROP TRIGGER IF EXISTS kestrel_test_reject_operator ON operators;
       DROP FUNCTION IF EXISTS public.kestrel_test_reject_operator();
+      DROP TRIGGER IF EXISTS kestrel_test_reject_audit_insert ON installation_audit_records;
+      DROP FUNCTION IF EXISTS public.kestrel_test_reject_audit_insert();
+      ALTER TABLE installation_audit_records DISABLE TRIGGER installation_audit_append_only;
+      TRUNCATE operator_step_up_proofs, authentication_rate_limits, installation_audit_records;
+      ALTER TABLE installation_audit_records ENABLE TRIGGER installation_audit_append_only;
       DELETE FROM operators;
       CREATE UNIQUE INDEX IF NOT EXISTS operators_singleton ON operators ((true));
     `);
@@ -182,6 +248,129 @@ describe("sole Operator authentication", () => {
     `);
   }, 60_000);
 
+  it("requires same-origin CSRF proof and clears only the browser cookies on logout", async () => {
+    expect(stack).toBeDefined();
+    const runningStack = stack as RunningStack;
+    await runningStack.bootstrapOperator(credentials);
+
+    const crossOriginLogin = await fetch(`${runningStack.apiUrl}/auth/login`, {
+      body: JSON.stringify(credentials),
+      headers: {
+        "Content-Type": "application/json",
+        Origin: "https://attacker.invalid",
+      },
+      method: "POST",
+    });
+    expect(crossOriginLogin.status).toBe(403);
+    expect(crossOriginLogin.headers.getSetCookie()).toEqual([]);
+
+    const loginResponse = await login(runningStack, credentials);
+    expect(loginResponse.status).toBe(200);
+    expect(loginResponse.headers.get("cache-control")).toBe("no-store");
+    expect(loginResponse.headers.get("pragma")).toBe("no-cache");
+    expect(loginResponse.headers.get("expires")).toBe("0");
+    const cookies = cookiePair(loginResponse);
+    const sessionCookie = namedCookie(loginResponse, "__Host-kestrel-session");
+    const csrfCookie = namedCookie(loginResponse, "__Host-kestrel-csrf");
+    const csrfToken = csrfCookie.slice(csrfCookie.indexOf("=") + 1);
+
+    const missingProof = await fetch(`${runningStack.apiUrl}/auth/logout`, {
+      body: "{}",
+      headers: { "Content-Type": "application/json", Cookie: cookies },
+      method: "POST",
+    });
+    expect(missingProof.status).toBe(403);
+
+    const wrongOrigin = await fetch(`${runningStack.apiUrl}/auth/logout`, {
+      body: "{}",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: cookies,
+        Origin: "https://attacker.invalid",
+        "X-Kestrel-CSRF": csrfToken,
+      },
+      method: "POST",
+    });
+    expect(wrongOrigin.status).toBe(403);
+
+    const logout = await fetch(`${runningStack.apiUrl}/auth/logout`, {
+      body: "{}",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: cookies,
+        Origin: runningStack.apiUrl,
+        "X-Kestrel-CSRF": csrfToken,
+      },
+      method: "POST",
+    });
+    expect(logout.status).toBe(204);
+    expect(logout.headers.getSetCookie()).toHaveLength(2);
+    for (const value of logout.headers.getSetCookie()) {
+      expect(value).toContain("Max-Age=0");
+    }
+    await runningStack.executeSql(`
+      DO $$
+      BEGIN
+        IF (
+          SELECT count(*) FROM installation_audit_records
+          WHERE event_type = 'operator.logout.succeeded' AND outcome = 'succeeded'
+        ) <> 1 THEN
+          RAISE EXCEPTION 'expected one successful logout audit record';
+        END IF;
+      END;
+      $$;
+    `);
+
+    const copiedJwt = await fetch(`${runningStack.apiUrl}/api/v1/session`, {
+      headers: { Cookie: sessionCookie },
+    });
+    expect(copiedJwt.status).toBe(200);
+  });
+
+  it("clears the browser cookies even when logout audit is unavailable", async () => {
+    expect(stack).toBeDefined();
+    const runningStack = stack as RunningStack;
+    await runningStack.bootstrapOperator(credentials);
+    const loginResponse = await login(runningStack, credentials);
+    expect(loginResponse.status).toBe(200);
+
+    await runningStack.executeSql(`
+      CREATE FUNCTION public.kestrel_test_reject_audit_insert()
+      RETURNS trigger
+      LANGUAGE plpgsql
+      AS $$
+      BEGIN
+        IF NEW.event_type = 'operator.logout.succeeded' THEN
+          RAISE EXCEPTION 'test rejects logout audit';
+        END IF;
+        RETURN NEW;
+      END;
+      $$;
+      CREATE TRIGGER kestrel_test_reject_audit_insert
+      BEFORE INSERT ON installation_audit_records
+      FOR EACH ROW
+      EXECUTE FUNCTION public.kestrel_test_reject_audit_insert();
+    `);
+
+    const failedLogout = await fetch(`${runningStack.apiUrl}/auth/logout`, {
+      body: "{}",
+      headers: authenticatedMutationHeaders(loginResponse),
+      method: "POST",
+    });
+    expect(failedLogout.status).toBe(503);
+    expect(failedLogout.headers.getSetCookie()).toHaveLength(2);
+    for (const value of failedLogout.headers.getSetCookie()) {
+      expect(value).toContain("Max-Age=0");
+    }
+    expect(
+      (
+        await fetch(`${runningStack.apiUrl}/api/v1/session`, {
+          headers: { Cookie: cookiePair(loginResponse) },
+        })
+      ).status,
+    ).toBe(200);
+  });
+
   it("returns the same denial for an unknown username and a wrong password", async () => {
     expect(stack).toBeDefined();
     const runningStack = stack as RunningStack;
@@ -210,6 +399,573 @@ describe("sole Operator authentication", () => {
     expect(wrongPassword.headers.get("set-cookie")).toBeNull();
   });
 
+  it("applies release-fixed login limits and records minimized abuse audit", async () => {
+    expect(stack).toBeDefined();
+    const runningStack = stack as RunningStack;
+    await runningStack.bootstrapOperator(credentials);
+
+    const denials: Response[] = [];
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      denials.push(
+        await login(runningStack, {
+          username: credentials.username,
+          password: `incorrect password attempt ${String(attempt)}`,
+        }),
+      );
+    }
+    expect(denials.map((response) => response.status)).toEqual(Array(10).fill(401));
+
+    const limited = await login(runningStack, {
+      username: credentials.username,
+      password: "one incorrect password too many",
+    });
+    expect(limited.status).toBe(429);
+    expect(ApiErrorSchema.parse(await limited.json())).toMatchObject({
+      code: "RATE_LIMITED",
+      message: "Operator authentication is temporarily limited",
+    });
+    expect(limited.headers.get("retry-after")).toMatch(/^[1-9][0-9]*$/u);
+
+    await runningStack.executeSql(`
+      DO $$
+      BEGIN
+        IF (
+          SELECT count(*) FROM installation_audit_records
+          WHERE event_type = 'operator.login.denied' AND outcome = 'denied'
+        ) <> 10 THEN
+          RAISE EXCEPTION 'expected ten denied login audit records';
+        END IF;
+        IF (
+          SELECT count(*) FROM installation_audit_records
+          WHERE event_type = 'operator.login.rate_limited' AND outcome = 'denied'
+        ) <> 1 THEN
+          RAISE EXCEPTION 'expected one rate-limited login audit record';
+        END IF;
+        IF EXISTS (
+          SELECT 1
+          FROM (
+            SELECT prior_record_hash,
+                   lag(record_hash) OVER (ORDER BY id) AS expected_prior_hash
+            FROM installation_audit_records
+          ) chained
+          WHERE prior_record_hash IS DISTINCT FROM expected_prior_hash
+        ) THEN
+          RAISE EXCEPTION 'authentication audit hash chain is discontinuous';
+        END IF;
+        IF EXISTS (
+          SELECT 1 FROM installation_audit_records
+          WHERE facts::text LIKE '%${credentials.username}%'
+             OR facts::text LIKE '%incorrect password%'
+             OR facts::text LIKE '%127.0.0.1%'
+        ) THEN
+          RAISE EXCEPTION 'authentication audit retained sensitive input';
+        END IF;
+      END;
+      $$;
+    `);
+    await expect(
+      runningStack.executeSql(`
+        UPDATE installation_audit_records
+        SET facts = '{"tampered":true}'::jsonb;
+      `),
+    ).rejects.toThrow(/append-only/u);
+    await expect(runningStack.executeSql("TRUNCATE installation_audit_records;")).rejects.toThrow(
+      /append-only/u,
+    );
+    await runningStack.executeRuntimeSql(`
+      DO $$
+      BEGIN
+        IF current_user <> 'kestrel_runtime' OR EXISTS (
+          SELECT 1 FROM pg_roles
+          WHERE rolname = current_user
+            AND (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls)
+        ) THEN
+          RAISE EXCEPTION 'application did not use the constrained runtime role';
+        END IF;
+      END;
+      $$;
+    `);
+    await expect(
+      runningStack.executeRuntimeSql(
+        "ALTER TABLE installation_audit_records DISABLE TRIGGER installation_audit_append_only;",
+      ),
+    ).rejects.toThrow(/must be owner|permission denied/u);
+    await expect(
+      runningStack.executeRuntimeSql(
+        "UPDATE installation_audit_records SET facts = '{\"tampered\":true}'::jsonb;",
+      ),
+    ).rejects.toThrow(/permission denied/u);
+    await expect(
+      runningStack.executeRuntimeSql("TRUNCATE installation_audit_records;"),
+    ).rejects.toThrow(/permission denied/u);
+    await expect(
+      runningStack.executeRuntimeSql(
+        "UPDATE schema_migrations SET checksum = repeat('0', 64) WHERE false;",
+      ),
+    ).rejects.toThrow(/permission denied/u);
+  });
+
+  it("limits one source even when it rotates candidate usernames", async () => {
+    expect(stack).toBeDefined();
+    const runningStack = stack as RunningStack;
+    await runningStack.bootstrapOperator(credentials);
+    await runningStack.executeSql(`
+      INSERT INTO authentication_rate_limits (
+        scope,
+        subject_digest,
+        window_started_at,
+        attempts
+      ) VALUES (
+        'operator_login_principal',
+        '${"a".repeat(64)}',
+        statement_timestamp() - interval '2 days',
+        1
+      );
+    `);
+
+    const statuses: number[] = [];
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const response = await login(runningStack, {
+        username: `candidate-${String(attempt)}`,
+        password: "one invalid password",
+      });
+      statuses.push(response.status);
+    }
+    expect(statuses).toEqual(Array(50).fill(401));
+
+    const limited = await login(runningStack, {
+      username: "candidate-over-limit",
+      password: "one invalid password",
+    });
+    expect(limited.status).toBe(429);
+    expect(ApiErrorSchema.parse(await limited.json())).toMatchObject({
+      code: "RATE_LIMITED",
+    });
+
+    const postLimitStatuses: number[] = [];
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      postLimitStatuses.push(
+        (
+          await login(runningStack, {
+            username: `post-limit-candidate-${String(attempt)}`,
+            password: "one invalid password",
+          })
+        ).status,
+      );
+    }
+    expect(postLimitStatuses).toEqual(Array(100).fill(429));
+
+    await runningStack.executeSql(`
+      DO $$
+      BEGIN
+        IF (
+          SELECT count(*) FROM authentication_rate_limits
+          WHERE scope = 'operator_login_principal'
+        ) <> 50 THEN
+          RAISE EXCEPTION 'blocked sources created unbounded principal buckets';
+        END IF;
+        IF (
+          SELECT attempts FROM authentication_rate_limits
+          WHERE scope = 'operator_login_source'
+        ) <> 51 THEN
+          RAISE EXCEPTION 'blocked source counter was not capped';
+        END IF;
+        IF (
+          SELECT count(*) FROM installation_audit_records
+          WHERE event_type = 'operator.login.rate_limited'
+        ) <> 1 THEN
+          RAISE EXCEPTION 'blocked source produced unbounded audit records';
+        END IF;
+        IF EXISTS (
+          SELECT 1 FROM authentication_rate_limits
+          WHERE subject_digest = '${"a".repeat(64)}'
+        ) THEN
+          RAISE EXCEPTION 'expired rate-limit bucket was not pruned';
+        END IF;
+      END;
+      $$;
+    `);
+  });
+
+  it("binds a one-command step-up proof and invalidates every session on credential change", async () => {
+    expect(stack).toBeDefined();
+    const runningStack = stack as RunningStack;
+    await runningStack.bootstrapOperator(credentials);
+    const loginResponse = await login(runningStack, credentials);
+    expect(loginResponse.status).toBe(200);
+    const session = SessionSchema.parse(await loginResponse.clone().json());
+    const command: CredentialChangeCommand = {
+      expectedVersion: session.credentialVersion,
+      newPassword: "a newly chosen correct horse battery staple",
+      username: "operator-renamed",
+    };
+    const requestDigest = credentialCommandDigest(command);
+    const baseStepUp: StepUpCommand = {
+      action: "operator_credentials_change",
+      password: credentials.password,
+      requestDigest,
+      targetId: session.operator.id,
+    };
+
+    const wrongTargetResponse = await requestStepUp(runningStack, loginResponse, {
+      ...baseStepUp,
+      targetId: "018f0f89-949a-75a8-8f61-6df78a843b1f",
+    });
+    const wrongTargetProof = StepUpProofSchema.parse(await wrongTargetResponse.json()).proof;
+    const wrongTarget = await changeCredentials(
+      runningStack,
+      loginResponse,
+      command,
+      wrongTargetProof,
+    );
+    expect(wrongTarget.status).toBe(403);
+
+    const wrongActionResponse = await requestStepUp(runningStack, loginResponse, {
+      ...baseStepUp,
+      action: "project_delete",
+    });
+    const wrongActionProof = StepUpProofSchema.parse(await wrongActionResponse.json()).proof;
+    const wrongAction = await changeCredentials(
+      runningStack,
+      loginResponse,
+      command,
+      wrongActionProof,
+    );
+    expect(wrongAction.status).toBe(403);
+
+    const wrongDigestResponse = await requestStepUp(runningStack, loginResponse, baseStepUp);
+    const wrongDigestProof = StepUpProofSchema.parse(await wrongDigestResponse.json()).proof;
+    const alteredCommand = { ...command, username: "unexpected-operator-name" };
+    const wrongDigest = await changeCredentials(
+      runningStack,
+      loginResponse,
+      alteredCommand,
+      wrongDigestProof,
+    );
+    expect(wrongDigest.status).toBe(403);
+
+    const expiredResponse = await requestStepUp(runningStack, loginResponse, baseStepUp);
+    const expiredProof = StepUpProofSchema.parse(await expiredResponse.json());
+    expect(Date.parse(expiredProof.expiresAt)).toBeGreaterThan(Date.now());
+    expect(Date.parse(expiredProof.expiresAt)).toBeLessThanOrEqual(Date.now() + 5 * 60 * 1_000);
+    const expiredDigest = createHash("sha256").update(expiredProof.proof).digest("hex");
+    await runningStack.executeSql(`
+      UPDATE operator_step_up_proofs
+      SET issued_at = statement_timestamp() - interval '6 minutes',
+          expires_at = statement_timestamp() - interval '1 minute'
+      WHERE proof_digest = '${expiredDigest}';
+    `);
+    const expired = await changeCredentials(
+      runningStack,
+      loginResponse,
+      command,
+      expiredProof.proof,
+    );
+    expect(expired.status).toBe(403);
+
+    const acceptedResponse = await requestStepUp(runningStack, loginResponse, baseStepUp);
+    expect(acceptedResponse.status).toBe(200);
+    const acceptedProof = StepUpProofSchema.parse(await acceptedResponse.json());
+    const acceptedProofDigest = createHash("sha256").update(acceptedProof.proof).digest("hex");
+    const requestBindingKey = createHmac("sha256", sessionSigningKey)
+      .update("kestrel-step-up-request-binding-key-v1", "ascii")
+      .digest();
+    const expectedRequestBinding = createHmac("sha256", requestBindingKey)
+      .update("kestrel-step-up-request-binding-v1\0", "ascii")
+      .update(requestDigest, "ascii")
+      .digest("hex");
+    await runningStack.executeSql(`
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'operator_step_up_proofs'
+            AND column_name = 'request_digest'
+        ) THEN
+          RAISE EXCEPTION 'step-up retained an unkeyed request digest';
+        END IF;
+        IF (
+          SELECT request_binding_hmac FROM operator_step_up_proofs
+          WHERE proof_digest = '${acceptedProofDigest}'
+        ) <> '${expectedRequestBinding}' THEN
+          RAISE EXCEPTION 'step-up request binding was not keyed and domain-separated';
+        END IF;
+      END;
+      $$;
+    `);
+    const changed = await changeCredentials(
+      runningStack,
+      loginResponse,
+      command,
+      acceptedProof.proof,
+    );
+    expect(changed.status).toBe(204);
+    expect(changed.headers.getSetCookie()).toHaveLength(2);
+
+    const oldSession = await fetch(`${runningStack.apiUrl}/api/v1/session`, {
+      headers: { Cookie: cookiePair(loginResponse) },
+    });
+    expect(oldSession.status).toBe(401);
+    expect((await login(runningStack, credentials)).status).toBe(401);
+
+    const renamedCredentials = {
+      username: command.username,
+      password: command.newPassword,
+    };
+    const newLogin = await login(runningStack, renamedCredentials);
+    expect(newLogin.status).toBe(200);
+    expect(SessionSchema.parse(await newLogin.clone().json())).toMatchObject({
+      credentialVersion: "2",
+      operator: { id: session.operator.id, username: command.username },
+    });
+
+    const replay = await changeCredentials(runningStack, newLogin, command, acceptedProof.proof);
+    expect(replay.status).toBe(403);
+
+    await runningStack.executeSql(`
+      DO $$
+      BEGIN
+        IF (SELECT count(*) FROM operator_step_up_proofs) <> 0 THEN
+          RAISE EXCEPTION 'presented or expired proofs were retained';
+        END IF;
+        IF (
+          SELECT count(*) FROM installation_audit_records
+          WHERE event_type = 'operator.credentials_change.succeeded'
+        ) <> 1 THEN
+          RAISE EXCEPTION 'expected one successful credential-change audit record';
+        END IF;
+        IF (
+          SELECT count(*) FROM installation_audit_records
+          WHERE event_type = 'operator.credentials_change.denied'
+        ) <> 5 THEN
+          RAISE EXCEPTION 'expected five denied credential-change audit records';
+        END IF;
+        IF (
+          SELECT count(*) FROM installation_audit_records
+          WHERE event_type = 'operator.step_up.issued'
+        ) <> 5 THEN
+          RAISE EXCEPTION 'expected five issued step-up audit records';
+        END IF;
+        IF EXISTS (
+          SELECT 1 FROM installation_audit_records
+          WHERE facts::text LIKE '%${credentials.password}%'
+             OR facts::text LIKE '%${command.newPassword}%'
+             OR facts::text LIKE '%${acceptedProof.proof}%'
+        ) THEN
+          RAISE EXCEPTION 'step-up audit retained authentication secrets';
+        END IF;
+      END;
+      $$;
+    `);
+  });
+
+  it("applies a release-fixed limit to failed step-up authentication", async () => {
+    expect(stack).toBeDefined();
+    const runningStack = stack as RunningStack;
+    await runningStack.bootstrapOperator(credentials);
+    const loginResponse = await login(runningStack, credentials);
+    const session = SessionSchema.parse(await loginResponse.clone().json());
+    const command: CredentialChangeCommand = {
+      expectedVersion: session.credentialVersion,
+      newPassword: "a newly chosen correct horse battery staple",
+      username: credentials.username,
+    };
+    const stepUp: StepUpCommand = {
+      action: "operator_credentials_change",
+      password: "the wrong current password",
+      requestDigest: credentialCommandDigest(command),
+      targetId: session.operator.id,
+    };
+
+    const denials: number[] = [];
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      denials.push((await requestStepUp(runningStack, loginResponse, stepUp)).status);
+    }
+    expect(denials).toEqual(Array(5).fill(403));
+
+    const limited = await requestStepUp(runningStack, loginResponse, stepUp);
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("retry-after")).toMatch(/^[1-9][0-9]*$/u);
+    expect(ApiErrorSchema.parse(await limited.json())).toMatchObject({ code: "RATE_LIMITED" });
+    await runningStack.executeSql(`
+      DO $$
+      BEGIN
+        IF (
+          SELECT count(*) FROM installation_audit_records
+          WHERE event_type = 'operator.step_up.denied' AND outcome = 'denied'
+        ) <> 5 THEN
+          RAISE EXCEPTION 'expected five denied step-up audit records';
+        END IF;
+        IF (
+          SELECT count(*) FROM installation_audit_records
+          WHERE event_type = 'operator.step_up.rate_limited' AND outcome = 'denied'
+        ) <> 1 THEN
+          RAISE EXCEPTION 'expected one rate-limited step-up audit record';
+        END IF;
+      END;
+      $$;
+    `);
+  });
+
+  it("limits invalid credential-change proofs before repeated password hashing", async () => {
+    expect(stack).toBeDefined();
+    const runningStack = stack as RunningStack;
+    await runningStack.bootstrapOperator(credentials);
+    const loginResponse = await login(runningStack, credentials);
+    const session = SessionSchema.parse(await loginResponse.clone().json());
+    const command: CredentialChangeCommand = {
+      expectedVersion: session.credentialVersion,
+      newPassword: "a newly chosen correct horse battery staple",
+      username: credentials.username,
+    };
+
+    const denials: number[] = [];
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      denials.push(
+        (await changeCredentials(runningStack, loginResponse, command, "A".repeat(43))).status,
+      );
+    }
+    expect(denials).toEqual(Array(5).fill(403));
+
+    const limited = await changeCredentials(runningStack, loginResponse, command, "A".repeat(43));
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("retry-after")).toMatch(/^[1-9][0-9]*$/u);
+    expect(ApiErrorSchema.parse(await limited.json())).toMatchObject({ code: "RATE_LIMITED" });
+  });
+
+  it("consumes a valid step-up proof when the credential version is stale", async () => {
+    expect(stack).toBeDefined();
+    const runningStack = stack as RunningStack;
+    await runningStack.bootstrapOperator(credentials);
+    const loginResponse = await login(runningStack, credentials);
+    const session = SessionSchema.parse(await loginResponse.clone().json());
+    const staleCommand: CredentialChangeCommand = {
+      expectedVersion: "2",
+      newPassword: "a newly chosen correct horse battery staple",
+      username: credentials.username,
+    };
+    const missingProof = await fetch(`${runningStack.apiUrl}/api/v1/operator/credentials`, {
+      body: JSON.stringify(staleCommand),
+      headers: authenticatedMutationHeaders(loginResponse),
+      method: "POST",
+    });
+    expect(missingProof.status).toBe(403);
+
+    const proofResponse = await requestStepUp(runningStack, loginResponse, {
+      action: "operator_credentials_change",
+      password: credentials.password,
+      requestDigest: credentialCommandDigest(staleCommand),
+      targetId: session.operator.id,
+    });
+    const proof = StepUpProofSchema.parse(await proofResponse.json()).proof;
+
+    const conflict = await changeCredentials(runningStack, loginResponse, staleCommand, proof);
+    expect(conflict.status).toBe(409);
+    expect(ApiErrorSchema.parse(await conflict.json())).toMatchObject({
+      code: "OPERATOR_VERSION_CONFLICT",
+    });
+    expect(
+      (
+        await fetch(`${runningStack.apiUrl}/api/v1/session`, {
+          headers: { Cookie: cookiePair(loginResponse) },
+        })
+      ).status,
+    ).toBe(200);
+    expect((await changeCredentials(runningStack, loginResponse, staleCommand, proof)).status).toBe(
+      403,
+    );
+
+    await runningStack.executeSql(`
+      DO $$
+      BEGIN
+        IF (SELECT credential_version FROM operators) <> 1 THEN
+          RAISE EXCEPTION 'stale command changed the Operator';
+        END IF;
+        IF (SELECT count(*) FROM operator_step_up_proofs) <> 0 THEN
+          RAISE EXCEPTION 'stale command retained its proof';
+        END IF;
+      END;
+      $$;
+    `);
+  });
+
+  it("recovers on the host only and invalidates sessions from a lost device", async () => {
+    expect(stack).toBeDefined();
+    const runningStack = stack as RunningStack;
+    await runningStack.bootstrapOperator(credentials);
+    const firstLogin = await login(runningStack, credentials);
+    expect(firstLogin.status).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, 1_100));
+    const secondLogin = await login(runningStack, credentials);
+    expect(secondLogin.status).toBe(200);
+    const firstCookie = namedCookie(firstLogin, "__Host-kestrel-session");
+    const secondCookie = namedCookie(secondLogin, "__Host-kestrel-session");
+    expect(firstCookie).not.toBe(secondCookie);
+
+    const remoteRecovery = await fetch(`${runningStack.apiUrl}/auth/reset`, {
+      body: "{}",
+      headers: authenticatedMutationHeaders(firstLogin),
+      method: "POST",
+    });
+    expect(remoteRecovery.status).toBe(404);
+    expect(ApiErrorSchema.parse(await remoteRecovery.json())).toMatchObject({ code: "NOT_FOUND" });
+
+    const lostDeviceStream = await fetch(`${runningStack.apiUrl}/api/v1/events`, {
+      headers: { Accept: "text/event-stream", Cookie: firstCookie },
+    });
+    expect(lostDeviceStream.status).toBe(200);
+    const lostDeviceDisconnected = waitForStreamEnd(lostDeviceStream);
+
+    const recoveredPassword = "host recovered correct horse battery staple";
+    const resetOutput = await runningStack.resetOperatorPassword(recoveredPassword);
+    expect(resetOutput).toContain("Operator password reset");
+    expect(resetOutput).not.toContain(credentials.password);
+    expect(resetOutput).not.toContain(recoveredPassword);
+    await lostDeviceDisconnected;
+
+    const oldSessions = await Promise.all(
+      [firstCookie, secondCookie].map((cookie) =>
+        fetch(`${runningStack.apiUrl}/api/v1/session`, { headers: { Cookie: cookie } }),
+      ),
+    );
+    expect(oldSessions.map((response) => response.status)).toEqual([401, 401]);
+    expect((await login(runningStack, credentials)).status).toBe(401);
+
+    const recoveredLogin = await login(runningStack, {
+      username: credentials.username,
+      password: recoveredPassword,
+    });
+    expect(recoveredLogin.status).toBe(200);
+    expect(SessionSchema.parse(await recoveredLogin.json())).toMatchObject({
+      credentialVersion: "2",
+      operator: { username: credentials.username },
+    });
+
+    await runningStack.executeSql(`
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM operators
+          WHERE credential_version <> 2
+             OR jwt_signing_generation <> 2
+             OR password_hash NOT LIKE '$argon2id$v=19$m=19456,t=2,p=1$%'
+        ) THEN
+          RAISE EXCEPTION 'host recovery did not rotate the certified authentication state';
+        END IF;
+        IF (
+          SELECT count(*) FROM installation_audit_records
+          WHERE event_type = 'operator.password_reset.succeeded'
+            AND actor_type = 'host'
+            AND outcome = 'succeeded'
+        ) <> 1 THEN
+          RAISE EXCEPTION 'expected one successful host reset audit record';
+        END IF;
+      END;
+      $$;
+    `);
+  });
+
   it("does not refresh a session and rejects expired, tampered, or duplicate cookies", async () => {
     expect(stack).toBeDefined();
     const runningStack = stack as RunningStack;
@@ -217,6 +973,7 @@ describe("sole Operator authentication", () => {
     const loginResponse = await login(runningStack, credentials);
     const session = SessionSchema.parse(await loginResponse.json());
     const cookie = cookiePair(loginResponse);
+    const sessionCookie = namedCookie(loginResponse, "__Host-kestrel-session");
 
     expect((Date.parse(session.expiresAt) - Date.parse(session.issuedAt)) / 1_000).toBe(
       7 * 24 * 60 * 60,
@@ -230,9 +987,11 @@ describe("sole Operator authentication", () => {
     const expiredAt = Math.floor(Date.now() / 1_000) - 1;
     const expiredToken = signSession({
       aud: "kestrel-pwa",
+      cv: "1",
       exp: expiredAt,
       iat: expiredAt - 7 * 24 * 60 * 60,
       iss: "kestrel",
+      sg: "1",
       sub: session.operator.id,
       username: session.operator.username,
       v: 1,
@@ -241,10 +1000,10 @@ describe("sole Operator authentication", () => {
       headers: { Cookie: `__Host-kestrel-session=${expiredToken}` },
     });
     const tampered = await fetch(`${runningStack.apiUrl}/api/v1/installation`, {
-      headers: { Cookie: `${cookie}x` },
+      headers: { Cookie: `${sessionCookie}x` },
     });
     const duplicate = await fetch(`${runningStack.apiUrl}/api/v1/installation`, {
-      headers: { Cookie: `${cookie}; ${cookie}` },
+      headers: { Cookie: `${sessionCookie}; ${sessionCookie}` },
     });
 
     expect(expired.status).toBe(401);
@@ -254,9 +1013,11 @@ describe("sole Operator authentication", () => {
     const shortlyExpiresAt = Math.floor(Date.now() / 1_000) + 2;
     const shortLivedToken = signSession({
       aud: "kestrel-pwa",
+      cv: "1",
       exp: shortlyExpiresAt,
       iat: shortlyExpiresAt - 7 * 24 * 60 * 60,
       iss: "kestrel",
+      sg: "1",
       sub: session.operator.id,
       username: session.operator.username,
       v: 1,
@@ -269,6 +1030,32 @@ describe("sole Operator authentication", () => {
     });
     expect(stream.status).toBe(200);
     await waitForStreamEnd(stream);
+  });
+
+  it("rejects every session from an earlier signing generation", async () => {
+    expect(stack).toBeDefined();
+    const runningStack = stack as RunningStack;
+    await runningStack.bootstrapOperator(credentials);
+    const loginResponse = await login(runningStack, credentials);
+    const cookie = cookiePair(loginResponse);
+
+    const beforeRotation = await fetch(`${runningStack.apiUrl}/api/v1/session`, {
+      headers: { Cookie: cookie },
+    });
+    expect(beforeRotation.status).toBe(200);
+
+    await runningStack.executeSql(`
+      UPDATE operators
+      SET jwt_signing_generation = jwt_signing_generation + 1;
+    `);
+
+    const afterRotation = await fetch(`${runningStack.apiUrl}/api/v1/session`, {
+      headers: { Cookie: cookie },
+    });
+    expect(afterRotation.status).toBe(401);
+    expect(ApiErrorSchema.parse(await afterRotation.json())).toMatchObject({
+      code: "AUTHENTICATION_REQUIRED",
+    });
   });
 
   it("serializes concurrent bootstrap attempts into one Operator", async () => {

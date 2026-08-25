@@ -10,6 +10,7 @@ import { registerEventRoutes } from "./routes/events.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerInstallationRoutes } from "./routes/installation.js";
 import { registerOpenApiRoute } from "./routes/openapi.js";
+import { registerOperatorSecurityRoutes } from "./routes/operator-security.js";
 import { registerPwaRoutes } from "./routes/pwa.js";
 import { registerSessionRoutes } from "./routes/session.js";
 import { registerAuthentication } from "./authentication.js";
@@ -105,6 +106,9 @@ export async function buildApp({
   app.addHook("onSend", (request, reply, payload, done) => {
     if (request.url.startsWith("/api/") || request.url.startsWith("/auth/")) {
       reply.header("Cache-Control", "no-store");
+      reply.header("Pragma", "no-cache");
+      reply.header("Expires", "0");
+      reply.header("Vary", "Origin");
     }
     done(null, payload);
   });
@@ -124,7 +128,7 @@ export async function buildApp({
   });
 
   app.setNotFoundHandler((request, reply) => {
-    if (request.url.startsWith("/api/")) {
+    if (request.url.startsWith("/api/") || request.url.startsWith("/auth/")) {
       return reply.code(404).send(
         ApiErrorSchema.parse({
           schemaVersion: 1,
@@ -137,8 +141,9 @@ export async function buildApp({
     return reply.code(404).type("text/plain").send("Not Found");
   });
 
-  registerAuthentication(app, sessionSigningKey);
+  registerAuthentication(app, pool, sessionSigningKey);
   registerSessionRoutes(app, pool, sessionSigningKey);
+  registerOperatorSecurityRoutes(app, pool, sessionSigningKey);
 
   registerDiagnosticRoutes(app, pool, boss, eventRetentionLimit);
   registerEventRoutes(app, eventPool);

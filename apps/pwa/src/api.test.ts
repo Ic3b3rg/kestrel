@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
 
 import type {
   ApiError,
@@ -12,8 +13,10 @@ import {
   fetchInstallation,
   fetchSession,
   loginOperator,
+  logoutOperator,
   runDiagnostic,
   streamInstallationEvents,
+  updateOperatorCredentials,
 } from "./api.js";
 
 const installationId = "018f0f89-8f75-7cc4-9860-3fda5f75d697";
@@ -67,6 +70,7 @@ const succeededEvent: InstallationEvent = {
 
 const session: Session = {
   schemaVersion: 1,
+  credentialVersion: "1",
   operator: {
     id: "018f0f89-949a-75a8-8f61-6df78a843b1e",
     username: "operator",
@@ -164,12 +168,96 @@ describe("PWA API client", () => {
   it("posts an empty diagnostic command and parses the accepted transition", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(accepted, 202));
     vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("document", {
+      cookie: `__Host-kestrel-csrf=${"A".repeat(43)}.${"B".repeat(43)}`,
+    });
 
     await expect(runDiagnostic()).resolves.toEqual(accepted);
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/v1/installation/diagnostics",
+    const request = fetchMock.mock.calls[0]?.[1];
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/v1/installation/diagnostics");
+    expect(request).toEqual(expect.objectContaining({ body: "{}", method: "POST" }));
+    expect(new Headers(request?.headers).get("X-Kestrel-CSRF")).toBe(
+      `${"A".repeat(43)}.${"B".repeat(43)}`,
+    );
+  });
+
+  it("logs out with CSRF proof and changes credentials through one bound step-up", async () => {
+    const csrfToken = `${"A".repeat(43)}.${"B".repeat(43)}`;
+    const stepUpProof = {
+      schemaVersion: 1 as const,
+      expiresAt: "2026-08-24T12:05:00.000Z",
+      proof: "C".repeat(43),
+    };
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(jsonResponse(stepUpProof))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("document", { cookie: `__Host-kestrel-csrf=${csrfToken}` });
+
+    await expect(logoutOperator()).resolves.toEqual({ auditError: null });
+    await expect(
+      updateOperatorCredentials({
+        currentPassword: "current correct horse battery staple",
+        newPassword: "newly selected correct horse battery staple",
+        session,
+        username: "operator-renamed",
+      }),
+    ).resolves.toBeUndefined();
+
+    const command = {
+      expectedVersion: session.credentialVersion,
+      newPassword: "newly selected correct horse battery staple",
+      username: "operator-renamed",
+    };
+    const requestDigest = createHash("sha256")
+      .update(JSON.stringify(command), "utf8")
+      .digest("hex");
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/auth/logout",
       expect.objectContaining({ body: "{}", method: "POST" }),
     );
+    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("X-Kestrel-CSRF")).toBe(
+      csrfToken,
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/auth/step-up",
+      expect.objectContaining({
+        body: JSON.stringify({
+          action: "operator_credentials_change",
+          password: "current correct horse battery staple",
+          requestDigest,
+          targetId: session.operator.id,
+        }),
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/v1/operator/credentials",
+      expect.objectContaining({ body: JSON.stringify(command), method: "POST" }),
+    );
+    expect(new Headers(fetchMock.mock.calls[2]?.[1]?.headers).get("X-Kestrel-Step-Up")).toBe(
+      stepUpProof.proof,
+    );
+  });
+
+  it("reports an audit warning after the server has cleared logout cookies", async () => {
+    const auditError: ApiError = {
+      schemaVersion: 1,
+      code: "SERVICE_UNAVAILABLE",
+      message: "Operator logout audit is unavailable",
+      correlationId: "0c14b018-0260-4aa0-a5e9-61d212b948ce",
+    };
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(auditError, 503)));
+    vi.stubGlobal("document", {
+      cookie: `__Host-kestrel-csrf=${"A".repeat(43)}.${"B".repeat(43)}`,
+    });
+
+    await expect(logoutOperator()).resolves.toEqual({ auditError });
   });
 
   it("refetches an expired cursor and reconnects from the returned snapshot cursor", async () => {

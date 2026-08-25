@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "bootstrap": "node dist/bootstrap.js",
+    "reset-password": "node dist/reset-password.js",
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit"

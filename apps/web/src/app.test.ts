@@ -3,24 +3,54 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiErrorSchema } from "@kestrel/contracts";
 
 import { buildApp } from "./app.js";
-import { createSessionToken, SESSION_COOKIE_NAME } from "./session.js";
+import {
+  createCsrfToken,
+  createSessionToken,
+  CSRF_COOKIE_NAME,
+  SESSION_COOKIE_NAME,
+} from "./session.js";
 
 const sessionSigningKey = Buffer.alloc(32, 7);
 const sessionToken = createSessionToken(
   {
+    credentialVersion: "1",
     id: "018f0f89-949a-75a8-8f61-6df78a843b1e",
+    sessionGeneration: "1",
     username: "operator",
   },
   sessionSigningKey,
 ).token;
-const authenticatedHeaders = { cookie: `${SESSION_COOKIE_NAME}=${sessionToken}` };
+const csrfToken = createCsrfToken(sessionToken, sessionSigningKey, Buffer.alloc(32, 3));
+const authenticatedHeaders = {
+  cookie: `${SESSION_COOKIE_NAME}=${sessionToken}; ${CSRF_COOKIE_NAME}=${csrfToken}`,
+  host: "kestrel.test",
+  origin: "https://kestrel.test",
+  "x-kestrel-csrf": csrfToken,
+};
 
 describe("web error and readiness boundaries", () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
 
   beforeEach(async () => {
     const pool = {
-      query: vi.fn().mockRejectedValue(new Error("required database state is unavailable")),
+      query: vi.fn().mockImplementation((statement: string) => {
+        if (statement.includes("FROM operators")) {
+          return Promise.resolve({
+            rowCount: 1,
+            rows: [
+              {
+                credential_version: "1",
+                created_at: new Date("2026-08-24T12:00:00.000Z"),
+                id: "018f0f89-949a-75a8-8f61-6df78a843b1e",
+                jwt_signing_generation: "1",
+                password_hash: "invalid-test-hash",
+                username: "operator",
+              },
+            ],
+          });
+        }
+        return Promise.reject(new Error("required database state is unavailable"));
+      }),
     };
     app = await buildApp({
       boss: { send: vi.fn() },
@@ -49,6 +79,7 @@ describe("web error and readiness boundaries", () => {
 
   it("limits anonymous access to the specified login route", async () => {
     const login = await app.inject({
+      headers: { host: "kestrel.test", origin: "https://kestrel.test" },
       method: "POST",
       payload: { password: "correct horse battery staple", username: "operator" },
       url: "/auth/login",
@@ -72,7 +103,7 @@ describe("web error and readiness boundaries", () => {
     const response = await app.inject({
       headers: { ...authenticatedHeaders, "content-type": "application/json" },
       method: "POST",
-      payload: JSON.stringify({ value: "x".repeat(1_048_576) }),
+      payload: JSON.stringify({ value: "x".repeat(1_025) }),
       url: "/api/v1/installation/diagnostics",
     });
 

@@ -5,6 +5,10 @@ export const EventCursorSchema = z
   .string()
   .max(19)
   .regex(/^(0|[1-9][0-9]*)$/u);
+export const CredentialVersionSchema = z
+  .string()
+  .max(18)
+  .regex(/^[1-9][0-9]*$/u);
 export const KestrelIdSchema = z.uuidv7();
 export const CorrelationIdSchema = z.uuid();
 export const UtcDateTimeSchema = z.iso.datetime({ offset: false });
@@ -24,12 +28,58 @@ export const LoginCommandSchema = z.strictObject({
   password: z.string().min(1).max(128),
 });
 
+export const NewOperatorPasswordSchema = z.string().min(12).max(128);
+
 export const SessionSchema = z.strictObject({
   schemaVersion: SchemaVersionSchema,
   operator: OperatorSchema,
+  credentialVersion: CredentialVersionSchema,
   issuedAt: UtcDateTimeSchema,
   expiresAt: UtcDateTimeSchema,
 });
+
+export const StepUpActionSchema = z.enum([
+  "operator_credentials_change",
+  "provider_connect",
+  "provider_disconnect",
+  "provider_replace",
+  "model_credentials_change",
+  "project_delete",
+  "installation_update",
+]);
+
+export const RequestDigestSchema = z.string().regex(/^[a-f0-9]{64}$/u);
+export const StepUpProofTokenSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/u);
+
+export const StepUpCommandSchema = z.strictObject({
+  action: StepUpActionSchema,
+  password: z.string().min(1).max(128),
+  requestDigest: RequestDigestSchema,
+  targetId: KestrelIdSchema,
+});
+
+export const StepUpProofSchema = z.strictObject({
+  schemaVersion: SchemaVersionSchema,
+  expiresAt: UtcDateTimeSchema,
+  proof: StepUpProofTokenSchema,
+});
+
+export const CredentialChangeCommandSchema = z.strictObject({
+  expectedVersion: CredentialVersionSchema,
+  newPassword: NewOperatorPasswordSchema,
+  username: OperatorUsernameSchema,
+});
+
+export const LogoutCommandSchema = z.strictObject({});
+
+export function serializeCredentialChangeCommand(command: CredentialChangeCommand): string {
+  const validated = CredentialChangeCommandSchema.parse(command);
+  return JSON.stringify({
+    expectedVersion: validated.expectedVersion,
+    newPassword: validated.newPassword,
+    username: validated.username,
+  });
+}
 
 export const InstallationStateSchema = z.enum([
   "ready",
@@ -101,11 +151,13 @@ const StandardApiErrorSchema = z.strictObject({
     "INVALID_REQUEST",
     "AUTHENTICATION_FAILED",
     "AUTHENTICATION_REQUIRED",
+    "RATE_LIMITED",
     "PAYLOAD_TOO_LARGE",
     "UNSUPPORTED_MEDIA_TYPE",
     "REQUEST_REJECTED",
     "NOT_FOUND",
     "INSTALLATION_TRANSITION_CONFLICT",
+    "OPERATOR_VERSION_CONFLICT",
     "SERVICE_UNAVAILABLE",
     "INTERNAL_ERROR",
   ]),
@@ -132,6 +184,8 @@ export const HealthStatusSchema = z.strictObject({
 });
 
 export type ApiError = z.infer<typeof ApiErrorSchema>;
+export type CredentialChangeCommand = z.infer<typeof CredentialChangeCommandSchema>;
+export type CredentialVersion = z.infer<typeof CredentialVersionSchema>;
 export type Diagnostic = z.infer<typeof DiagnosticSchema>;
 export type DiagnosticAccepted = z.infer<typeof DiagnosticAcceptedSchema>;
 export type DiagnosticCommand = z.infer<typeof DiagnosticCommandSchema>;
@@ -142,6 +196,12 @@ export type InstallationEventType = z.infer<typeof InstallationEventTypeSchema>;
 export type InstallationSnapshot = z.infer<typeof InstallationSnapshotSchema>;
 export type InstallationState = z.infer<typeof InstallationStateSchema>;
 export type LoginCommand = z.infer<typeof LoginCommandSchema>;
+export type NewOperatorPassword = z.infer<typeof NewOperatorPasswordSchema>;
+export type LogoutCommand = z.infer<typeof LogoutCommandSchema>;
 export type Operator = z.infer<typeof OperatorSchema>;
 export type OperatorUsername = z.infer<typeof OperatorUsernameSchema>;
 export type Session = z.infer<typeof SessionSchema>;
+export type StepUpAction = z.infer<typeof StepUpActionSchema>;
+export type StepUpCommand = z.infer<typeof StepUpCommandSchema>;
+export type StepUpProof = z.infer<typeof StepUpProofSchema>;
+export type StepUpProofToken = z.infer<typeof StepUpProofTokenSchema>;

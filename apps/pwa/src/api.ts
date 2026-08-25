@@ -2,12 +2,16 @@ import { createParser } from "eventsource-parser";
 
 import {
   ApiErrorSchema,
+  CredentialChangeCommandSchema,
   DiagnosticAcceptedSchema,
   EventCursorSchema,
   InstallationEventSchema,
   InstallationSnapshotSchema,
   LoginCommandSchema,
+  serializeCredentialChangeCommand,
   SessionSchema,
+  StepUpCommandSchema,
+  StepUpProofSchema,
   type ApiError,
   type DiagnosticAccepted,
   type EventCursor,
@@ -19,6 +23,7 @@ import {
 
 const RECONNECT_DELAYS_MS = [250, 500, 1_000, 2_000, 5_000] as const;
 const STABLE_STREAM_MS = 10_000;
+const CSRF_COOKIE_NAME = "__Host-kestrel-csrf";
 
 interface Parser<T> {
   parse(value: unknown): T;
@@ -83,6 +88,44 @@ async function requireJson<T>(
   return parseServerValue(parser, body, description);
 }
 
+function readCsrfToken(): string {
+  const cookieHeader = typeof document === "undefined" ? "" : document.cookie;
+  const prefix = `${CSRF_COOKIE_NAME}=`;
+  const matches = cookieHeader
+    .split(";")
+    .map((part) => part.trim())
+    .filter((part) => part.startsWith(prefix));
+  const token = matches.length === 1 ? matches[0]?.slice(prefix.length) : undefined;
+  if (!token || !/^[A-Za-z0-9_-]{43}\.[A-Za-z0-9_-]{43}$/u.test(token)) {
+    throw new Error("The authenticated mutation CSRF cookie is unavailable");
+  }
+  return token;
+}
+
+function authenticatedMutationHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  return {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    "X-Kestrel-CSRF": readCsrfToken(),
+    ...extra,
+  };
+}
+
+async function requireNoContent(response: Response, description: string): Promise<void> {
+  if (!response.ok) {
+    const body = await readJson(response);
+    throw new ApiClientError(response.status, parseServerValue(ApiErrorSchema, body, "API error"));
+  }
+  if (response.status !== 204 || (await response.arrayBuffer()).byteLength !== 0) {
+    throw new InvalidServerResponseError(`The server returned an invalid ${description}`);
+  }
+}
+
+async function sha256(value: string): Promise<string> {
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 export async function fetchInstallation(signal?: AbortSignal): Promise<InstallationSnapshot> {
   const response = await fetch("/api/v1/installation", {
     credentials: "same-origin",
@@ -118,14 +161,72 @@ export async function loginOperator(command: LoginCommand, signal?: AbortSignal)
   return requireJson(response, SessionSchema, "Operator session");
 }
 
+export interface LogoutOutcome {
+  auditError: ApiError | null;
+}
+
+export async function logoutOperator(signal?: AbortSignal): Promise<LogoutOutcome> {
+  const response = await fetch("/auth/logout", {
+    body: "{}",
+    credentials: "same-origin",
+    headers: authenticatedMutationHeaders(),
+    method: "POST",
+    signal: signal ?? null,
+  });
+  if (response.status === 503) {
+    return {
+      auditError: parseServerValue(ApiErrorSchema, await readJson(response), "API error"),
+    };
+  }
+  await requireNoContent(response, "logout response");
+  return { auditError: null };
+}
+
+export interface UpdateOperatorCredentialsInput {
+  currentPassword: string;
+  newPassword: string;
+  session: Session;
+  username: string;
+}
+
+export async function updateOperatorCredentials(
+  input: UpdateOperatorCredentialsInput,
+  signal?: AbortSignal,
+): Promise<void> {
+  const command = CredentialChangeCommandSchema.parse({
+    expectedVersion: input.session.credentialVersion,
+    newPassword: input.newPassword,
+    username: input.username,
+  });
+  const stepUp = StepUpCommandSchema.parse({
+    action: "operator_credentials_change",
+    password: input.currentPassword,
+    requestDigest: await sha256(serializeCredentialChangeCommand(command)),
+    targetId: input.session.operator.id,
+  });
+  const stepUpResponse = await fetch("/auth/step-up", {
+    body: JSON.stringify(stepUp),
+    credentials: "same-origin",
+    headers: authenticatedMutationHeaders(),
+    method: "POST",
+    signal: signal ?? null,
+  });
+  const proof = await requireJson(stepUpResponse, StepUpProofSchema, "step-up proof");
+  const changeResponse = await fetch("/api/v1/operator/credentials", {
+    body: serializeCredentialChangeCommand(command),
+    credentials: "same-origin",
+    headers: authenticatedMutationHeaders({ "X-Kestrel-Step-Up": proof.proof }),
+    method: "POST",
+    signal: signal ?? null,
+  });
+  await requireNoContent(changeResponse, "credential-change response");
+}
+
 export async function runDiagnostic(signal?: AbortSignal): Promise<DiagnosticAccepted> {
   const response = await fetch("/api/v1/installation/diagnostics", {
     body: "{}",
     credentials: "same-origin",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    },
+    headers: authenticatedMutationHeaders(),
     method: "POST",
     signal: signal ?? null,
   });

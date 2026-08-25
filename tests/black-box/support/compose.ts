@@ -13,8 +13,10 @@ export interface RunningStack {
   bootstrapOperator(credentials: OperatorTestCredentials): Promise<string>;
   pwaUrl: string;
   close(): Promise<void>;
+  executeRuntimeSql(sql: string): Promise<void>;
   executeSql(sql: string): Promise<void>;
   fetchApi(path: string, init?: RequestInit): Promise<Response>;
+  resetOperatorPassword(password: string): Promise<string>;
   readonly sessionCookie: string;
   restart(...services: string[]): Promise<void>;
   start(...services: string[]): Promise<void>;
@@ -117,6 +119,8 @@ export async function startStack(options: StartStackOptions = {}): Promise<Runni
   const composeArgs = ["compose", "-p", project, "-f", "compose.yaml", "-f", "compose.test.yaml"];
   const environment = {
     ...dockerEnvironment(docker),
+    KESTREL_MIGRATOR_DATABASE_PASSWORD: randomBytes(32).toString("base64url"),
+    KESTREL_RUNTIME_DATABASE_PASSWORD: randomBytes(32).toString("base64url"),
     SESSION_SIGNING_KEY: options.sessionSigningKey ?? randomBytes(32).toString("base64url"),
   };
 
@@ -159,6 +163,25 @@ export async function startStack(options: StartStackOptions = {}): Promise<Runni
     );
   }
 
+  async function resetOperatorPassword(password: string): Promise<string> {
+    return executeWithInput(
+      docker,
+      [
+        ...composeArgs,
+        "exec",
+        "--no-TTY",
+        "web",
+        "npm",
+        "run",
+        "reset-password",
+        "-w",
+        "@kestrel/web",
+      ],
+      `${password}\n${password}\n`,
+      environment,
+    );
+  }
+
   try {
     await execFileAsync(docker, [...composeArgs, "up", "--build", "--detach", "--wait"], {
       env: environment,
@@ -167,6 +190,7 @@ export async function startStack(options: StartStackOptions = {}): Promise<Runni
 
     let apiUrl = await resolvePublishedUrl("web", "3000");
     let pwaUrl = await resolvePublishedUrl("pwa", "5173");
+    let csrfToken: string | null = null;
     let sessionCookie: string | null = null;
     await waitForJson(`${apiUrl}/health/ready`);
     await waitForJson(pwaUrl);
@@ -188,18 +212,44 @@ export async function startStack(options: StartStackOptions = {}): Promise<Runni
         await bootstrapOperator(credentials);
         const response = await fetch(`${apiUrl}/auth/login`, {
           body: JSON.stringify(credentials),
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", Origin: apiUrl },
           method: "POST",
         });
         await response.arrayBuffer();
-        const cookie = response.headers.get("set-cookie")?.split(";", 1)[0];
-        if (!response.ok || !cookie) {
+        const cookies = response.headers
+          .getSetCookie()
+          .map((value) => value.split(";", 1)[0])
+          .filter((value): value is string => value !== undefined && value.length > 0);
+        const csrfCookie = cookies.find((value) => value.startsWith("__Host-kestrel-csrf="));
+        if (!response.ok || cookies.length !== 2 || csrfCookie === undefined) {
           throw new Error(`Operator test login failed with status ${String(response.status)}`);
         }
-        sessionCookie = cookie;
+        csrfToken = csrfCookie.slice(csrfCookie.indexOf("=") + 1);
+        sessionCookie = cookies.join("; ");
       },
       bootstrapOperator,
       close,
+      async executeRuntimeSql(sql) {
+        await execFileAsync(
+          docker,
+          [
+            ...composeArgs,
+            "exec",
+            "--no-TTY",
+            "postgres",
+            "psql",
+            "--username",
+            "kestrel_runtime",
+            "--dbname",
+            "kestrel",
+            "--set",
+            "ON_ERROR_STOP=1",
+            "--command",
+            sql,
+          ],
+          { env: environment },
+        );
+      },
       async executeSql(sql) {
         await execFileAsync(
           docker,
@@ -227,8 +277,17 @@ export async function startStack(options: StartStackOptions = {}): Promise<Runni
         }
         const headers = new Headers(init.headers);
         headers.set("Cookie", sessionCookie);
+        const method = (init.method ?? "GET").toUpperCase();
+        if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
+          if (csrfToken === null) {
+            throw new Error("The test stack has no CSRF token");
+          }
+          headers.set("Origin", apiUrl);
+          headers.set("X-Kestrel-CSRF", csrfToken);
+        }
         return fetch(new URL(path, apiUrl), { ...init, headers });
       },
+      resetOperatorPassword,
       async restart(...services) {
         await execFileAsync(docker, [...composeArgs, "restart", ...services], {
           env: environment,

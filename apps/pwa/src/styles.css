@@ -332,10 +332,110 @@ h1 {
 }
 
 .record-section,
+.operator-security,
 .system-state,
 .error-state {
   padding: 2rem 0;
   border-bottom: 1px solid var(--line);
+}
+
+.operator-security {
+  border-bottom-color: var(--ink);
+}
+
+.security-state {
+  margin: 0;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--success);
+  color: var(--success);
+  background: var(--surface);
+  font:
+    700 0.6875rem/1 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.security-layout {
+  display: grid;
+  gap: 2rem;
+}
+
+.security-session,
+.security-form {
+  min-width: 0;
+}
+
+h3 {
+  margin: 0;
+  font:
+    700 1.125rem/1.2 Georgia,
+    "Times New Roman",
+    serif;
+}
+
+.security-facts {
+  display: grid;
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+.security-facts div {
+  min-width: 0;
+}
+
+.security-facts dt {
+  margin-bottom: 0.375rem;
+  color: var(--muted);
+  font:
+    0.6875rem/1.2 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.security-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
+.secondary-action {
+  width: 100%;
+  color: var(--ink);
+  background: transparent;
+}
+
+.security-form {
+  display: grid;
+  gap: 1rem;
+  padding: 1.5rem;
+  border: 1px solid var(--ink);
+  background: var(--surface);
+}
+
+.security-form > button {
+  width: 100%;
+}
+
+.required-note {
+  margin: 0.5rem 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.security-error {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.75rem;
+  border-left: 0.25rem solid var(--danger);
+  background: #f9e9e3;
+  font-size: 0.8125rem;
+  line-height: 1.4;
 }
 
 .section-heading {
@@ -559,6 +659,15 @@ footer {
 
   .record-layout {
     grid-template-columns: minmax(0, 1fr) minmax(20rem, 0.78fr);
+  }
+
+  .security-layout {
+    grid-template-columns: minmax(16rem, 0.65fr) minmax(20rem, 1fr);
+  }
+
+  .security-session {
+    padding-right: 2rem;
+    border-right: 1px solid var(--line);
   }
 
   .record-section:first-child {

@@ -12,12 +12,18 @@ import {
   fetchInstallation,
   fetchSession,
   loginOperator,
+  logoutOperator,
   runDiagnostic,
   streamInstallationEvents,
+  updateOperatorCredentials,
   type EventConnectionState,
 } from "./api.js";
 import { InstallationView, type PwaConnectionState } from "./InstallationView.js";
 import { LoginView } from "./LoginView.js";
+import {
+  OperatorSecurityPanel,
+  type OperatorCredentialFormValue,
+} from "./OperatorSecurityPanel.js";
 
 const INSTALLATION_ERROR_MESSAGE =
   "Kestrel could not read authoritative Installation data. Try again.";
@@ -75,17 +81,22 @@ export function App() {
   const [requestError, setRequestError] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState("Reading the Kestrel Installation.");
   const [commandPending, setCommandPending] = useState(false);
+  const [securityPending, setSecurityPending] = useState<"credentials" | "logout" | null>(null);
+  const [securityError, setSecurityError] = useState<string | null>(null);
   const [reloadGeneration, setReloadGeneration] = useState(0);
   const commandController = useRef<AbortController | null>(null);
   const loginController = useRef<AbortController | null>(null);
+  const securityController = useRef<AbortController | null>(null);
 
   const requireAuthentication = useCallback((message: string) => {
     commandController.current?.abort();
+    securityController.current?.abort();
     setSession(null);
     setSnapshot(null);
     setSynchronized(false);
     setConnection("disconnected");
     setLoginError(message);
+    setSecurityError(null);
   }, []);
 
   const handleAuthenticationBoundaryError = useCallback(
@@ -107,6 +118,7 @@ export function App() {
     const handleOffline = () => {
       commandController.current?.abort();
       loginController.current?.abort();
+      securityController.current?.abort();
       setOnline(false);
       setSynchronized(false);
       setConnection("offline");
@@ -119,6 +131,7 @@ export function App() {
       window.removeEventListener("offline", handleOffline);
       commandController.current?.abort();
       loginController.current?.abort();
+      securityController.current?.abort();
     };
   }, []);
 
@@ -299,6 +312,63 @@ export function App() {
     }
   };
 
+  const handleLogout = async (): Promise<void> => {
+    const controller = new AbortController();
+    securityController.current?.abort();
+    securityController.current = controller;
+    setSecurityPending("logout");
+    setSecurityError(null);
+    try {
+      const outcome = await logoutOperator(controller.signal);
+      setLoginError(
+        outcome.auditError === null
+          ? null
+          : `This browser is signed out. ${outcome.auditError.message} Reference: ${outcome.auditError.correlationId}`,
+      );
+      setSession(null);
+      setSnapshot(null);
+      setSynchronized(false);
+      setConnection("disconnected");
+    } catch (error) {
+      if (!controller.signal.aborted && !handleAuthenticationBoundaryError(error)) {
+        setSecurityError(errorMessage(error, "Kestrel could not sign out this browser."));
+      }
+    } finally {
+      if (securityController.current === controller) {
+        securityController.current = null;
+        setSecurityPending(null);
+      }
+    }
+  };
+
+  const handleCredentialChange = async (value: OperatorCredentialFormValue): Promise<void> => {
+    if (session === null || session === undefined) {
+      return;
+    }
+    const controller = new AbortController();
+    securityController.current?.abort();
+    securityController.current = controller;
+    setSecurityPending("credentials");
+    setSecurityError(null);
+    try {
+      await updateOperatorCredentials({ ...value, session }, controller.signal);
+      setLoginError(null);
+      setSession(null);
+      setSnapshot(null);
+      setSynchronized(false);
+      setConnection("disconnected");
+    } catch (error) {
+      if (!controller.signal.aborted && !handleAuthenticationBoundaryError(error)) {
+        setSecurityError(errorMessage(error, "Kestrel could not change the Operator credentials."));
+      }
+    } finally {
+      if (securityController.current === controller) {
+        securityController.current = null;
+        setSecurityPending(null);
+      }
+    }
+  };
+
   if (session === null || session === undefined) {
     return (
       <LoginView
@@ -318,6 +388,16 @@ export function App() {
       connection={connection}
       loading={online && !synchronized && requestError === null}
       online={online}
+      operatorControls={
+        <OperatorSecurityPanel
+          error={securityError}
+          online={online}
+          pending={securityPending}
+          session={session}
+          onChangeCredentials={handleCredentialChange}
+          onLogout={handleLogout}
+        />
+      }
       operatorUsername={session.operator.username}
       requestError={requestError}
       showData={online && synchronized}

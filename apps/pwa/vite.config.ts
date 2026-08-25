@@ -2,6 +2,8 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
+const apiProxyTarget = process.env.VITE_API_PROXY ?? "http://127.0.0.1:3000";
+
 export default defineConfig({
   cacheDir: "/tmp/kestrel-vite",
   plugins: [
@@ -42,9 +44,9 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
-      "/api": process.env.VITE_API_PROXY ?? "http://127.0.0.1:3000",
-      "/auth": process.env.VITE_API_PROXY ?? "http://127.0.0.1:3000",
-      "/health": process.env.VITE_API_PROXY ?? "http://127.0.0.1:3000",
+      "/api": { changeOrigin: false, target: apiProxyTarget },
+      "/auth": { changeOrigin: false, target: apiProxyTarget },
+      "/health": { changeOrigin: false, target: apiProxyTarget },
     },
   },
 });
