@@ -103,7 +103,7 @@ describe("web error and readiness boundaries", () => {
     const response = await app.inject({
       headers: { ...authenticatedHeaders, "content-type": "application/json" },
       method: "POST",
-      payload: JSON.stringify({ value: "x".repeat(1_048_576) }),
+      payload: JSON.stringify({ value: "x".repeat(1_025) }),
       url: "/api/v1/installation/diagnostics",
     });
 

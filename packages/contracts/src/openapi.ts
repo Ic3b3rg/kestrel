@@ -459,6 +459,10 @@ export const openApiDocument = sortJson({
             content: { "application/json": { schema: schemaReference("ApiError") } },
             description: "The credential change media type is unsupported",
           },
+          "429": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "The release-fixed credential-change limit was reached",
+          },
           "503": {
             content: { "application/json": { schema: schemaReference("ApiError") } },
             description: "Credential storage is unavailable",

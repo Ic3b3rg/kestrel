@@ -128,7 +128,7 @@ export async function buildApp({
   });
 
   app.setNotFoundHandler((request, reply) => {
-    if (request.url.startsWith("/api/")) {
+    if (request.url.startsWith("/api/") || request.url.startsWith("/auth/")) {
       return reply.code(404).send(
         ApiErrorSchema.parse({
           schemaVersion: 1,

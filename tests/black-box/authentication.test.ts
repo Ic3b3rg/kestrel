@@ -146,7 +146,9 @@ describe("sole Operator authentication", () => {
     await stack?.executeSql(`
       DROP TRIGGER IF EXISTS kestrel_test_reject_operator ON operators;
       DROP FUNCTION IF EXISTS public.kestrel_test_reject_operator();
+      ALTER TABLE installation_audit_records DISABLE TRIGGER installation_audit_append_only;
       TRUNCATE operator_step_up_proofs, authentication_rate_limits, installation_audit_records;
+      ALTER TABLE installation_audit_records ENABLE TRIGGER installation_audit_append_only;
       DELETE FROM operators;
       CREATE UNIQUE INDEX IF NOT EXISTS operators_singleton ON operators ((true));
     `);
@@ -394,6 +396,17 @@ describe("sole Operator authentication", () => {
           RAISE EXCEPTION 'expected one rate-limited login audit record';
         END IF;
         IF EXISTS (
+          SELECT 1
+          FROM (
+            SELECT prior_record_hash,
+                   lag(record_hash) OVER (ORDER BY id) AS expected_prior_hash
+            FROM installation_audit_records
+          ) chained
+          WHERE prior_record_hash IS DISTINCT FROM expected_prior_hash
+        ) THEN
+          RAISE EXCEPTION 'authentication audit hash chain is discontinuous';
+        END IF;
+        IF EXISTS (
           SELECT 1 FROM installation_audit_records
           WHERE facts::text LIKE '%${credentials.username}%'
              OR facts::text LIKE '%incorrect password%'
@@ -410,6 +423,9 @@ describe("sole Operator authentication", () => {
         SET facts = '{"tampered":true}'::jsonb;
       `),
     ).rejects.toThrow(/append-only/u);
+    await expect(runningStack.executeSql("TRUNCATE installation_audit_records;")).rejects.toThrow(
+      /append-only/u,
+    );
   });
 
   it("limits one source even when it rotates candidate usernames", async () => {
@@ -633,6 +649,32 @@ describe("sole Operator authentication", () => {
     `);
   });
 
+  it("limits invalid credential-change proofs before repeated password hashing", async () => {
+    expect(stack).toBeDefined();
+    const runningStack = stack as RunningStack;
+    await runningStack.bootstrapOperator(credentials);
+    const loginResponse = await login(runningStack, credentials);
+    const session = SessionSchema.parse(await loginResponse.clone().json());
+    const command: CredentialChangeCommand = {
+      expectedVersion: session.credentialVersion,
+      newPassword: "a newly chosen correct horse battery staple",
+      username: credentials.username,
+    };
+
+    const denials: number[] = [];
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      denials.push(
+        (await changeCredentials(runningStack, loginResponse, command, "A".repeat(43))).status,
+      );
+    }
+    expect(denials).toEqual(Array(5).fill(403));
+
+    const limited = await changeCredentials(runningStack, loginResponse, command, "A".repeat(43));
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("retry-after")).toMatch(/^[1-9][0-9]*$/u);
+    expect(ApiErrorSchema.parse(await limited.json())).toMatchObject({ code: "RATE_LIMITED" });
+  });
+
   it("consumes a valid step-up proof when the credential version is stale", async () => {
     expect(stack).toBeDefined();
     const runningStack = stack as RunningStack;
@@ -711,6 +753,7 @@ describe("sole Operator authentication", () => {
       method: "POST",
     });
     expect(remoteRecovery.status).toBe(404);
+    expect(ApiErrorSchema.parse(await remoteRecovery.json())).toMatchObject({ code: "NOT_FOUND" });
 
     const lostDeviceStream = await fetch(`${runningStack.apiUrl}/api/v1/events`, {
       headers: { Accept: "text/event-stream", Cookie: firstCookie },

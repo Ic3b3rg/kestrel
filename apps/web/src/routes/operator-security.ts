@@ -33,6 +33,8 @@ import { serializeClearedAuthenticationCookies } from "../session.js";
 
 const STEP_UP_RATE_LIMIT = 5;
 const STEP_UP_RATE_LIMIT_WINDOW_SECONDS = 15 * 60;
+const CREDENTIAL_CHANGE_RATE_LIMIT = 5;
+const CREDENTIAL_CHANGE_RATE_LIMIT_WINDOW_SECONDS = 15 * 60;
 const STEP_UP_HEADER_NAME = "x-kestrel-step-up";
 
 function sha256(value: string): string {
@@ -93,6 +95,26 @@ async function auditStepUpDenial(
     outcome: "denied",
     targetId: command.targetId,
     targetType: stepUpTargetType(command.action),
+  });
+}
+
+async function auditCredentialChangeDenial(
+  pool: DatabasePool,
+  request: FastifyRequest,
+  session: Session,
+  denialReason: "invalid_step_up" | "rate_limit_exceeded",
+): Promise<void> {
+  await appendAuditRecord(pool, {
+    actorId: session.operator.id,
+    actorType: "operator",
+    causationId: null,
+    correlationId: request.id,
+    denialReason,
+    eventType: "operator.credentials_change.denied",
+    facts: {},
+    outcome: "denied",
+    targetId: session.operator.id,
+    targetType: "operator",
   });
 }
 
@@ -231,6 +253,7 @@ export function registerOperatorSecurityRoutes(app: FastifyInstance, pool: Datab
           409: jsonSchemaForEmbedding(apiErrorJsonSchema),
           413: jsonSchemaForEmbedding(apiErrorJsonSchema),
           415: jsonSchemaForEmbedding(apiErrorJsonSchema),
+          429: jsonSchemaForEmbedding(apiErrorJsonSchema),
           503: jsonSchemaForEmbedding(apiErrorJsonSchema),
         },
       },
@@ -238,35 +261,40 @@ export function registerOperatorSecurityRoutes(app: FastifyInstance, pool: Datab
     async (request, reply) => {
       const command = CredentialChangeCommandSchema.parse(request.body);
       const session = requireOperatorSession(request);
-      const parsedProof = StepUpProofTokenSchema.safeParse(request.headers[STEP_UP_HEADER_NAME]);
-      if (!parsedProof.success) {
-        try {
-          await appendAuditRecord(pool, {
-            actorId: session.operator.id,
-            actorType: "operator",
-            causationId: null,
-            correlationId: request.id,
-            denialReason: "invalid_step_up",
-            eventType: "operator.credentials_change.denied",
-            facts: {},
-            outcome: "denied",
-            targetId: session.operator.id,
-            targetType: "operator",
-          });
-        } catch (error) {
-          request.log.error({ err: error, event: "operator.credentials_change_unavailable" });
-          return await reply.code(503).send(
-            ApiErrorSchema.parse({
-              schemaVersion: 1,
-              code: "SERVICE_UNAVAILABLE",
-              message: "Operator credential storage is unavailable",
-              correlationId: request.id,
-            }),
-          );
-        }
-        return await rejectedResponse(request, reply);
-      }
       try {
+        const rateLimit = await consumeAuthenticationRateLimit(
+          pool,
+          [
+            {
+              limit: CREDENTIAL_CHANGE_RATE_LIMIT,
+              scope: "operator_credentials_change_actor",
+              subjectDigest: sha256(
+                `operator-credentials-change-actor\0${session.operator.id}\0${session.credentialVersion}`,
+              ),
+            },
+          ],
+          CREDENTIAL_CHANGE_RATE_LIMIT_WINDOW_SECONDS,
+        );
+        if (!rateLimit.allowed) {
+          await auditCredentialChangeDenial(pool, request, session, "rate_limit_exceeded");
+          return await reply
+            .header("Retry-After", String(rateLimit.retryAfterSeconds))
+            .code(429)
+            .send(
+              ApiErrorSchema.parse({
+                schemaVersion: 1,
+                code: "RATE_LIMITED",
+                message: "Operator credential changes are temporarily limited",
+                correlationId: request.id,
+              }),
+            );
+        }
+
+        const parsedProof = StepUpProofTokenSchema.safeParse(request.headers[STEP_UP_HEADER_NAME]);
+        if (!parsedProof.success) {
+          await auditCredentialChangeDenial(pool, request, session, "invalid_step_up");
+          return await rejectedResponse(request, reply);
+        }
         const result = await changeOperatorCredentials(pool, {
           correlationId: request.id,
           credentialVersion: session.credentialVersion,

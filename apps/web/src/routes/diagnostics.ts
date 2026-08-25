@@ -24,6 +24,7 @@ export function registerDiagnosticRoutes(
   app.post(
     "/api/v1/installation/diagnostics",
     {
+      bodyLimit: 1_024,
       config: AUTHENTICATED_MUTATION_ROUTE_CONFIG,
       schema: {
         body: jsonSchemaForEmbedding(diagnosticCommandJsonSchema),
