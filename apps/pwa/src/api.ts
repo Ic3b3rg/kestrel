@@ -19,6 +19,7 @@ import {
 
 const RECONNECT_DELAYS_MS = [250, 500, 1_000, 2_000, 5_000] as const;
 const STABLE_STREAM_MS = 10_000;
+const CSRF_COOKIE_NAME = "__Host-kestrel-csrf";
 
 interface Parser<T> {
   parse(value: unknown): T;
@@ -83,6 +84,20 @@ async function requireJson<T>(
   return parseServerValue(parser, body, description);
 }
 
+function readCsrfToken(): string {
+  const cookieHeader = typeof document === "undefined" ? "" : document.cookie;
+  const prefix = `${CSRF_COOKIE_NAME}=`;
+  const matches = cookieHeader
+    .split(";")
+    .map((part) => part.trim())
+    .filter((part) => part.startsWith(prefix));
+  const token = matches.length === 1 ? matches[0]?.slice(prefix.length) : undefined;
+  if (!token || !/^[A-Za-z0-9_-]{43}\.[A-Za-z0-9_-]{43}$/u.test(token)) {
+    throw new Error("The authenticated mutation CSRF cookie is unavailable");
+  }
+  return token;
+}
+
 export async function fetchInstallation(signal?: AbortSignal): Promise<InstallationSnapshot> {
   const response = await fetch("/api/v1/installation", {
     credentials: "same-origin",
@@ -125,6 +140,7 @@ export async function runDiagnostic(signal?: AbortSignal): Promise<DiagnosticAcc
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
+      "X-Kestrel-CSRF": readCsrfToken(),
     },
     method: "POST",
     signal: signal ?? null,

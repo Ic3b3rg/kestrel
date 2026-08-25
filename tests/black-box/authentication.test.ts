@@ -19,7 +19,7 @@ async function login(
 ): Promise<Response> {
   return fetch(`${stack.apiUrl}/auth/login`, {
     body: JSON.stringify(command),
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Origin: stack.apiUrl },
     method: "POST",
   });
 }
@@ -35,9 +35,20 @@ function signSession(payload: Record<string, unknown>): string {
 }
 
 function cookiePair(response: Response): string {
-  const cookie = response.headers.get("set-cookie")?.split(";", 1)[0];
-  if (!cookie) {
+  const cookies = response.headers.getSetCookie().map((value) => value.split(";", 1)[0]);
+  if (cookies.length === 0 || cookies.some((cookie) => !cookie)) {
     throw new Error("Login did not set a session cookie");
+  }
+  return cookies.join("; ");
+}
+
+function namedCookie(response: Response, name: string): string {
+  const cookie = response.headers
+    .getSetCookie()
+    .map((value) => value.split(";", 1)[0])
+    .find((value) => value?.startsWith(`${name}=`));
+  if (!cookie) {
+    throw new Error(`Response did not set ${name}`);
   }
   return cookie;
 }
@@ -181,6 +192,73 @@ describe("sole Operator authentication", () => {
       $$;
     `);
   }, 60_000);
+
+  it("requires same-origin CSRF proof and clears only the browser cookies on logout", async () => {
+    expect(stack).toBeDefined();
+    const runningStack = stack as RunningStack;
+    await runningStack.bootstrapOperator(credentials);
+
+    const crossOriginLogin = await fetch(`${runningStack.apiUrl}/auth/login`, {
+      body: JSON.stringify(credentials),
+      headers: {
+        "Content-Type": "application/json",
+        Origin: "https://attacker.invalid",
+      },
+      method: "POST",
+    });
+    expect(crossOriginLogin.status).toBe(403);
+    expect(crossOriginLogin.headers.getSetCookie()).toEqual([]);
+
+    const loginResponse = await login(runningStack, credentials);
+    expect(loginResponse.status).toBe(200);
+    expect(loginResponse.headers.get("cache-control")).toBe("no-store");
+    expect(loginResponse.headers.get("pragma")).toBe("no-cache");
+    expect(loginResponse.headers.get("expires")).toBe("0");
+    const cookies = cookiePair(loginResponse);
+    const sessionCookie = namedCookie(loginResponse, "__Host-kestrel-session");
+    const csrfCookie = namedCookie(loginResponse, "__Host-kestrel-csrf");
+    const csrfToken = csrfCookie.slice(csrfCookie.indexOf("=") + 1);
+
+    const missingProof = await fetch(`${runningStack.apiUrl}/auth/logout`, {
+      body: "{}",
+      headers: { "Content-Type": "application/json", Cookie: cookies },
+      method: "POST",
+    });
+    expect(missingProof.status).toBe(403);
+
+    const wrongOrigin = await fetch(`${runningStack.apiUrl}/auth/logout`, {
+      body: "{}",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: cookies,
+        Origin: "https://attacker.invalid",
+        "X-Kestrel-CSRF": csrfToken,
+      },
+      method: "POST",
+    });
+    expect(wrongOrigin.status).toBe(403);
+
+    const logout = await fetch(`${runningStack.apiUrl}/auth/logout`, {
+      body: "{}",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: cookies,
+        Origin: runningStack.apiUrl,
+        "X-Kestrel-CSRF": csrfToken,
+      },
+      method: "POST",
+    });
+    expect(logout.status).toBe(204);
+    expect(logout.headers.getSetCookie()).toHaveLength(2);
+    for (const value of logout.headers.getSetCookie()) {
+      expect(value).toContain("Max-Age=0");
+    }
+
+    const copiedJwt = await fetch(`${runningStack.apiUrl}/api/v1/session`, {
+      headers: { Cookie: sessionCookie },
+    });
+    expect(copiedJwt.status).toBe(200);
+  });
 
   it("returns the same denial for an unknown username and a wrong password", async () => {
     expect(stack).toBeDefined();

@@ -1,13 +1,20 @@
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import { ApiErrorSchema, type Session } from "@kestrel/contracts";
 import { readOperatorSessionState, type DatabasePool } from "@kestrel/database";
 
-import { readSessionCookie, verifySessionToken } from "./session.js";
+import {
+  CSRF_HEADER_NAME,
+  readCsrfCookie,
+  readSessionCookie,
+  verifyCsrfToken,
+  verifySessionToken,
+} from "./session.js";
 
 declare module "fastify" {
   interface FastifyContextConfig {
     authentication?: "public";
+    mutationProtection?: "origin" | "origin-and-csrf";
   }
 
   interface FastifyRequest {
@@ -16,9 +23,49 @@ declare module "fastify" {
 }
 
 export const PUBLIC_ROUTE_CONFIG = { authentication: "public" } as const;
+export const PUBLIC_MUTATION_ROUTE_CONFIG = {
+  authentication: "public",
+  mutationProtection: "origin",
+} as const;
+export const AUTHENTICATED_MUTATION_ROUTE_CONFIG = {
+  mutationProtection: "origin-and-csrf",
+} as const;
 
 function isPublicRequest(request: FastifyRequest): boolean {
   return request.routeOptions.config.authentication === "public";
+}
+
+function isSameOrigin(request: FastifyRequest): boolean {
+  const originHeader = request.headers.origin;
+  const targetHost = request.headers.host;
+  if (typeof originHeader !== "string" || targetHost === undefined) {
+    return false;
+  }
+  try {
+    const origin = new URL(originHeader);
+    const loopback =
+      origin.hostname === "localhost" ||
+      origin.hostname === "127.0.0.1" ||
+      origin.hostname === "[::1]";
+    return (
+      origin.origin === originHeader &&
+      origin.host.toLowerCase() === targetHost.toLowerCase() &&
+      (origin.protocol === "https:" || (loopback && origin.protocol === "http:"))
+    );
+  } catch {
+    return false;
+  }
+}
+
+function rejectMutation(request: FastifyRequest, reply: FastifyReply) {
+  return reply.code(403).send(
+    ApiErrorSchema.parse({
+      schemaVersion: 1,
+      code: "REQUEST_REJECTED",
+      message: "The request was rejected",
+      correlationId: request.id,
+    }),
+  );
 }
 
 export function registerAuthentication(
@@ -61,5 +108,36 @@ export function registerAuthentication(
           correlationId: request.id,
         }),
       );
+  });
+
+  app.addHook("onRequest", (request, reply, done) => {
+    const protection = request.routeOptions.config.mutationProtection;
+    if (protection === undefined) {
+      done();
+      return;
+    }
+    if (!isSameOrigin(request)) {
+      void rejectMutation(request, reply);
+      return;
+    }
+    if (protection === "origin-and-csrf") {
+      const sessionToken = readSessionCookie(request.headers.cookie);
+      const csrfHeader = request.headers[CSRF_HEADER_NAME];
+      if (
+        sessionToken === null ||
+        !verifyCsrfToken(
+          {
+            cookieToken: readCsrfCookie(request.headers.cookie),
+            headerToken: typeof csrfHeader === "string" ? csrfHeader : null,
+            sessionToken,
+          },
+          signingKey,
+        )
+      ) {
+        void rejectMutation(request, reply);
+        return;
+      }
+    }
+    done();
   });
 }

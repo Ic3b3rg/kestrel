@@ -13,6 +13,8 @@ import {
   type DiagnosticJobSender,
 } from "@kestrel/database";
 
+import { AUTHENTICATED_MUTATION_ROUTE_CONFIG } from "../authentication.js";
+
 export function registerDiagnosticRoutes(
   app: FastifyInstance,
   pool: DatabasePool,
@@ -22,6 +24,7 @@ export function registerDiagnosticRoutes(
   app.post(
     "/api/v1/installation/diagnostics",
     {
+      config: AUTHENTICATED_MUTATION_ROUTE_CONFIG,
       schema: {
         body: jsonSchemaForEmbedding(diagnosticCommandJsonSchema),
         response: {

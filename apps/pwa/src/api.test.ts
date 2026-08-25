@@ -165,11 +165,16 @@ describe("PWA API client", () => {
   it("posts an empty diagnostic command and parses the accepted transition", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(accepted, 202));
     vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("document", {
+      cookie: `__Host-kestrel-csrf=${"A".repeat(43)}.${"B".repeat(43)}`,
+    });
 
     await expect(runDiagnostic()).resolves.toEqual(accepted);
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/v1/installation/diagnostics",
-      expect.objectContaining({ body: "{}", method: "POST" }),
+    const request = fetchMock.mock.calls[0]?.[1];
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/v1/installation/diagnostics");
+    expect(request).toEqual(expect.objectContaining({ body: "{}", method: "POST" }));
+    expect(new Headers(request?.headers).get("X-Kestrel-CSRF")).toBe(
+      `${"A".repeat(43)}.${"B".repeat(43)}`,
     );
   });
 

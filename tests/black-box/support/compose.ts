@@ -167,6 +167,7 @@ export async function startStack(options: StartStackOptions = {}): Promise<Runni
 
     let apiUrl = await resolvePublishedUrl("web", "3000");
     let pwaUrl = await resolvePublishedUrl("pwa", "5173");
+    let csrfToken: string | null = null;
     let sessionCookie: string | null = null;
     await waitForJson(`${apiUrl}/health/ready`);
     await waitForJson(pwaUrl);
@@ -188,15 +189,20 @@ export async function startStack(options: StartStackOptions = {}): Promise<Runni
         await bootstrapOperator(credentials);
         const response = await fetch(`${apiUrl}/auth/login`, {
           body: JSON.stringify(credentials),
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", Origin: apiUrl },
           method: "POST",
         });
         await response.arrayBuffer();
-        const cookie = response.headers.get("set-cookie")?.split(";", 1)[0];
-        if (!response.ok || !cookie) {
+        const cookies = response.headers
+          .getSetCookie()
+          .map((value) => value.split(";", 1)[0])
+          .filter((value): value is string => value !== undefined && value.length > 0);
+        const csrfCookie = cookies.find((value) => value.startsWith("__Host-kestrel-csrf="));
+        if (!response.ok || cookies.length !== 2 || csrfCookie === undefined) {
           throw new Error(`Operator test login failed with status ${String(response.status)}`);
         }
-        sessionCookie = cookie;
+        csrfToken = csrfCookie.slice(csrfCookie.indexOf("=") + 1);
+        sessionCookie = cookies.join("; ");
       },
       bootstrapOperator,
       close,
@@ -227,6 +233,14 @@ export async function startStack(options: StartStackOptions = {}): Promise<Runni
         }
         const headers = new Headers(init.headers);
         headers.set("Cookie", sessionCookie);
+        const method = (init.method ?? "GET").toUpperCase();
+        if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
+          if (csrfToken === null) {
+            throw new Error("The test stack has no CSRF token");
+          }
+          headers.set("Origin", apiUrl);
+          headers.set("X-Kestrel-CSRF", csrfToken);
+        }
         return fetch(new URL(path, apiUrl), { ...init, headers });
       },
       async restart(...services) {

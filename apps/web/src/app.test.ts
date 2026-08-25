@@ -3,7 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiErrorSchema } from "@kestrel/contracts";
 
 import { buildApp } from "./app.js";
-import { createSessionToken, SESSION_COOKIE_NAME } from "./session.js";
+import {
+  createCsrfToken,
+  createSessionToken,
+  CSRF_COOKIE_NAME,
+  SESSION_COOKIE_NAME,
+} from "./session.js";
 
 const sessionSigningKey = Buffer.alloc(32, 7);
 const sessionToken = createSessionToken(
@@ -15,7 +20,13 @@ const sessionToken = createSessionToken(
   },
   sessionSigningKey,
 ).token;
-const authenticatedHeaders = { cookie: `${SESSION_COOKIE_NAME}=${sessionToken}` };
+const csrfToken = createCsrfToken(sessionToken, sessionSigningKey, Buffer.alloc(32, 3));
+const authenticatedHeaders = {
+  cookie: `${SESSION_COOKIE_NAME}=${sessionToken}; ${CSRF_COOKIE_NAME}=${csrfToken}`,
+  host: "kestrel.test",
+  origin: "https://kestrel.test",
+  "x-kestrel-csrf": csrfToken,
+};
 
 describe("web error and readiness boundaries", () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
@@ -68,6 +79,7 @@ describe("web error and readiness boundaries", () => {
 
   it("limits anonymous access to the specified login route", async () => {
     const login = await app.inject({
+      headers: { host: "kestrel.test", origin: "https://kestrel.test" },
       method: "POST",
       payload: { password: "correct horse battery staple", username: "operator" },
       url: "/auth/login",

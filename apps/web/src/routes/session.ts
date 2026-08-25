@@ -6,13 +6,24 @@ import {
   jsonSchemaForEmbedding,
   LoginCommandSchema,
   loginCommandJsonSchema,
+  LogoutCommandSchema,
+  logoutCommandJsonSchema,
   sessionJsonSchema,
 } from "@kestrel/contracts";
 import { readOperatorCredentials, type DatabasePool } from "@kestrel/database";
 
 import { verifyPassword } from "../password.js";
-import { createSessionToken, serializeSessionCookie } from "../session.js";
-import { PUBLIC_ROUTE_CONFIG } from "../authentication.js";
+import {
+  createCsrfToken,
+  createSessionToken,
+  serializeClearedAuthenticationCookies,
+  serializeCsrfCookie,
+  serializeSessionCookie,
+} from "../session.js";
+import {
+  AUTHENTICATED_MUTATION_ROUTE_CONFIG,
+  PUBLIC_MUTATION_ROUTE_CONFIG,
+} from "../authentication.js";
 
 export function registerSessionRoutes(
   app: FastifyInstance,
@@ -35,7 +46,8 @@ export function registerSessionRoutes(
   app.post(
     "/auth/login",
     {
-      config: PUBLIC_ROUTE_CONFIG,
+      bodyLimit: 1_024,
+      config: PUBLIC_MUTATION_ROUTE_CONFIG,
       schema: {
         body: jsonSchemaForEmbedding(loginCommandJsonSchema),
         response: {
@@ -69,6 +81,13 @@ export function registerSessionRoutes(
           "Set-Cookie",
           serializeSessionCookie(created.token, created.session.expiresAt),
         );
+        reply.header(
+          "Set-Cookie",
+          serializeCsrfCookie(
+            createCsrfToken(created.token, signingKey),
+            created.session.expiresAt,
+          ),
+        );
         request.log.info({ event: "operator.login_succeeded", operatorId: credentials.id });
         return created.session;
       } catch (error) {
@@ -82,6 +101,32 @@ export function registerSessionRoutes(
           }),
         );
       }
+    },
+  );
+
+  app.post(
+    "/auth/logout",
+    {
+      bodyLimit: 1_024,
+      config: AUTHENTICATED_MUTATION_ROUTE_CONFIG,
+      schema: {
+        body: jsonSchemaForEmbedding(logoutCommandJsonSchema),
+        response: {
+          204: { type: "null" },
+          400: jsonSchemaForEmbedding(apiErrorJsonSchema),
+          401: jsonSchemaForEmbedding(apiErrorJsonSchema),
+          403: jsonSchemaForEmbedding(apiErrorJsonSchema),
+          413: jsonSchemaForEmbedding(apiErrorJsonSchema),
+          415: jsonSchemaForEmbedding(apiErrorJsonSchema),
+        },
+      },
+    },
+    (request, reply) => {
+      LogoutCommandSchema.parse(request.body);
+      for (const cookie of serializeClearedAuthenticationCookies()) {
+        reply.header("Set-Cookie", cookie);
+      }
+      return reply.code(204).send();
     },
   );
 }
