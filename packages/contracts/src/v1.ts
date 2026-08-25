@@ -91,7 +91,7 @@ export const ProjectSchema = z.strictObject({
   id: KestrelIdSchema,
   repositoryAccess: RepositoryAccessSchema,
   repository: RepositorySnapshotSchema,
-  sourceAvailability: z.enum(["available", "unavailable"]),
+  sourceAvailability: z.enum(["not_acquired", "available", "unavailable"]),
   providerContext: z.enum(["public_pull_request", "not_applicable"]),
   modelAccess: z.enum(["not_configured"]),
   createdAt: UtcDateTimeSchema,

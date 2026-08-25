@@ -199,7 +199,7 @@ describe("V1 public contracts", () => {
               owner: "openai",
               providerId: "R_kgDOGx",
             },
-            sourceAvailability: "available",
+            sourceAvailability: "not_acquired",
             providerContext: "public_pull_request",
             modelAccess: "not_configured",
             createdAt: "2026-08-24T12:00:00.000Z",

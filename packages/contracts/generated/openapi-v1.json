@@ -751,6 +751,7 @@
                 },
                 "sourceAvailability": {
                   "enum": [
+                    "not_acquired",
                     "available",
                     "unavailable"
                   ],
@@ -1004,6 +1005,7 @@
               },
               "sourceAvailability": {
                 "enum": [
+                  "not_acquired",
                   "available",
                   "unavailable"
                 ],

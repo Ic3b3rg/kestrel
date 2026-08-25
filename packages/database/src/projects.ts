@@ -84,7 +84,7 @@ export function mapProjectRows(rows: readonly ProjectDatabaseRow[]): ProjectInbo
           kind: "public_github",
           synchronization: "manual",
         },
-        sourceAvailability: "available",
+        sourceAvailability: "not_acquired",
         updatedAt: row.updated_at.toISOString(),
       };
       projects.set(row.id, project);

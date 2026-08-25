@@ -66,7 +66,7 @@ const project: Project = {
     kind: "public_github",
     synchronization: "manual",
   },
-  sourceAvailability: "available",
+  sourceAvailability: "not_acquired",
   updatedAt: "2026-08-24T12:01:00.000Z",
 };
 
