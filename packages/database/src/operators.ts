@@ -105,7 +105,7 @@ export async function readOperatorCredentials(
 }
 
 export async function readOperatorSessionState(
-  pool: DatabasePool,
+  pool: Pick<DatabasePool, "query">,
   operatorId: string,
 ): Promise<OperatorSessionState | null> {
   const selected = await pool.query<OperatorDatabaseRow>(`

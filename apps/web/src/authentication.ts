@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
-import { ApiErrorSchema, type Session } from "@kestrel/contracts";
+import { ApiErrorSchema, type CredentialVersion, type Session } from "@kestrel/contracts";
 import { readOperatorSessionState, type DatabasePool } from "@kestrel/database";
 
 import {
@@ -19,6 +19,7 @@ declare module "fastify" {
 
   interface FastifyRequest {
     operatorSession: Session | null;
+    operatorSessionGeneration: CredentialVersion | null;
   }
 }
 
@@ -74,6 +75,7 @@ export function registerAuthentication(
   signingKey: Buffer,
 ): void {
   app.decorateRequest("operatorSession", null);
+  app.decorateRequest("operatorSessionGeneration", null);
   app.addHook("onRequest", async (request, reply) => {
     if (isPublicRequest(request)) {
       return;
@@ -91,6 +93,7 @@ export function registerAuthentication(
           current.sessionGeneration === verified.sessionGeneration
         ) {
           request.operatorSession = verified.session;
+          request.operatorSessionGeneration = verified.sessionGeneration;
           return;
         }
       } catch {

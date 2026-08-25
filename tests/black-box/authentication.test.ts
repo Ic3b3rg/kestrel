@@ -118,7 +118,7 @@ async function waitForStreamEnd(response: Response, timeoutMs = 5_000): Promise<
       })(),
       new Promise<never>((_resolve, reject) => {
         timeout = setTimeout(
-          () => reject(new Error("Event stream remained open beyond session expiry")),
+          () => reject(new Error("Event stream remained open beyond its security deadline")),
           timeoutMs,
         );
       }),
@@ -712,11 +712,18 @@ describe("sole Operator authentication", () => {
     });
     expect(remoteRecovery.status).toBe(404);
 
+    const lostDeviceStream = await fetch(`${runningStack.apiUrl}/api/v1/events`, {
+      headers: { Accept: "text/event-stream", Cookie: firstCookie },
+    });
+    expect(lostDeviceStream.status).toBe(200);
+    const lostDeviceDisconnected = waitForStreamEnd(lostDeviceStream);
+
     const recoveredPassword = "host recovered correct horse battery staple";
     const resetOutput = await runningStack.resetOperatorPassword(recoveredPassword);
     expect(resetOutput).toContain("Operator password reset");
     expect(resetOutput).not.toContain(credentials.password);
     expect(resetOutput).not.toContain(recoveredPassword);
+    await lostDeviceDisconnected;
 
     const oldSessions = await Promise.all(
       [firstCookie, secondCookie].map((cookie) =>

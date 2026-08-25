@@ -5,6 +5,7 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import { ApiErrorSchema, type InstallationEvent } from "@kestrel/contracts";
 import {
   readEventReplayBatch,
+  readOperatorSessionState,
   validateCursor,
   type DatabasePool,
   type EventCursorValidation,
@@ -52,9 +53,12 @@ export async function startInstallationEventStream({
   request,
 }: StartEventStreamOptions): Promise<EventStreamStartResult> {
   const session = request.operatorSession;
-  if (session === null) {
+  const sessionGeneration = request.operatorSessionGeneration;
+  if (session === null || sessionGeneration === null) {
     throw new Error("An authenticated Operator session is required for event streaming");
   }
+  const authenticatedSession = session;
+  const authenticatedSessionGeneration = sessionGeneration;
   const client = await pool.connect();
   let transferred = false;
 
@@ -131,6 +135,23 @@ export async function startInstallationEventStream({
 
     async function drain(): Promise<void> {
       while (!closed) {
+        const currentOperator = await readOperatorSessionState(
+          client,
+          authenticatedSession.operator.id,
+        );
+        if (
+          currentOperator === null ||
+          currentOperator.username !== authenticatedSession.operator.username ||
+          currentOperator.credentialVersion !== authenticatedSession.credentialVersion ||
+          currentOperator.sessionGeneration !== authenticatedSessionGeneration
+        ) {
+          request.log.info({
+            event: "events.session_invalidated",
+            operatorId: authenticatedSession.operator.id,
+          });
+          await cleanup(true);
+          return;
+        }
         const batch = await readEventReplayBatch(client, cursor, EVENT_BATCH_SIZE);
         if (!batch.valid) {
           await writeChunk(encodeResetRequired(request.id, batch.firstAvailable));
@@ -166,9 +187,12 @@ export async function startInstallationEventStream({
       enqueue(async () => writeChunk(": keep-alive\n\n"));
     }, HEARTBEAT_INTERVAL_MS);
     const sessionExpiryTimer = setTimeout(() => {
-      request.log.info({ event: "events.session_expired", operatorId: session.operator.id });
+      request.log.info({
+        event: "events.session_expired",
+        operatorId: authenticatedSession.operator.id,
+      });
       void cleanup(true);
-    }, millisecondsUntilSessionExpiry(session.expiresAt));
+    }, millisecondsUntilSessionExpiry(authenticatedSession.expiresAt));
     request.raw.once("close", onRequestClose);
     client.on("error", onDatabaseError);
     client.on("notification", onNotification);
