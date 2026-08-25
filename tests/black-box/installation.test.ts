@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
 
-import { InstallationSnapshotSchema } from "@kestrel/contracts";
+import { ApiErrorSchema, InstallationSnapshotSchema, ProjectInboxSchema } from "@kestrel/contracts";
 
 import { startStack, type RunningStack } from "./support/compose.js";
 
@@ -87,6 +87,90 @@ describe("observable Kestrel Installation", () => {
     expect(serviceWorker).toContain("/^\\/api\\//");
     expect(serviceWorker).not.toContain("/api/v1/installation");
   });
+
+  it("keeps the Project inbox durable and rejects unsafe URLs before provider access", async () => {
+    expect(stack).toBeDefined();
+    const runningStack = stack as RunningStack;
+    expect(ProjectInboxSchema.parse(await getJson(runningStack, "/api/v1/projects"))).toEqual({
+      schemaVersion: 1,
+      projects: [],
+    });
+
+    const rejected = await runningStack.fetchApi("/api/v1/projects", {
+      body: JSON.stringify({ url: "http://127.0.0.1/internal" }),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    });
+    expect(rejected.status).toBe(400);
+    expect(ApiErrorSchema.parse(await rejected.json())).toMatchObject({
+      code: "INVALID_REQUEST",
+    });
+    expect(ProjectInboxSchema.parse(await getJson(runningStack, "/api/v1/projects"))).toEqual({
+      schemaVersion: 1,
+      projects: [],
+    });
+
+    await runningStack.executeRuntimeSql(`
+      WITH project AS (
+        INSERT INTO projects (
+          installation_id,
+          repository_access_kind,
+          provider,
+          provider_repository_id,
+          repository_owner_snapshot,
+          repository_name_snapshot,
+          repository_canonical_url_snapshot
+        )
+        SELECT id,
+               'public_github',
+               'github',
+               'R_kgDOGx',
+               'openai',
+               'openai-node',
+               'https://github.com/openai/openai-node'
+        FROM installations
+        RETURNING id
+      )
+      INSERT INTO change_proposals (
+        project_id,
+        provider_proposal_id,
+        provider_number,
+        title_snapshot,
+        canonical_url_snapshot,
+        proposal_state,
+        base_ref_snapshot,
+        base_object_id,
+        head_ref_snapshot,
+        head_object_id,
+        author_provider_id,
+        author_login_snapshot
+      )
+      SELECT id,
+             'PR_kwDOGx',
+             1234,
+             'Keep repository access explicit',
+             'https://github.com/openai/openai-node/pull/1234',
+             'open',
+             'main',
+             '${"a".repeat(40)}',
+             'repository-access',
+             '${"b".repeat(40)}',
+             'U_kgDOA',
+             'octocat'
+      FROM project;
+    `);
+
+    const beforeRestart = ProjectInboxSchema.parse(await getJson(runningStack, "/api/v1/projects"));
+    expect(beforeRestart.projects[0]).toMatchObject({
+      repositoryAccess: { authentication: "none", synchronization: "manual" },
+      repository: { owner: "openai", name: "openai-node" },
+      changeProposals: [{ number: 1234 }],
+    });
+    await runningStack.restart("web");
+    expect(ProjectInboxSchema.parse(await getJson(runningStack, "/api/v1/projects"))).toEqual(
+      beforeRestart,
+    );
+  }, 60_000);
 
   it("backfills a conservative replay floor when upgrading retained schema 002 state", async () => {
     expect(stack).toBeDefined();
