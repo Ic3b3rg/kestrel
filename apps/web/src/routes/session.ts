@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import type { FastifyInstance } from "fastify";
 
 import {
@@ -10,7 +12,12 @@ import {
   logoutCommandJsonSchema,
   sessionJsonSchema,
 } from "@kestrel/contracts";
-import { readOperatorCredentials, type DatabasePool } from "@kestrel/database";
+import {
+  appendAuditRecord,
+  consumeAuthenticationRateLimit,
+  readOperatorCredentials,
+  type DatabasePool,
+} from "@kestrel/database";
 
 import { verifyPassword } from "../password.js";
 import {
@@ -24,6 +31,16 @@ import {
   AUTHENTICATED_MUTATION_ROUTE_CONFIG,
   PUBLIC_MUTATION_ROUTE_CONFIG,
 } from "../authentication.js";
+
+const LOGIN_RATE_LIMIT_WINDOW_SECONDS = 15 * 60;
+const LOGIN_PRINCIPAL_LIMIT = 10;
+const LOGIN_SOURCE_LIMIT = 50;
+const DUMMY_PASSWORD_HASH =
+  "$argon2id$v=19$m=19456,t=2,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
+function authenticationSubjectDigest(scope: string, subject: string): string {
+  return createHash("sha256").update(`${scope}\0${subject}`, "utf8").digest("hex");
+}
 
 export function registerSessionRoutes(
   app: FastifyInstance,
@@ -56,6 +73,7 @@ export function registerSessionRoutes(
           401: jsonSchemaForEmbedding(apiErrorJsonSchema),
           413: jsonSchemaForEmbedding(apiErrorJsonSchema),
           415: jsonSchemaForEmbedding(apiErrorJsonSchema),
+          429: jsonSchemaForEmbedding(apiErrorJsonSchema),
           503: jsonSchemaForEmbedding(apiErrorJsonSchema),
         },
       },
@@ -63,8 +81,68 @@ export function registerSessionRoutes(
     async (request, reply) => {
       const command = LoginCommandSchema.parse(request.body);
       try {
+        const rateLimit = await consumeAuthenticationRateLimit(
+          pool,
+          [
+            {
+              limit: LOGIN_PRINCIPAL_LIMIT,
+              scope: "operator_login_principal",
+              subjectDigest: authenticationSubjectDigest(
+                "operator-login-principal",
+                command.username,
+              ),
+            },
+            {
+              limit: LOGIN_SOURCE_LIMIT,
+              scope: "operator_login_source",
+              subjectDigest: authenticationSubjectDigest("operator-login-source", request.ip),
+            },
+          ],
+          LOGIN_RATE_LIMIT_WINDOW_SECONDS,
+        );
+        if (!rateLimit.allowed) {
+          await appendAuditRecord(pool, {
+            actorId: null,
+            actorType: "anonymous",
+            causationId: null,
+            correlationId: request.id,
+            denialReason: "rate_limit_exceeded",
+            eventType: "operator.login.rate_limited",
+            outcome: "denied",
+            targetId: null,
+            targetType: "operator",
+          });
+          request.log.warn({ event: "operator.login_rate_limited" });
+          return await reply
+            .header("Retry-After", String(rateLimit.retryAfterSeconds))
+            .code(429)
+            .send(
+              ApiErrorSchema.parse({
+                schemaVersion: 1,
+                code: "RATE_LIMITED",
+                message: "Operator authentication is temporarily limited",
+                correlationId: request.id,
+              }),
+            );
+        }
+
         const credentials = await readOperatorCredentials(pool, command.username);
-        if (!credentials || !(await verifyPassword(command.password, credentials.passwordHash))) {
+        const passwordMatches = await verifyPassword(
+          command.password,
+          credentials?.passwordHash ?? DUMMY_PASSWORD_HASH,
+        );
+        if (!credentials || !passwordMatches) {
+          await appendAuditRecord(pool, {
+            actorId: null,
+            actorType: "anonymous",
+            causationId: null,
+            correlationId: request.id,
+            denialReason: "invalid_credentials",
+            eventType: "operator.login.denied",
+            outcome: "denied",
+            targetId: credentials?.id ?? null,
+            targetType: "operator",
+          });
           request.log.warn({ event: "operator.login_failed" });
           return await reply.code(401).send(
             ApiErrorSchema.parse({
@@ -77,6 +155,17 @@ export function registerSessionRoutes(
         }
 
         const created = createSessionToken(credentials, signingKey);
+        await appendAuditRecord(pool, {
+          actorId: credentials.id,
+          actorType: "operator",
+          causationId: null,
+          correlationId: request.id,
+          denialReason: null,
+          eventType: "operator.login.succeeded",
+          outcome: "succeeded",
+          targetId: credentials.id,
+          targetType: "operator",
+        });
         reply.header(
           "Set-Cookie",
           serializeSessionCookie(created.token, created.session.expiresAt),

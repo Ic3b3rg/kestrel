@@ -10,6 +10,7 @@
                 "INVALID_REQUEST",
                 "AUTHENTICATION_FAILED",
                 "AUTHENTICATION_REQUIRED",
+                "RATE_LIMITED",
                 "PAYLOAD_TOO_LARGE",
                 "UNSUPPORTED_MEDIA_TYPE",
                 "REQUEST_REJECTED",

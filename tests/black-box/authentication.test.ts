@@ -96,6 +96,7 @@ describe("sole Operator authentication", () => {
     await stack?.executeSql(`
       DROP TRIGGER IF EXISTS kestrel_test_reject_operator ON operators;
       DROP FUNCTION IF EXISTS public.kestrel_test_reject_operator();
+      TRUNCATE authentication_rate_limits, installation_audit_records;
       DELETE FROM operators;
       CREATE UNIQUE INDEX IF NOT EXISTS operators_singleton ON operators ((true));
     `);
@@ -288,6 +289,92 @@ describe("sole Operator authentication", () => {
     expect(wrongPassword.headers.get("set-cookie")).toBeNull();
   });
 
+  it("applies release-fixed login limits and records minimized abuse audit", async () => {
+    expect(stack).toBeDefined();
+    const runningStack = stack as RunningStack;
+    await runningStack.bootstrapOperator(credentials);
+
+    const denials: Response[] = [];
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      denials.push(
+        await login(runningStack, {
+          username: credentials.username,
+          password: `incorrect password attempt ${String(attempt)}`,
+        }),
+      );
+    }
+    expect(denials.map((response) => response.status)).toEqual(Array(10).fill(401));
+
+    const limited = await login(runningStack, {
+      username: credentials.username,
+      password: "one incorrect password too many",
+    });
+    expect(limited.status).toBe(429);
+    expect(ApiErrorSchema.parse(await limited.json())).toMatchObject({
+      code: "RATE_LIMITED",
+      message: "Operator authentication is temporarily limited",
+    });
+    expect(limited.headers.get("retry-after")).toMatch(/^[1-9][0-9]*$/u);
+
+    await runningStack.executeSql(`
+      DO $$
+      BEGIN
+        IF (
+          SELECT count(*) FROM installation_audit_records
+          WHERE event_type = 'operator.login.denied' AND outcome = 'denied'
+        ) <> 10 THEN
+          RAISE EXCEPTION 'expected ten denied login audit records';
+        END IF;
+        IF (
+          SELECT count(*) FROM installation_audit_records
+          WHERE event_type = 'operator.login.rate_limited' AND outcome = 'denied'
+        ) <> 1 THEN
+          RAISE EXCEPTION 'expected one rate-limited login audit record';
+        END IF;
+        IF EXISTS (
+          SELECT 1 FROM installation_audit_records
+          WHERE facts::text LIKE '%${credentials.username}%'
+             OR facts::text LIKE '%incorrect password%'
+             OR facts::text LIKE '%127.0.0.1%'
+        ) THEN
+          RAISE EXCEPTION 'authentication audit retained sensitive input';
+        END IF;
+      END;
+      $$;
+    `);
+    await expect(
+      runningStack.executeSql(`
+        UPDATE installation_audit_records
+        SET facts = '{"tampered":true}'::jsonb;
+      `),
+    ).rejects.toThrow(/append-only/u);
+  });
+
+  it("limits one source even when it rotates candidate usernames", async () => {
+    expect(stack).toBeDefined();
+    const runningStack = stack as RunningStack;
+    await runningStack.bootstrapOperator(credentials);
+
+    const statuses: number[] = [];
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const response = await login(runningStack, {
+        username: `candidate-${String(attempt)}`,
+        password: "one invalid password",
+      });
+      statuses.push(response.status);
+    }
+    expect(statuses).toEqual(Array(50).fill(401));
+
+    const limited = await login(runningStack, {
+      username: "candidate-over-limit",
+      password: "one invalid password",
+    });
+    expect(limited.status).toBe(429);
+    expect(ApiErrorSchema.parse(await limited.json())).toMatchObject({
+      code: "RATE_LIMITED",
+    });
+  });
+
   it("does not refresh a session and rejects expired, tampered, or duplicate cookies", async () => {
     expect(stack).toBeDefined();
     const runningStack = stack as RunningStack;
@@ -295,6 +382,7 @@ describe("sole Operator authentication", () => {
     const loginResponse = await login(runningStack, credentials);
     const session = SessionSchema.parse(await loginResponse.json());
     const cookie = cookiePair(loginResponse);
+    const sessionCookie = namedCookie(loginResponse, "__Host-kestrel-session");
 
     expect((Date.parse(session.expiresAt) - Date.parse(session.issuedAt)) / 1_000).toBe(
       7 * 24 * 60 * 60,
@@ -321,10 +409,10 @@ describe("sole Operator authentication", () => {
       headers: { Cookie: `__Host-kestrel-session=${expiredToken}` },
     });
     const tampered = await fetch(`${runningStack.apiUrl}/api/v1/installation`, {
-      headers: { Cookie: `${cookie}x` },
+      headers: { Cookie: `${sessionCookie}x` },
     });
     const duplicate = await fetch(`${runningStack.apiUrl}/api/v1/installation`, {
-      headers: { Cookie: `${cookie}; ${cookie}` },
+      headers: { Cookie: `${sessionCookie}; ${sessionCookie}` },
     });
 
     expect(expired.status).toBe(401);

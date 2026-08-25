@@ -11,6 +11,7 @@
                   "INVALID_REQUEST",
                   "AUTHENTICATION_FAILED",
                   "AUTHENTICATION_REQUIRED",
+                  "RATE_LIMITED",
                   "PAYLOAD_TOO_LARGE",
                   "UNSUPPORTED_MEDIA_TYPE",
                   "REQUEST_REJECTED",
@@ -1093,6 +1094,16 @@
               }
             },
             "description": "The login media type is unsupported"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The release-fixed Operator login limit was reached"
           },
           "503": {
             "content": {

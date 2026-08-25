@@ -323,6 +323,12 @@ export const openApiDocument = sortJson({
             },
             description: "The login media type is unsupported",
           },
+          "429": {
+            content: {
+              "application/json": { schema: schemaReference("ApiError") },
+            },
+            description: "The release-fixed Operator login limit was reached",
+          },
           "503": {
             content: {
               "application/json": { schema: schemaReference("ApiError") },
