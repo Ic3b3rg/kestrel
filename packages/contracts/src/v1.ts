@@ -33,7 +33,7 @@ const GitReferenceSchema = z
   .string()
   .min(1)
   .max(255)
-  .regex(/^[^\u0000-\u001f\u007f]+$/u);
+  .regex(/^[^\p{Cc}]+$/u);
 
 export const PublicGitHubPullRequestUrlSchema = z
   .string()

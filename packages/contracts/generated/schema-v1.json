@@ -566,7 +566,7 @@
                         "ref": {
                           "maxLength": 255,
                           "minLength": 1,
-                          "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+                          "pattern": "^[^\\p{Cc}]+$",
                           "type": "string"
                         }
                       },
@@ -591,7 +591,7 @@
                         "ref": {
                           "maxLength": 255,
                           "minLength": 1,
-                          "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+                          "pattern": "^[^\\p{Cc}]+$",
                           "type": "string"
                         }
                       },
@@ -819,7 +819,7 @@
                       "ref": {
                         "maxLength": 255,
                         "minLength": 1,
-                        "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+                        "pattern": "^[^\\p{Cc}]+$",
                         "type": "string"
                       }
                     },
@@ -844,7 +844,7 @@
                       "ref": {
                         "maxLength": 255,
                         "minLength": 1,
-                        "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+                        "pattern": "^[^\\p{Cc}]+$",
                         "type": "string"
                       }
                     },
