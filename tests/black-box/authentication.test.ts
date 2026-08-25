@@ -146,6 +146,8 @@ describe("sole Operator authentication", () => {
     await stack?.executeSql(`
       DROP TRIGGER IF EXISTS kestrel_test_reject_operator ON operators;
       DROP FUNCTION IF EXISTS public.kestrel_test_reject_operator();
+      DROP TRIGGER IF EXISTS kestrel_test_reject_audit_insert ON installation_audit_records;
+      DROP FUNCTION IF EXISTS public.kestrel_test_reject_audit_insert();
       ALTER TABLE installation_audit_records DISABLE TRIGGER installation_audit_append_only;
       TRUNCATE operator_step_up_proofs, authentication_rate_limits, installation_audit_records;
       ALTER TABLE installation_audit_records ENABLE TRIGGER installation_audit_append_only;
@@ -325,6 +327,50 @@ describe("sole Operator authentication", () => {
     expect(copiedJwt.status).toBe(200);
   });
 
+  it("clears the browser cookies even when logout audit is unavailable", async () => {
+    expect(stack).toBeDefined();
+    const runningStack = stack as RunningStack;
+    await runningStack.bootstrapOperator(credentials);
+    const loginResponse = await login(runningStack, credentials);
+    expect(loginResponse.status).toBe(200);
+
+    await runningStack.executeSql(`
+      CREATE FUNCTION public.kestrel_test_reject_audit_insert()
+      RETURNS trigger
+      LANGUAGE plpgsql
+      AS $$
+      BEGIN
+        IF NEW.event_type = 'operator.logout.succeeded' THEN
+          RAISE EXCEPTION 'test rejects logout audit';
+        END IF;
+        RETURN NEW;
+      END;
+      $$;
+      CREATE TRIGGER kestrel_test_reject_audit_insert
+      BEFORE INSERT ON installation_audit_records
+      FOR EACH ROW
+      EXECUTE FUNCTION public.kestrel_test_reject_audit_insert();
+    `);
+
+    const failedLogout = await fetch(`${runningStack.apiUrl}/auth/logout`, {
+      body: "{}",
+      headers: authenticatedMutationHeaders(loginResponse),
+      method: "POST",
+    });
+    expect(failedLogout.status).toBe(503);
+    expect(failedLogout.headers.getSetCookie()).toHaveLength(2);
+    for (const value of failedLogout.headers.getSetCookie()) {
+      expect(value).toContain("Max-Age=0");
+    }
+    expect(
+      (
+        await fetch(`${runningStack.apiUrl}/api/v1/session`, {
+          headers: { Cookie: cookiePair(loginResponse) },
+        })
+      ).status,
+    ).toBe(200);
+  });
+
   it("returns the same denial for an unknown username and a wrong password", async () => {
     expect(stack).toBeDefined();
     const runningStack = stack as RunningStack;
@@ -426,12 +472,56 @@ describe("sole Operator authentication", () => {
     await expect(runningStack.executeSql("TRUNCATE installation_audit_records;")).rejects.toThrow(
       /append-only/u,
     );
+    await runningStack.executeRuntimeSql(`
+      DO $$
+      BEGIN
+        IF current_user <> 'kestrel_runtime' OR EXISTS (
+          SELECT 1 FROM pg_roles
+          WHERE rolname = current_user
+            AND (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls)
+        ) THEN
+          RAISE EXCEPTION 'application did not use the constrained runtime role';
+        END IF;
+      END;
+      $$;
+    `);
+    await expect(
+      runningStack.executeRuntimeSql(
+        "ALTER TABLE installation_audit_records DISABLE TRIGGER installation_audit_append_only;",
+      ),
+    ).rejects.toThrow(/must be owner|permission denied/u);
+    await expect(
+      runningStack.executeRuntimeSql(
+        "UPDATE installation_audit_records SET facts = '{\"tampered\":true}'::jsonb;",
+      ),
+    ).rejects.toThrow(/permission denied/u);
+    await expect(
+      runningStack.executeRuntimeSql("TRUNCATE installation_audit_records;"),
+    ).rejects.toThrow(/permission denied/u);
+    await expect(
+      runningStack.executeRuntimeSql(
+        "UPDATE schema_migrations SET checksum = repeat('0', 64) WHERE false;",
+      ),
+    ).rejects.toThrow(/permission denied/u);
   });
 
   it("limits one source even when it rotates candidate usernames", async () => {
     expect(stack).toBeDefined();
     const runningStack = stack as RunningStack;
     await runningStack.bootstrapOperator(credentials);
+    await runningStack.executeSql(`
+      INSERT INTO authentication_rate_limits (
+        scope,
+        subject_digest,
+        window_started_at,
+        attempts
+      ) VALUES (
+        'operator_login_principal',
+        '${"a".repeat(64)}',
+        statement_timestamp() - interval '2 days',
+        1
+      );
+    `);
 
     const statuses: number[] = [];
     for (let attempt = 0; attempt < 50; attempt += 1) {
@@ -451,6 +541,50 @@ describe("sole Operator authentication", () => {
     expect(ApiErrorSchema.parse(await limited.json())).toMatchObject({
       code: "RATE_LIMITED",
     });
+
+    const postLimitStatuses: number[] = [];
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      postLimitStatuses.push(
+        (
+          await login(runningStack, {
+            username: `post-limit-candidate-${String(attempt)}`,
+            password: "one invalid password",
+          })
+        ).status,
+      );
+    }
+    expect(postLimitStatuses).toEqual(Array(100).fill(429));
+
+    await runningStack.executeSql(`
+      DO $$
+      BEGIN
+        IF (
+          SELECT count(*) FROM authentication_rate_limits
+          WHERE scope = 'operator_login_principal'
+        ) <> 50 THEN
+          RAISE EXCEPTION 'blocked sources created unbounded principal buckets';
+        END IF;
+        IF (
+          SELECT attempts FROM authentication_rate_limits
+          WHERE scope = 'operator_login_source'
+        ) <> 51 THEN
+          RAISE EXCEPTION 'blocked source counter was not capped';
+        END IF;
+        IF (
+          SELECT count(*) FROM installation_audit_records
+          WHERE event_type = 'operator.login.rate_limited'
+        ) <> 1 THEN
+          RAISE EXCEPTION 'blocked source produced unbounded audit records';
+        END IF;
+        IF EXISTS (
+          SELECT 1 FROM authentication_rate_limits
+          WHERE subject_digest = '${"a".repeat(64)}'
+        ) THEN
+          RAISE EXCEPTION 'expired rate-limit bucket was not pruned';
+        END IF;
+      END;
+      $$;
+    `);
   });
 
   it("binds a one-command step-up proof and invalidates every session on credential change", async () => {
@@ -532,6 +666,34 @@ describe("sole Operator authentication", () => {
     const acceptedResponse = await requestStepUp(runningStack, loginResponse, baseStepUp);
     expect(acceptedResponse.status).toBe(200);
     const acceptedProof = StepUpProofSchema.parse(await acceptedResponse.json());
+    const acceptedProofDigest = createHash("sha256").update(acceptedProof.proof).digest("hex");
+    const requestBindingKey = createHmac("sha256", sessionSigningKey)
+      .update("kestrel-step-up-request-binding-key-v1", "ascii")
+      .digest();
+    const expectedRequestBinding = createHmac("sha256", requestBindingKey)
+      .update("kestrel-step-up-request-binding-v1\0", "ascii")
+      .update(requestDigest, "ascii")
+      .digest("hex");
+    await runningStack.executeSql(`
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'operator_step_up_proofs'
+            AND column_name = 'request_digest'
+        ) THEN
+          RAISE EXCEPTION 'step-up retained an unkeyed request digest';
+        END IF;
+        IF (
+          SELECT request_binding_hmac FROM operator_step_up_proofs
+          WHERE proof_digest = '${acceptedProofDigest}'
+        ) <> '${expectedRequestBinding}' THEN
+          RAISE EXCEPTION 'step-up request binding was not keyed and domain-separated';
+        END IF;
+      END;
+      $$;
+    `);
     const changed = await changeCredentials(
       runningStack,
       loginResponse,
@@ -564,11 +726,8 @@ describe("sole Operator authentication", () => {
     await runningStack.executeSql(`
       DO $$
       BEGIN
-        IF (
-          SELECT count(*) FROM operator_step_up_proofs
-          WHERE consumed_at IS NOT NULL
-        ) <> 5 THEN
-          RAISE EXCEPTION 'expected every presented proof to be consumed once';
+        IF (SELECT count(*) FROM operator_step_up_proofs) <> 0 THEN
+          RAISE EXCEPTION 'presented or expired proofs were retained';
         END IF;
         IF (
           SELECT count(*) FROM installation_audit_records
@@ -723,11 +882,8 @@ describe("sole Operator authentication", () => {
         IF (SELECT credential_version FROM operators) <> 1 THEN
           RAISE EXCEPTION 'stale command changed the Operator';
         END IF;
-        IF (
-          SELECT count(*) FROM operator_step_up_proofs
-          WHERE consumed_at IS NOT NULL
-        ) <> 1 THEN
-          RAISE EXCEPTION 'stale command did not consume its proof';
+        IF (SELECT count(*) FROM operator_step_up_proofs) <> 0 THEN
+          RAISE EXCEPTION 'stale command retained its proof';
         END IF;
       END;
       $$;

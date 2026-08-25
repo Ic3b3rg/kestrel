@@ -161,7 +161,11 @@ export async function loginOperator(command: LoginCommand, signal?: AbortSignal)
   return requireJson(response, SessionSchema, "Operator session");
 }
 
-export async function logoutOperator(signal?: AbortSignal): Promise<void> {
+export interface LogoutOutcome {
+  auditError: ApiError | null;
+}
+
+export async function logoutOperator(signal?: AbortSignal): Promise<LogoutOutcome> {
   const response = await fetch("/auth/logout", {
     body: "{}",
     credentials: "same-origin",
@@ -169,7 +173,13 @@ export async function logoutOperator(signal?: AbortSignal): Promise<void> {
     method: "POST",
     signal: signal ?? null,
   });
+  if (response.status === 503) {
+    return {
+      auditError: parseServerValue(ApiErrorSchema, await readJson(response), "API error"),
+    };
+  }
   await requireNoContent(response, "logout response");
+  return { auditError: null };
 }
 
 export interface UpdateOperatorCredentialsInput {

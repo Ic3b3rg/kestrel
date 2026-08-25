@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
@@ -39,6 +39,16 @@ const STEP_UP_HEADER_NAME = "x-kestrel-step-up";
 
 function sha256(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+function stepUpRequestBinding(requestDigest: string, signingKey: Buffer): string {
+  const bindingKey = createHmac("sha256", signingKey)
+    .update("kestrel-step-up-request-binding-key-v1", "ascii")
+    .digest();
+  return createHmac("sha256", bindingKey)
+    .update("kestrel-step-up-request-binding-v1\0", "ascii")
+    .update(requestDigest, "ascii")
+    .digest("hex");
 }
 
 function stepUpTargetType(action: StepUpAction): string {
@@ -118,7 +128,11 @@ async function auditCredentialChangeDenial(
   });
 }
 
-export function registerOperatorSecurityRoutes(app: FastifyInstance, pool: DatabasePool): void {
+export function registerOperatorSecurityRoutes(
+  app: FastifyInstance,
+  pool: DatabasePool,
+  signingKey: Buffer,
+): void {
   app.post(
     "/auth/step-up",
     {
@@ -154,14 +168,16 @@ export function registerOperatorSecurityRoutes(app: FastifyInstance, pool: Datab
           STEP_UP_RATE_LIMIT_WINDOW_SECONDS,
         );
         if (!rateLimit.allowed) {
-          await auditStepUpDenial(
-            pool,
-            request,
-            session,
-            command,
-            "operator.step_up.rate_limited",
-            "rate_limit_exceeded",
-          );
+          if (rateLimit.newlyExceededScopes.length > 0) {
+            await auditStepUpDenial(
+              pool,
+              request,
+              session,
+              command,
+              "operator.step_up.rate_limited",
+              "rate_limit_exceeded",
+            );
+          }
           return await reply
             .header("Retry-After", String(rateLimit.retryAfterSeconds))
             .code(429)
@@ -204,7 +220,7 @@ export function registerOperatorSecurityRoutes(app: FastifyInstance, pool: Datab
           credentialVersion: session.credentialVersion,
           operatorId: session.operator.id,
           proofDigest: sha256(proof),
-          requestDigest: command.requestDigest,
+          requestBindingHmac: stepUpRequestBinding(command.requestDigest, signingKey),
           targetId: command.targetId,
           targetType: stepUpTargetType(command.action),
         });
@@ -276,7 +292,9 @@ export function registerOperatorSecurityRoutes(app: FastifyInstance, pool: Datab
           CREDENTIAL_CHANGE_RATE_LIMIT_WINDOW_SECONDS,
         );
         if (!rateLimit.allowed) {
-          await auditCredentialChangeDenial(pool, request, session, "rate_limit_exceeded");
+          if (rateLimit.newlyExceededScopes.length > 0) {
+            await auditCredentialChangeDenial(pool, request, session, "rate_limit_exceeded");
+          }
           return await reply
             .header("Retry-After", String(rateLimit.retryAfterSeconds))
             .code(429)
@@ -302,7 +320,10 @@ export function registerOperatorSecurityRoutes(app: FastifyInstance, pool: Datab
           newPasswordHash: await hashPassword(command.newPassword),
           operatorId: session.operator.id,
           proofDigest: sha256(parsedProof.data),
-          requestDigest: sha256(serializeCredentialChangeCommand(command)),
+          requestBindingHmac: stepUpRequestBinding(
+            sha256(serializeCredentialChangeCommand(command)),
+            signingKey,
+          ),
           username: command.username,
         });
         if (result.kind === "proof-rejected") {

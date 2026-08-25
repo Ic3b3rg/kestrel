@@ -765,6 +765,26 @@
       "post": {
         "description": "Each accepted request creates a new diagnostic. Clients must not retry this command automatically.",
         "operationId": "runInstallationDiagnostic",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Origin",
+            "required": true,
+            "schema": {
+              "format": "uri",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Kestrel-CSRF",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -805,6 +825,16 @@
               }
             },
             "description": "Operator authentication is required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Origin or CSRF validation failed"
           },
           "409": {
             "content": {
@@ -1045,6 +1075,17 @@
     "/auth/login": {
       "post": {
         "operationId": "createOperatorSession",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Origin",
+            "required": true,
+            "schema": {
+              "format": "uri",
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -1085,6 +1126,16 @@
               }
             },
             "description": "Invalid Operator credentials"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Origin validation failed"
           },
           "413": {
             "content": {

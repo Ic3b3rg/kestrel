@@ -13,6 +13,7 @@ export interface RunningStack {
   bootstrapOperator(credentials: OperatorTestCredentials): Promise<string>;
   pwaUrl: string;
   close(): Promise<void>;
+  executeRuntimeSql(sql: string): Promise<void>;
   executeSql(sql: string): Promise<void>;
   fetchApi(path: string, init?: RequestInit): Promise<Response>;
   resetOperatorPassword(password: string): Promise<string>;
@@ -118,6 +119,8 @@ export async function startStack(options: StartStackOptions = {}): Promise<Runni
   const composeArgs = ["compose", "-p", project, "-f", "compose.yaml", "-f", "compose.test.yaml"];
   const environment = {
     ...dockerEnvironment(docker),
+    KESTREL_MIGRATOR_DATABASE_PASSWORD: randomBytes(32).toString("base64url"),
+    KESTREL_RUNTIME_DATABASE_PASSWORD: randomBytes(32).toString("base64url"),
     SESSION_SIGNING_KEY: options.sessionSigningKey ?? randomBytes(32).toString("base64url"),
   };
 
@@ -226,6 +229,27 @@ export async function startStack(options: StartStackOptions = {}): Promise<Runni
       },
       bootstrapOperator,
       close,
+      async executeRuntimeSql(sql) {
+        await execFileAsync(
+          docker,
+          [
+            ...composeArgs,
+            "exec",
+            "--no-TTY",
+            "postgres",
+            "psql",
+            "--username",
+            "kestrel_runtime",
+            "--dbname",
+            "kestrel",
+            "--set",
+            "ON_ERROR_STOP=1",
+            "--command",
+            sql,
+          ],
+          { env: environment },
+        );
+      },
       async executeSql(sql) {
         await execFileAsync(
           docker,

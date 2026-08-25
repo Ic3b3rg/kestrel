@@ -23,8 +23,8 @@ boss.on("error", (error) => {
 });
 
 try {
-  await migrate(pool);
   await boss.start();
+  await migrate(pool);
   await boss.createQueue(DIAGNOSTIC_QUEUE, DIAGNOSTIC_QUEUE_OPTIONS);
   await boss.updateQueue(DIAGNOSTIC_QUEUE, DIAGNOSTIC_QUEUE_OPTIONS);
   console.log(

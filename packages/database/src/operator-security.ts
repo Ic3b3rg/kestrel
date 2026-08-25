@@ -19,7 +19,7 @@ export interface IssueOperatorStepUpProofInput {
   credentialVersion: CredentialVersion;
   operatorId: string;
   proofDigest: string;
-  requestDigest: string;
+  requestBindingHmac: string;
   targetId: string;
   targetType: string;
 }
@@ -35,6 +35,10 @@ export async function issueOperatorStepUpProof(
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    await client.query(`
+      DELETE FROM operator_step_up_proofs
+      WHERE expires_at <= statement_timestamp()
+    `);
     const issued = await client.query<IssuedStepUpProofRow>(
       `
         INSERT INTO operator_step_up_proofs (
@@ -42,7 +46,7 @@ export async function issueOperatorStepUpProof(
           operator_id,
           action,
           target_id,
-          request_digest,
+          request_binding_hmac,
           credential_version,
           jwt_signing_generation,
           issued_at,
@@ -59,7 +63,7 @@ export async function issueOperatorStepUpProof(
         RequestDigestSchema.parse(input.proofDigest),
         StepUpActionSchema.parse(input.action),
         KestrelIdSchema.parse(input.targetId),
-        RequestDigestSchema.parse(input.requestDigest),
+        RequestDigestSchema.parse(input.requestBindingHmac),
         KestrelIdSchema.parse(input.operatorId),
         CredentialVersionSchema.parse(input.credentialVersion),
         CorrelationIdSchema.parse(input.correlationId),
@@ -97,7 +101,7 @@ export interface ConsumeOperatorStepUpProofInput {
   credentialVersion: CredentialVersion;
   operatorId: string;
   proofDigest: string;
-  requestDigest: string;
+  requestBindingHmac: string;
   targetId: string;
 }
 
@@ -107,7 +111,7 @@ interface ConsumedStepUpProofRow {
   is_unexpired: boolean;
   jwt_signing_generation: string;
   operator_id: string;
-  request_digest: string;
+  request_binding_hmac: string;
   target_id: string;
 }
 
@@ -118,16 +122,15 @@ export async function consumeOperatorStepUpProofInTransaction(
   const consumed = await client.query<ConsumedStepUpProofRow>(
     `
       WITH consumed AS (
-        UPDATE operator_step_up_proofs
-        SET consumed_at = statement_timestamp()
-        WHERE proof_digest = $1 AND consumed_at IS NULL
-        RETURNING operator_id, action, target_id, request_digest, credential_version,
+        DELETE FROM operator_step_up_proofs
+        WHERE proof_digest = $1
+        RETURNING operator_id, action, target_id, request_binding_hmac, credential_version,
                   jwt_signing_generation, expires_at
       )
       SELECT operator_id,
              action,
              target_id,
-             request_digest,
+             request_binding_hmac,
              credential_version,
              jwt_signing_generation,
              expires_at > statement_timestamp() AS is_unexpired
@@ -155,7 +158,7 @@ export async function consumeOperatorStepUpProofInTransaction(
     row.operator_id === KestrelIdSchema.parse(input.operatorId) &&
     row.action === StepUpActionSchema.parse(input.action) &&
     row.target_id === KestrelIdSchema.parse(input.targetId) &&
-    row.request_digest === RequestDigestSchema.parse(input.requestDigest) &&
+    row.request_binding_hmac === RequestDigestSchema.parse(input.requestBindingHmac) &&
     row.credential_version === CredentialVersionSchema.parse(input.credentialVersion) &&
     row.is_unexpired
   );
@@ -168,7 +171,7 @@ export interface ChangeOperatorCredentialsInput {
   newPasswordHash: string;
   operatorId: string;
   proofDigest: string;
-  requestDigest: string;
+  requestBindingHmac: string;
   username: string;
 }
 
@@ -187,7 +190,7 @@ export async function changeOperatorCredentials(
       credentialVersion: input.credentialVersion,
       operatorId: input.operatorId,
       proofDigest: input.proofDigest,
-      requestDigest: input.requestDigest,
+      requestBindingHmac: input.requestBindingHmac,
       targetId: input.operatorId,
     });
     if (!proofAccepted) {
@@ -224,6 +227,10 @@ export async function changeOperatorCredentials(
       await client.query("COMMIT");
       return { kind: "version-conflict" };
     }
+
+    await client.query("DELETE FROM operator_step_up_proofs WHERE operator_id = $1", [
+      input.operatorId,
+    ]);
 
     await appendAuditRecordInTransaction(client, {
       actorId: input.operatorId,
@@ -285,6 +292,7 @@ export async function resetOperatorPassword(
     if (updated.rowCount !== 1) {
       throw new Error("Operator password reset did not update exactly one row");
     }
+    await client.query("DELETE FROM operator_step_up_proofs WHERE operator_id = $1", [operator.id]);
     await client.query("DELETE FROM authentication_rate_limits");
     await appendAuditRecordInTransaction(client, {
       actorId: null,

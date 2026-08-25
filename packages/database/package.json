@@ -13,6 +13,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "migrate": "node dist/migrate-cli.js",
+    "prepare-runtime-role": "node dist/prepare-runtime-role-cli.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

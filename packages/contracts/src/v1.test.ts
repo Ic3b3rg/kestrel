@@ -183,9 +183,23 @@ describe("V1 public contracts", () => {
     });
     expect(openApiDocument).toMatchObject({
       paths: {
+        "/auth/login": {
+          post: {
+            parameters: [{ in: "header", name: "Origin", required: true }],
+            responses: { "403": {} },
+          },
+        },
         "/api/v1/events": { get: { responses: { "401": {} } } },
         "/api/v1/installation": { get: { responses: { "401": {} } } },
-        "/api/v1/installation/diagnostics": { post: { responses: { "401": {} } } },
+        "/api/v1/installation/diagnostics": {
+          post: {
+            parameters: [
+              { in: "header", name: "Origin", required: true },
+              { in: "header", name: "X-Kestrel-CSRF", required: true },
+            ],
+            responses: { "401": {}, "403": {} },
+          },
+        },
         "/api/v1/openapi.json": { get: { responses: { "401": {} } } },
         "/api/v1/session": { get: { responses: { "401": {} } } },
       },

@@ -143,7 +143,7 @@ export async function buildApp({
 
   registerAuthentication(app, pool, sessionSigningKey);
   registerSessionRoutes(app, pool, sessionSigningKey);
-  registerOperatorSecurityRoutes(app, pool);
+  registerOperatorSecurityRoutes(app, pool, sessionSigningKey);
 
   registerDiagnosticRoutes(app, pool, boss, eventRetentionLimit);
   registerEventRoutes(app, eventPool);

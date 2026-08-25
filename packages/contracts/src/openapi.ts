@@ -92,14 +92,20 @@ const schemaReference = (name: string): JsonObject => ({
   $ref: `#/components/schemas/${name}`,
 });
 
-function authenticatedMutationHeaders(includeStepUp: boolean): JsonValue[] {
-  const headers: JsonValue[] = [
+function publicMutationHeaders(): JsonValue[] {
+  return [
     {
       in: "header",
       name: "Origin",
       required: true,
       schema: { format: "uri", type: "string" },
     },
+  ];
+}
+
+function authenticatedMutationHeaders(includeStepUp: boolean): JsonValue[] {
+  const headers: JsonValue[] = [
+    ...publicMutationHeaders(),
     {
       in: "header",
       name: "X-Kestrel-CSRF",
@@ -225,6 +231,7 @@ export const openApiDocument = sortJson({
         description:
           "Each accepted request creates a new diagnostic. Clients must not retry this command automatically.",
         operationId: "runInstallationDiagnostic",
+        parameters: authenticatedMutationHeaders(false),
         requestBody: {
           content: {
             "application/json": { schema: schemaReference("DiagnosticCommand") },
@@ -249,6 +256,12 @@ export const openApiDocument = sortJson({
               "application/json": { schema: schemaReference("ApiError") },
             },
             description: "Operator authentication is required",
+          },
+          "403": {
+            content: {
+              "application/json": { schema: schemaReference("ApiError") },
+            },
+            description: "Origin or CSRF validation failed",
           },
           "409": {
             content: {
@@ -286,6 +299,7 @@ export const openApiDocument = sortJson({
     "/auth/login": {
       post: {
         operationId: "createOperatorSession",
+        parameters: publicMutationHeaders(),
         requestBody: {
           content: {
             "application/json": { schema: schemaReference("LoginCommand") },
@@ -310,6 +324,12 @@ export const openApiDocument = sortJson({
               "application/json": { schema: schemaReference("ApiError") },
             },
             description: "Invalid Operator credentials",
+          },
+          "403": {
+            content: {
+              "application/json": { schema: schemaReference("ApiError") },
+            },
+            description: "Origin validation failed",
           },
           "413": {
             content: {

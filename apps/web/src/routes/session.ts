@@ -83,6 +83,11 @@ export function registerSessionRoutes(
           pool,
           [
             {
+              limit: LOGIN_SOURCE_LIMIT,
+              scope: "operator_login_source",
+              subjectDigest: authenticationSubjectDigest("operator-login-source", request.ip),
+            },
+            {
               limit: LOGIN_PRINCIPAL_LIMIT,
               scope: "operator_login_principal",
               subjectDigest: authenticationSubjectDigest(
@@ -90,27 +95,25 @@ export function registerSessionRoutes(
                 command.username,
               ),
             },
-            {
-              limit: LOGIN_SOURCE_LIMIT,
-              scope: "operator_login_source",
-              subjectDigest: authenticationSubjectDigest("operator-login-source", request.ip),
-            },
           ],
           LOGIN_RATE_LIMIT_WINDOW_SECONDS,
         );
         if (!rateLimit.allowed) {
-          await appendAuditRecord(pool, {
-            actorId: null,
-            actorType: "anonymous",
-            causationId: null,
-            correlationId: request.id,
-            denialReason: "rate_limit_exceeded",
-            eventType: "operator.login.rate_limited",
-            outcome: "denied",
-            targetId: null,
-            targetType: "operator",
-          });
-          request.log.warn({ event: "operator.login_rate_limited" });
+          if (rateLimit.newlyExceededScopes.length > 0) {
+            await appendAuditRecord(pool, {
+              actorId: null,
+              actorType: "anonymous",
+              causationId: null,
+              correlationId: request.id,
+              denialReason: "rate_limit_exceeded",
+              eventType: "operator.login.rate_limited",
+              facts: {},
+              outcome: "denied",
+              targetId: null,
+              targetType: "operator",
+            });
+            request.log.warn({ event: "operator.login_rate_limited" });
+          }
           return await reply
             .header("Retry-After", String(rateLimit.retryAfterSeconds))
             .code(429)

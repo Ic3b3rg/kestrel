@@ -319,8 +319,12 @@ export function App() {
     setSecurityPending("logout");
     setSecurityError(null);
     try {
-      await logoutOperator(controller.signal);
-      setLoginError(null);
+      const outcome = await logoutOperator(controller.signal);
+      setLoginError(
+        outcome.auditError === null
+          ? null
+          : `This browser is signed out. ${outcome.auditError.message} Reference: ${outcome.auditError.correlationId}`,
+      );
       setSession(null);
       setSnapshot(null);
       setSynchronized(false);

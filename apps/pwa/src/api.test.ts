@@ -196,7 +196,7 @@ describe("PWA API client", () => {
     vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal("document", { cookie: `__Host-kestrel-csrf=${csrfToken}` });
 
-    await expect(logoutOperator()).resolves.toBeUndefined();
+    await expect(logoutOperator()).resolves.toEqual({ auditError: null });
     await expect(
       updateOperatorCredentials({
         currentPassword: "current correct horse battery staple",
@@ -243,6 +243,21 @@ describe("PWA API client", () => {
     expect(new Headers(fetchMock.mock.calls[2]?.[1]?.headers).get("X-Kestrel-Step-Up")).toBe(
       stepUpProof.proof,
     );
+  });
+
+  it("reports an audit warning after the server has cleared logout cookies", async () => {
+    const auditError: ApiError = {
+      schemaVersion: 1,
+      code: "SERVICE_UNAVAILABLE",
+      message: "Operator logout audit is unavailable",
+      correlationId: "0c14b018-0260-4aa0-a5e9-61d212b948ce",
+    };
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(auditError, 503)));
+    vi.stubGlobal("document", {
+      cookie: `__Host-kestrel-csrf=${"A".repeat(43)}.${"B".repeat(43)}`,
+    });
+
+    await expect(logoutOperator()).resolves.toEqual({ auditError });
   });
 
   it("refetches an expired cursor and reconnects from the returned snapshot cursor", async () => {

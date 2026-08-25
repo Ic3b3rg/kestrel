@@ -141,3 +141,10 @@ npm run contracts:check
 
 TLS/Caddy, repository-provider connections, Projects, Change Proposals, and review workflows are
 delivered by later issues.
+
+The development Compose file keeps database ownership out of the long-running services. The one-shot
+migration and role-preparation containers use the database owner; web and worker connect as
+`kestrel_runtime`, which cannot alter schema or update, delete, truncate, or disable protection on
+Installation Audit records. The loopback-only development defaults can be overridden with
+`KESTREL_MIGRATOR_DATABASE_PASSWORD` and `KESTREL_RUNTIME_DATABASE_PASSWORD`; a certified release
+must supply generated values.
