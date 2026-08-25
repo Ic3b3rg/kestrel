@@ -15,6 +15,7 @@ interface InstallationViewProps {
   online: boolean;
   operatorUsername: string;
   operatorControls: ReactNode;
+  projectControls: ReactNode;
   onRetry: () => void;
   onRunDiagnostic: () => void;
   requestError: string | null;
@@ -253,6 +254,8 @@ export function InstallationView(props: InstallationViewProps) {
         ) : props.showData && props.snapshot ? (
           <InstallationRecord snapshot={props.snapshot} />
         ) : null}
+
+        {props.projectControls}
 
         {props.operatorControls}
 

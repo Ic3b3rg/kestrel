@@ -9,6 +9,55 @@ test.describe("observable Installation PWA", () => {
   test.beforeAll(async () => {
     stack = await startStack();
     await stack.bootstrapOperator(TEST_OPERATOR_CREDENTIALS);
+    await stack.executeRuntimeSql(`
+      WITH project AS (
+        INSERT INTO projects (
+          installation_id,
+          repository_access_kind,
+          provider,
+          provider_repository_id,
+          repository_owner_snapshot,
+          repository_name_snapshot,
+          repository_canonical_url_snapshot
+        )
+        SELECT id,
+               'public_github',
+               'github',
+               'R_kgDOGx',
+               'openai',
+               'openai-node',
+               'https://github.com/openai/openai-node'
+        FROM installations
+        RETURNING id
+      )
+      INSERT INTO change_proposals (
+        project_id,
+        provider_proposal_id,
+        provider_number,
+        title_snapshot,
+        canonical_url_snapshot,
+        proposal_state,
+        base_ref_snapshot,
+        base_object_id,
+        head_ref_snapshot,
+        head_object_id,
+        author_provider_id,
+        author_login_snapshot
+      )
+      SELECT id,
+             'PR_kwDOGx',
+             1234,
+             'Keep repository access explicit',
+             'https://github.com/openai/openai-node/pull/1234',
+             'open',
+             'main',
+             '${"a".repeat(40)}',
+             'repository-access',
+             '${"b".repeat(40)}',
+             'U_kgDOA',
+             'octocat'
+      FROM project;
+    `);
   });
 
   test.afterAll(async () => {
@@ -61,6 +110,20 @@ test.describe("observable Installation PWA", () => {
     await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page.getByRole("heading", { name: "Kestrel Installation" })).toBeVisible();
     expectedUnauthorizedResponses = 0;
+    await expect(page.getByRole("heading", { name: "Public pull requests" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "openai/openai-node" })).toBeVisible();
+    await expect(page.getByText("Not acquired", { exact: true })).toBeVisible();
+    await expect(page.getByText("Public pull request metadata", { exact: true })).toBeVisible();
+    await expect(page.getByText("Manual refresh", { exact: true })).toBeVisible();
+    await expect(page.getByText("Not configured", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Refresh PR #1234" })).toBeVisible();
+    await page
+      .getByLabel("Public GitHub pull request URL")
+      .fill("https://github.com/openai/openai-node");
+    await page.getByRole("button", { name: "Open pull request" }).click();
+    await expect(page.getByRole("alert")).toContainText(
+      "Enter a canonical public pull request URL",
+    );
     await expect(
       page.getByText(`Signed in as ${TEST_OPERATOR_CREDENTIALS.username}`, { exact: true }),
     ).toBeVisible();
@@ -92,6 +155,7 @@ test.describe("observable Installation PWA", () => {
     await expect(
       page.getByText(installationId ?? "missing Installation ID", { exact: true }),
     ).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "openai/openai-node" })).toHaveCount(0);
 
     await context.setOffline(false);
     await expect(page.getByText("Connected", { exact: true })).toBeVisible();

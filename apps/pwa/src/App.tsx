@@ -4,15 +4,20 @@ import type {
   InstallationEvent,
   InstallationSnapshot,
   LoginCommand,
+  ProjectInbox,
+  ProjectUpserted,
+  PublicGitHubPullRequestUrl,
   Session,
 } from "@kestrel/contracts";
 
 import {
   ApiClientError,
   fetchInstallation,
+  fetchProjectInbox,
   fetchSession,
   loginOperator,
   logoutOperator,
+  openPublicGitHubPullRequest,
   runDiagnostic,
   streamInstallationEvents,
   updateOperatorCredentials,
@@ -24,9 +29,11 @@ import {
   OperatorSecurityPanel,
   type OperatorCredentialFormValue,
 } from "./OperatorSecurityPanel.js";
+import { ProjectInboxPanel } from "./ProjectInboxPanel.js";
 
 const INSTALLATION_ERROR_MESSAGE =
   "Kestrel could not read authoritative Installation data. Try again.";
+const PROJECT_ERROR_MESSAGE = "Kestrel could not read the authoritative Project inbox. Try again.";
 const SESSION_ERROR_MESSAGE = "Kestrel could not verify the Operator session. Try again.";
 
 function newerSnapshot(
@@ -51,6 +58,21 @@ function eventAnnouncement(event: InstallationEvent): string {
     case "installation.diagnostic.succeeded":
       return "Diagnostic succeeded.";
   }
+}
+
+function withUpsertedProject(
+  current: ProjectInbox | null,
+  project: ProjectUpserted["project"],
+): ProjectInbox {
+  const projects = current?.projects ?? [];
+  const existingIndex = projects.findIndex((candidate) => candidate.id === project.id);
+  if (existingIndex === -1) {
+    return { schemaVersion: 1, projects: [...projects, project] };
+  }
+  return {
+    schemaVersion: 1,
+    projects: projects.map((candidate, index) => (index === existingIndex ? project : candidate)),
+  };
 }
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -84,15 +106,26 @@ export function App() {
   const [securityPending, setSecurityPending] = useState<"credentials" | "logout" | null>(null);
   const [securityError, setSecurityError] = useState<string | null>(null);
   const [reloadGeneration, setReloadGeneration] = useState(0);
+  const [projectInbox, setProjectInbox] = useState<ProjectInbox | null>(null);
+  const [projectLoading, setProjectLoading] = useState(false);
+  const [projectError, setProjectError] = useState<string | null>(null);
+  const [projectPending, setProjectPending] = useState(false);
+  const [projectReloadGeneration, setProjectReloadGeneration] = useState(0);
   const commandController = useRef<AbortController | null>(null);
   const loginController = useRef<AbortController | null>(null);
+  const projectCommandController = useRef<AbortController | null>(null);
   const securityController = useRef<AbortController | null>(null);
 
   const requireAuthentication = useCallback((message: string) => {
     commandController.current?.abort();
+    projectCommandController.current?.abort();
     securityController.current?.abort();
     setSession(null);
     setSnapshot(null);
+    setProjectInbox(null);
+    setProjectLoading(false);
+    setProjectPending(false);
+    setProjectError(null);
     setSynchronized(false);
     setConnection("disconnected");
     setLoginError(message);
@@ -118,8 +151,13 @@ export function App() {
     const handleOffline = () => {
       commandController.current?.abort();
       loginController.current?.abort();
+      projectCommandController.current?.abort();
       securityController.current?.abort();
       setOnline(false);
+      setProjectInbox(null);
+      setProjectLoading(false);
+      setProjectPending(false);
+      setProjectError(null);
       setSynchronized(false);
       setConnection("offline");
       setAnnouncement("Offline. Installation data is hidden until Kestrel reconnects.");
@@ -131,6 +169,7 @@ export function App() {
       window.removeEventListener("offline", handleOffline);
       commandController.current?.abort();
       loginController.current?.abort();
+      projectCommandController.current?.abort();
       securityController.current?.abort();
     };
   }, []);
@@ -264,6 +303,40 @@ export function App() {
     };
   }, [handleAuthenticationBoundaryError, online, reloadGeneration, session]);
 
+  useEffect(() => {
+    if (!online || session === null || session === undefined) {
+      return;
+    }
+
+    const controller = new AbortController();
+    let active = true;
+    setProjectLoading(true);
+    setProjectError(null);
+
+    void fetchProjectInbox(controller.signal).then(
+      (inbox) => {
+        if (active) {
+          setProjectInbox(inbox);
+          setProjectLoading(false);
+        }
+      },
+      (error: unknown) => {
+        if (!active || controller.signal.aborted) {
+          return;
+        }
+        setProjectLoading(false);
+        if (!handleAuthenticationBoundaryError(error)) {
+          setProjectError(errorMessage(error, PROJECT_ERROR_MESSAGE));
+        }
+      },
+    );
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [handleAuthenticationBoundaryError, online, projectReloadGeneration, session]);
+
   const handleLogin = async (command: LoginCommand): Promise<void> => {
     const controller = new AbortController();
     loginController.current?.abort();
@@ -312,10 +385,40 @@ export function App() {
     }
   };
 
+  const handleOpenPublicPullRequest = async (url: PublicGitHubPullRequestUrl): Promise<void> => {
+    const controller = new AbortController();
+    projectCommandController.current?.abort();
+    projectCommandController.current = controller;
+    setProjectPending(true);
+    setProjectError(null);
+
+    try {
+      const result = await openPublicGitHubPullRequest({ url }, controller.signal);
+      setProjectInbox((current) => withUpsertedProject(current, result.project));
+      setAnnouncement(
+        `Project refreshed from GitHub pull request #${String(result.project.changeProposals[0]?.number ?? "unknown")}.`,
+      );
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        if (!handleAuthenticationBoundaryError(error)) {
+          setProjectError(errorMessage(error, PROJECT_ERROR_MESSAGE));
+          setAnnouncement("The public pull request could not be opened.");
+        }
+      }
+    } finally {
+      if (projectCommandController.current === controller) {
+        projectCommandController.current = null;
+        setProjectPending(false);
+      }
+    }
+  };
+
   const handleLogout = async (): Promise<void> => {
     const controller = new AbortController();
+    projectCommandController.current?.abort();
     securityController.current?.abort();
     securityController.current = controller;
+    setProjectPending(false);
     setSecurityPending("logout");
     setSecurityError(null);
     try {
@@ -327,6 +430,8 @@ export function App() {
       );
       setSession(null);
       setSnapshot(null);
+      setProjectInbox(null);
+      setProjectError(null);
       setSynchronized(false);
       setConnection("disconnected");
     } catch (error) {
@@ -346,8 +451,10 @@ export function App() {
       return;
     }
     const controller = new AbortController();
+    projectCommandController.current?.abort();
     securityController.current?.abort();
     securityController.current = controller;
+    setProjectPending(false);
     setSecurityPending("credentials");
     setSecurityError(null);
     try {
@@ -355,6 +462,8 @@ export function App() {
       setLoginError(null);
       setSession(null);
       setSnapshot(null);
+      setProjectInbox(null);
+      setProjectError(null);
       setSynchronized(false);
       setConnection("disconnected");
     } catch (error) {
@@ -388,6 +497,17 @@ export function App() {
       connection={connection}
       loading={online && !synchronized && requestError === null}
       online={online}
+      projectControls={
+        <ProjectInboxPanel
+          error={projectError}
+          inbox={projectInbox}
+          loading={projectLoading}
+          online={online}
+          pending={projectPending}
+          onOpen={(url) => void handleOpenPublicPullRequest(url)}
+          onRetry={() => setProjectReloadGeneration((generation) => generation + 1)}
+        />
+      }
       operatorControls={
         <OperatorSecurityPanel
           error={securityError}
