@@ -34,6 +34,16 @@ npm run bootstrap
 Open [http://localhost:5173](http://localhost:5173) and sign in. The API and the production-shaped
 compiled PWA are also available at [http://localhost:3000](http://localhost:3000).
 
+If the password or every signed-in device is lost, recover the sole Operator from the trusted host:
+
+```sh
+npm run reset-password
+```
+
+The command accepts the new password only through hidden prompts (or stdin for automation), keeps
+the username, and invalidates every existing session. Kestrel deliberately exposes no remote
+password-recovery endpoint.
+
 The Compose ports bind only to loopback. Operator sessions use a signed, host-only, secure cookie
 with an absolute seven-day lifetime. TLS termination is still a later delivery, so do not expose
 this development stack to an untrusted network.

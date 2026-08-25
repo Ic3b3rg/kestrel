@@ -247,6 +247,66 @@ export async function changeOperatorCredentials(
   }
 }
 
+export interface ResetOperatorPasswordInput {
+  correlationId: string;
+  passwordHash: string;
+}
+
+export async function resetOperatorPassword(
+  pool: DatabasePool,
+  input: ResetOperatorPasswordInput,
+): Promise<void> {
+  const correlationId = CorrelationIdSchema.parse(input.correlationId);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const selected = await client.query<{ id: string }>(`
+      SELECT id
+      FROM operators
+      ORDER BY created_at, id
+      LIMIT 2
+      FOR UPDATE
+    `);
+    const operator = selected.rows[0];
+    if (selected.rowCount !== 1 || !operator) {
+      throw new Error("Operator state is not recoverable");
+    }
+    const updated = await client.query(
+      `
+        UPDATE operators
+        SET password_hash = $1,
+            credential_version = credential_version + 1,
+            jwt_signing_generation = jwt_signing_generation + 1,
+            changed_at = statement_timestamp()
+        WHERE id = $2
+      `,
+      [input.passwordHash, operator.id],
+    );
+    if (updated.rowCount !== 1) {
+      throw new Error("Operator password reset did not update exactly one row");
+    }
+    await client.query("DELETE FROM authentication_rate_limits");
+    await appendAuditRecordInTransaction(client, {
+      actorId: null,
+      actorType: "host",
+      causationId: null,
+      correlationId,
+      denialReason: null,
+      eventType: "operator.password_reset.succeeded",
+      facts: {},
+      outcome: "succeeded",
+      targetId: operator.id,
+      targetType: "operator",
+    });
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 async function appendCredentialChangeAudit(
   client: PoolClient,
   input: ChangeOperatorCredentialsInput,

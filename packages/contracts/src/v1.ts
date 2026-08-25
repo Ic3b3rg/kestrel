@@ -28,6 +28,8 @@ export const LoginCommandSchema = z.strictObject({
   password: z.string().min(1).max(128),
 });
 
+export const NewOperatorPasswordSchema = z.string().min(12).max(128);
+
 export const SessionSchema = z.strictObject({
   schemaVersion: SchemaVersionSchema,
   operator: OperatorSchema,
@@ -64,7 +66,7 @@ export const StepUpProofSchema = z.strictObject({
 
 export const CredentialChangeCommandSchema = z.strictObject({
   expectedVersion: CredentialVersionSchema,
-  newPassword: z.string().min(12).max(128),
+  newPassword: NewOperatorPasswordSchema,
   username: OperatorUsernameSchema,
 });
 
@@ -194,6 +196,7 @@ export type InstallationEventType = z.infer<typeof InstallationEventTypeSchema>;
 export type InstallationSnapshot = z.infer<typeof InstallationSnapshotSchema>;
 export type InstallationState = z.infer<typeof InstallationStateSchema>;
 export type LoginCommand = z.infer<typeof LoginCommandSchema>;
+export type NewOperatorPassword = z.infer<typeof NewOperatorPasswordSchema>;
 export type LogoutCommand = z.infer<typeof LogoutCommandSchema>;
 export type Operator = z.infer<typeof OperatorSchema>;
 export type OperatorUsername = z.infer<typeof OperatorUsernameSchema>;

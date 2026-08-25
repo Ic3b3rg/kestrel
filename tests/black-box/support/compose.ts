@@ -15,6 +15,7 @@ export interface RunningStack {
   close(): Promise<void>;
   executeSql(sql: string): Promise<void>;
   fetchApi(path: string, init?: RequestInit): Promise<Response>;
+  resetOperatorPassword(password: string): Promise<string>;
   readonly sessionCookie: string;
   restart(...services: string[]): Promise<void>;
   start(...services: string[]): Promise<void>;
@@ -159,6 +160,25 @@ export async function startStack(options: StartStackOptions = {}): Promise<Runni
     );
   }
 
+  async function resetOperatorPassword(password: string): Promise<string> {
+    return executeWithInput(
+      docker,
+      [
+        ...composeArgs,
+        "exec",
+        "--no-TTY",
+        "web",
+        "npm",
+        "run",
+        "reset-password",
+        "-w",
+        "@kestrel/web",
+      ],
+      `${password}\n${password}\n`,
+      environment,
+    );
+  }
+
   try {
     await execFileAsync(docker, [...composeArgs, "up", "--build", "--detach", "--wait"], {
       env: environment,
@@ -243,6 +263,7 @@ export async function startStack(options: StartStackOptions = {}): Promise<Runni
         }
         return fetch(new URL(path, apiUrl), { ...init, headers });
       },
+      resetOperatorPassword,
       async restart(...services) {
         await execFileAsync(docker, [...composeArgs, "restart", ...services], {
           env: environment,

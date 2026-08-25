@@ -692,6 +692,74 @@ describe("sole Operator authentication", () => {
     `);
   });
 
+  it("recovers on the host only and invalidates sessions from a lost device", async () => {
+    expect(stack).toBeDefined();
+    const runningStack = stack as RunningStack;
+    await runningStack.bootstrapOperator(credentials);
+    const firstLogin = await login(runningStack, credentials);
+    expect(firstLogin.status).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, 1_100));
+    const secondLogin = await login(runningStack, credentials);
+    expect(secondLogin.status).toBe(200);
+    const firstCookie = namedCookie(firstLogin, "__Host-kestrel-session");
+    const secondCookie = namedCookie(secondLogin, "__Host-kestrel-session");
+    expect(firstCookie).not.toBe(secondCookie);
+
+    const remoteRecovery = await fetch(`${runningStack.apiUrl}/auth/reset`, {
+      body: "{}",
+      headers: authenticatedMutationHeaders(firstLogin),
+      method: "POST",
+    });
+    expect(remoteRecovery.status).toBe(404);
+
+    const recoveredPassword = "host recovered correct horse battery staple";
+    const resetOutput = await runningStack.resetOperatorPassword(recoveredPassword);
+    expect(resetOutput).toContain("Operator password reset");
+    expect(resetOutput).not.toContain(credentials.password);
+    expect(resetOutput).not.toContain(recoveredPassword);
+
+    const oldSessions = await Promise.all(
+      [firstCookie, secondCookie].map((cookie) =>
+        fetch(`${runningStack.apiUrl}/api/v1/session`, { headers: { Cookie: cookie } }),
+      ),
+    );
+    expect(oldSessions.map((response) => response.status)).toEqual([401, 401]);
+    expect((await login(runningStack, credentials)).status).toBe(401);
+
+    const recoveredLogin = await login(runningStack, {
+      username: credentials.username,
+      password: recoveredPassword,
+    });
+    expect(recoveredLogin.status).toBe(200);
+    expect(SessionSchema.parse(await recoveredLogin.json())).toMatchObject({
+      credentialVersion: "2",
+      operator: { username: credentials.username },
+    });
+
+    await runningStack.executeSql(`
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM operators
+          WHERE credential_version <> 2
+             OR jwt_signing_generation <> 2
+             OR password_hash NOT LIKE '$argon2id$v=19$m=19456,t=2,p=1$%'
+        ) THEN
+          RAISE EXCEPTION 'host recovery did not rotate the certified authentication state';
+        END IF;
+        IF (
+          SELECT count(*) FROM installation_audit_records
+          WHERE event_type = 'operator.password_reset.succeeded'
+            AND actor_type = 'host'
+            AND outcome = 'succeeded'
+        ) <> 1 THEN
+          RAISE EXCEPTION 'expected one successful host reset audit record';
+        END IF;
+      END;
+      $$;
+    `);
+  });
+
   it("does not refresh a session and rejects expired, tampered, or duplicate cookies", async () => {
     expect(stack).toBeDefined();
     const runningStack = stack as RunningStack;
