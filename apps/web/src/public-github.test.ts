@@ -44,6 +44,21 @@ function privatePullRequestResponse() {
   };
 }
 
+function inconsistentRepositoryResponse() {
+  const response = pullRequestResponse();
+  return {
+    ...response,
+    base: {
+      ...response.base,
+      repo: {
+        ...response.base.repo,
+        name: "different-repository",
+        owner: { login: "different-owner" },
+      },
+    },
+  };
+}
+
 describe("public GitHub reader", () => {
   it("derives one fixed API target and normalizes the untrusted response", async () => {
     const fetchImplementation = vi.fn((input: string | URL | Request, init?: RequestInit) => {
@@ -135,6 +150,7 @@ describe("public GitHub reader", () => {
   it.each([
     pullRequestResponse({ number: 999 }),
     privatePullRequestResponse(),
+    inconsistentRepositoryResponse(),
     pullRequestResponse({ title: "x".repeat(513) }),
   ])("rejects mismatched, private, or over-bound provider data", async (providerBody) => {
     const reader = createPublicGitHubReader(
@@ -159,6 +175,27 @@ describe("public GitHub reader", () => {
 
     await expect(reader.read(pullRequestUrl)).rejects.toMatchObject({
       kind: "invalid_response",
+    });
+  });
+
+  it("classifies a response stream failure as public GitHub unavailability", async () => {
+    const reader = createPublicGitHubReader(
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(
+            new ReadableStream({
+              start(controller) {
+                controller.error(new Error("response stream failed"));
+              },
+            }),
+            { headers: { "content-type": "application/json" } },
+          ),
+        ),
+      ),
+    );
+
+    await expect(reader.read(pullRequestUrl)).rejects.toMatchObject({
+      kind: "unavailable",
     });
   });
 });

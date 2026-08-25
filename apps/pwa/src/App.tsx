@@ -116,21 +116,28 @@ export function App() {
   const projectCommandController = useRef<AbortController | null>(null);
   const securityController = useRef<AbortController | null>(null);
 
-  const requireAuthentication = useCallback((message: string) => {
-    commandController.current?.abort();
-    projectCommandController.current?.abort();
-    securityController.current?.abort();
-    setSession(null);
-    setSnapshot(null);
+  const resetProjectState = useCallback(() => {
     setProjectInbox(null);
     setProjectLoading(false);
     setProjectPending(false);
     setProjectError(null);
-    setSynchronized(false);
-    setConnection("disconnected");
-    setLoginError(message);
-    setSecurityError(null);
   }, []);
+
+  const requireAuthentication = useCallback(
+    (message: string) => {
+      commandController.current?.abort();
+      projectCommandController.current?.abort();
+      securityController.current?.abort();
+      setSession(null);
+      setSnapshot(null);
+      resetProjectState();
+      setSynchronized(false);
+      setConnection("disconnected");
+      setLoginError(message);
+      setSecurityError(null);
+    },
+    [resetProjectState],
+  );
 
   const handleAuthenticationBoundaryError = useCallback(
     (error: unknown): boolean => {
@@ -154,10 +161,7 @@ export function App() {
       projectCommandController.current?.abort();
       securityController.current?.abort();
       setOnline(false);
-      setProjectInbox(null);
-      setProjectLoading(false);
-      setProjectPending(false);
-      setProjectError(null);
+      resetProjectState();
       setSynchronized(false);
       setConnection("offline");
       setAnnouncement("Offline. Installation data is hidden until Kestrel reconnects.");
@@ -172,7 +176,7 @@ export function App() {
       projectCommandController.current?.abort();
       securityController.current?.abort();
     };
-  }, []);
+  }, [resetProjectState]);
 
   useEffect(() => {
     if (!online) {
@@ -395,9 +399,7 @@ export function App() {
     try {
       const result = await openPublicGitHubPullRequest({ url }, controller.signal);
       setProjectInbox((current) => withUpsertedProject(current, result.project));
-      setAnnouncement(
-        `Project refreshed from GitHub pull request #${String(result.project.changeProposals[0]?.number ?? "unknown")}.`,
-      );
+      setAnnouncement("Project refreshed from the public GitHub pull request.");
     } catch (error) {
       if (!controller.signal.aborted) {
         if (!handleAuthenticationBoundaryError(error)) {
@@ -430,8 +432,7 @@ export function App() {
       );
       setSession(null);
       setSnapshot(null);
-      setProjectInbox(null);
-      setProjectError(null);
+      resetProjectState();
       setSynchronized(false);
       setConnection("disconnected");
     } catch (error) {
@@ -462,8 +463,7 @@ export function App() {
       setLoginError(null);
       setSession(null);
       setSnapshot(null);
-      setProjectInbox(null);
-      setProjectError(null);
+      resetProjectState();
       setSynchronized(false);
       setConnection("disconnected");
     } catch (error) {

@@ -15,6 +15,7 @@ export interface RunningStack {
   close(): Promise<void>;
   executeRuntimeSql(sql: string): Promise<void>;
   executeSql(sql: string): Promise<void>;
+  executeWebModule(source: string): Promise<string>;
   fetchApi(path: string, init?: RequestInit): Promise<Response>;
   resetOperatorPassword(password: string): Promise<string>;
   readonly sessionCookie: string;
@@ -270,6 +271,23 @@ export async function startStack(options: StartStackOptions = {}): Promise<Runni
           ],
           { env: environment },
         );
+      },
+      async executeWebModule(source) {
+        const { stdout } = await execFileAsync(
+          docker,
+          [
+            ...composeArgs,
+            "exec",
+            "--no-TTY",
+            "web",
+            "node",
+            "--input-type=module",
+            "--eval",
+            source,
+          ],
+          { env: environment, maxBuffer: 2 * 1024 * 1024 },
+        );
+        return stdout;
       },
       async fetchApi(path, init = {}) {
         if (sessionCookie === null) {

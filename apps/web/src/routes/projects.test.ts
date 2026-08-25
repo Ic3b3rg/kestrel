@@ -206,6 +206,7 @@ describe("Project routes", () => {
     [new PublicGitHubReadError("not_found"), 404, "NOT_FOUND"],
     [new PublicGitHubReadError("rate_limited", "1787673600"), 429, "RATE_LIMITED"],
     [new PublicGitHubReadError("invalid_response"), 503, "SERVICE_UNAVAILABLE"],
+    [new PublicGitHubReadError("unavailable"), 503, "SERVICE_UNAVAILABLE"],
   ] as const)("maps a provider failure without exposing it", async (error, status, code) => {
     projectService.openPublicGitHubPullRequest.mockRejectedValueOnce(error);
 

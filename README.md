@@ -83,10 +83,10 @@ without an account or token, then persists the Project, Change Proposal, exact b
 SHAs, and an audit record atomically. Opening the same pull request again is a manual, idempotent
 refresh.
 
-This path identifies the revisions but does not yet acquire their source. It is limited by GitHub's
-shared unauthenticated allowance of 60 REST API requests per hour per Installation IP and never
-falls back to credentials. Private repositories, local source acquisition, model access, GitHub
-Enterprise, GitLab, and automatic synchronization remain out of scope.
+This path identifies the observed base and head commits but does not yet acquire their source. It is
+limited by GitHub's shared unauthenticated allowance of 60 REST API requests per hour per
+Installation IP and never falls back to credentials. Private repositories, local source acquisition,
+model access, GitHub Enterprise, GitLab, and automatic synchronization remain out of scope.
 
 Useful endpoints on port 3000:
 

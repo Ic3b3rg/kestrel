@@ -103,16 +103,16 @@ function ChangeProposalRecord({
           Refresh PR #{changeProposal.number}
         </button>
       </div>
-      <dl className="revision-list">
+      <dl className="commit-pointer-list">
         <div>
-          <dt>Base revision</dt>
+          <dt>Base commit</dt>
           <dd>
             <span>{changeProposal.base.ref}</span>
             <code>{changeProposal.base.objectId}</code>
           </dd>
         </div>
         <div>
-          <dt>Head revision</dt>
+          <dt>Head commit</dt>
           <dd>
             <span>{changeProposal.head.ref}</span>
             <code>{changeProposal.head.objectId}</code>

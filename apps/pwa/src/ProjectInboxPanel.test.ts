@@ -82,6 +82,9 @@ describe("ProjectInboxPanel", () => {
     expect(html).toContain("Manual refresh");
     expect(html).toContain("Model access");
     expect(html).toContain("Not configured");
+    expect(html).toContain("Base commit");
+    expect(html).toContain("Head commit");
+    expect(html).not.toContain("Base revision");
     expect(html).toContain("Refresh PR #1234");
   });
 });

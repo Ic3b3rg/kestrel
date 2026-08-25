@@ -119,15 +119,24 @@ async function readBoundedJson(response: Response): Promise<unknown> {
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let length = 0;
-  let result = await reader.read();
-  while (!result.done) {
-    length += result.value.byteLength;
-    if (length > MAX_RESPONSE_BYTES) {
-      await reader.cancel();
-      throw new PublicGitHubReadError("invalid_response");
+  try {
+    let result = await reader.read();
+    while (!result.done) {
+      length += result.value.byteLength;
+      if (length > MAX_RESPONSE_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        throw new PublicGitHubReadError("invalid_response");
+      }
+      chunks.push(result.value);
+      result = await reader.read();
     }
-    chunks.push(result.value);
-    result = await reader.read();
+  } catch (error) {
+    if (error instanceof PublicGitHubReadError) {
+      throw error;
+    }
+    throw new PublicGitHubReadError("unavailable");
+  } finally {
+    reader.releaseLock();
   }
 
   const contents = new Uint8Array(length);
@@ -153,15 +162,17 @@ function normalizeObservation(
   }
   const pullRequest = parsed.data;
   const expectedRepository = `${requested.owner}/${requested.repository}`;
+  const owner = pullRequest.base.repo.owner.login;
+  const repository = pullRequest.base.repo.name;
+  const observedRepository = `${owner}/${repository}`;
   if (
     pullRequest.number !== requested.number ||
-    pullRequest.base.repo.full_name.toLowerCase() !== expectedRepository.toLowerCase()
+    pullRequest.base.repo.full_name.toLowerCase() !== expectedRepository.toLowerCase() ||
+    observedRepository.toLowerCase() !== pullRequest.base.repo.full_name.toLowerCase()
   ) {
     throw new PublicGitHubReadError("invalid_response");
   }
 
-  const owner = pullRequest.base.repo.owner.login;
-  const repository = pullRequest.base.repo.name;
   const repositoryUrl = `https://github.com/${owner}/${repository}`;
   const canonicalUrl = `${repositoryUrl}/pull/${String(pullRequest.number)}`;
   return {

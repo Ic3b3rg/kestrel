@@ -1,7 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
 
-import { ApiErrorSchema, InstallationSnapshotSchema, ProjectInboxSchema } from "@kestrel/contracts";
+import {
+  ApiErrorSchema,
+  InstallationSnapshotSchema,
+  ProjectInboxSchema,
+  ProjectUpsertedSchema,
+} from "@kestrel/contracts";
 
 import { startStack, type RunningStack } from "./support/compose.js";
 
@@ -88,7 +93,7 @@ describe("observable Kestrel Installation", () => {
     expect(serviceWorker).not.toContain("/api/v1/installation");
   });
 
-  it("keeps the Project inbox durable and rejects unsafe URLs before provider access", async () => {
+  it("opens one public GitHub Project idempotently and keeps its inbox durable", async () => {
     expect(stack).toBeDefined();
     const runningStack = stack as RunningStack;
     expect(ProjectInboxSchema.parse(await getJson(runningStack, "/api/v1/projects"))).toEqual({
@@ -110,57 +115,90 @@ describe("observable Kestrel Installation", () => {
       projects: [],
     });
 
-    await runningStack.executeRuntimeSql(`
-      WITH project AS (
-        INSERT INTO projects (
-          installation_id,
-          repository_access_kind,
-          provider,
-          provider_repository_id,
-          repository_owner_snapshot,
-          repository_name_snapshot,
-          repository_canonical_url_snapshot
-        )
-        SELECT id,
-               'public_github',
-               'github',
-               'R_kgDOGx',
-               'openai',
-               'openai-node',
-               'https://github.com/openai/openai-node'
-        FROM installations
-        RETURNING id
-      )
-      INSERT INTO change_proposals (
-        project_id,
-        provider_proposal_id,
-        provider_number,
-        title_snapshot,
-        canonical_url_snapshot,
-        proposal_state,
-        base_ref_snapshot,
-        base_object_id,
-        head_ref_snapshot,
-        head_object_id,
-        author_provider_id,
-        author_login_snapshot
-      )
-      SELECT id,
-             'PR_kwDOGx',
-             1234,
-             'Keep repository access explicit',
-             'https://github.com/openai/openai-node/pull/1234',
-             'open',
-             'main',
-             '${"a".repeat(40)}',
-             'repository-access',
-             '${"b".repeat(40)}',
-             'U_kgDOA',
-             'octocat'
-      FROM project;
-    `);
+    const integrationResult = JSON.parse(
+      await runningStack.executeWebModule(`
+        import {
+          createPool,
+          readProjectInbox,
+          upsertPublicGitHubProject,
+        } from "@kestrel/database";
+        import { createPublicGitHubReader } from "./apps/web/dist/public-github.js";
+        import { createProjectService } from "./apps/web/dist/routes/projects.js";
+
+        const url = "https://github.com/openai/openai-node/pull/1234";
+        const apiUrl = "https://api.github.com/repos/openai/openai-node/pulls/1234";
+        const requestedTargets = [];
+        const reader = createPublicGitHubReader(async (target, init) => {
+          requestedTargets.push(String(target));
+          if (String(target) !== apiUrl || Object.hasOwn(init.headers, "Authorization")) {
+            throw new Error("Public GitHub integration used an unsafe request");
+          }
+          return Response.json({
+            base: {
+              ref: "main",
+              repo: {
+                full_name: "openai/openai-node",
+                name: "openai-node",
+                node_id: "R_kgDOGx",
+                owner: { login: "openai" },
+                private: false,
+              },
+              sha: "${"a".repeat(40)}",
+            },
+            head: { ref: "repository-access", sha: "${"b".repeat(40)}" },
+            merged: false,
+            merged_at: null,
+            node_id: "PR_kwDOGx",
+            number: 1234,
+            state: "open",
+            title: "Keep repository access explicit",
+            user: { login: "octocat", node_id: "U_kgDOA" },
+          });
+        });
+        const pool = createPool(process.env.DATABASE_URL, "project-black-box", { max: 1 });
+        try {
+          const actor = await pool.query("SELECT id FROM operators ORDER BY created_at LIMIT 1");
+          const actorId = actor.rows[0]?.id;
+          if (typeof actorId !== "string") {
+            throw new Error("The Project integration test has no Operator");
+          }
+          const service = createProjectService(reader, {
+            readInbox: () => readProjectInbox(pool),
+            upsert: (input) => upsertPublicGitHubProject(pool, input),
+          });
+          const first = await service.openPublicGitHubPullRequest(
+            { url },
+            { actorId, correlationId: "0c14b018-0260-4aa0-a5e9-61d212b948ce" },
+          );
+          const second = await service.openPublicGitHubPullRequest(
+            { url },
+            { actorId, correlationId: "1c14b018-0260-4aa0-a5e9-61d212b948ce" },
+          );
+          const inbox = await service.readInbox();
+          console.log(JSON.stringify({ first, inbox, requestedTargets, second }));
+        } finally {
+          await pool.end();
+        }
+      `),
+    ) as Record<string, unknown>;
+
+    const first = ProjectUpsertedSchema.parse(integrationResult.first);
+    const second = ProjectUpsertedSchema.parse(integrationResult.second);
+    expect(integrationResult.requestedTargets).toEqual([
+      "https://api.github.com/repos/openai/openai-node/pulls/1234",
+      "https://api.github.com/repos/openai/openai-node/pulls/1234",
+    ]);
+    expect(second.project.id).toBe(first.project.id);
+    expect(second.project.changeProposals[0]?.id).toBe(first.project.changeProposals[0]?.id);
+    expect(ProjectInboxSchema.parse(integrationResult.inbox)).toMatchObject({
+      projects: [
+        { id: first.project.id, changeProposals: [{ id: first.project.changeProposals[0]?.id }] },
+      ],
+    });
 
     const beforeRestart = ProjectInboxSchema.parse(await getJson(runningStack, "/api/v1/projects"));
+    expect(beforeRestart.projects).toHaveLength(1);
+    expect(beforeRestart.projects[0]?.changeProposals).toHaveLength(1);
     expect(beforeRestart.projects[0]).toMatchObject({
       repositoryAccess: { authentication: "none", synchronization: "manual" },
       repository: { owner: "openai", name: "openai-node" },

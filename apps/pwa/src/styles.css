@@ -349,7 +349,8 @@ h1 {
   align-items: center;
 }
 
-.credential-state {
+.credential-state,
+.security-state {
   margin: 0;
   padding: 0.5rem 0.625rem;
   border: 1px solid var(--success);
@@ -485,7 +486,7 @@ h1 {
 }
 
 .project-facts dt,
-.revision-list dt {
+.commit-pointer-list dt {
   margin-bottom: 0.375rem;
   color: var(--muted);
   font:
@@ -498,7 +499,7 @@ h1 {
 }
 
 .project-facts dd,
-.revision-list dd {
+.commit-pointer-list dd {
   margin: 0;
   font-weight: 700;
   line-height: 1.4;
@@ -565,35 +566,20 @@ h4 a {
   width: auto;
 }
 
-.revision-list {
+.commit-pointer-list {
   display: grid;
   gap: 1rem;
   margin: 1.5rem 0 0;
 }
 
-.revision-list > div {
+.commit-pointer-list > div {
   min-width: 0;
 }
 
-.revision-list dd {
+.commit-pointer-list dd {
   display: grid;
   gap: 0.25rem;
   font-size: 0.8125rem;
-}
-
-.security-state {
-  margin: 0;
-  padding: 0.5rem 0.625rem;
-  border: 1px solid var(--success);
-  color: var(--success);
-  background: var(--surface);
-  font:
-    700 0.6875rem/1 ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    monospace;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 .security-layout {
@@ -918,7 +904,7 @@ footer {
   }
 
   .project-facts,
-  .revision-list {
+  .commit-pointer-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
