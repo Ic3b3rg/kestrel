@@ -12,6 +12,11 @@ import { registerInstallationRoutes } from "./routes/installation.js";
 import { registerOpenApiRoute } from "./routes/openapi.js";
 import { registerOperatorSecurityRoutes } from "./routes/operator-security.js";
 import { registerPwaRoutes } from "./routes/pwa.js";
+import {
+  createDatabaseProjectService,
+  registerProjectRoutes,
+  type ProjectService,
+} from "./routes/projects.js";
 import { registerSessionRoutes } from "./routes/session.js";
 import { registerAuthentication } from "./authentication.js";
 
@@ -21,6 +26,7 @@ export interface BuildAppOptions {
   eventRetentionLimit: number;
   logger?: boolean;
   pool: DatabasePool;
+  projectService?: ProjectService;
   pwaRoot?: string;
   sessionSigningKey: Buffer;
 }
@@ -95,6 +101,7 @@ export async function buildApp({
   pool,
   eventPool = pool,
   pwaRoot,
+  projectService = createDatabaseProjectService(pool),
   sessionSigningKey,
 }: BuildAppOptions): Promise<FastifyInstance> {
   const app = Fastify({
@@ -150,6 +157,7 @@ export async function buildApp({
   registerHealthRoutes(app, pool);
   registerInstallationRoutes(app, pool);
   registerOpenApiRoute(app);
+  registerProjectRoutes(app, projectService);
   if (pwaRoot !== undefined) {
     await registerPwaRoutes(app, pwaRoot);
   }

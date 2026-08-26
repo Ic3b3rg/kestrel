@@ -8,6 +8,9 @@ import {
   InstallationEventSchema,
   InstallationSnapshotSchema,
   LoginCommandSchema,
+  OpenPublicGitHubPullRequestCommandSchema,
+  ProjectInboxSchema,
+  ProjectUpsertedSchema,
   serializeCredentialChangeCommand,
   SessionSchema,
   StepUpCommandSchema,
@@ -18,6 +21,9 @@ import {
   type InstallationEvent,
   type InstallationSnapshot,
   type LoginCommand,
+  type OpenPublicGitHubPullRequestCommand,
+  type ProjectInbox,
+  type ProjectUpserted,
   type Session,
 } from "@kestrel/contracts";
 
@@ -134,6 +140,31 @@ export async function fetchInstallation(signal?: AbortSignal): Promise<Installat
     signal: signal ?? null,
   });
   return requireJson(response, InstallationSnapshotSchema, "Installation snapshot");
+}
+
+export async function fetchProjectInbox(signal?: AbortSignal): Promise<ProjectInbox> {
+  const response = await fetch("/api/v1/projects", {
+    credentials: "same-origin",
+    headers: { Accept: "application/json" },
+    method: "GET",
+    signal: signal ?? null,
+  });
+  return requireJson(response, ProjectInboxSchema, "Project inbox");
+}
+
+export async function openPublicGitHubPullRequest(
+  command: OpenPublicGitHubPullRequestCommand,
+  signal?: AbortSignal,
+): Promise<ProjectUpserted> {
+  const validated = OpenPublicGitHubPullRequestCommandSchema.parse(command);
+  const response = await fetch("/api/v1/projects", {
+    body: JSON.stringify(validated),
+    credentials: "same-origin",
+    headers: authenticatedMutationHeaders(),
+    method: "POST",
+    signal: signal ?? null,
+  });
+  return requireJson(response, ProjectUpsertedSchema, "Project response");
 }
 
 export async function fetchSession(signal?: AbortSignal): Promise<Session> {

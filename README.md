@@ -1,8 +1,8 @@
 # Kestrel
 
-This repository currently contains the first authenticated, observable Kestrel Installation path:
-one local Operator, one persisted Installation, a durable diagnostic command, ordered server-sent
-events, and a React PWA that shows the result. PostgreSQL is the only durable authority.
+This repository contains an authenticated, observable Kestrel Installation path and the first
+Provider Observation path: one local Operator can open a public github.com pull request without
+GitHub credentials. PostgreSQL is the only durable authority.
 
 ## Start the development Installation
 
@@ -77,6 +77,17 @@ transition, durable event, and pg-boss job in one PostgreSQL transaction. The wo
 diagnostic monotonically from queued to running to succeeded. The PWA reconnects from its last
 confirmed event cursor and performs a full snapshot refetch when retained history has expired.
 
+The same authenticated PWA reads `GET /api/v1/projects` and submits a canonical public GitHub pull
+request URL to `POST /api/v1/projects`. Kestrel reads public pull request metadata from GitHub
+without an account or token, then persists the Project, Change Proposal, exact base/head refs and
+SHAs, and an audit record atomically. Opening the same pull request again is a manual, idempotent
+refresh.
+
+This path identifies the observed base and head commits but does not yet acquire their source. It is
+limited by GitHub's shared unauthenticated allowance of 60 REST API requests per hour per
+Installation IP and never falls back to credentials. Private repositories, local source acquisition,
+model access, GitHub Enterprise, GitLab, and Provider Synchronization remain out of scope.
+
 Useful endpoints on port 3000:
 
 - `/health/live` — process liveness;
@@ -87,6 +98,7 @@ Useful endpoints on port 3000:
 - `/api/v1/session` — current authenticated session;
 - `/api/v1/operator/credentials` — step-up-protected username/password change;
 - `/api/v1/installation` — authoritative snapshot;
+- `/api/v1/projects` — Project inbox read and public GitHub pull request open/refresh;
 - `/api/v1/events` — replayable SSE stream;
 - `/api/v1/openapi.json` — generated OpenAPI 3.1 contract.
 
@@ -117,9 +129,9 @@ npm run build
 ```
 
 `npm run test:black-box` creates isolated Compose projects on random loopback ports and deletes
-their test volumes afterward. `npm run test:browser` drives the diagnostic and Operator security
-controls through Chromium, checks keyboard and offline behavior, audits accessibility with axe, and
-verifies 320, 768, 1024, and 1440 CSS-pixel viewports.
+their test volumes afterward. `npm run test:browser` drives the Project, diagnostic, and Operator
+security controls through Chromium, checks keyboard and offline behavior, audits accessibility with
+axe, and verifies 320, 768, 1024, and 1440 CSS-pixel viewports.
 
 The authored Zod schemas live in `packages/contracts/src`. Regenerate committed JSON Schema and
 OpenAPI artifacts after an intentional contract change:
@@ -139,8 +151,8 @@ npm run contracts:check
 - `packages/contracts` owns versioned Zod, JSON Schema, and OpenAPI contracts.
 - `packages/database` owns SQL migrations and node-postgres queries; there is no ORM.
 
-TLS/Caddy, repository-provider connections, Projects, Change Proposals, and review workflows are
-delivered by later issues.
+TLS/Caddy, authenticated repository-provider connections, source acquisition, model access, and
+review workflows are delivered by later issues.
 
 The development Compose file keeps database ownership out of the long-running services. The one-shot
 migration and role-preparation containers use the database owner; web and worker connect as

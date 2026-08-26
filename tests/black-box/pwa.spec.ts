@@ -1,7 +1,46 @@
 import { AxeBuilder } from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
+import type { ProjectUpserted } from "@kestrel/contracts";
+
 import { startStack, TEST_OPERATOR_CREDENTIALS, type RunningStack } from "./support/compose.js";
+
+const publicPullRequestUrl = "https://github.com/Ic3b3rg/kestrel/pull/88";
+const openedProject: ProjectUpserted = {
+  schemaVersion: 1,
+  project: {
+    changeProposals: [
+      {
+        author: { login: "Ic3b3rg", providerId: "U_kestrel" },
+        base: { objectId: "c".repeat(40), ref: "master" },
+        canonicalUrl: publicPullRequestUrl,
+        head: { objectId: "d".repeat(40), ref: "operator-security" },
+        id: "018f0f89-9192-755f-aa96-f72094c734df",
+        number: 88,
+        observedAt: "2026-08-25T12:01:00.000Z",
+        proposalState: "merged",
+        providerId: "PR_kestrel",
+        title: "Secure and recover the Operator",
+      },
+    ],
+    createdAt: "2026-08-25T12:00:00.000Z",
+    id: "018f0f89-949a-75a8-8f61-6df78a843b1f",
+    modelAccess: "not_configured",
+    providerObservation: {
+      authentication: "none",
+      kind: "public_github",
+      refresh: "manual",
+    },
+    repository: {
+      canonicalUrl: "https://github.com/Ic3b3rg/kestrel",
+      name: "kestrel",
+      owner: "Ic3b3rg",
+      providerId: "R_kestrel",
+    },
+    sourceAvailability: "not_acquired",
+    updatedAt: "2026-08-25T12:01:00.000Z",
+  },
+};
 
 test.describe("observable Installation PWA", () => {
   let stack: RunningStack | undefined;
@@ -9,6 +48,55 @@ test.describe("observable Installation PWA", () => {
   test.beforeAll(async () => {
     stack = await startStack();
     await stack.bootstrapOperator(TEST_OPERATOR_CREDENTIALS);
+    await stack.executeRuntimeSql(`
+      WITH project AS (
+        INSERT INTO projects (
+          installation_id,
+          provider_observation_kind,
+          provider,
+          provider_repository_id,
+          repository_owner_snapshot,
+          repository_name_snapshot,
+          repository_canonical_url_snapshot
+        )
+        SELECT id,
+               'public_github',
+               'github',
+               'R_kgDOGx',
+               'openai',
+               'openai-node',
+               'https://github.com/openai/openai-node'
+        FROM installations
+        RETURNING id
+      )
+      INSERT INTO change_proposals (
+        project_id,
+        provider_proposal_id,
+        provider_number,
+        title_snapshot,
+        canonical_url_snapshot,
+        proposal_state,
+        base_ref_snapshot,
+        base_object_id,
+        head_ref_snapshot,
+        head_object_id,
+        author_provider_id,
+        author_login_snapshot
+      )
+      SELECT id,
+             'PR_kwDOGx',
+             1234,
+             'Keep repository access explicit',
+             'https://github.com/openai/openai-node/pull/1234',
+             'open',
+             'main',
+             '${"a".repeat(40)}',
+             'provider-observation',
+             '${"b".repeat(40)}',
+             'U_kgDOA',
+             'octocat'
+      FROM project;
+    `);
   });
 
   test.afterAll(async () => {
@@ -42,6 +130,19 @@ test.describe("observable Installation PWA", () => {
       }
     });
     page.on("pageerror", (error) => browserErrors.push(error.message));
+    let projectPostCount = 0;
+    await page.route("**/api/v1/projects", async (route) => {
+      const request = route.request();
+      if (request.method() !== "POST") {
+        await route.continue();
+        return;
+      }
+      projectPostCount += 1;
+      expect(request.postDataJSON()).toEqual({ url: publicPullRequestUrl });
+      expect(request.headers()["x-kestrel-csrf"]).toBeTruthy();
+      expect(request.headers().authorization).toBeUndefined();
+      await route.fulfill({ json: openedProject, status: 200 });
+    });
 
     await page.goto(runningStack.pwaUrl);
     await expect(page.getByRole("heading", { name: "Sign in to Kestrel" })).toBeVisible();
@@ -61,6 +162,31 @@ test.describe("observable Installation PWA", () => {
     await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page.getByRole("heading", { name: "Kestrel Installation" })).toBeVisible();
     expectedUnauthorizedResponses = 0;
+    await expect(page.getByRole("heading", { name: "Public pull requests" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "openai/openai-node" })).toBeVisible();
+    await expect(page.getByText("Not acquired", { exact: true })).toBeVisible();
+    await expect(page.getByText("Public GitHub pull request", { exact: true })).toBeVisible();
+    await expect(page.getByText("Manual only", { exact: true })).toBeVisible();
+    await expect(page.getByText("Not configured", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Refresh PR #1234" })).toBeVisible();
+    await page
+      .getByLabel("Public GitHub pull request URL")
+      .fill("https://github.com/openai/openai-node");
+    await page.getByRole("button", { name: "Open pull request" }).click();
+    await expect(page.getByRole("alert")).toContainText(
+      "Enter a canonical public pull request URL",
+    );
+    expect(projectPostCount).toBe(0);
+    await page.getByLabel("Public GitHub pull request URL").fill(publicPullRequestUrl);
+    await page.getByRole("button", { name: "Open pull request" }).click();
+    await expect(page.getByRole("link", { name: "Ic3b3rg/kestrel" })).toBeVisible();
+    await expect(page.getByText("Base commit", { exact: true })).toHaveCount(2);
+    await expect(page.getByText("Head commit", { exact: true })).toHaveCount(2);
+    await expect(page.getByRole("status")).toContainText(
+      "Project refreshed from the public GitHub pull request.",
+    );
+    expect(projectPostCount).toBe(1);
+    await expect(page.getByText("04 / OPERATOR", { exact: true })).toBeVisible();
     await expect(
       page.getByText(`Signed in as ${TEST_OPERATOR_CREDENTIALS.username}`, { exact: true }),
     ).toBeVisible();
@@ -92,6 +218,8 @@ test.describe("observable Installation PWA", () => {
     await expect(
       page.getByText(installationId ?? "missing Installation ID", { exact: true }),
     ).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "openai/openai-node" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Ic3b3rg/kestrel" })).toHaveCount(0);
 
     await context.setOffline(false);
     await expect(page.getByText("Connected", { exact: true })).toBeVisible();

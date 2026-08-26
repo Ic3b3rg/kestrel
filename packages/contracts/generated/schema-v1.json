@@ -504,6 +504,510 @@
       "properties": {},
       "type": "object"
     },
+    "OpenPublicGitHubPullRequestCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "url": {
+          "maxLength": 256,
+          "pattern": "^https:\\/\\/github\\.com\\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\\/[A-Za-z0-9._-]{1,100}\\/pull\\/[1-9][0-9]{0,9}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    },
+    "ProjectInbox": {
+      "additionalProperties": false,
+      "properties": {
+        "projects": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "changeProposals": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "author": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "login": {
+                              "maxLength": 100,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "providerId": {
+                              "maxLength": 256,
+                              "minLength": 1,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "login",
+                            "providerId"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "base": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "objectId": {
+                          "pattern": "^[a-f0-9]{40}$",
+                          "type": "string"
+                        },
+                        "ref": {
+                          "maxLength": 255,
+                          "minLength": 1,
+                          "pattern": "^[^\\p{Cc}]+$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "objectId",
+                        "ref"
+                      ],
+                      "type": "object"
+                    },
+                    "canonicalUrl": {
+                      "maxLength": 256,
+                      "pattern": "^https:\\/\\/github\\.com\\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\\/[A-Za-z0-9._-]{1,100}\\/pull\\/[1-9][0-9]{0,9}$",
+                      "type": "string"
+                    },
+                    "head": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "objectId": {
+                          "pattern": "^[a-f0-9]{40}$",
+                          "type": "string"
+                        },
+                        "ref": {
+                          "maxLength": 255,
+                          "minLength": 1,
+                          "pattern": "^[^\\p{Cc}]+$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "objectId",
+                        "ref"
+                      ],
+                      "type": "object"
+                    },
+                    "id": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                      "type": "string"
+                    },
+                    "number": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9999999999,
+                      "type": "integer"
+                    },
+                    "observedAt": {
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                      "type": "string"
+                    },
+                    "proposalState": {
+                      "enum": [
+                        "open",
+                        "merged",
+                        "closed",
+                        "unknown"
+                      ],
+                      "type": "string"
+                    },
+                    "providerId": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "title": {
+                      "maxLength": 512,
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "providerId",
+                    "number",
+                    "title",
+                    "canonicalUrl",
+                    "proposalState",
+                    "base",
+                    "head",
+                    "author",
+                    "observedAt"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                "type": "string"
+              },
+              "modelAccess": {
+                "enum": [
+                  "not_configured"
+                ],
+                "type": "string"
+              },
+              "providerObservation": {
+                "additionalProperties": false,
+                "properties": {
+                  "authentication": {
+                    "const": "none",
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "public_github",
+                    "type": "string"
+                  },
+                  "refresh": {
+                    "const": "manual",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "authentication",
+                  "kind",
+                  "refresh"
+                ],
+                "type": "object"
+              },
+              "repository": {
+                "additionalProperties": false,
+                "properties": {
+                  "canonicalUrl": {
+                    "maxLength": 240,
+                    "pattern": "^https:\\/\\/github\\.com\\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\\/[A-Za-z0-9._-]{1,100}$",
+                    "type": "string"
+                  },
+                  "name": {
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "pattern": "^[A-Za-z0-9._-]+$",
+                    "type": "string"
+                  },
+                  "owner": {
+                    "maxLength": 39,
+                    "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$",
+                    "type": "string"
+                  },
+                  "providerId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "canonicalUrl",
+                  "name",
+                  "owner",
+                  "providerId"
+                ],
+                "type": "object"
+              },
+              "sourceAvailability": {
+                "enum": [
+                  "not_acquired",
+                  "available",
+                  "unavailable"
+                ],
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "providerObservation",
+              "repository",
+              "sourceAvailability",
+              "modelAccess",
+              "createdAt",
+              "updatedAt",
+              "changeProposals"
+            ],
+            "type": "object"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "type": "number"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "projects"
+      ],
+      "type": "object"
+    },
+    "ProjectUpserted": {
+      "additionalProperties": false,
+      "properties": {
+        "project": {
+          "additionalProperties": false,
+          "properties": {
+            "changeProposals": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "author": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "login": {
+                            "maxLength": 100,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "providerId": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "login",
+                          "providerId"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "base": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "objectId": {
+                        "pattern": "^[a-f0-9]{40}$",
+                        "type": "string"
+                      },
+                      "ref": {
+                        "maxLength": 255,
+                        "minLength": 1,
+                        "pattern": "^[^\\p{Cc}]+$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "objectId",
+                      "ref"
+                    ],
+                    "type": "object"
+                  },
+                  "canonicalUrl": {
+                    "maxLength": 256,
+                    "pattern": "^https:\\/\\/github\\.com\\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\\/[A-Za-z0-9._-]{1,100}\\/pull\\/[1-9][0-9]{0,9}$",
+                    "type": "string"
+                  },
+                  "head": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "objectId": {
+                        "pattern": "^[a-f0-9]{40}$",
+                        "type": "string"
+                      },
+                      "ref": {
+                        "maxLength": 255,
+                        "minLength": 1,
+                        "pattern": "^[^\\p{Cc}]+$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "objectId",
+                      "ref"
+                    ],
+                    "type": "object"
+                  },
+                  "id": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                    "type": "string"
+                  },
+                  "number": {
+                    "exclusiveMinimum": 0,
+                    "maximum": 9999999999,
+                    "type": "integer"
+                  },
+                  "observedAt": {
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                    "type": "string"
+                  },
+                  "proposalState": {
+                    "enum": [
+                      "open",
+                      "merged",
+                      "closed",
+                      "unknown"
+                    ],
+                    "type": "string"
+                  },
+                  "providerId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "title": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "providerId",
+                  "number",
+                  "title",
+                  "canonicalUrl",
+                  "proposalState",
+                  "base",
+                  "head",
+                  "author",
+                  "observedAt"
+                ],
+                "type": "object"
+              },
+              "maxItems": 100,
+              "type": "array"
+            },
+            "createdAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "type": "string"
+            },
+            "id": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "modelAccess": {
+              "enum": [
+                "not_configured"
+              ],
+              "type": "string"
+            },
+            "providerObservation": {
+              "additionalProperties": false,
+              "properties": {
+                "authentication": {
+                  "const": "none",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "public_github",
+                  "type": "string"
+                },
+                "refresh": {
+                  "const": "manual",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "authentication",
+                "kind",
+                "refresh"
+              ],
+              "type": "object"
+            },
+            "repository": {
+              "additionalProperties": false,
+              "properties": {
+                "canonicalUrl": {
+                  "maxLength": 240,
+                  "pattern": "^https:\\/\\/github\\.com\\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\\/[A-Za-z0-9._-]{1,100}$",
+                  "type": "string"
+                },
+                "name": {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._-]+$",
+                  "type": "string"
+                },
+                "owner": {
+                  "maxLength": 39,
+                  "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$",
+                  "type": "string"
+                },
+                "providerId": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "canonicalUrl",
+                "name",
+                "owner",
+                "providerId"
+              ],
+              "type": "object"
+            },
+            "sourceAvailability": {
+              "enum": [
+                "not_acquired",
+                "available",
+                "unavailable"
+              ],
+              "type": "string"
+            },
+            "updatedAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "providerObservation",
+            "repository",
+            "sourceAvailability",
+            "modelAccess",
+            "createdAt",
+            "updatedAt",
+            "changeProposals"
+          ],
+          "type": "object"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "type": "number"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "project"
+      ],
+      "type": "object"
+    },
     "Session": {
       "additionalProperties": false,
       "properties": {

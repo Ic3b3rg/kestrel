@@ -18,6 +18,96 @@ export const OperatorUsernameSchema = z
   .max(64)
   .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/u);
 
+const GitHubOwnerSchema = z
+  .string()
+  .max(39)
+  .regex(/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/u);
+const GitHubRepositoryNameSchema = z
+  .string()
+  .min(1)
+  .max(100)
+  .regex(/^[A-Za-z0-9._-]+$/u);
+const GitHubOpaqueIdSchema = z.string().min(1).max(256);
+const GitObjectIdSchema = z.string().regex(/^[a-f0-9]{40}$/u);
+const GitReferenceSchema = z
+  .string()
+  .min(1)
+  .max(255)
+  .regex(/^[^\p{Cc}]+$/u);
+
+export const PublicGitHubPullRequestUrlSchema = z
+  .string()
+  .max(256)
+  .regex(
+    /^https:\/\/github\.com\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\/[A-Za-z0-9._-]{1,100}\/pull\/[1-9][0-9]{0,9}$/u,
+  );
+
+export const OpenPublicGitHubPullRequestCommandSchema = z.strictObject({
+  url: PublicGitHubPullRequestUrlSchema,
+});
+
+export const ProviderObservationSchema = z.strictObject({
+  authentication: z.literal("none"),
+  kind: z.literal("public_github"),
+  refresh: z.literal("manual"),
+});
+
+export const RepositorySnapshotSchema = z.strictObject({
+  canonicalUrl: z
+    .string()
+    .max(240)
+    .regex(
+      /^https:\/\/github\.com\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\/[A-Za-z0-9._-]{1,100}$/u,
+    ),
+  name: GitHubRepositoryNameSchema,
+  owner: GitHubOwnerSchema,
+  providerId: GitHubOpaqueIdSchema,
+});
+
+export const GitRevisionPointerSchema = z.strictObject({
+  objectId: GitObjectIdSchema,
+  ref: GitReferenceSchema,
+});
+
+export const ChangeProposalSchema = z.strictObject({
+  id: KestrelIdSchema,
+  providerId: GitHubOpaqueIdSchema,
+  number: z.number().int().positive().max(9_999_999_999),
+  title: z.string().min(1).max(512),
+  canonicalUrl: PublicGitHubPullRequestUrlSchema,
+  proposalState: z.enum(["open", "merged", "closed", "unknown"]),
+  base: GitRevisionPointerSchema,
+  head: GitRevisionPointerSchema,
+  author: z
+    .strictObject({
+      login: z.string().min(1).max(100),
+      providerId: GitHubOpaqueIdSchema,
+    })
+    .nullable(),
+  observedAt: UtcDateTimeSchema,
+});
+
+export const ProjectSchema = z.strictObject({
+  id: KestrelIdSchema,
+  providerObservation: ProviderObservationSchema,
+  repository: RepositorySnapshotSchema,
+  sourceAvailability: z.enum(["not_acquired", "available", "unavailable"]),
+  modelAccess: z.enum(["not_configured"]),
+  createdAt: UtcDateTimeSchema,
+  updatedAt: UtcDateTimeSchema,
+  changeProposals: z.array(ChangeProposalSchema).max(100),
+});
+
+export const ProjectInboxSchema = z.strictObject({
+  schemaVersion: SchemaVersionSchema,
+  projects: z.array(ProjectSchema).max(100),
+});
+
+export const ProjectUpsertedSchema = z.strictObject({
+  schemaVersion: SchemaVersionSchema,
+  project: ProjectSchema,
+});
+
 export const OperatorSchema = z.strictObject({
   id: KestrelIdSchema,
   username: OperatorUsernameSchema,
@@ -196,10 +286,17 @@ export type InstallationEventType = z.infer<typeof InstallationEventTypeSchema>;
 export type InstallationSnapshot = z.infer<typeof InstallationSnapshotSchema>;
 export type InstallationState = z.infer<typeof InstallationStateSchema>;
 export type LoginCommand = z.infer<typeof LoginCommandSchema>;
+export type OpenPublicGitHubPullRequestCommand = z.infer<
+  typeof OpenPublicGitHubPullRequestCommandSchema
+>;
 export type NewOperatorPassword = z.infer<typeof NewOperatorPasswordSchema>;
 export type LogoutCommand = z.infer<typeof LogoutCommandSchema>;
 export type Operator = z.infer<typeof OperatorSchema>;
 export type OperatorUsername = z.infer<typeof OperatorUsernameSchema>;
+export type Project = z.infer<typeof ProjectSchema>;
+export type ProjectInbox = z.infer<typeof ProjectInboxSchema>;
+export type ProjectUpserted = z.infer<typeof ProjectUpsertedSchema>;
+export type PublicGitHubPullRequestUrl = z.infer<typeof PublicGitHubPullRequestUrlSchema>;
 export type Session = z.infer<typeof SessionSchema>;
 export type StepUpAction = z.infer<typeof StepUpActionSchema>;
 export type StepUpCommand = z.infer<typeof StepUpCommandSchema>;

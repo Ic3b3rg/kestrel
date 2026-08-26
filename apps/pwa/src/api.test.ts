@@ -6,14 +6,17 @@ import type {
   DiagnosticAccepted,
   InstallationEvent,
   InstallationSnapshot,
+  ProjectInbox,
   Session,
 } from "@kestrel/contracts";
 
 import {
   fetchInstallation,
+  fetchProjectInbox,
   fetchSession,
   loginOperator,
   logoutOperator,
+  openPublicGitHubPullRequest,
   runDiagnostic,
   streamInstallationEvents,
   updateOperatorCredentials,
@@ -77,6 +80,44 @@ const session: Session = {
   },
   issuedAt: "2026-08-24T12:00:00.000Z",
   expiresAt: "2026-08-31T12:00:00.000Z",
+};
+
+const projectInbox: ProjectInbox = {
+  schemaVersion: 1,
+  projects: [
+    {
+      changeProposals: [
+        {
+          author: { login: "octocat", providerId: "U_kgDOA" },
+          base: { objectId: "a".repeat(40), ref: "main" },
+          canonicalUrl: "https://github.com/openai/openai-node/pull/1234",
+          head: { objectId: "b".repeat(40), ref: "provider-observation" },
+          id: "018f0f89-9192-755f-aa96-f72094c734dd",
+          number: 1234,
+          observedAt: "2026-08-24T12:01:00.000Z",
+          proposalState: "open",
+          providerId: "PR_kwDOGx",
+          title: "Keep repository access explicit",
+        },
+      ],
+      createdAt: "2026-08-24T12:00:00.000Z",
+      id: "018f0f89-949a-75a8-8f61-6df78a843b1e",
+      modelAccess: "not_configured",
+      providerObservation: {
+        authentication: "none",
+        kind: "public_github",
+        refresh: "manual",
+      },
+      repository: {
+        canonicalUrl: "https://github.com/openai/openai-node",
+        name: "openai-node",
+        owner: "openai",
+        providerId: "R_kgDOGx",
+      },
+      sourceAvailability: "not_acquired",
+      updatedAt: "2026-08-24T12:01:00.000Z",
+    },
+  ],
 };
 
 function jsonResponse(value: unknown, status = 200): Response {
@@ -177,6 +218,43 @@ describe("PWA API client", () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/v1/installation/diagnostics");
     expect(request).toEqual(expect.objectContaining({ body: "{}", method: "POST" }));
     expect(new Headers(request?.headers).get("X-Kestrel-CSRF")).toBe(
+      `${"A".repeat(43)}.${"B".repeat(43)}`,
+    );
+  });
+
+  it("reads the Project inbox and opens a public PR with CSRF protection", async () => {
+    const created = { schemaVersion: 1 as const, project: projectInbox.projects[0] };
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(projectInbox))
+      .mockResolvedValueOnce(jsonResponse(created));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("document", {
+      cookie: `__Host-kestrel-csrf=${"A".repeat(43)}.${"B".repeat(43)}`,
+    });
+
+    await expect(fetchProjectInbox()).resolves.toEqual(projectInbox);
+    await expect(
+      openPublicGitHubPullRequest({
+        url: "https://github.com/openai/openai-node/pull/1234",
+      }),
+    ).resolves.toEqual(created);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/v1/projects",
+      expect.objectContaining({ credentials: "same-origin", method: "GET" }),
+    );
+    const mutation = fetchMock.mock.calls[1]?.[1];
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/v1/projects");
+    expect(mutation).toEqual(
+      expect.objectContaining({
+        body: JSON.stringify({ url: "https://github.com/openai/openai-node/pull/1234" }),
+        credentials: "same-origin",
+        method: "POST",
+      }),
+    );
+    expect(new Headers(mutation?.headers).get("X-Kestrel-CSRF")).toBe(
       `${"A".repeat(43)}.${"B".repeat(43)}`,
     );
   });

@@ -11,6 +11,9 @@ import {
   InstallationSnapshotSchema,
   LoginCommandSchema,
   LogoutCommandSchema,
+  OpenPublicGitHubPullRequestCommandSchema,
+  ProjectInboxSchema,
+  ProjectUpsertedSchema,
   SessionSchema,
   StepUpCommandSchema,
   StepUpProofSchema,
@@ -67,6 +70,11 @@ export const sessionJsonSchema = asJsonSchema(SessionSchema);
 export const stepUpCommandJsonSchema = asJsonSchema(StepUpCommandSchema);
 export const stepUpProofJsonSchema = asJsonSchema(StepUpProofSchema);
 export const credentialChangeCommandJsonSchema = asJsonSchema(CredentialChangeCommandSchema);
+export const openPublicGitHubPullRequestCommandJsonSchema = asJsonSchema(
+  OpenPublicGitHubPullRequestCommandSchema,
+);
+export const projectInboxJsonSchema = asJsonSchema(ProjectInboxSchema);
+export const projectUpsertedJsonSchema = asJsonSchema(ProjectUpsertedSchema);
 
 export const contractBundle = sortJson({
   $defs: {
@@ -78,6 +86,11 @@ export const contractBundle = sortJson({
     CredentialChangeCommand: asComponentSchema(credentialChangeCommandJsonSchema),
     LoginCommand: asComponentSchema(loginCommandJsonSchema),
     LogoutCommand: asComponentSchema(logoutCommandJsonSchema),
+    OpenPublicGitHubPullRequestCommand: asComponentSchema(
+      openPublicGitHubPullRequestCommandJsonSchema,
+    ),
+    ProjectInbox: asComponentSchema(projectInboxJsonSchema),
+    ProjectUpserted: asComponentSchema(projectUpsertedJsonSchema),
     Session: asComponentSchema(sessionJsonSchema),
     StepUpCommand: asComponentSchema(stepUpCommandJsonSchema),
     StepUpProof: asComponentSchema(stepUpProofJsonSchema),
@@ -136,6 +149,11 @@ export const openApiDocument = sortJson({
       CredentialChangeCommand: asComponentSchema(credentialChangeCommandJsonSchema),
       LoginCommand: asComponentSchema(loginCommandJsonSchema),
       LogoutCommand: asComponentSchema(logoutCommandJsonSchema),
+      OpenPublicGitHubPullRequestCommand: asComponentSchema(
+        openPublicGitHubPullRequestCommandJsonSchema,
+      ),
+      ProjectInbox: asComponentSchema(projectInboxJsonSchema),
+      ProjectUpserted: asComponentSchema(projectUpsertedJsonSchema),
       Session: asComponentSchema(sessionJsonSchema),
       StepUpCommand: asComponentSchema(stepUpCommandJsonSchema),
       StepUpProof: asComponentSchema(stepUpProofJsonSchema),
@@ -486,6 +504,77 @@ export const openApiDocument = sortJson({
           "503": {
             content: { "application/json": { schema: schemaReference("ApiError") } },
             description: "Credential storage is unavailable",
+          },
+        },
+      },
+    },
+    "/api/v1/projects": {
+      get: {
+        operationId: "readProjectInbox",
+        responses: {
+          "200": {
+            content: { "application/json": { schema: schemaReference("ProjectInbox") } },
+            description: "Current Project inbox",
+          },
+          "401": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Operator authentication is required",
+          },
+          "503": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Project storage is unavailable",
+          },
+        },
+      },
+      post: {
+        description:
+          "Opens or manually refreshes one canonical public GitHub pull request without credentials.",
+        operationId: "openPublicGitHubPullRequest",
+        parameters: authenticatedMutationHeaders(false),
+        requestBody: {
+          content: {
+            "application/json": {
+              schema: schemaReference("OpenPublicGitHubPullRequestCommand"),
+            },
+          },
+          required: true,
+        },
+        responses: {
+          "200": {
+            content: { "application/json": { schema: schemaReference("ProjectUpserted") } },
+            description: "Public GitHub Project opened or refreshed idempotently",
+          },
+          "400": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "The pull-request URL is not canonical",
+          },
+          "401": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Operator authentication is required",
+          },
+          "403": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Origin or CSRF validation failed",
+          },
+          "404": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "The public pull request is unavailable",
+          },
+          "413": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "The command payload is too large",
+          },
+          "415": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "The command media type is unsupported",
+          },
+          "429": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "GitHub's public API limit was reached",
+          },
+          "503": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Public GitHub or Project storage is unavailable",
           },
         },
       },
