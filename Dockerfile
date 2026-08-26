@@ -1,7 +1,12 @@
-FROM node:24.18.1-bookworm-slim
+FROM node:24.18.1-trixie-slim
 
 ENV NODE_ENV=development
 WORKDIR /workspace
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends git \
+  && rm -rf /var/lib/apt/lists/* \
+  && install -d -m 0700 -o node -g node /var/lib/kestrel/artifacts
 
 COPY package.json package-lock.json ./
 COPY apps ./apps

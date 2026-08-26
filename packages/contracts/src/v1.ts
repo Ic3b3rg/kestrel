@@ -28,12 +28,74 @@ const GitHubRepositoryNameSchema = z
   .max(100)
   .regex(/^[A-Za-z0-9._-]+$/u);
 const GitHubOpaqueIdSchema = z.string().min(1).max(256);
-const GitObjectIdSchema = z.string().regex(/^[a-f0-9]{40}$/u);
+export const GitObjectFormatSchema = z.enum(["sha1", "sha256"]);
+export const GitObjectIdSchema = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u);
 const GitReferenceSchema = z
   .string()
   .min(1)
   .max(255)
   .regex(/^[^\p{Cc}]+$/u);
+
+export const ChangeIntentTextSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(20_000)
+  .refine((value) => new TextEncoder().encode(value).byteLength <= 20_000, {
+    message: "Change Intent must be at most 20000 UTF-8 bytes",
+  });
+
+export const RetainReviewRevisionCommandSchema = z
+  .strictObject({
+    repositoryId: KestrelIdSchema,
+    baseRef: GitReferenceSchema,
+    headRef: GitReferenceSchema,
+    changeIntent: ChangeIntentTextSchema,
+    changeProposalId: KestrelIdSchema.optional(),
+  })
+  .refine(({ baseRef, headRef }) => baseRef !== headRef, {
+    message: "Base and head references must be different",
+    path: ["headRef"],
+  });
+
+export const LocalRepositoryInventoryItemSchema = z.strictObject({
+  repositoryId: KestrelIdSchema,
+  displayName: z.string().min(1).max(256),
+  attachmentState: z.enum(["unattached", "attached"]),
+});
+
+export const LocalRepositoryInventorySchema = z.strictObject({
+  schemaVersion: SchemaVersionSchema,
+  repositories: z.array(LocalRepositoryInventoryItemSchema).max(100),
+});
+
+export const LocalRepositoryReferenceSchema = z.strictObject({
+  ref: GitReferenceSchema,
+  displayName: z.string().min(1).max(255),
+  kind: z.enum(["head", "local_branch", "remote_branch", "tag"]),
+  commitObjectId: GitObjectIdSchema,
+  commitSubjectSuggestion: z.string().max(512).nullable(),
+});
+
+export const LocalRepositoryReferencesSchema = z
+  .strictObject({
+    schemaVersion: SchemaVersionSchema,
+    repositoryId: KestrelIdSchema,
+    objectFormat: GitObjectFormatSchema,
+    references: z.array(LocalRepositoryReferenceSchema).max(500),
+  })
+  .superRefine((value, context) => {
+    const expectedLength = value.objectFormat === "sha1" ? 40 : 64;
+    for (const [index, reference] of value.references.entries()) {
+      if (reference.commitObjectId.length !== expectedLength) {
+        context.addIssue({
+          code: "custom",
+          message: `Expected a ${value.objectFormat} object ID`,
+          path: ["references", index, "commitObjectId"],
+        });
+      }
+    }
+  });
 
 export const PublicGitHubPullRequestUrlSchema = z
   .string()
@@ -69,7 +131,85 @@ export const GitRevisionPointerSchema = z.strictObject({
   ref: GitReferenceSchema,
 });
 
-export const ChangeProposalSchema = z.strictObject({
+export const ChangeIntentSchema = z.strictObject({
+  id: KestrelIdSchema,
+  version: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  text: ChangeIntentTextSchema,
+  createdAt: UtcDateTimeSchema,
+});
+
+export const ReviewRevisionFailureReasonSchema = z.enum([
+  "source_not_available",
+  "source_containment_violation",
+  "reference_not_available",
+  "revision_limit_exceeded",
+  "object_missing",
+  "object_verification_failed",
+  "artifact_finalization_failed",
+  "acquisition_interrupted",
+]);
+
+export const ReviewRevisionSchema = z
+  .strictObject({
+    id: KestrelIdSchema,
+    state: z.enum(["acquiring", "available", "unavailable"]),
+    objectFormat: GitObjectFormatSchema,
+    base: GitRevisionPointerSchema,
+    head: GitRevisionPointerSchema,
+    objectCount: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).nullable(),
+    retainedBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).nullable(),
+    failureReason: ReviewRevisionFailureReasonSchema.nullable(),
+    createdAt: UtcDateTimeSchema,
+    availableAt: UtcDateTimeSchema.nullable(),
+  })
+  .superRefine((value, context) => {
+    const expectedLength = value.objectFormat === "sha1" ? 40 : 64;
+    for (const side of ["base", "head"] as const) {
+      if (value[side].objectId.length !== expectedLength) {
+        context.addIssue({
+          code: "custom",
+          message: `Expected a ${value.objectFormat} object ID`,
+          path: [side, "objectId"],
+        });
+      }
+    }
+    const availableFields =
+      value.objectCount !== null &&
+      value.objectCount > 0 &&
+      value.retainedBytes !== null &&
+      value.availableAt !== null &&
+      value.failureReason === null;
+    const acquiringFields =
+      value.objectCount === null &&
+      value.retainedBytes === null &&
+      value.availableAt === null &&
+      value.failureReason === null;
+    const unavailableFields =
+      value.objectCount === null &&
+      value.retainedBytes === null &&
+      value.availableAt === null &&
+      value.failureReason !== null;
+    if (
+      (value.state === "available" && !availableFields) ||
+      (value.state === "acquiring" && !acquiringFields) ||
+      (value.state === "unavailable" && !unavailableFields)
+    ) {
+      context.addIssue({ code: "custom", message: "Revision State fields are inconsistent" });
+    }
+  });
+
+export const LocalRepositorySourceSchema = z.strictObject({
+  id: KestrelIdSchema,
+  repositoryId: KestrelIdSchema,
+  displayName: z.string().min(1).max(256),
+  state: z.enum(["attached", "detached"]),
+  objectFormat: GitObjectFormatSchema,
+  createdAt: UtcDateTimeSchema,
+  updatedAt: UtcDateTimeSchema,
+});
+
+export const ProviderObservedChangeProposalSchema = z.strictObject({
+  kind: z.literal("provider_observed"),
   id: KestrelIdSchema,
   providerId: GitHubOpaqueIdSchema,
   number: z.number().int().positive().max(9_999_999_999),
@@ -85,12 +225,32 @@ export const ChangeProposalSchema = z.strictObject({
     })
     .nullable(),
   observedAt: UtcDateTimeSchema,
+  changeIntent: ChangeIntentSchema.nullable(),
+  reviewRevisions: z.array(ReviewRevisionSchema).max(20),
 });
+
+export const LocalChangeProposalSchema = z.strictObject({
+  kind: z.literal("local"),
+  id: KestrelIdSchema,
+  title: z.string().min(1).max(512),
+  base: GitRevisionPointerSchema,
+  head: GitRevisionPointerSchema,
+  changeIntent: ChangeIntentSchema,
+  reviewRevisions: z.array(ReviewRevisionSchema).max(20),
+  createdAt: UtcDateTimeSchema,
+  updatedAt: UtcDateTimeSchema,
+});
+
+export const ChangeProposalSchema = z.discriminatedUnion("kind", [
+  ProviderObservedChangeProposalSchema,
+  LocalChangeProposalSchema,
+]);
 
 export const ProjectSchema = z.strictObject({
   id: KestrelIdSchema,
-  providerObservation: ProviderObservationSchema,
-  repository: RepositorySnapshotSchema,
+  providerObservation: ProviderObservationSchema.nullable(),
+  repository: RepositorySnapshotSchema.nullable(),
+  localRepositorySource: LocalRepositorySourceSchema.nullable(),
   sourceAvailability: z.enum(["not_acquired", "available", "unavailable"]),
   modelAccess: z.enum(["not_configured"]),
   createdAt: UtcDateTimeSchema,
@@ -107,6 +267,42 @@ export const ProjectUpsertedSchema = z.strictObject({
   schemaVersion: SchemaVersionSchema,
   project: ProjectSchema,
 });
+
+export const ReviewRevisionAvailableSchema = z
+  .strictObject({
+    schemaVersion: SchemaVersionSchema,
+    project: ProjectSchema,
+    localRepositorySource: LocalRepositorySourceSchema,
+    changeProposal: ChangeProposalSchema,
+    acquisitionChangeIntent: ChangeIntentSchema,
+    reviewRevision: ReviewRevisionSchema,
+  })
+  .superRefine((value, context) => {
+    if (value.reviewRevision.state !== "available") {
+      context.addIssue({
+        code: "custom",
+        message: "Only an available Review Revision may be published",
+        path: ["reviewRevision", "state"],
+      });
+    }
+    if (value.project.localRepositorySource?.id !== value.localRepositorySource.id) {
+      context.addIssue({
+        code: "custom",
+        message: "Local Repository Source is not attached to Project",
+      });
+    }
+    const proposal = value.project.changeProposals.find(({ id }) => id === value.changeProposal.id);
+    if (proposal === undefined) {
+      context.addIssue({ code: "custom", message: "Change Proposal is not attached to Project" });
+    } else {
+      if (!proposal.reviewRevisions.some(({ id }) => id === value.reviewRevision.id)) {
+        context.addIssue({
+          code: "custom",
+          message: "Review Revision is not attached to Change Proposal",
+        });
+      }
+    }
+  });
 
 export const OperatorSchema = z.strictObject({
   id: KestrelIdSchema,
@@ -250,6 +446,14 @@ const StandardApiErrorSchema = z.strictObject({
     "OPERATOR_VERSION_CONFLICT",
     "SERVICE_UNAVAILABLE",
     "INTERNAL_ERROR",
+    "REPOSITORY_NOT_AVAILABLE",
+    "REFERENCE_NOT_AVAILABLE",
+    "SOURCE_CONTAINMENT_VIOLATION",
+    "REVISION_LIMIT_EXCEEDED",
+    "OBJECT_MISSING",
+    "OBJECT_VERIFICATION_FAILED",
+    "CHANGE_PROPOSAL_MISMATCH",
+    "REVISION_ACQUIRING",
   ]),
   message: z.string().min(1),
   correlationId: CorrelationIdSchema,
@@ -285,10 +489,18 @@ export type InstallationEvent = z.infer<typeof InstallationEventSchema>;
 export type InstallationEventType = z.infer<typeof InstallationEventTypeSchema>;
 export type InstallationSnapshot = z.infer<typeof InstallationSnapshotSchema>;
 export type InstallationState = z.infer<typeof InstallationStateSchema>;
+export type ChangeIntent = z.infer<typeof ChangeIntentSchema>;
+export type ChangeProposal = z.infer<typeof ChangeProposalSchema>;
 export type LoginCommand = z.infer<typeof LoginCommandSchema>;
+export type LocalRepositoryInventory = z.infer<typeof LocalRepositoryInventorySchema>;
+export type LocalRepositoryInventoryItem = z.infer<typeof LocalRepositoryInventoryItemSchema>;
+export type LocalRepositoryReference = z.infer<typeof LocalRepositoryReferenceSchema>;
+export type LocalRepositoryReferences = z.infer<typeof LocalRepositoryReferencesSchema>;
+export type LocalRepositorySource = z.infer<typeof LocalRepositorySourceSchema>;
 export type OpenPublicGitHubPullRequestCommand = z.infer<
   typeof OpenPublicGitHubPullRequestCommandSchema
 >;
+export type RetainReviewRevisionCommand = z.infer<typeof RetainReviewRevisionCommandSchema>;
 export type NewOperatorPassword = z.infer<typeof NewOperatorPasswordSchema>;
 export type LogoutCommand = z.infer<typeof LogoutCommandSchema>;
 export type Operator = z.infer<typeof OperatorSchema>;
@@ -296,6 +508,11 @@ export type OperatorUsername = z.infer<typeof OperatorUsernameSchema>;
 export type Project = z.infer<typeof ProjectSchema>;
 export type ProjectInbox = z.infer<typeof ProjectInboxSchema>;
 export type ProjectUpserted = z.infer<typeof ProjectUpsertedSchema>;
+export type ProviderObservedChangeProposal = z.infer<typeof ProviderObservedChangeProposalSchema>;
+export type RepositorySnapshot = z.infer<typeof RepositorySnapshotSchema>;
+export type ReviewRevision = z.infer<typeof ReviewRevisionSchema>;
+export type ReviewRevisionAvailable = z.infer<typeof ReviewRevisionAvailableSchema>;
+export type ReviewRevisionFailureReason = z.infer<typeof ReviewRevisionFailureReasonSchema>;
 export type PublicGitHubPullRequestUrl = z.infer<typeof PublicGitHubPullRequestUrlSchema>;
 export type Session = z.infer<typeof SessionSchema>;
 export type StepUpAction = z.infer<typeof StepUpActionSchema>;

@@ -1,16 +1,19 @@
 # Kestrel
 
-This repository contains an authenticated, observable Kestrel Installation path and the first
-Provider Observation path: one local Operator can open a public github.com pull request without
-GitHub credentials. PostgreSQL is the only durable authority.
+This repository contains an authenticated, observable Kestrel Installation and its first local-first
+source path. One local Operator can select exact committed base/head references from an authorized
+read-only Git repository, confirm Change Intent, and retain an immutable Review Revision. A public
+github.com pull request may add optional Provider Observation metadata without GitHub credentials.
+PostgreSQL is the durable application authority; verified source objects live in a separate
+Kestrel-owned artifact root.
 
 Review First V1 is [local-first](./docs/adr/0002-make-review-first-v1-local-first.md): every review
 must be materialized from exact commits available through an authorized local Git repository. Public
 GitHub and the Operator's existing host `gh` session may provide optional pull-request discovery,
 but Kestrel stores no provider credential. Supported VPS/cloud operation, GitHub App, webhooks,
-GitLab, and remote availability are deferred. The Compose workflow documented below is the currently
-implemented development scaffold; it does not yet satisfy the host source-control path, whose
-implementation frontier is GitHub issue #90.
+GitLab, and remote availability are deferred. The development Compose configuration disables host
+repository discovery by default. Enabling it requires one explicit read-only bind mount as
+documented below; Kestrel never scans arbitrary host paths.
 
 ## Start the development Installation
 
@@ -73,9 +76,83 @@ Stop and remove the development containers with:
 npm run dev:down
 ```
 
-This preserves the named `kestrel_postgres-data` volume. A later `npm run dev` presents the same
-Installation and confirmed diagnostic operations. Use `docker compose down --volumes` only when
-deliberately resetting all local Kestrel data.
+This preserves the named `kestrel_postgres-data` and `kestrel_review-artifacts` volumes. A later
+`npm run dev` presents the same Installation, confirmed diagnostic operations, and retained Review
+Revisions. Use `docker compose down --volumes` only when deliberately resetting all local Kestrel
+data and retained source.
+
+## Authorize local repositories
+
+Local discovery is disabled safely by the default `LOCAL_REPOSITORY_ROOTS=[]`. To enable it in
+Compose, add a local override with an explicit host directory mounted read-only and refer to the
+container path, never the host path, in configuration:
+
+```yaml
+services:
+  web:
+    environment:
+      LOCAL_REPOSITORY_ROOTS: '["/repositories"]'
+    volumes:
+      - type: bind
+        source: /absolute/path/to/authorized-parent
+        target: /repositories
+        read_only: true
+```
+
+The web process validates all five local-source settings before listening:
+
+- `LOCAL_REPOSITORY_ROOTS` — JSON array of absolute, non-overlapping directory roots;
+- `LOCAL_GIT_EXECUTABLE` — absolute executable path to Git 2.45 or newer;
+- `ARTIFACT_ROOT` — Kestrel-owned mode-0700 directory outside every repository root;
+- `REVIEW_REVISION_MAX_BYTES` — positive maximum retained bytes per exact revision;
+- `REVIEW_REVISION_MAX_OBJECTS` — positive maximum unique retained objects per revision.
+
+The image uses `/usr/bin/git` and the separate `review-artifacts` volume. For a native web process,
+create the artifact directory as the web service user with owner-only access. After exporting the
+normal database and session settings, a complete local-source configuration and native start looks
+like this:
+
+```sh
+install -d -m 0700 /var/lib/kestrel/review-revisions
+npm run build
+LOCAL_REPOSITORY_ROOTS='["/srv/kestrel-repositories"]' \
+LOCAL_GIT_EXECUTABLE=/usr/bin/git \
+ARTIFACT_ROOT=/var/lib/kestrel/review-revisions \
+REVIEW_REVISION_MAX_BYTES=10485760 \
+REVIEW_REVISION_MAX_OBJECTS=10000 \
+npm run start -w @kestrel/web
+```
+
+The configured repository root must already exist and be readable by the web service user. Restart
+the web process after changing authorized roots. Duplicate, nested, symlinked, escaped,
+inaccessible, or source/artifact-overlapping roots fail closed before the listener starts.
+
+In the PWA, “Open local repository” lists only bounded display labels and opaque IDs beneath these
+roots. The browser never submits a path. Select two enumerated committed refs and write or
+explicitly copy a commit-subject suggestion into Change Intent. Kestrel re-resolves both refs to
+exact object IDs before acquisition; later branch movement cannot retarget the Review Revision.
+
+The retained closure contains the selected base/head commit objects and all trees and blobs needed
+to materialize those two exact source trees. It deliberately excludes ancestor history, unrelated
+branches, gitlink targets, the index, and dirty, staged, ignored, or untracked working-tree bytes.
+Symlink blobs are retained as bytes and never followed. The snapshot remains readable if its Local
+Repository Source becomes detached.
+
+Acquisition uses only fixed read-only Git inspection commands with sanitized configuration and
+environment. It never fetches, pulls, clones, checks out, invokes hooks or filters, consults
+credential helpers, SSH agents, provider CLIs, runs a build/test, or executes repository-defined
+commands. It never modifies or deletes the source repository. A failed acquisition publishes no
+partial artifact and records a bounded unavailable reason. If filesystem publication succeeds but
+the database completion is uncertain, Kestrel locks and rereads the revision: an already-available
+artifact is preserved; an acquiring artifact is quarantined before the unavailable transition. An
+acquiring row older than 30 minutes becomes retryable only when its per-revision session lease is no
+longer live; orphaned acquisitions are also reconciled at startup.
+
+Expected public failures use the versioned API envelope and the stable codes
+`REPOSITORY_NOT_AVAILABLE`, `REFERENCE_NOT_AVAILABLE`, `SOURCE_CONTAINMENT_VIOLATION`,
+`REVISION_LIMIT_EXCEEDED`, `OBJECT_MISSING`, `OBJECT_VERIFICATION_FAILED`,
+`CHANGE_PROPOSAL_MISMATCH`, or `REVISION_ACQUIRING`. Messages and logs returned to the browser do
+not include source paths, Git stderr, credentials, or artifact locators.
 
 ## Observable path
 
@@ -85,15 +162,24 @@ transition, durable event, and pg-boss job in one PostgreSQL transaction. The wo
 diagnostic monotonically from queued to running to succeeded. The PWA reconnects from its last
 confirmed event cursor and performs a full snapshot refetch when retained history has expired.
 
-The same authenticated PWA reads `GET /api/v1/projects` and submits a canonical public GitHub pull
-request URL to `POST /api/v1/projects`. Kestrel reads public pull request metadata from GitHub
-without an account or token, then persists the Project, Change Proposal, exact base/head refs and
-SHAs, and an audit record atomically. Opening the same pull request again is a manual, idempotent
-refresh.
+The authenticated PWA reads the opaque local inventory and committed refs through
+`GET /api/v1/local-repository-sources` and
+`GET /api/v1/local-repository-sources/:repositoryId/references`. It submits the confirmed selection
+to `POST /api/v1/review-revisions`; success exposes the exact identity and Revision State but never
+an artifact locator or local path.
 
-This path identifies the observed base and head commits but does not yet acquire their source. It is
-limited by GitHub's shared unauthenticated allowance of 60 REST API requests per hour per
-Installation IP and never falls back to credentials. Private repositories, local source acquisition,
+The same PWA reads `GET /api/v1/projects` and may submit a canonical public GitHub pull request URL
+to `POST /api/v1/projects`. Kestrel reads public pull request metadata from GitHub without an
+account or token, then persists the Project, Change Proposal, exact base/head refs and SHAs, and an
+audit record atomically. Opening the same pull request again is a manual, idempotent refresh.
+
+Provider Observation is limited by GitHub's shared unauthenticated allowance of 60 REST API requests
+per hour per Installation IP and never falls back to credentials. It does not supply source. When a
+sanitized local GitHub remote and exact commits match an observed proposal, local source attaches to
+that same logical Project and Change Proposal. If independent local and provider-first records
+already exist, Kestrel keeps their immutable source/revision history, creates durable internal
+aliases, and returns only the canonical Project in the inbox. An explicit proposal selection
+disambiguates multiple provider proposals for the same exact commit pair. Private provider metadata,
 model access, GitHub Enterprise, GitLab, and Provider Synchronization remain out of scope.
 
 Useful endpoints on port 3000:
@@ -107,6 +193,9 @@ Useful endpoints on port 3000:
 - `/api/v1/operator/credentials` — step-up-protected username/password change;
 - `/api/v1/installation` — authoritative snapshot;
 - `/api/v1/projects` — Project inbox read and public GitHub pull request open/refresh;
+- `/api/v1/local-repository-sources` — bounded opaque authorized repository inventory;
+- `/api/v1/local-repository-sources/:repositoryId/references` — bounded committed ref inventory;
+- `/api/v1/review-revisions` — retain an exact, Operator-intended Review Revision;
 - `/api/v1/events` — replayable SSE stream;
 - `/api/v1/openapi.json` — generated OpenAPI 3.1 contract.
 
@@ -137,9 +226,11 @@ npm run build
 ```
 
 `npm run test:black-box` creates isolated Compose projects on random loopback ports and deletes
-their test volumes afterward. `npm run test:browser` drives the Project, diagnostic, and Operator
-security controls through Chromium, checks keyboard and offline behavior, audits accessibility with
-axe, and verifies 320, 768, 1024, and 1440 CSS-pixel viewports.
+their test volumes and generated repository roots afterward. It proves source immutability,
+committed-object exactness, artifact durability after source disappearance, and lifecycle
+idempotency. `npm run test:browser` drives local and provider Project flows, diagnostic, and
+Operator security controls through Chromium, checks keyboard and offline behavior, audits
+accessibility with axe, and verifies mobile and desktop viewports.
 
 The authored Zod schemas live in `packages/contracts/src`. Regenerate committed JSON Schema and
 OpenAPI artifacts after an intentional contract change:
@@ -158,13 +249,17 @@ npm run contracts:check
 - `apps/pwa` owns the browser experience and retains no product data in browser storage.
 - `packages/contracts` owns versioned Zod, JSON Schema, and OpenAPI contracts.
 - `packages/database` owns SQL migrations and node-postgres queries; there is no ORM.
+- `packages/local-source` owns bounded discovery, fixed Git inspection, verified artifact retention,
+  reconciliation, and detached artifact reads.
 
-Local Repository Source acquisition, model access, and review workflows are delivered by later
-issues. TLS/Caddy and Repository Provider Connections are outside the local-first V1 contract.
+Model access and Review Workflows are delivered by later issues. TLS/Caddy and Repository Provider
+Connections are outside the local-first V1 contract.
 
 The development Compose file keeps database ownership out of the long-running services. The one-shot
 migration and role-preparation containers use the database owner; web and worker connect as
 `kestrel_runtime`, which cannot alter schema or update, delete, truncate, or disable protection on
-Installation Audit records. The loopback-only development defaults can be overridden with
-`KESTREL_MIGRATOR_DATABASE_PASSWORD` and `KESTREL_RUNTIME_DATABASE_PASSWORD`; a certified release
-must supply generated values.
+Installation Audit records. Review-domain grants are similarly narrow: Change Intent is
+select/insert-only and the Project, proposal, source, and revision lifecycle tables expose no DELETE
+authority; database constraints preserve immutable revisions and canonical-family associations. The
+loopback-only development defaults can be overridden with `KESTREL_MIGRATOR_DATABASE_PASSWORD` and
+`KESTREL_RUNTIME_DATABASE_PASSWORD`; a certified release must supply generated values.

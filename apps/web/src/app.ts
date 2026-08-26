@@ -11,6 +11,10 @@ import { registerHealthRoutes } from "./routes/health.js";
 import { registerInstallationRoutes } from "./routes/installation.js";
 import { registerOpenApiRoute } from "./routes/openapi.js";
 import { registerOperatorSecurityRoutes } from "./routes/operator-security.js";
+import {
+  registerLocalRepositoryRoutes,
+  type LocalRepositoryService,
+} from "./routes/local-repository-sources.js";
 import { registerPwaRoutes } from "./routes/pwa.js";
 import {
   createDatabaseProjectService,
@@ -18,6 +22,10 @@ import {
   type ProjectService,
 } from "./routes/projects.js";
 import { registerSessionRoutes } from "./routes/session.js";
+import {
+  registerReviewRevisionRoutes,
+  type ReviewRevisionService,
+} from "./routes/review-revisions.js";
 import { registerAuthentication } from "./authentication.js";
 
 export interface BuildAppOptions {
@@ -25,8 +33,10 @@ export interface BuildAppOptions {
   eventPool?: DatabasePool;
   eventRetentionLimit: number;
   logger?: boolean;
+  localRepositoryService?: LocalRepositoryService;
   pool: DatabasePool;
   projectService?: ProjectService;
+  reviewRevisionService?: ReviewRevisionService;
   pwaRoot?: string;
   sessionSigningKey: Buffer;
 }
@@ -101,7 +111,14 @@ export async function buildApp({
   pool,
   eventPool = pool,
   pwaRoot,
+  localRepositoryService = {
+    listRepositories: () => Promise.resolve({ schemaVersion: 1, repositories: [] }),
+    listReferences: () => Promise.reject(new Error("Local repository access is not configured")),
+  },
   projectService = createDatabaseProjectService(pool),
+  reviewRevisionService = {
+    retain: () => Promise.reject(new Error("Review Revision acquisition is not configured")),
+  },
   sessionSigningKey,
 }: BuildAppOptions): Promise<FastifyInstance> {
   const app = Fastify({
@@ -158,6 +175,8 @@ export async function buildApp({
   registerInstallationRoutes(app, pool);
   registerOpenApiRoute(app);
   registerProjectRoutes(app, projectService);
+  registerLocalRepositoryRoutes(app, localRepositoryService);
+  registerReviewRevisionRoutes(app, reviewRevisionService);
   if (pwaRoot !== undefined) {
     await registerPwaRoutes(app, pwaRoot);
   }

@@ -118,11 +118,12 @@ discarded. A matching provider identity never replaces the local source identity
 
 ## Fixed Git inspection boundary
 
-All Git calls use `spawn` with `shell: false`, the configured absolute executable, fixed argument
-vectors, closed stdin unless a bounded object batch is required, bounded stdout and stderr, a hard
-timeout, and process-group teardown. The child environment is allowlisted and disables system and
-global Git configuration, terminal prompts, optional locks, replacement objects, pagers, and
-credential interaction. Source stderr is not returned to the Operator.
+All Git calls require Git 2.45+ and use `spawn` with `shell: false`, the configured absolute
+executable, fixed argument vectors, closed stdin unless a bounded object batch is required, bounded
+stdout and stderr, a hard timeout, and process-group teardown. The child environment is allowlisted
+and disables system and global Git configuration, terminal prompts, optional locks, replacement
+objects, lazy fetching, pagers, and credential interaction. Source stderr is not returned to the
+Operator.
 
 The allowlist contains only the read operations needed to:
 
@@ -144,7 +145,9 @@ Acquisition performs the following bounded sequence:
 
 1. Revalidate repository identity and resolve the selected base and head references.
 2. Persist or reuse the Project, Change Proposal, Change Intent version, Local Repository Source,
-   and a Review Revision in `acquiring` state with exact base/head object IDs.
+   and a Review Revision in `acquiring` state with exact base/head object IDs. Before committing a
+   new or retried acquisition, take a per-revision session lease and retain that same database
+   client through artifact completion or failure.
 3. Enumerate both trees, rejecting absolute paths, empty segments, `.` or `..` segments, NUL bytes,
    unsupported modes or types, duplicate paths, excessive path lengths, excessive counts, missing
    objects, and inconsistent object IDs.
@@ -173,8 +176,14 @@ source root no longer exists.
 If acquisition fails, Kestrel removes only the explicitly resolved staging directory, records the
 Revision State as `unavailable` with a bounded reason code, and exposes no artifact locator. It
 never changes or deletes the Operator repository. Startup reconciliation removes abandoned staging
-directories and marks stale `acquiring` revisions unavailable; finalized but unreferenced artifacts
-are quarantined for later retention handling rather than guessed at or attached automatically.
+directories and marks an `acquiring` revision stale only after 30 minutes and only when a
+nonblocking advisory-lock probe confirms that no live per-revision lease owns it; finalized but
+unreferenced artifacts are quarantined for later retention handling rather than guessed at or
+attached automatically. When final artifact publication succeeded but database completion failed,
+the lifecycle lock and a row lock resolve ambiguous commit state. An `available` row preserves the
+artifact. An `acquiring` row quarantines that exact locator before committing `unavailable`, so a
+live retry cannot collide with an orphan final directory. Post-rename fsync failure rolls
+publication back to staging and removes it; an existing final directory is never overwritten.
 
 ## Durable data model
 
@@ -185,6 +194,11 @@ private review modes.
 
 Provider observation columns become optional. A Project may have local source, provider metadata, or
 both. Existing public GitHub identity uniqueness remains in force when provider columns are present.
+If separately created local-first and provider-first Projects later resolve to the same repository,
+the local Project remains canonical and the provider Project becomes an internal direct alias.
+Existing source and Review Revision rows retain their physical Project IDs, while canonical reads
+aggregate both histories. Alias constraints reject nested or cross-family targets, and startup
+attachment reconciliation chooses one current source per canonical Project family.
 
 ### `local_repository_sources`
 
@@ -205,6 +219,10 @@ Provider identifiers become nullable and a constrained proposal kind distinguish
 from provider-observed proposals. A local proposal has a stable identity derived from Project plus
 exact base/head object IDs. Provider-observed proposals retain their existing unique provider
 identity. Both variants share the same Change Proposal contract and Review Revision path.
+Convergence applies the same direct-alias model to proposals. Provider-shaped and local-shaped alias
+rows preserve their original immutable histories but are excluded from the public inbox. Current
+Change Intent and Review Revision reads aggregate the canonical proposal plus its direct aliases;
+intent version numbers advance across that whole family.
 
 ### `change_intents`
 
@@ -252,6 +270,10 @@ sanitized GitHub identity and exact commits match one #89 proposal, Kestrel atta
 source to it even when the optional proposal ID is absent. An explicit proposal ID that does not
 match repository and exact commits is rejected. Without a match, Kestrel creates or reuses one local
 Change Proposal.
+
+When more than one provider proposal names the same exact commit pair, implicit selection fails
+closed. An explicit matching proposal ID identifies which provider proposal may enrich an existing
+local proposal; the remaining proposals retain distinct canonical identities and histories.
 
 Success returns the affected Project, Local Repository Source, Change Proposal, Change Intent
 version, and available Review Revision. Expected discovery, validation, size, missing-object,
@@ -326,6 +348,10 @@ repository-defined commands.
 - local Project/proposal creation, public GitHub attachment, retries, concurrency, and repeated
   requests are idempotent;
 - failure and restart reconciliation expose no partially usable revision;
+- occupied local/provider Project convergence, proposal aliases, restart attachment selection, and
+  response-time canonicalization preserve one logical inbox without rewriting retained history;
+- fault injection covers post-rename parent fsync, existing final artifacts, and the ordered
+  artifact-quarantine/database-failure handoff;
 - authentication, CSRF, payload limits, stable errors, and absence of local path leakage hold.
 
 ### Black-box and PWA seam

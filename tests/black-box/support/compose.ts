@@ -1,7 +1,8 @@
 import { execFile, spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
-import { access } from "node:fs/promises";
-import { dirname } from "node:path";
+import { access, chmod, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -17,6 +18,7 @@ export interface RunningStack {
   executeSql(sql: string): Promise<void>;
   executeWebModule(source: string): Promise<string>;
   fetchApi(path: string, init?: RequestInit): Promise<Response>;
+  logs(service: string): Promise<string>;
   resetOperatorPassword(password: string): Promise<string>;
   readonly sessionCookie: string;
   restart(...services: string[]): Promise<void>;
@@ -35,7 +37,20 @@ export const TEST_OPERATOR_CREDENTIALS: OperatorTestCredentials = {
 };
 
 export interface StartStackOptions {
+  repositoryRoot?: string;
+  reviewRevisionMaxBytes?: number;
+  reviewRevisionMaxObjects?: number;
   sessionSigningKey?: string;
+}
+
+function isContained(parent: string, candidate: string): boolean {
+  const pathFromParent = relative(parent, candidate);
+  return (
+    pathFromParent === "" ||
+    (!pathFromParent.startsWith(`..${sep}`) &&
+      pathFromParent !== ".." &&
+      !isAbsolute(pathFromParent))
+  );
 }
 
 function executeWithInput(
@@ -117,11 +132,42 @@ function dockerEnvironment(docker: string): NodeJS.ProcessEnv {
 export async function startStack(options: StartStackOptions = {}): Promise<RunningStack> {
   const docker = await resolveDocker();
   const project = `kestrel-black-box-${randomUUID().slice(0, 8)}`;
+  const generatedTemporaryRoot =
+    options.repositoryRoot === undefined
+      ? await mkdtemp(join(tmpdir(), "kestrel-black-box-repositories-"))
+      : null;
+  const generatedRepositoryRoot =
+    generatedTemporaryRoot === null ? null : join(generatedTemporaryRoot, "repositories");
+  if (generatedRepositoryRoot !== null) {
+    await mkdir(generatedRepositoryRoot, { mode: 0o755 });
+    await chmod(generatedRepositoryRoot, 0o755);
+  }
+  const canonicalGeneratedRepositoryRoot =
+    generatedRepositoryRoot === null ? null : await realpath(generatedRepositoryRoot);
+  const canonicalGeneratedTemporaryRoot =
+    generatedTemporaryRoot === null ? null : await realpath(generatedTemporaryRoot);
+  const configuredRepositoryRoot = options.repositoryRoot ?? canonicalGeneratedRepositoryRoot;
+  if (configuredRepositoryRoot === null) {
+    throw new Error("Black-box repository root setup failed");
+  }
+  const repositoryRoot = await realpath(configuredRepositoryRoot);
+  const generatedGitToolsRoot = await mkdtemp(join(tmpdir(), "kestrel-black-box-git-tools-"));
+  const gitRecorder = join(generatedGitToolsRoot, "git-recorder");
+  await writeFile(
+    gitRecorder,
+    "#!/bin/sh\nprintf '%s\\n' \"$*\" >> /tmp/kestrel-git-commands.log\n/usr/bin/env >> /tmp/kestrel-git-environment.log\nprintf '%s\\n' '-- invocation --' >> /tmp/kestrel-git-environment.log\nexec /usr/bin/git \"$@\"\n",
+    { mode: 0o755 },
+  );
+  const canonicalGitToolsRoot = await realpath(generatedGitToolsRoot);
   const composeArgs = ["compose", "-p", project, "-f", "compose.yaml", "-f", "compose.test.yaml"];
   const environment = {
     ...dockerEnvironment(docker),
     KESTREL_MIGRATOR_DATABASE_PASSWORD: randomBytes(32).toString("base64url"),
     KESTREL_RUNTIME_DATABASE_PASSWORD: randomBytes(32).toString("base64url"),
+    KESTREL_TEST_REPOSITORY_ROOT: repositoryRoot,
+    KESTREL_TEST_GIT_RECORDER: gitRecorder,
+    KESTREL_TEST_REVIEW_MAX_BYTES: String(options.reviewRevisionMaxBytes ?? 10 * 1024 * 1024),
+    KESTREL_TEST_REVIEW_MAX_OBJECTS: String(options.reviewRevisionMaxObjects ?? 10_000),
     SESSION_SIGNING_KEY: options.sessionSigningKey ?? randomBytes(32).toString("base64url"),
   };
 
@@ -132,6 +178,28 @@ export async function startStack(options: StartStackOptions = {}): Promise<Runni
     await execFileAsync(docker, [...composeArgs, "down", "--volumes", "--remove-orphans"], {
       env: environment,
     });
+    if (canonicalGeneratedTemporaryRoot !== null) {
+      const canonicalTemporaryRoot = await realpath(tmpdir());
+      if (
+        !isContained(canonicalTemporaryRoot, canonicalGeneratedTemporaryRoot) ||
+        !canonicalGeneratedTemporaryRoot.startsWith(
+          join(canonicalTemporaryRoot, "kestrel-black-box-repositories-"),
+        )
+      ) {
+        throw new Error("Refusing to remove unexpected black-box repository root");
+      }
+      await rm(canonicalGeneratedTemporaryRoot, { force: true, recursive: true });
+    }
+    const canonicalTemporaryRoot = await realpath(tmpdir());
+    if (
+      !isContained(canonicalTemporaryRoot, canonicalGitToolsRoot) ||
+      !canonicalGitToolsRoot.startsWith(
+        join(canonicalTemporaryRoot, "kestrel-black-box-git-tools-"),
+      )
+    ) {
+      throw new Error("Refusing to remove unexpected black-box Git tools root");
+    }
+    await rm(canonicalGitToolsRoot, { force: true, recursive: true });
   }
 
   async function resolvePublishedUrl(service: string, containerPort: string): Promise<string> {
@@ -195,6 +263,20 @@ export async function startStack(options: StartStackOptions = {}): Promise<Runni
     let sessionCookie: string | null = null;
     await waitForJson(`${apiUrl}/health/ready`);
     await waitForJson(pwaUrl);
+    await execFileAsync(
+      docker,
+      [
+        ...composeArgs,
+        "exec",
+        "--no-TTY",
+        "web",
+        "node",
+        "--input-type=module",
+        "--eval",
+        "import { constants } from 'node:fs'; import { access } from 'node:fs/promises'; await access('/fixtures/repositories', constants.R_OK | constants.X_OK);",
+      ],
+      { env: environment },
+    );
 
     return {
       get apiUrl() {
@@ -304,6 +386,14 @@ export async function startStack(options: StartStackOptions = {}): Promise<Runni
           headers.set("X-Kestrel-CSRF", csrfToken);
         }
         return fetch(new URL(path, apiUrl), { ...init, headers });
+      },
+      async logs(service) {
+        const { stdout } = await execFileAsync(
+          docker,
+          [...composeArgs, "logs", "--no-color", "--tail=160", service],
+          { env: environment, maxBuffer: 4 * 1024 * 1024 },
+        );
+        return stdout;
       },
       resetOperatorPassword,
       async restart(...services) {

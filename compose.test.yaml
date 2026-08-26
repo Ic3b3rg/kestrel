@@ -5,9 +5,29 @@ services:
   web:
     environment:
       EVENT_RETENTION_LIMIT: 8
+      GH_TOKEN: provider-client-canary
+      GITHUB_TOKEN: provider-client-canary
+      GIT_ASKPASS: /fixtures/repositories/kestrel/.git/kestrel-command-canary
+      LOCAL_GIT_EXECUTABLE: /fixtures/git-tools/git-recorder
+      LOCAL_REPOSITORY_ROOTS: '["/fixtures/repositories"]'
+      REVIEW_REVISION_MAX_BYTES: ${KESTREL_TEST_REVIEW_MAX_BYTES:-10485760}
+      REVIEW_REVISION_MAX_OBJECTS: ${KESTREL_TEST_REVIEW_MAX_OBJECTS:-10000}
+      GIT_SSH: /fixtures/repositories/kestrel/.git/kestrel-command-canary
+      GIT_SSH_COMMAND: /fixtures/repositories/kestrel/.git/kestrel-command-canary
+      SSH_ASKPASS: /fixtures/repositories/kestrel/.git/kestrel-command-canary
+      SSH_AUTH_SOCK: /fixtures/repositories/kestrel/.git/kestrel-command-canary
     ports: !override
       - "127.0.0.1::3000"
     restart: "no"
+    volumes:
+      - type: bind
+        source: ${KESTREL_TEST_REPOSITORY_ROOT:?KESTREL_TEST_REPOSITORY_ROOT must be set}
+        target: /fixtures/repositories
+        read_only: true
+      - type: bind
+        source: ${KESTREL_TEST_GIT_RECORDER:?KESTREL_TEST_GIT_RECORDER must be set}
+        target: /fixtures/git-tools/git-recorder
+        read_only: true
 
   worker:
     environment:

@@ -1,14 +1,24 @@
 import { resolve } from "node:path";
 
 import { buildApp } from "./app.js";
+import {
+  createLocalRepositoryService,
+  inspectLocalSourceAttachments,
+} from "./routes/local-repository-sources.js";
+import { createReviewRevisionService } from "./routes/review-revisions.js";
 import { readSessionSigningKey } from "./session.js";
 
 import {
   createPgBoss,
   createPool,
+  readReferencedArtifactLocators,
   readDatabaseConfig,
   readEventRetentionLimit,
+  reconcileAcquiringRevisions,
+  reconcileLocalSourceAttachments,
+  withArtifactLifecycleLock,
 } from "@kestrel/database";
+import { readLocalSourceConfig, reconcileArtifactRoot } from "@kestrel/local-source";
 
 function readPort(value: string | undefined): number {
   const port = Number(value ?? "3000");
@@ -19,6 +29,7 @@ function readPort(value: string | undefined): number {
 }
 
 const config = readDatabaseConfig();
+const localSourceConfig = await readLocalSourceConfig();
 const pool = createPool(config.databaseUrl, "kestrel-web");
 const eventPool = createPool(config.databaseUrl, "kestrel-web-events", {
   connectionTimeoutMillis: 2_000,
@@ -28,13 +39,25 @@ const boss = createPgBoss({
   applicationName: "kestrel-web-pgboss",
   databaseUrl: config.databaseUrl,
 });
+const localRepositoryService = createLocalRepositoryService(localSourceConfig, pool);
+await withArtifactLifecycleLock(pool, async (lockedPool) => {
+  await reconcileAcquiringRevisions(lockedPool);
+  const referenced = await readReferencedArtifactLocators(lockedPool);
+  await reconcileArtifactRoot(localSourceConfig, referenced);
+  await reconcileLocalSourceAttachments(
+    lockedPool,
+    await inspectLocalSourceAttachments(localSourceConfig),
+  );
+});
 const app = await buildApp({
   boss,
   eventPool,
   eventRetentionLimit: readEventRetentionLimit(),
+  localRepositoryService,
   pool,
   pwaRoot: process.env.PWA_ROOT ?? resolve(import.meta.dirname, "../../pwa/dist"),
   sessionSigningKey: readSessionSigningKey(),
+  reviewRevisionService: createReviewRevisionService(pool, localRepositoryService),
 });
 boss.on("error", (error) => {
   app.log.error({ err: error, event: "pgboss.error" });

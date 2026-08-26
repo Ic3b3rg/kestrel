@@ -1,8 +1,7 @@
 # Local Repository Review Revision Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
-> (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use
-> checkbox (`- [ ]`) syntax for tracking.
+> **Implementation workflow:** Execute this plan with the repository `$implement` skill and finish
+> with its required `$code-review` pass. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Deliver issue #90's authenticated local-first path from an authorized read-only Git
 repository to an immutable, project-scoped, exact Review Revision that remains usable after its
@@ -14,7 +13,7 @@ coordinates that boundary with PostgreSQL lifecycle records; versioned Zod contr
 free of filesystem paths and command surfaces. Existing public GitHub observations remain optional
 metadata on the same Project and matching Change Proposal.
 
-**Tech Stack:** Node 24, TypeScript 6 strict mode, Git 2.39+ plumbing, Fastify 5, React 19/Vite 8,
+**Tech Stack:** Node 24, TypeScript 6 strict mode, Git 2.45+ plumbing, Fastify 5, React 19/Vite 8,
 Zod 4, PostgreSQL 18, Vitest 4, Playwright 1.62, Docker Compose.
 
 **Spec:** `docs/superpowers/specs/2026-08-26-local-repository-review-revision-design.md`
@@ -163,7 +162,7 @@ Zod 4, PostgreSQL 18, Vitest 4, Playwright 1.62, Docker Compose.
 
 ### Runtime and end-to-end evidence
 
-- `Dockerfile`, `compose.yaml`, `compose.test.yaml`: validated Git 2.39+ runtime, explicit read-only
+- `Dockerfile`, `compose.yaml`, `compose.test.yaml`: validated Git 2.45+ runtime, explicit read-only
   source mounts, and Kestrel-owned artifact volume; no home/SSH/provider mounts.
 - `tests/black-box/support/git-fixture.ts`, `compose.ts`: exact fixture commits, source mutation
   fingerprints, configurable roots, and artifact inspection seam.
@@ -652,10 +651,11 @@ export interface BeginReviewRevisionResult {
   revision: ReviewRevision;
 }
 
-export function beginReviewRevision(
+export function withReviewRevisionAcquisitionLease<T>(
   pool: DatabasePool,
   input: BeginReviewRevisionInput,
-): Promise<BeginReviewRevisionResult>;
+  operation: (begun: BeginReviewRevisionResult, leasedPool: DatabasePool) => Promise<T> | T,
+): Promise<T>;
 export function completeReviewRevision(
   pool: DatabasePool,
   input: CompleteReviewRevisionInput,
@@ -720,12 +720,15 @@ to the runtime role and extend allowed minimized audit event types.
 
 - [ ] **Step 4: Implement lifecycle transactions and provider matching**
 
-`beginReviewRevision` upserts/reuses the Project and local source, matches an existing #89 proposal
-only when sanitized owner/name plus exact base/head IDs agree, rejects an explicit mismatch, creates
-or reuses a local proposal otherwise, reuses an identical current Change Intent or appends a new
-Operator-submitted version, and inserts or locks the exact revision in `acquiring` state. A later
-intent version may become current on the proposal while an already-available exact source revision
-remains the same immutable revision.
+`withReviewRevisionAcquisitionLease` upserts/reuses the Project and local source, matches an
+existing #89 proposal only when sanitized owner/name plus exact base/head IDs agree, rejects an
+explicit mismatch, creates or reuses a local proposal otherwise, reuses an identical current Change
+Intent or appends a new Operator-submitted version, and inserts or locks the exact revision in
+`acquiring` state. A later intent version may become current on the proposal while an
+already-available exact source revision remains the same immutable revision. Before committing a new
+or retried acquisition, it takes a per-revision session advisory lease and holds the same client
+through retain and complete-or-fail. Stale recovery uses the corresponding nonblocking transaction
+advisory lock, so it skips live work but reclaims an orphan after 30 minutes.
 
 `completeReviewRevision` locks the acquiring row and transitions it once with relative locator,
 digest, count, and bytes in the same transaction as Project source availability and audit append.
@@ -823,7 +826,8 @@ exact inventory members, resolves both to commit IDs, and returns those IDs plus
 state. Before publishing inventory, the concrete web service inspects every bounded discovery
 candidate and omits candidates that fail repository/containment validation; a systemic Git runtime
 failure returns `SERVICE_UNAVAILABLE`. It joins verified repository IDs to database attachment state
-without exposing stored locators. Only after exact ref resolution call `beginReviewRevision`.
+without exposing stored locators. Only after exact ref resolution call
+`withReviewRevisionAcquisitionLease`.
 
 On `acquire`, retain and verify the artifact, then complete the database transition and return 201.
 On `already_available`, return the existing strict response with 200. On `acquiring`, return
@@ -831,9 +835,10 @@ On `already_available`, return the existing strict response with 200. On `acquir
 return the mapped status; do not return a partial response or artifact locator. If final artifact
 creation succeeds but database completion fails, quarantine that exact just-created locator before
 recording failure; a quarantine failure is logged without deleting or exposing the artifact. After
-`beginReviewRevision` returns `acquire`, wrap retain/complete-or-fail in
-`withArtifactLifecycleLock`, using the same lock as startup reconciliation. A concurrent request can
-still observe the committed `acquiring` row and receive 409 instead of waiting for artifact I/O.
+When `withReviewRevisionAcquisitionLease` reports `acquire`, wrap retain/complete-or-fail in
+`withArtifactLifecycleLock` on its leased pool, using the same lifecycle lock as startup
+reconciliation. A concurrent request can still observe the committed `acquiring` row and receive 409
+instead of waiting for artifact I/O.
 
 - [ ] **Step 4: Generalize Project mapping at one compilation boundary**
 
@@ -1024,7 +1029,7 @@ source/artifact mounts.
 
 - [ ] **Step 4: Implement explicit release wiring**
 
-Install a Git 2.39+ runtime in the pinned Node 24 image and keep the process as non-root. Add
+Install a Git 2.45+ runtime in the pinned Node 24 image and keep the process as non-root. Add
 `LOCAL_REPOSITORY_ROOTS`, `LOCAL_GIT_EXECUTABLE`, `ARTIFACT_ROOT`, and both limits explicitly to
 Compose. The development file defaults to an empty roots array and a named Kestrel artifact volume;
 the black-box override receives one generated fixture parent and one Compose-project-scoped named
@@ -1117,7 +1122,7 @@ git commit -m "test: verify local-first Project flow in browser (#90)"
 - [ ] **Step 1: Document the operational boundary**
 
 Document the native/Compose variables with safe examples, empty-root disable behavior, read-only
-root requirement, separate artifact ownership, Git 2.39+ requirement, root changes/restart, opaque
+root requirement, separate artifact ownership, Git 2.45+ requirement, root changes/restart, opaque
 browser inventory, exact object closure, source-detachment durability, Change Intent confirmation,
 provider attachment, stable failure codes, and the explicit list of operations Kestrel never runs.
 

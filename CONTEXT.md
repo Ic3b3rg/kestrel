@@ -2,6 +2,24 @@
 
 Kestrel is the domain of understanding and governing software change across projects while keeping consequential decisions with the human. Review First V1 is the active release domain; the planned agentic-development lifecycle is reserved future language.
 
+## Implemented local-source boundary
+
+Review First V1 now retains an exact Review Revision only from a Local Repository Source beneath an
+Installation-configured read-only root. The Operator selects an opaque repository identity and two
+enumerated committed refs, then supplies or explicitly confirms Change Intent. Kestrel records the
+resolved base/head object IDs before retaining a verified, project-scoped commit/tree/blob closure;
+working-tree and index state are never source.
+
+Local Repository Source attachment, optional Provider Observation metadata, Revision State, and
+Model Access Availability remain independent Project facts. A matching public GitHub observation
+enriches the same Change Proposal but never supplies source. Detaching or losing the repository
+changes only source attachment state: an Available Review Revision remains immutable and usable.
+When independently created local and provider-first records later identify the same repository,
+Kestrel converges them behind one canonical Project and canonical Change Proposal while retaining
+the old IDs as internal aliases. Source and Review Revision rows are not rewritten; reads aggregate
+their immutable history into the canonical inbox, and restart reconciliation selects at most one
+attached source for the logical Project family.
+
 ## Language
 
 ### Review First V1

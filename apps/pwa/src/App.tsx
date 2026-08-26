@@ -6,6 +6,7 @@ import type {
   LoginCommand,
   ProjectInbox,
   ProjectUpserted,
+  ReviewRevisionAvailable,
   PublicGitHubPullRequestUrl,
   Session,
 } from "@kestrel/contracts";
@@ -415,6 +416,13 @@ export function App() {
     }
   };
 
+  const handleLocalRevisionAvailable = (result: ReviewRevisionAvailable): void => {
+    setProjectInbox((current) => withUpsertedProject(current, result.project));
+    setProjectReloadGeneration((current) => current + 1);
+    setProjectError(null);
+    setAnnouncement("The exact Review Revision is available.");
+  };
+
   const handleLogout = async (): Promise<void> => {
     const controller = new AbortController();
     projectCommandController.current?.abort();
@@ -504,7 +512,9 @@ export function App() {
           loading={projectLoading}
           online={online}
           pending={projectPending}
+          onAuthenticationError={handleAuthenticationBoundaryError}
           onOpen={(url) => void handleOpenPublicPullRequest(url)}
+          onLocalAvailable={handleLocalRevisionAvailable}
           onRetry={() => setProjectReloadGeneration((generation) => generation + 1)}
         />
       }

@@ -14,17 +14,21 @@ const openedProject: ProjectUpserted = {
         author: { login: "Ic3b3rg", providerId: "U_kestrel" },
         base: { objectId: "c".repeat(40), ref: "master" },
         canonicalUrl: publicPullRequestUrl,
+        changeIntent: null,
         head: { objectId: "d".repeat(40), ref: "operator-security" },
         id: "018f0f89-9192-755f-aa96-f72094c734df",
+        kind: "provider_observed",
         number: 88,
         observedAt: "2026-08-25T12:01:00.000Z",
         proposalState: "merged",
         providerId: "PR_kestrel",
+        reviewRevisions: [],
         title: "Secure and recover the Operator",
       },
     ],
     createdAt: "2026-08-25T12:00:00.000Z",
     id: "018f0f89-949a-75a8-8f61-6df78a843b1f",
+    localRepositorySource: null,
     modelAccess: "not_configured",
     providerObservation: {
       authentication: "none",
@@ -162,26 +166,26 @@ test.describe("observable Installation PWA", () => {
     await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page.getByRole("heading", { name: "Kestrel Installation" })).toBeVisible();
     expectedUnauthorizedResponses = 0;
-    await expect(page.getByRole("heading", { name: "Public pull requests" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: "openai/openai-node" })).toBeVisible();
-    await expect(page.getByText("Not acquired", { exact: true })).toBeVisible();
+    await expect(page.getByText("Not acquired", { exact: true })).toHaveCount(2);
     await expect(page.getByText("Public GitHub pull request", { exact: true })).toBeVisible();
-    await expect(page.getByText("Manual only", { exact: true })).toBeVisible();
+    await expect(page.getByText(/Refresh is Manual only/u)).toBeVisible();
     await expect(page.getByText("Not configured", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Refresh PR #1234" })).toBeVisible();
     await page
-      .getByLabel("Public GitHub pull request URL")
+      .getByLabel("Optional public GitHub pull request URL")
       .fill("https://github.com/openai/openai-node");
-    await page.getByRole("button", { name: "Open pull request" }).click();
+    await page.getByRole("button", { name: "Add provider context" }).click();
     await expect(page.getByRole("alert")).toContainText(
       "Enter a canonical public pull request URL",
     );
     expect(projectPostCount).toBe(0);
-    await page.getByLabel("Public GitHub pull request URL").fill(publicPullRequestUrl);
-    await page.getByRole("button", { name: "Open pull request" }).click();
+    await page.getByLabel("Optional public GitHub pull request URL").fill(publicPullRequestUrl);
+    await page.getByRole("button", { name: "Add provider context" }).click();
     await expect(page.getByRole("link", { name: "Ic3b3rg/kestrel" })).toBeVisible();
-    await expect(page.getByText("Base commit", { exact: true })).toHaveCount(2);
-    await expect(page.getByText("Head commit", { exact: true })).toHaveCount(2);
+    await expect(page.getByText("Observed base", { exact: true })).toHaveCount(2);
+    await expect(page.getByText("Observed head", { exact: true })).toHaveCount(2);
     await expect(page.getByRole("status")).toContainText(
       "Project refreshed from the public GitHub pull request.",
     );
@@ -210,7 +214,14 @@ test.describe("observable Installation PWA", () => {
       .textContent();
     expect(installationId).not.toBeNull();
 
+    await page.getByRole("button", { name: "Open local repository" }).click();
+    await expect(page.getByRole("dialog", { name: "Retain an exact change" })).toBeVisible();
+    const dialogAccessibility = await new AxeBuilder({ page })
+      .include(".local-repository-dialog")
+      .analyze();
+    expect(dialogAccessibility.violations).toEqual([]);
     await context.setOffline(true);
+    await expect(page.getByRole("dialog", { name: "Retain an exact change" })).toHaveCount(0);
     await expect(
       page.getByRole("heading", { name: "Reconnect to view product data" }),
     ).toBeVisible();
