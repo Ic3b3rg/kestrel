@@ -1,8 +1,8 @@
 # Kestrel
 
 This repository contains an authenticated, observable Kestrel Installation path and the first
-repository-access path: one local Operator can open a public github.com pull request without GitHub
-credentials. PostgreSQL is the only durable authority.
+Provider Observation path: one local Operator can open a public github.com pull request without
+GitHub credentials. PostgreSQL is the only durable authority.
 
 ## Start the development Installation
 
@@ -86,7 +86,7 @@ refresh.
 This path identifies the observed base and head commits but does not yet acquire their source. It is
 limited by GitHub's shared unauthenticated allowance of 60 REST API requests per hour per
 Installation IP and never falls back to credentials. Private repositories, local source acquisition,
-model access, GitHub Enterprise, GitLab, and automatic synchronization remain out of scope.
+model access, GitHub Enterprise, GitLab, and Provider Synchronization remain out of scope.
 
 Useful endpoints on port 3000:
 

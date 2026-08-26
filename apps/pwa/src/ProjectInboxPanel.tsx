@@ -39,7 +39,7 @@ function formatObservedAt(value: string): string {
   }).format(new Date(value));
 }
 
-function AccessFacts({ project }: { project: Project }) {
+function ProjectFacts({ project }: { project: Project }) {
   return (
     <dl className="project-facts">
       <div>
@@ -50,16 +50,16 @@ function AccessFacts({ project }: { project: Project }) {
         </dd>
       </div>
       <div>
-        <dt>GitHub context</dt>
+        <dt>Provider observation</dt>
         <dd>
-          <strong>Public pull request metadata</strong>
+          <strong>Public GitHub pull request</strong>
           <span>Read without a GitHub account or token.</span>
         </dd>
       </div>
       <div>
-        <dt>Synchronization</dt>
+        <dt>Refresh</dt>
         <dd>
-          <strong>Manual refresh</strong>
+          <strong>Manual only</strong>
           <span>Kestrel contacts GitHub only when you open or refresh this pull request.</span>
         </dd>
       </div>
@@ -250,7 +250,7 @@ export function ProjectInboxPanel(props: ProjectInboxPanelProps) {
                 </div>
                 <code>{project.id}</code>
               </div>
-              <AccessFacts project={project} />
+              <ProjectFacts project={project} />
               <div className="proposal-list">
                 {project.changeProposals.map((changeProposal) => (
                   <ChangeProposalRecord

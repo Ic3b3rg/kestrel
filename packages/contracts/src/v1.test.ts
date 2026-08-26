@@ -181,47 +181,54 @@ describe("V1 public contracts", () => {
     }
   });
 
-  it("represents public source, provider context, synchronization, and model access separately", () => {
-    expect(
-      ProjectInboxSchema.parse({
-        schemaVersion: 1,
-        projects: [
-          {
-            id: "018f0f89-949a-75a8-8f61-6df78a843b1e",
-            repositoryAccess: {
-              authentication: "none",
-              kind: "public_github",
-              synchronization: "manual",
-            },
-            repository: {
-              canonicalUrl: "https://github.com/openai/openai-node",
-              name: "openai-node",
-              owner: "openai",
-              providerId: "R_kgDOGx",
-            },
-            sourceAvailability: "not_acquired",
-            providerContext: "public_pull_request",
-            modelAccess: "not_configured",
-            createdAt: "2026-08-24T12:00:00.000Z",
-            updatedAt: "2026-08-24T12:01:00.000Z",
-            changeProposals: [
-              {
-                id: "018f0f89-9192-755f-aa96-f72094c734dd",
-                providerId: "PR_kwDOGx",
-                number: 1234,
-                title: "Keep repository access explicit",
-                canonicalUrl: "https://github.com/openai/openai-node/pull/1234",
-                proposalState: "open",
-                base: { objectId: "a".repeat(40), ref: "main" },
-                head: { objectId: "b".repeat(40), ref: "repository-access" },
-                author: { login: "octocat", providerId: "U_kgDOA" },
-                observedAt: "2026-08-24T12:01:00.000Z",
-              },
-            ],
+  it("keeps a public GitHub Provider Observation separate from source and model access", () => {
+    const inbox = ProjectInboxSchema.parse({
+      schemaVersion: 1,
+      projects: [
+        {
+          id: "018f0f89-949a-75a8-8f61-6df78a843b1e",
+          providerObservation: {
+            authentication: "none",
+            kind: "public_github",
+            refresh: "manual",
           },
-        ],
-      }),
-    ).toBeDefined();
+          repository: {
+            canonicalUrl: "https://github.com/openai/openai-node",
+            name: "openai-node",
+            owner: "openai",
+            providerId: "R_kgDOGx",
+          },
+          sourceAvailability: "not_acquired",
+          modelAccess: "not_configured",
+          createdAt: "2026-08-24T12:00:00.000Z",
+          updatedAt: "2026-08-24T12:01:00.000Z",
+          changeProposals: [
+            {
+              id: "018f0f89-9192-755f-aa96-f72094c734dd",
+              providerId: "PR_kwDOGx",
+              number: 1234,
+              title: "Keep repository access explicit",
+              canonicalUrl: "https://github.com/openai/openai-node/pull/1234",
+              proposalState: "open",
+              base: { objectId: "a".repeat(40), ref: "main" },
+              head: { objectId: "b".repeat(40), ref: "provider-observation" },
+              author: { login: "octocat", providerId: "U_kgDOA" },
+              observedAt: "2026-08-24T12:01:00.000Z",
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(inbox.projects[0]).toMatchObject({
+      providerObservation: {
+        authentication: "none",
+        kind: "public_github",
+        refresh: "manual",
+      },
+      sourceAvailability: "not_acquired",
+    });
+    expect(inbox.projects[0]).not.toHaveProperty("repositoryAccess");
   });
 
   it("generates strict JSON Schema and a deterministic OpenAPI 3.1 document", () => {

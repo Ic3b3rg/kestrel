@@ -13,7 +13,7 @@ function projectRow(overrides: Partial<ProjectDatabaseRow> = {}): ProjectDatabas
     base_ref_snapshot: "main",
     created_at: new Date("2026-08-24T12:00:00.000Z"),
     head_object_id: "b".repeat(40),
-    head_ref_snapshot: "repository-access",
+    head_ref_snapshot: "provider-observation",
     id: projectId,
     observed_at: new Date("2026-08-24T12:01:00.000Z"),
     proposal_canonical_url: "https://github.com/openai/openai-node/pull/1234",
@@ -24,7 +24,7 @@ function projectRow(overrides: Partial<ProjectDatabaseRow> = {}): ProjectDatabas
     proposal_title: "Keep repository access explicit",
     provider: "github",
     provider_repository_id: "R_kgDOGx",
-    repository_access_kind: "public_github",
+    provider_observation_kind: "public_github",
     repository_canonical_url_snapshot: "https://github.com/openai/openai-node",
     repository_name_snapshot: "openai-node",
     repository_owner_snapshot: "openai",
@@ -58,17 +58,16 @@ describe("Project persistence mapping", () => {
           createdAt: "2026-08-24T12:00:00.000Z",
           id: projectId,
           modelAccess: "not_configured",
-          providerContext: "public_pull_request",
+          providerObservation: {
+            authentication: "none",
+            kind: "public_github",
+            refresh: "manual",
+          },
           repository: {
             canonicalUrl: "https://github.com/openai/openai-node",
             name: "openai-node",
             owner: "openai",
             providerId: "R_kgDOGx",
-          },
-          repositoryAccess: {
-            authentication: "none",
-            kind: "public_github",
-            synchronization: "manual",
           },
           sourceAvailability: "not_acquired",
           updatedAt: "2026-08-24T12:01:00.000Z",
@@ -81,9 +80,9 @@ describe("Project persistence mapping", () => {
     expect(() => mapProjectRows([projectRow({ author_provider_id: null })])).toThrow();
   });
 
-  it("fails closed for an unsupported repository-access kind", () => {
+  it("fails closed for an unsupported Provider Observation kind", () => {
     expect(() =>
-      mapProjectRows([projectRow({ repository_access_kind: "local_repository" })]),
-    ).toThrow("Unsupported Repository Access kind");
+      mapProjectRows([projectRow({ provider_observation_kind: "local_repository" })]),
+    ).toThrow("Unsupported Provider Observation kind");
   });
 });

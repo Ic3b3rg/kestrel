@@ -145,7 +145,7 @@ describe("observable Kestrel Installation", () => {
               },
               sha: "${"a".repeat(40)}",
             },
-            head: { ref: "repository-access", sha: "${"b".repeat(40)}" },
+            head: { ref: "provider-observation", sha: "${"b".repeat(40)}" },
             merged: false,
             merged_at: null,
             node_id: "PR_kwDOGx",
@@ -200,7 +200,7 @@ describe("observable Kestrel Installation", () => {
     expect(beforeRestart.projects).toHaveLength(1);
     expect(beforeRestart.projects[0]?.changeProposals).toHaveLength(1);
     expect(beforeRestart.projects[0]).toMatchObject({
-      repositoryAccess: { authentication: "none", synchronization: "manual" },
+      providerObservation: { authentication: "none", kind: "public_github", refresh: "manual" },
       repository: { owner: "openai", name: "openai-node" },
       changeProposals: [{ number: 1234 }],
     });

@@ -29,7 +29,7 @@ export interface ProjectDatabaseRow {
   proposal_title: string;
   provider: string;
   provider_repository_id: string;
-  repository_access_kind: string;
+  provider_observation_kind: string;
   repository_canonical_url_snapshot: string;
   repository_name_snapshot: string;
   repository_owner_snapshot: string;
@@ -62,8 +62,8 @@ function mapAuthor(row: ProjectDatabaseRow): ChangeProposal["author"] {
 export function mapProjectRows(rows: readonly ProjectDatabaseRow[]): ProjectInbox {
   const projects = new Map<string, Project>();
   for (const row of rows) {
-    if (row.repository_access_kind !== "public_github" || row.provider !== "github") {
-      throw new Error(`Unsupported Repository Access kind: ${row.repository_access_kind}`);
+    if (row.provider_observation_kind !== "public_github" || row.provider !== "github") {
+      throw new Error(`Unsupported Provider Observation kind: ${row.provider_observation_kind}`);
     }
     let project = projects.get(row.id);
     if (project === undefined) {
@@ -72,17 +72,16 @@ export function mapProjectRows(rows: readonly ProjectDatabaseRow[]): ProjectInbo
         createdAt: row.created_at.toISOString(),
         id: row.id,
         modelAccess: "not_configured",
-        providerContext: "public_pull_request",
+        providerObservation: {
+          authentication: "none",
+          kind: "public_github",
+          refresh: "manual",
+        },
         repository: {
           canonicalUrl: row.repository_canonical_url_snapshot,
           name: row.repository_name_snapshot,
           owner: row.repository_owner_snapshot,
           providerId: row.provider_repository_id,
-        },
-        repositoryAccess: {
-          authentication: "none",
-          kind: "public_github",
-          synchronization: "manual",
         },
         sourceAvailability: "not_acquired",
         updatedAt: row.updated_at.toISOString(),
@@ -107,7 +106,7 @@ export function mapProjectRows(rows: readonly ProjectDatabaseRow[]): ProjectInbo
 
 const PROJECT_ROWS_SELECT = `
   SELECT p.id,
-         p.repository_access_kind,
+         p.provider_observation_kind,
          p.provider,
          p.provider_repository_id,
          p.repository_owner_snapshot,
@@ -168,7 +167,7 @@ export async function upsertPublicGitHubProject(
       `
         INSERT INTO projects (
           installation_id,
-          repository_access_kind,
+          provider_observation_kind,
           provider,
           provider_repository_id,
           repository_owner_snapshot,
@@ -257,7 +256,7 @@ export async function upsertPublicGitHubProject(
       eventType: "project.public_github_observed",
       facts: {
         proposalNumber: proposal.number,
-        repositoryAccessKind: "public_github",
+        providerObservationKind: "public_github",
       },
       outcome: "succeeded",
       targetId: projectId,

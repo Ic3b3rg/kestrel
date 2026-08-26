@@ -1,7 +1,7 @@
 CREATE TABLE projects (
   id uuid PRIMARY KEY DEFAULT uuidv7(),
   installation_id uuid NOT NULL REFERENCES installations(id) ON DELETE CASCADE,
-  repository_access_kind text NOT NULL CHECK (repository_access_kind = 'public_github'),
+  provider_observation_kind text NOT NULL CHECK (provider_observation_kind = 'public_github'),
   provider text NOT NULL CHECK (provider = 'github'),
   provider_repository_id text NOT NULL CHECK (
     char_length(provider_repository_id) BETWEEN 1 AND 256
@@ -56,7 +56,7 @@ CREATE INDEX change_proposals_project_observed_idx
 ON change_proposals (project_id, observed_at DESC, id);
 
 COMMENT ON TABLE projects IS
-'One repository scoped by an explicit Repository Access route.';
+'One repository observed through bounded provider metadata kept separate from source access.';
 
 COMMENT ON TABLE change_proposals IS
 'Mutable provider observation kept separate from future immutable Review Revisions.';

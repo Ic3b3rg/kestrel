@@ -669,12 +669,28 @@
                 ],
                 "type": "string"
               },
-              "providerContext": {
-                "enum": [
-                  "public_pull_request",
-                  "not_applicable"
+              "providerObservation": {
+                "additionalProperties": false,
+                "properties": {
+                  "authentication": {
+                    "const": "none",
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "public_github",
+                    "type": "string"
+                  },
+                  "refresh": {
+                    "const": "manual",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "authentication",
+                  "kind",
+                  "refresh"
                 ],
-                "type": "string"
+                "type": "object"
               },
               "repository": {
                 "additionalProperties": false,
@@ -709,29 +725,6 @@
                 ],
                 "type": "object"
               },
-              "repositoryAccess": {
-                "additionalProperties": false,
-                "properties": {
-                  "authentication": {
-                    "const": "none",
-                    "type": "string"
-                  },
-                  "kind": {
-                    "const": "public_github",
-                    "type": "string"
-                  },
-                  "synchronization": {
-                    "const": "manual",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "authentication",
-                  "kind",
-                  "synchronization"
-                ],
-                "type": "object"
-              },
               "sourceAvailability": {
                 "enum": [
                   "not_acquired",
@@ -748,10 +741,9 @@
             },
             "required": [
               "id",
-              "repositoryAccess",
+              "providerObservation",
               "repository",
               "sourceAvailability",
-              "providerContext",
               "modelAccess",
               "createdAt",
               "updatedAt",
@@ -923,12 +915,28 @@
               ],
               "type": "string"
             },
-            "providerContext": {
-              "enum": [
-                "public_pull_request",
-                "not_applicable"
+            "providerObservation": {
+              "additionalProperties": false,
+              "properties": {
+                "authentication": {
+                  "const": "none",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "public_github",
+                  "type": "string"
+                },
+                "refresh": {
+                  "const": "manual",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "authentication",
+                "kind",
+                "refresh"
               ],
-              "type": "string"
+              "type": "object"
             },
             "repository": {
               "additionalProperties": false,
@@ -963,29 +971,6 @@
               ],
               "type": "object"
             },
-            "repositoryAccess": {
-              "additionalProperties": false,
-              "properties": {
-                "authentication": {
-                  "const": "none",
-                  "type": "string"
-                },
-                "kind": {
-                  "const": "public_github",
-                  "type": "string"
-                },
-                "synchronization": {
-                  "const": "manual",
-                  "type": "string"
-                }
-              },
-              "required": [
-                "authentication",
-                "kind",
-                "synchronization"
-              ],
-              "type": "object"
-            },
             "sourceAvailability": {
               "enum": [
                 "not_acquired",
@@ -1002,10 +987,9 @@
           },
           "required": [
             "id",
-            "repositoryAccess",
+            "providerObservation",
             "repository",
             "sourceAvailability",
-            "providerContext",
             "modelAccess",
             "createdAt",
             "updatedAt",

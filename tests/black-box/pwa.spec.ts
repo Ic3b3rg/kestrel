@@ -26,17 +26,16 @@ const openedProject: ProjectUpserted = {
     createdAt: "2026-08-25T12:00:00.000Z",
     id: "018f0f89-949a-75a8-8f61-6df78a843b1f",
     modelAccess: "not_configured",
-    providerContext: "public_pull_request",
+    providerObservation: {
+      authentication: "none",
+      kind: "public_github",
+      refresh: "manual",
+    },
     repository: {
       canonicalUrl: "https://github.com/Ic3b3rg/kestrel",
       name: "kestrel",
       owner: "Ic3b3rg",
       providerId: "R_kestrel",
-    },
-    repositoryAccess: {
-      authentication: "none",
-      kind: "public_github",
-      synchronization: "manual",
     },
     sourceAvailability: "not_acquired",
     updatedAt: "2026-08-25T12:01:00.000Z",
@@ -53,7 +52,7 @@ test.describe("observable Installation PWA", () => {
       WITH project AS (
         INSERT INTO projects (
           installation_id,
-          repository_access_kind,
+          provider_observation_kind,
           provider,
           provider_repository_id,
           repository_owner_snapshot,
@@ -92,7 +91,7 @@ test.describe("observable Installation PWA", () => {
              'open',
              'main',
              '${"a".repeat(40)}',
-             'repository-access',
+             'provider-observation',
              '${"b".repeat(40)}',
              'U_kgDOA',
              'octocat'
@@ -166,8 +165,8 @@ test.describe("observable Installation PWA", () => {
     await expect(page.getByRole("heading", { name: "Public pull requests" })).toBeVisible();
     await expect(page.getByRole("link", { name: "openai/openai-node" })).toBeVisible();
     await expect(page.getByText("Not acquired", { exact: true })).toBeVisible();
-    await expect(page.getByText("Public pull request metadata", { exact: true })).toBeVisible();
-    await expect(page.getByText("Manual refresh", { exact: true })).toBeVisible();
+    await expect(page.getByText("Public GitHub pull request", { exact: true })).toBeVisible();
+    await expect(page.getByText("Manual only", { exact: true })).toBeVisible();
     await expect(page.getByText("Not configured", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Refresh PR #1234" })).toBeVisible();
     await page

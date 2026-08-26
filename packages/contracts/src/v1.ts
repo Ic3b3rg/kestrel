@@ -46,10 +46,10 @@ export const OpenPublicGitHubPullRequestCommandSchema = z.strictObject({
   url: PublicGitHubPullRequestUrlSchema,
 });
 
-export const RepositoryAccessSchema = z.strictObject({
+export const ProviderObservationSchema = z.strictObject({
   authentication: z.literal("none"),
   kind: z.literal("public_github"),
-  synchronization: z.literal("manual"),
+  refresh: z.literal("manual"),
 });
 
 export const RepositorySnapshotSchema = z.strictObject({
@@ -89,10 +89,9 @@ export const ChangeProposalSchema = z.strictObject({
 
 export const ProjectSchema = z.strictObject({
   id: KestrelIdSchema,
-  repositoryAccess: RepositoryAccessSchema,
+  providerObservation: ProviderObservationSchema,
   repository: RepositorySnapshotSchema,
   sourceAvailability: z.enum(["not_acquired", "available", "unavailable"]),
-  providerContext: z.enum(["public_pull_request", "not_applicable"]),
   modelAccess: z.enum(["not_configured"]),
   createdAt: UtcDateTimeSchema,
   updatedAt: UtcDateTimeSchema,
