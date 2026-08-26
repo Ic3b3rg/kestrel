@@ -4,6 +4,14 @@ This repository contains an authenticated, observable Kestrel Installation path 
 Provider Observation path: one local Operator can open a public github.com pull request without
 GitHub credentials. PostgreSQL is the only durable authority.
 
+Review First V1 is [local-first](./docs/adr/0002-make-review-first-v1-local-first.md): every review
+must be materialized from exact commits available through an authorized local Git repository. Public
+GitHub and the Operator's existing host `gh` session may provide optional pull-request discovery,
+but Kestrel stores no provider credential. Supported VPS/cloud operation, GitHub App, webhooks,
+GitLab, and remote availability are deferred. The Compose workflow documented below is the currently
+implemented development scaffold; it does not yet satisfy the host source-control path, whose
+implementation frontier is GitHub issue #90.
+
 ## Start the development Installation
 
 Requirements:
@@ -151,8 +159,8 @@ npm run contracts:check
 - `packages/contracts` owns versioned Zod, JSON Schema, and OpenAPI contracts.
 - `packages/database` owns SQL migrations and node-postgres queries; there is no ORM.
 
-TLS/Caddy, authenticated repository-provider connections, source acquisition, model access, and
-review workflows are delivered by later issues.
+Local Repository Source acquisition, model access, and review workflows are delivered by later
+issues. TLS/Caddy and Repository Provider Connections are outside the local-first V1 contract.
 
 The development Compose file keeps database ownership out of the long-running services. The one-shot
 migration and role-preparation containers use the database owner; web and worker connect as
