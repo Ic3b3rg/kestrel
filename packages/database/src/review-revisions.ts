@@ -285,7 +285,7 @@ async function findRepositoryProjects(
         AND p.canonical_project_id IS NULL
         AND (
           (
-            p.provider_observation_kind = 'public_github'
+            p.provider_observation_kind IN ('public_github', 'host_gh')
             AND p.provider = 'github'
             AND lower(p.repository_owner_snapshot) = lower($2)
             AND lower(p.repository_name_snapshot) = lower($3)
@@ -342,7 +342,8 @@ function sameGitHubRepository(
   github: { name: string; owner: string },
 ): boolean {
   return (
-    project.provider_observation_kind === "public_github" &&
+    (project.provider_observation_kind === "public_github" ||
+      project.provider_observation_kind === "host_gh") &&
     project.provider === "github" &&
     project.provider_repository_id !== null &&
     project.repository_canonical_url_snapshot !== null &&
@@ -540,7 +541,8 @@ async function mergeProviderProjectAsAlias(
 ): Promise<void> {
   if (
     providerProject.canonical_project_id !== null ||
-    providerProject.provider_observation_kind !== "public_github" ||
+    (providerProject.provider_observation_kind !== "public_github" &&
+      providerProject.provider_observation_kind !== "host_gh") ||
     providerProject.provider !== "github" ||
     providerProject.provider_repository_id === null ||
     providerProject.repository_owner_snapshot === null ||

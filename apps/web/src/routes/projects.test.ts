@@ -15,7 +15,12 @@ import {
   SESSION_COOKIE_NAME,
 } from "../session.js";
 import { PublicGitHubReadError, type PublicGitHubReader } from "../public-github.js";
-import { createProjectService, type ProjectService, type ProjectStore } from "./projects.js";
+import {
+  createProjectService,
+  type HostGitHubProjectService,
+  type ProjectService,
+  type ProjectStore,
+} from "./projects.js";
 
 const sessionSigningKey = Buffer.alloc(32, 7);
 const operatorId = "018f0f89-949a-75a8-8f61-6df78a843b1e";
@@ -107,12 +112,34 @@ describe("Project routes", () => {
     openPublicGitHubPullRequest: vi.fn<ProjectService["openPublicGitHubPullRequest"]>(),
     readInbox: vi.fn<ProjectService["readInbox"]>(),
   };
+  const hostGitHubProjectService = {
+    read: vi.fn<HostGitHubProjectService["read"]>(),
+    observe: vi.fn<HostGitHubProjectService["observe"]>(),
+  };
 
   beforeEach(async () => {
     projectService.openPublicGitHubPullRequest.mockReset();
     projectService.readInbox.mockReset();
     projectService.readInbox.mockResolvedValue({ schemaVersion: 1, projects: [project] });
     projectService.openPublicGitHubPullRequest.mockResolvedValue({ schemaVersion: 1, project });
+    hostGitHubProjectService.read.mockReset();
+    hostGitHubProjectService.observe.mockReset();
+    hostGitHubProjectService.read.mockResolvedValue({
+      schemaVersion: 1,
+      projectId: project.id,
+      route: "host_gh",
+      limitations: ["Manual refresh only"],
+      status: {
+        executableVersion: "2.87.0",
+        availability: "available",
+        host: "github.com",
+        authentication: "authenticated",
+        account: "operator",
+      },
+      pullRequests: [],
+      observedAt: "2026-08-27T10:00:00.000Z",
+    });
+    hostGitHubProjectService.observe.mockResolvedValue({ schemaVersion: 1, project });
     const pool = {
       query: vi.fn().mockResolvedValue({
         rowCount: 1,
@@ -132,6 +159,7 @@ describe("Project routes", () => {
       boss: { send: vi.fn() },
       eventRetentionLimit: 1_000,
       logger: false,
+      hostGitHubProjectService,
       pool: pool as never,
       projectService,
       sessionSigningKey,
@@ -154,6 +182,46 @@ describe("Project routes", () => {
       schemaVersion: 1,
       projects: [project],
     });
+  });
+
+  it("reads the attributed host GitHub route for one Project", async () => {
+    const response = await app.inject({
+      headers: authenticatedHeaders,
+      method: "GET",
+      url: `/api/v1/projects/${project.id}/provider/github?refresh=true`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      projectId: project.id,
+      route: "host_gh",
+      status: { account: "operator", host: "github.com" },
+    });
+    expect(hostGitHubProjectService.read).toHaveBeenCalledWith(
+      project.id,
+      true,
+      expect.any(AbortSignal),
+    );
+  });
+
+  it("selects one host pull request without accepting repository coordinates", async () => {
+    const response = await app.inject({
+      headers: { ...authenticatedHeaders, "content-type": "application/json" },
+      method: "POST",
+      payload: { number: 1234 },
+      url: `/api/v1/projects/${project.id}/provider/github/pull-requests/observe`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(hostGitHubProjectService.observe).toHaveBeenCalledWith(
+      project.id,
+      1234,
+      expect.objectContaining({ actorId: operatorId }),
+      expect.any(AbortSignal),
+    );
+    expect(JSON.stringify(hostGitHubProjectService.observe.mock.calls[0])).not.toContain(
+      "openai-node",
+    );
   });
 
   it("fails closed when Project storage cannot be read", async () => {

@@ -6,6 +6,7 @@ import {
   inspectLocalSourceAttachments,
 } from "./routes/local-repository-sources.js";
 import { createReviewRevisionService } from "./routes/review-revisions.js";
+import { createHostGitHubProjectService } from "./routes/projects.js";
 import { readSessionSigningKey } from "./session.js";
 
 import {
@@ -54,6 +55,7 @@ const app = await buildApp({
   eventPool,
   eventRetentionLimit: readEventRetentionLimit(),
   localRepositoryService,
+  hostGitHubProjectService: createHostGitHubProjectService(pool),
   pool,
   pwaRoot: process.env.PWA_ROOT ?? resolve(import.meta.dirname, "../../pwa/dist"),
   sessionSigningKey: readSessionSigningKey(),

@@ -8,6 +8,7 @@ import {
 } from "@kestrel/contracts";
 
 import { OpenLocalRepositoryForm } from "./OpenLocalRepositoryForm.js";
+import { HostGitHubProjectPanel } from "./HostGitHubProjectPanel.js";
 
 interface ProjectInboxPanelProps {
   error: string | null;
@@ -18,6 +19,8 @@ interface ProjectInboxPanelProps {
   onAuthenticationError?: (error: unknown) => boolean;
   onLocalAvailable?: (result: ReviewRevisionAvailable) => void;
   onOpen: (url: PublicGitHubPullRequestUrl) => void;
+  onHostObserved?: (project: Project) => void;
+  onHostRefresh?: (projectId: string, number: number) => void;
   onRetry: () => void;
 }
 
@@ -100,11 +103,19 @@ function ProjectFacts({ project }: { project: Project }) {
       <div>
         <dt>Provider metadata</dt>
         <dd>
-          <strong>{provider === null ? "Not observed" : "Public GitHub pull request"}</strong>
+          <strong>
+            {provider === null
+              ? "Not observed"
+              : provider.kind === "host_gh"
+                ? "GitHub through host session"
+                : "Public GitHub pull request"}
+          </strong>
           <span>
             {provider === null
               ? "No Provider observation is attached."
-              : "Provider observation is read without a GitHub account or token."}
+              : provider.kind === "host_gh"
+                ? `Observed as ${provider.account} on ${provider.host}; Kestrel stores no token.`
+                : "Provider observation is read without a GitHub account or token."}
           </span>
         </dd>
       </div>
@@ -184,7 +195,7 @@ function ChangeProposalRecord({
 }: {
   changeProposal: ChangeProposal;
   disabled: boolean;
-  onRefresh: (url: PublicGitHubPullRequestUrl) => void;
+  onRefresh: () => void;
 }) {
   const revision = changeProposal.reviewRevisions[0];
   if (!isProviderChangeProposal(changeProposal)) {
@@ -236,7 +247,7 @@ function ChangeProposalRecord({
           className="secondary-action proposal-refresh"
           type="button"
           disabled={disabled}
-          onClick={() => onRefresh(changeProposal.canonicalUrl)}
+          onClick={onRefresh}
         >
           Refresh PR #{changeProposal.number}
         </button>
@@ -405,7 +416,11 @@ export function ProjectInboxPanel(props: ProjectInboxPanelProps) {
                     </>
                   ) : (
                     <>
-                      <p>PUBLIC GITHUB / NO AUTHENTICATION</p>
+                      <p>
+                        {project.providerObservation?.kind === "host_gh"
+                          ? "GITHUB / HOST SESSION"
+                          : "PUBLIC GITHUB / NO AUTHENTICATION"}
+                      </p>
                       <h3>
                         <a href={project.repository.canonicalUrl}>
                           {project.repository.owner}/{project.repository.name}
@@ -417,13 +432,31 @@ export function ProjectInboxPanel(props: ProjectInboxPanelProps) {
                 <code>{project.id}</code>
               </div>
               <ProjectFacts project={project} />
+              {project.localRepositorySource?.state === "attached" ? (
+                <HostGitHubProjectPanel
+                  projectId={project.id}
+                  disabled={unavailable}
+                  onObserved={(observed) => props.onHostObserved?.(observed)}
+                />
+              ) : null}
               <div className="proposal-list">
                 {project.changeProposals.map((changeProposal) => (
                   <ChangeProposalRecord
                     changeProposal={changeProposal}
                     disabled={unavailable}
                     key={changeProposal.id}
-                    onRefresh={props.onOpen}
+                    onRefresh={() => {
+                      if (
+                        project.providerObservation?.kind === "host_gh" &&
+                        isProviderChangeProposal(changeProposal)
+                      ) {
+                        props.onHostRefresh?.(project.id, changeProposal.number);
+                        return;
+                      }
+                      if (isProviderChangeProposal(changeProposal)) {
+                        props.onOpen(changeProposal.canonicalUrl);
+                      }
+                    }}
                   />
                 ))}
               </div>

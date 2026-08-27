@@ -174,6 +174,30 @@ describe("ProjectInboxPanel", () => {
     expect(html).not.toContain("/private/");
   });
 
+  it("labels an authenticated host observation without claiming public anonymous access", () => {
+    const project = populatedInbox.projects[0];
+    if (project === undefined) throw new Error("Provider fixture is unavailable");
+    const html = render({
+      schemaVersion: 1,
+      projects: [
+        {
+          ...project,
+          providerObservation: {
+            kind: "host_gh",
+            authentication: "host_session",
+            refresh: "manual",
+            host: "github.com",
+            account: "operator",
+          },
+        },
+      ],
+    });
+    expect(html).toContain("GITHUB / HOST SESSION");
+    expect(html).toContain("GitHub through host session");
+    expect(html).toContain("operator on github.com");
+    expect(html).not.toContain("PUBLIC GITHUB / NO AUTHENTICATION");
+  });
+
   it("renders retained revision facts on an enriched provider proposal", () => {
     const project = populatedInbox.projects[0];
     const proposal = project?.changeProposals[0];
