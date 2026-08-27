@@ -50,9 +50,12 @@ export function HostGitHubProjectPanel({
         <>
           <p>
             <strong>
-              {inbox.status.account}@{inbox.status.host}
+              {inbox.status.account === null
+                ? inbox.status.host
+                : `${inbox.status.account}@${inbox.status.host}`}
             </strong>{" "}
-            · gh {inbox.status.executableVersion} · Authenticated
+            · gh {inbox.status.executableVersion ?? "unavailable"} ·{" "}
+            {inbox.status.authentication.replaceAll("_", " ")}
           </p>
           <p>
             Route: host session. Manual refresh only; metadata never supplies source or starts

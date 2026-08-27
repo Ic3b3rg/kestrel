@@ -88,6 +88,7 @@ export interface UpsertPublicGitHubProjectInput {
 }
 
 export interface ProjectGitHubCoordinates {
+  installationId: string;
   owner: string;
   repository: string;
   repositoryId: string;
@@ -768,7 +769,7 @@ async function upsertProviderProposal(
   }
 }
 
-export async function upsertPublicGitHubProject(
+async function upsertGitHubObservedProject(
   pool: DatabasePool,
   input: UpsertPublicGitHubProjectInput,
 ): Promise<ProjectUpserted> {
@@ -808,7 +809,10 @@ export async function upsertPublicGitHubProject(
       causationId: null,
       correlationId: input.correlationId,
       denialReason: null,
-      eventType: "project.public_github_observed",
+      eventType:
+        input.route?.kind === "host_gh"
+          ? "project.host_github_observed"
+          : "project.public_github_observed",
       facts: {
         proposalNumber: proposal.number,
         providerObservationKind: input.route?.kind ?? "public_github",
@@ -827,6 +831,26 @@ export async function upsertPublicGitHubProject(
   }
 }
 
+export function upsertPublicGitHubProject(
+  pool: DatabasePool,
+  input: UpsertPublicGitHubProjectInput,
+): Promise<ProjectUpserted> {
+  return upsertGitHubObservedProject(pool, {
+    actorId: input.actorId,
+    correlationId: input.correlationId,
+    observation: input.observation,
+  });
+}
+
+export function upsertHostGitHubProject(
+  pool: DatabasePool,
+  input: UpsertPublicGitHubProjectInput & {
+    route: { kind: "host_gh"; host: string; account: string };
+  },
+): Promise<ProjectUpserted> {
+  return upsertGitHubObservedProject(pool, input);
+}
+
 export async function readProjectGitHubCoordinates(
   pool: DatabasePool,
   projectId: string,
@@ -835,8 +859,10 @@ export async function readProjectGitHubCoordinates(
     github_owner_snapshot: string;
     github_name_snapshot: string;
     repository_id: string;
+    installation_id: string;
   }>(
-    `SELECT source.github_owner_snapshot, source.github_name_snapshot, source.repository_id
+    `SELECT source.github_owner_snapshot, source.github_name_snapshot, source.repository_id,
+            project.installation_id
      FROM local_repository_sources AS source
      INNER JOIN projects AS project ON project.id = source.project_id
      INNER JOIN installations AS installation ON installation.id = project.installation_id
@@ -853,6 +879,7 @@ export async function readProjectGitHubCoordinates(
   return row === undefined
     ? null
     : {
+        installationId: row.installation_id,
         owner: row.github_owner_snapshot,
         repository: row.github_name_snapshot,
         repositoryId: row.repository_id,

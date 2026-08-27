@@ -9,7 +9,9 @@ import { createHostGitHubCli, type HostGitHubError } from "./host-github.js";
 const projectId = "018f0f89-949a-75a8-8f61-6df78a843b1e";
 const temporaryDirectories: string[] = [];
 
-async function fakeGh(mode: "ok" | "malformed" | "slow" = "ok") {
+async function fakeGh(
+  mode: "ok" | "malformed" | "slow" | "account_drift" | "rate_limited" | "sso_denied" = "ok",
+) {
   const directory = await mkdtemp(join(tmpdir(), "kestrel-fake-gh-"));
   temporaryDirectories.push(directory);
   const executable = join(directory, "gh");
@@ -18,11 +20,13 @@ async function fakeGh(mode: "ok" | "malformed" | "slow" = "ok") {
 printf '%s\\n' "$*" >> '${log}'
 ${mode === "slow" ? "sleep 5" : ""}
 ${mode === "malformed" ? "printf 'not-json'; exit 0" : ""}
+${mode === "rate_limited" ? "printf 'API rate limit exceeded' >&2; exit 1" : ""}
+${mode === "sso_denied" ? "printf 'Resource protected by organization SAML enforcement' >&2; exit 1" : ""}
 case "$1 $2" in
   "version ") printf 'gh version 2.87.0 (test)\\n' ;;
   "api --hostname")
     case "$4" in
-      "/user") printf '{"login":"operator"}' ;;
+      "/user") ${mode === "account_drift" ? `if [ -f '${join(directory, "seen-user")}' ]; then printf '{"login":"intruder"}'; else touch '${join(directory, "seen-user")}'; printf '{"login":"operator"}'; fi` : 'printf \'{"login":"operator"}\''} ;;
       *) printf '{"id":1,"name":"kestrel","node_id":"R_test","owner":{"login":"Ic3b3rg"}}' ;;
     esac ;;
   "search prs")
@@ -67,6 +71,9 @@ describe("host GitHub CLI", () => {
     expect(commands).toContain("api --hostname github.com /repos/Ic3b3rg/kestrel");
     expect(commands.match(/search prs/g)).toHaveLength(3);
     expect(commands).not.toMatch(/token|auth status|--show-token/iu);
+    expect(commands).not.toMatch(
+      /(?:--method|-X)\s+(?:POST|PATCH|PUT|DELETE)|\bpr\s+(?:merge|close|comment|review)\b/iu,
+    );
   });
 
   it("rejects malformed output without exposing it", async () => {
@@ -102,5 +109,45 @@ describe("host GitHub CLI", () => {
         controller.signal,
       ),
     ).rejects.toEqual(expect.objectContaining({ kind: "cancelled" }));
+  });
+
+  it("terminates an in-flight command on cancellation", async () => {
+    const fake = await fakeGh("slow");
+    const controller = new AbortController();
+    const pending = createHostGitHubCli({
+      executable: fake.executable,
+      timeoutMs: 1_000,
+    }).readProjectInbox(projectId, { owner: "Ic3b3rg", repository: "kestrel" }, controller.signal);
+    setTimeout(() => controller.abort(), 20);
+    await expect(pending).rejects.toEqual(expect.objectContaining({ kind: "cancelled" }));
+  });
+
+  it("classifies rate limits without returning provider output", async () => {
+    const fake = await fakeGh("rate_limited");
+    await expect(
+      createHostGitHubCli({ executable: fake.executable }).readProjectInbox(projectId, {
+        owner: "Ic3b3rg",
+        repository: "kestrel",
+      }),
+    ).rejects.toEqual(expect.objectContaining({ kind: "rate_limited" }));
+  });
+
+  it("classifies SSO policy denial without exposing provider output", async () => {
+    const fake = await fakeGh("sso_denied");
+    await expect(
+      createHostGitHubCli({ executable: fake.executable }).readProjectInbox(projectId, {
+        owner: "Ic3b3rg",
+        repository: "kestrel",
+      }),
+    ).rejects.toEqual(expect.objectContaining({ kind: "access_denied" }));
+  });
+
+  it("fails closed when the active account drifts before selection", async () => {
+    const fake = await fakeGh("account_drift");
+    const cli = createHostGitHubCli({ executable: fake.executable });
+    expect(await cli.readActiveAccount()).toBe("operator");
+    await expect(
+      cli.observePullRequest({ owner: "Ic3b3rg", repository: "kestrel" }, 1, "operator"),
+    ).rejects.toEqual(expect.objectContaining({ kind: "access_denied" }));
   });
 });

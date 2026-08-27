@@ -54,7 +54,8 @@ export type HostGitHubErrorKind =
   | "rate_limited"
   | "invalid_response"
   | "timeout"
-  | "cancelled";
+  | "cancelled"
+  | "project_not_supported";
 
 export class HostGitHubError extends Error {
   constructor(public readonly kind: HostGitHubErrorKind) {
@@ -182,6 +183,20 @@ function parseJson<T>(schema: z.ZodType<T>, text: string): T {
   }
 }
 
+function parseSupportedVersion(text: string): string {
+  const match = /^gh version (\d+)\.(\d+)\.([^\s]+)(?:\s|$)/u.exec(text);
+  const major = match?.[1];
+  const minor = match?.[2];
+  const patch = match?.[3];
+  if (major === undefined || minor === undefined || patch === undefined) {
+    throw new HostGitHubError("invalid_response");
+  }
+  if (Number(major) < 2 || (Number(major) === 2 && Number(minor) < 40)) {
+    throw new HostGitHubError("unavailable");
+  }
+  return `${major}.${minor}.${patch}`;
+}
+
 function searchArgs(
   coordinates: Coordinates,
   filter: "all" | "authored" | "review_requested",
@@ -235,16 +250,36 @@ function normalizeSearch(groups: {
     );
 }
 
+function assertProjectPullRequest(coordinates: Coordinates, number: number, url: string): void {
+  if (
+    url.toLowerCase() !==
+    `https://${HOST}/${coordinates.owner}/${coordinates.repository}/pull/${String(number)}`.toLowerCase()
+  ) {
+    throw new HostGitHubError("invalid_response");
+  }
+}
+
 export function createHostGitHubCli(options: HostGitHubCliOptions = {}) {
   const executable = options.executable ?? process.env.KESTREL_GH_EXECUTABLE ?? "gh";
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   return {
+    async readVersion(signal?: AbortSignal): Promise<string> {
+      return parseSupportedVersion((await run(executable, ["version"], timeoutMs, signal)).stdout);
+    },
+    async readActiveAccount(signal?: AbortSignal): Promise<string> {
+      return parseJson(
+        AccountSchema,
+        (await run(executable, ["api", "--hostname", HOST, "/user"], timeoutMs, signal)).stdout,
+      ).login;
+    },
     async readProjectInbox(
       projectId: string,
       coordinates: Coordinates,
       signal?: AbortSignal,
     ): Promise<HostGitHubProjectInbox> {
-      const version = (await run(executable, ["version"], timeoutMs, signal)).stdout;
+      const executableVersion = parseSupportedVersion(
+        (await run(executable, ["version"], timeoutMs, signal)).stdout,
+      );
       const account = parseJson(
         AccountSchema,
         (await run(executable, ["api", "--hostname", HOST, "/user"], timeoutMs, signal)).stdout,
@@ -278,8 +313,10 @@ export function createHostGitHubCli(options: HostGitHubCliOptions = {}) {
         (await run(executable, searchArgs(coordinates, "review_requested"), timeoutMs, signal))
           .stdout,
       );
-      const parsedVersion = /^gh version ([^\s]+)(?:\s|$)/u.exec(version)?.[1];
-      if (parsedVersion === undefined) throw new HostGitHubError("invalid_response");
+      const pullRequests = normalizeSearch({ all, authored, review_requested });
+      for (const pullRequest of pullRequests) {
+        assertProjectPullRequest(coordinates, pullRequest.number, pullRequest.url);
+      }
       return HostGitHubProjectInboxSchema.parse({
         schemaVersion: 1,
         projectId,
@@ -289,13 +326,13 @@ export function createHostGitHubCli(options: HostGitHubCliOptions = {}) {
           "Provider metadata never supplies source or starts Review",
         ],
         status: {
-          executableVersion: parsedVersion,
+          executableVersion,
           availability: "available",
           host: HOST,
           authentication: "authenticated",
           account: account.login,
         },
-        pullRequests: normalizeSearch({ all, authored, review_requested }),
+        pullRequests,
         observedAt: new Date().toISOString(),
       });
     },
@@ -342,6 +379,14 @@ export function createHostGitHubCli(options: HostGitHubCliOptions = {}) {
         (await run(executable, ["api", "--hostname", HOST, "/user"], timeoutMs, signal)).stdout,
       );
       if (account.login !== expectedAccount) throw new HostGitHubError("access_denied");
+      if (
+        repository.owner.login.toLowerCase() !== coordinates.owner.toLowerCase() ||
+        repository.name.toLowerCase() !== coordinates.repository.toLowerCase() ||
+        pull.number !== number
+      ) {
+        throw new HostGitHubError("invalid_response");
+      }
+      assertProjectPullRequest(coordinates, pull.number, pull.url);
       return {
         repository: {
           canonicalUrl: `https://${HOST}/${coordinates.owner}/${coordinates.repository}`,

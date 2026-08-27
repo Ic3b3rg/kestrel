@@ -369,7 +369,8 @@
               "enum": [
                 "authenticated",
                 "needs_authentication",
-                "access_denied"
+                "access_denied",
+                "unknown"
               ],
               "type": "string"
             },
@@ -381,9 +382,16 @@
               "type": "string"
             },
             "executableVersion": {
-              "maxLength": 128,
-              "minLength": 1,
-              "type": "string"
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "host": {
               "maxLength": 253,

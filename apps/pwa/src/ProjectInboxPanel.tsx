@@ -102,11 +102,19 @@ function ProjectFacts({ project }: { project: Project }) {
       <div>
         <dt>Provider metadata</dt>
         <dd>
-          <strong>{provider === null ? "Not observed" : "Public GitHub pull request"}</strong>
+          <strong>
+            {provider === null
+              ? "Not observed"
+              : provider.kind === "host_gh"
+                ? "GitHub through host session"
+                : "Public GitHub pull request"}
+          </strong>
           <span>
             {provider === null
               ? "No Provider observation is attached."
-              : "Provider observation is read without a GitHub account or token."}
+              : provider.kind === "host_gh"
+                ? `Observed as ${provider.account} on ${provider.host}; Kestrel stores no token.`
+                : "Provider observation is read without a GitHub account or token."}
           </span>
         </dd>
       </div>
@@ -407,7 +415,11 @@ export function ProjectInboxPanel(props: ProjectInboxPanelProps) {
                     </>
                   ) : (
                     <>
-                      <p>PUBLIC GITHUB / NO AUTHENTICATION</p>
+                      <p>
+                        {project.providerObservation?.kind === "host_gh"
+                          ? "GITHUB / HOST SESSION"
+                          : "PUBLIC GITHUB / NO AUTHENTICATION"}
+                      </p>
                       <h3>
                         <a href={project.repository.canonicalUrl}>
                           {project.repository.owner}/{project.repository.name}

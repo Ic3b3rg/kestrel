@@ -111,10 +111,10 @@ export const OpenPublicGitHubPullRequestCommandSchema = z.strictObject({
 export const HostGitHubPullRequestGroupSchema = z.enum(["review_requested", "authored", "other"]);
 
 export const HostGitHubStatusSchema = z.strictObject({
-  executableVersion: z.string().min(1).max(128),
+  executableVersion: z.string().min(1).max(128).nullable(),
   availability: z.enum(["available", "unavailable"]),
   host: z.string().min(1).max(253),
-  authentication: z.enum(["authenticated", "needs_authentication", "access_denied"]),
+  authentication: z.enum(["authenticated", "needs_authentication", "access_denied", "unknown"]),
   account: z.string().min(1).max(100).nullable(),
 });
 

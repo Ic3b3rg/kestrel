@@ -22,6 +22,7 @@ import {
   readProjectInbox,
   readProjectGitHubCoordinates,
   upsertPublicGitHubProject,
+  upsertHostGitHubProject,
   type DatabasePool,
   type UpsertPublicGitHubProjectInput,
 } from "@kestrel/database";
@@ -67,21 +68,51 @@ export function createHostGitHubProjectService(pool: DatabasePool): HostGitHubPr
   const cache = new Map<string, { expiresAt: number; value: HostGitHubProjectInbox }>();
   const coordinates = async (projectId: string) => {
     const value = await readProjectGitHubCoordinates(pool, projectId);
-    if (value === null) throw new HostGitHubError("access_denied");
+    if (value === null) throw new HostGitHubError("project_not_supported");
     return value;
   };
   return {
     async read(projectId, refresh, signal) {
-      if (refresh) cache.delete(projectId);
-      const cached = cache.get(projectId);
-      if (cached !== undefined && cached.expiresAt > Date.now()) return cached.value;
       const projectCoordinates = await coordinates(projectId);
-      const value = await cli.readProjectInbox(projectId, projectCoordinates, signal);
-      cache.set(`${projectId}\0${value.status.host}\0${value.status.account ?? ""}`, {
-        expiresAt: Date.now() + 30_000,
-        value,
-      });
-      cache.set(projectId, { expiresAt: Date.now() + 30_000, value });
+      const prefix = `${projectCoordinates.installationId}\0${projectId}\0github.com\0`;
+      if (refresh) {
+        for (const key of cache.keys()) if (key.startsWith(prefix)) cache.delete(key);
+      }
+      let value: HostGitHubProjectInbox;
+      let executableVersion: string | null = null;
+      try {
+        executableVersion = await cli.readVersion(signal);
+        const account = await cli.readActiveAccount(signal);
+        const key = `${prefix}${account}`;
+        const cached = cache.get(key);
+        if (cached !== undefined && cached.expiresAt > Date.now()) return cached.value;
+        value = await cli.readProjectInbox(projectId, projectCoordinates, signal);
+        if (value.status.account !== account) throw new HostGitHubError("access_denied");
+        cache.set(key, { expiresAt: Date.now() + 30_000, value });
+      } catch (error) {
+        if (!(error instanceof HostGitHubError) || error.kind === "project_not_supported")
+          throw error;
+        return HostGitHubProjectInboxSchema.parse({
+          schemaVersion: 1,
+          projectId,
+          route: "host_gh",
+          limitations: ["Manual refresh only", "The failed observation was not cached"],
+          status: {
+            executableVersion,
+            availability: error.kind === "unavailable" ? "unavailable" : "available",
+            host: "github.com",
+            authentication:
+              error.kind === "needs_authentication"
+                ? "needs_authentication"
+                : error.kind === "access_denied"
+                  ? "access_denied"
+                  : "unknown",
+            account: null,
+          },
+          pullRequests: [],
+          observedAt: new Date().toISOString(),
+        });
+      }
       return value;
     },
     async observe(projectId, number, context, signal) {
@@ -89,13 +120,8 @@ export function createHostGitHubProjectService(pool: DatabasePool): HostGitHubPr
       const status = await cli.readProjectInbox(projectId, projectCoordinates, signal);
       const account = status.status.account;
       if (account === null) throw new HostGitHubError("needs_authentication");
-      const observation = await cli.observePullRequest(
-        projectCoordinates,
-        number,
-        account,
-        signal,
-      );
-      return upsertPublicGitHubProject(pool, {
+      const observation = await cli.observePullRequest(projectCoordinates, number, account, signal);
+      return upsertHostGitHubProject(pool, {
         ...context,
         observation,
         route: { kind: "host_gh", host: status.status.host, account: status.status.account ?? "" },
@@ -143,6 +169,23 @@ function rateLimitRetryAfter(reset: string | null): string {
   }
   const seconds = Number(reset) - Math.floor(Date.now() / 1_000);
   return String(Math.max(1, Math.min(3_600, seconds)));
+}
+
+async function withRequestCancellation<T>(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  task: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  request.raw.once("aborted", abort);
+  reply.raw.once("close", abort);
+  try {
+    return await task(controller.signal);
+  } finally {
+    request.raw.removeListener("aborted", abort);
+    reply.raw.removeListener("close", abort);
+  }
 }
 
 function sendPublicGitHubError(
@@ -264,9 +307,12 @@ export function registerProjectRoutes(
         .send(apiError(request, "INVALID_REQUEST", "The Project ID is invalid"));
     try {
       return HostGitHubProjectInboxSchema.parse(
-        await hostGitHub.read(
-          parsed.data,
-          (request.query as { refresh?: string }).refresh === "true",
+        await withRequestCancellation(request, reply, (signal) =>
+          hostGitHub.read(
+            parsed.data,
+            (request.query as { refresh?: string }).refresh === "true",
+            signal,
+          ),
         ),
       );
     } catch (error) {
@@ -287,7 +333,7 @@ export function registerProjectRoutes(
   });
   app.post(
     "/api/v1/projects/:projectId/provider/github/pull-requests/observe",
-    { config: AUTHENTICATED_MUTATION_ROUTE_CONFIG },
+    { bodyLimit: 128, config: AUTHENTICATED_MUTATION_ROUTE_CONFIG },
     async (request, reply) => {
       const { projectId } = request.params as { projectId: string };
       const parsedProject = KestrelIdSchema.safeParse(projectId);
@@ -301,10 +347,14 @@ export function registerProjectRoutes(
         throw new Error("Authenticated host GitHub route has no Operator session");
       try {
         return ProjectUpsertedSchema.parse(
-          await hostGitHub.observe(parsedProject.data, parsedCommand.data.number, {
-            actorId: session.operator.id,
-            correlationId: request.id,
-          }),
+          await withRequestCancellation(request, reply, (signal) =>
+            hostGitHub.observe(
+              parsedProject.data,
+              parsedCommand.data.number,
+              { actorId: session.operator.id, correlationId: request.id },
+              signal,
+            ),
+          ),
         );
       } catch (error) {
         if (error instanceof HostGitHubError)
