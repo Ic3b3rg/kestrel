@@ -7,6 +7,8 @@ import {
   EventCursorSchema,
   InstallationEventSchema,
   InstallationSnapshotSchema,
+  HostGitHubProjectInboxSchema,
+  ObserveHostGitHubPullRequestCommandSchema,
   LoginCommandSchema,
   OpenPublicGitHubPullRequestCommandSchema,
   LocalRepositoryInventorySchema,
@@ -24,6 +26,8 @@ import {
   type EventCursor,
   type InstallationEvent,
   type InstallationSnapshot,
+  type HostGitHubProjectInbox,
+  type ObserveHostGitHubPullRequestCommand,
   type LoginCommand,
   type OpenPublicGitHubPullRequestCommand,
   type LocalRepositoryInventory,
@@ -158,6 +162,44 @@ export async function fetchProjectInbox(signal?: AbortSignal): Promise<ProjectIn
     signal: signal ?? null,
   });
   return requireJson(response, ProjectInboxSchema, "Project inbox");
+}
+
+export async function fetchHostGitHubProjectInbox(
+  projectId: string,
+  refresh = false,
+  signal?: AbortSignal,
+): Promise<HostGitHubProjectInbox> {
+  const validatedId = ProjectInboxSchema.shape.projects.element.shape.id.parse(projectId);
+  const response = await fetch(
+    `/api/v1/projects/${encodeURIComponent(validatedId)}/provider/github${refresh ? "?refresh=true" : ""}`,
+    {
+      credentials: "same-origin",
+      headers: { Accept: "application/json" },
+      method: "GET",
+      signal: signal ?? null,
+    },
+  );
+  return requireJson(response, HostGitHubProjectInboxSchema, "host GitHub Project inbox");
+}
+
+export async function observeHostGitHubPullRequest(
+  projectId: string,
+  command: ObserveHostGitHubPullRequestCommand,
+  signal?: AbortSignal,
+): Promise<ProjectUpserted> {
+  const validatedId = ProjectInboxSchema.shape.projects.element.shape.id.parse(projectId);
+  const validated = ObserveHostGitHubPullRequestCommandSchema.parse(command);
+  const response = await fetch(
+    `/api/v1/projects/${encodeURIComponent(validatedId)}/provider/github/pull-requests/observe`,
+    {
+      body: JSON.stringify(validated),
+      credentials: "same-origin",
+      headers: authenticatedMutationHeaders(),
+      method: "POST",
+      signal: signal ?? null,
+    },
+  );
+  return requireJson(response, ProjectUpsertedSchema, "observed Project response");
 }
 
 export async function fetchLocalRepositories(

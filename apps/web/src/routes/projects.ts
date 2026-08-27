@@ -2,6 +2,9 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import {
   ApiErrorSchema,
+  HostGitHubProjectInboxSchema,
+  KestrelIdSchema,
+  ObserveHostGitHubPullRequestCommandSchema,
   OpenPublicGitHubPullRequestCommandSchema,
   ProjectInboxSchema,
   ProjectUpsertedSchema,
@@ -13,9 +16,11 @@ import {
   type OpenPublicGitHubPullRequestCommand,
   type ProjectInbox,
   type ProjectUpserted,
+  type HostGitHubProjectInbox,
 } from "@kestrel/contracts";
 import {
   readProjectInbox,
+  readProjectGitHubCoordinates,
   upsertPublicGitHubProject,
   type DatabasePool,
   type UpsertPublicGitHubProjectInput,
@@ -27,6 +32,7 @@ import {
   createPublicGitHubReader,
   type PublicGitHubReader,
 } from "../public-github.js";
+import { createHostGitHubCli, HostGitHubError } from "../host-github.js";
 
 export interface ProjectServiceContext {
   actorId: string;
@@ -44,6 +50,58 @@ export interface ProjectService {
 export interface ProjectStore {
   readInbox(): Promise<ProjectInbox>;
   upsert(input: UpsertPublicGitHubProjectInput): Promise<ProjectUpserted>;
+}
+
+export interface HostGitHubProjectService {
+  read(projectId: string, refresh: boolean, signal?: AbortSignal): Promise<HostGitHubProjectInbox>;
+  observe(
+    projectId: string,
+    number: number,
+    context: ProjectServiceContext,
+    signal?: AbortSignal,
+  ): Promise<ProjectUpserted>;
+}
+
+export function createHostGitHubProjectService(pool: DatabasePool): HostGitHubProjectService {
+  const cli = createHostGitHubCli();
+  const cache = new Map<string, { expiresAt: number; value: HostGitHubProjectInbox }>();
+  const coordinates = async (projectId: string) => {
+    const value = await readProjectGitHubCoordinates(pool, projectId);
+    if (value === null) throw new HostGitHubError("access_denied");
+    return value;
+  };
+  return {
+    async read(projectId, refresh, signal) {
+      if (refresh) cache.delete(projectId);
+      const cached = cache.get(projectId);
+      if (cached !== undefined && cached.expiresAt > Date.now()) return cached.value;
+      const projectCoordinates = await coordinates(projectId);
+      const value = await cli.readProjectInbox(projectId, projectCoordinates, signal);
+      cache.set(`${projectId}\0${value.status.host}\0${value.status.account ?? ""}`, {
+        expiresAt: Date.now() + 30_000,
+        value,
+      });
+      cache.set(projectId, { expiresAt: Date.now() + 30_000, value });
+      return value;
+    },
+    async observe(projectId, number, context, signal) {
+      const projectCoordinates = await coordinates(projectId);
+      const status = await cli.readProjectInbox(projectId, projectCoordinates, signal);
+      const account = status.status.account;
+      if (account === null) throw new HostGitHubError("needs_authentication");
+      const observation = await cli.observePullRequest(
+        projectCoordinates,
+        number,
+        account,
+        signal,
+      );
+      return upsertPublicGitHubProject(pool, {
+        ...context,
+        observation,
+        route: { kind: "host_gh", host: status.status.host, account: status.status.account ?? "" },
+      });
+    },
+  };
 }
 
 export function createProjectService(
@@ -122,7 +180,11 @@ function sendPublicGitHubError(
   }
 }
 
-export function registerProjectRoutes(app: FastifyInstance, service: ProjectService): void {
+export function registerProjectRoutes(
+  app: FastifyInstance,
+  service: ProjectService,
+  hostGitHub?: HostGitHubProjectService,
+): void {
   app.get(
     "/api/v1/projects",
     {
@@ -188,6 +250,70 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
         return reply
           .code(503)
           .send(apiError(request, "SERVICE_UNAVAILABLE", "Project storage is unavailable"));
+      }
+    },
+  );
+
+  if (hostGitHub === undefined) return;
+  app.get("/api/v1/projects/:projectId/provider/github", async (request, reply) => {
+    const { projectId } = request.params as { projectId: string };
+    const parsed = KestrelIdSchema.safeParse(projectId);
+    if (!parsed.success)
+      return reply
+        .code(400)
+        .send(apiError(request, "INVALID_REQUEST", "The Project ID is invalid"));
+    try {
+      return HostGitHubProjectInboxSchema.parse(
+        await hostGitHub.read(
+          parsed.data,
+          (request.query as { refresh?: string }).refresh === "true",
+        ),
+      );
+    } catch (error) {
+      if (error instanceof HostGitHubError) {
+        request.log.warn({ event: "project.host_github_read_failed", kind: error.kind });
+        return reply
+          .code(error.kind === "access_denied" ? 404 : 503)
+          .send(
+            apiError(
+              request,
+              error.kind === "access_denied" ? "NOT_FOUND" : "SERVICE_UNAVAILABLE",
+              "Host GitHub observation is unavailable",
+            ),
+          );
+      }
+      throw error;
+    }
+  });
+  app.post(
+    "/api/v1/projects/:projectId/provider/github/pull-requests/observe",
+    { config: AUTHENTICATED_MUTATION_ROUTE_CONFIG },
+    async (request, reply) => {
+      const { projectId } = request.params as { projectId: string };
+      const parsedProject = KestrelIdSchema.safeParse(projectId);
+      const parsedCommand = ObserveHostGitHubPullRequestCommandSchema.safeParse(request.body);
+      if (!parsedProject.success || !parsedCommand.success)
+        return reply
+          .code(400)
+          .send(apiError(request, "INVALID_REQUEST", "The observation request is invalid"));
+      const session = request.operatorSession;
+      if (session === null)
+        throw new Error("Authenticated host GitHub route has no Operator session");
+      try {
+        return ProjectUpsertedSchema.parse(
+          await hostGitHub.observe(parsedProject.data, parsedCommand.data.number, {
+            actorId: session.operator.id,
+            correlationId: request.id,
+          }),
+        );
+      } catch (error) {
+        if (error instanceof HostGitHubError)
+          return reply
+            .code(503)
+            .send(
+              apiError(request, "SERVICE_UNAVAILABLE", "Host GitHub observation is unavailable"),
+            );
+        throw error;
       }
     },
   );

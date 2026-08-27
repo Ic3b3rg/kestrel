@@ -8,6 +8,7 @@ import {
 } from "@kestrel/contracts";
 
 import { OpenLocalRepositoryForm } from "./OpenLocalRepositoryForm.js";
+import { HostGitHubProjectPanel } from "./HostGitHubProjectPanel.js";
 
 interface ProjectInboxPanelProps {
   error: string | null;
@@ -18,6 +19,7 @@ interface ProjectInboxPanelProps {
   onAuthenticationError?: (error: unknown) => boolean;
   onLocalAvailable?: (result: ReviewRevisionAvailable) => void;
   onOpen: (url: PublicGitHubPullRequestUrl) => void;
+  onHostObserved?: (project: Project) => void;
   onRetry: () => void;
 }
 
@@ -417,6 +419,13 @@ export function ProjectInboxPanel(props: ProjectInboxPanelProps) {
                 <code>{project.id}</code>
               </div>
               <ProjectFacts project={project} />
+              {project.localRepositorySource?.state === "attached" ? (
+                <HostGitHubProjectPanel
+                  projectId={project.id}
+                  disabled={unavailable}
+                  onObserved={(observed) => props.onHostObserved?.(observed)}
+                />
+              ) : null}
               <div className="proposal-list">
                 {project.changeProposals.map((changeProposal) => (
                   <ChangeProposalRecord

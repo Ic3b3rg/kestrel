@@ -33,9 +33,12 @@ export interface ProjectDatabaseRow {
   proposal_provider_id: string | null;
   proposal_state: "closed" | "merged" | "open" | "unknown" | null;
   proposal_title: string;
+  proposal_body?: string | null;
   provider: string | null;
   provider_repository_id: string | null;
   provider_observation_kind: string | null;
+  provider_host_snapshot?: string | null;
+  provider_account_snapshot?: string | null;
   repository_canonical_url_snapshot: string | null;
   repository_name_snapshot: string | null;
   repository_owner_snapshot: string | null;
@@ -81,6 +84,13 @@ export interface UpsertPublicGitHubProjectInput {
   actorId: string;
   correlationId: string;
   observation: PublicGitHubProjectObservation;
+  route?: { kind: "host_gh"; host: string; account: string };
+}
+
+export interface ProjectGitHubCoordinates {
+  owner: string;
+  repository: string;
+  repositoryId: string;
 }
 
 function mapAuthor(row: ProjectDatabaseRow): ProviderObservedChangeProposal["author"] {
@@ -94,7 +104,11 @@ function mapAuthor(row: ProjectDatabaseRow): ProviderObservedChangeProposal["aut
 }
 
 function mapProviderRepository(row: ProjectDatabaseRow): RepositorySnapshot | null {
-  if (row.provider_observation_kind !== null && row.provider_observation_kind !== "public_github") {
+  if (
+    row.provider_observation_kind !== null &&
+    row.provider_observation_kind !== "public_github" &&
+    row.provider_observation_kind !== "host_gh"
+  ) {
     throw new Error(`Unsupported Provider Observation kind: ${row.provider_observation_kind}`);
   }
   const values = [
@@ -111,7 +125,8 @@ function mapProviderRepository(row: ProjectDatabaseRow): RepositorySnapshot | nu
   }
   if (
     row.provider !== "github" ||
-    row.provider_observation_kind !== "public_github" ||
+    (row.provider_observation_kind !== "public_github" &&
+      row.provider_observation_kind !== "host_gh") ||
     row.provider_repository_id === null ||
     row.repository_owner_snapshot === null ||
     row.repository_name_snapshot === null ||
@@ -247,7 +262,15 @@ export function mapProjectRows(rows: readonly ProjectDatabaseRow[]): ProjectInbo
         providerObservation:
           repository === null
             ? null
-            : { authentication: "none", kind: "public_github", refresh: "manual" },
+            : row.provider_observation_kind === "host_gh"
+              ? {
+                  authentication: "host_session",
+                  kind: "host_gh",
+                  refresh: "manual",
+                  host: row.provider_host_snapshot ?? "",
+                  account: row.provider_account_snapshot ?? "",
+                }
+              : { authentication: "none", kind: "public_github", refresh: "manual" },
         repository,
         localRepositorySource: localSource,
         sourceAvailability: row.source_availability ?? "not_acquired",
@@ -271,6 +294,7 @@ export function mapProjectRows(rows: readonly ProjectDatabaseRow[]): ProjectInbo
           kind: "local",
           reviewRevisions: [],
           title: row.proposal_title,
+          ...(row.proposal_body == null ? {} : { body: row.proposal_body }),
           updatedAt: (row.proposal_updated_at ?? row.updated_at).toISOString(),
         };
       } else {
@@ -310,6 +334,8 @@ function projectRowsSelect(requiredRevisionId: "NULL::uuid" | "$2::uuid"): strin
   return `
   SELECT p.id,
          p.provider_observation_kind,
+         p.provider_host_snapshot,
+         p.provider_account_snapshot,
          p.provider,
          p.provider_repository_id,
          p.repository_owner_snapshot,
@@ -330,6 +356,7 @@ function projectRowsSelect(requiredRevisionId: "NULL::uuid" | "$2::uuid"): strin
          cp.provider_proposal_id AS proposal_provider_id,
          cp.provider_number AS proposal_number,
          cp.title_snapshot AS proposal_title,
+         cp.body_snapshot AS proposal_body,
          cp.canonical_url_snapshot AS proposal_canonical_url,
          cp.proposal_state,
          cp.base_ref_snapshot,
@@ -677,6 +704,7 @@ async function upsertProviderProposal(
     proposal.providerId,
     proposal.number,
     proposal.title,
+    proposal.body ?? null,
     proposal.canonicalUrl,
     proposal.proposalState,
     proposal.base.ref,
@@ -694,17 +722,18 @@ async function upsertProviderProposal(
             provider_proposal_id = $2,
             provider_number = $3,
             title_snapshot = $4,
-            canonical_url_snapshot = $5,
-            proposal_state = $6,
-            base_ref_snapshot = $7,
-            base_object_id = $8,
-            head_ref_snapshot = $9,
-            head_object_id = $10,
-            author_provider_id = $11,
-            author_login_snapshot = $12,
+            body_snapshot = $5,
+            canonical_url_snapshot = $6,
+            proposal_state = $7,
+            base_ref_snapshot = $8,
+            base_object_id = $9,
+            head_ref_snapshot = $10,
+            head_object_id = $11,
+            author_provider_id = $12,
+            author_login_snapshot = $13,
             observed_at = clock_timestamp(),
             updated_at = clock_timestamp()
-        WHERE id = $13 AND project_id = $1
+        WHERE id = $14 AND project_id = $1
       `,
       [...parameters, proposalId],
     );
@@ -720,6 +749,7 @@ async function upsertProviderProposal(
         provider_proposal_id,
         provider_number,
         title_snapshot,
+        body_snapshot,
         canonical_url_snapshot,
         proposal_state,
         base_ref_snapshot,
@@ -729,7 +759,7 @@ async function upsertProviderProposal(
         author_provider_id,
         author_login_snapshot
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
     `,
     parameters,
   );
@@ -747,6 +777,27 @@ export async function upsertPublicGitHubProject(
     await client.query("BEGIN");
     const installationId = await readInstallationId(client);
     const projectId = await resolveProviderProject(client, installationId, input.observation);
+    if (input.route !== undefined) {
+      const routed = await client.query(
+        `UPDATE projects
+         SET provider_observation_kind = 'host_gh',
+             provider_host_snapshot = $2,
+             provider_account_snapshot = $3,
+             updated_at = clock_timestamp()
+         WHERE id = $1 AND provider = 'github'`,
+        [projectId, input.route.host, input.route.account],
+      );
+      if (routed.rowCount !== 1) throw new Error("Host GitHub route did not match one Project");
+    } else {
+      await client.query(
+        `UPDATE projects
+         SET provider_observation_kind = 'public_github',
+             provider_host_snapshot = NULL,
+             provider_account_snapshot = NULL
+         WHERE id = $1 AND provider = 'github'`,
+        [projectId],
+      );
+    }
     const proposal = input.observation.proposal;
     await upsertProviderProposal(client, projectId, proposal);
 
@@ -760,7 +811,7 @@ export async function upsertPublicGitHubProject(
       eventType: "project.public_github_observed",
       facts: {
         proposalNumber: proposal.number,
-        providerObservationKind: "public_github",
+        providerObservationKind: input.route?.kind ?? "public_github",
       },
       outcome: "succeeded",
       targetId: projectId,
@@ -774,4 +825,36 @@ export async function upsertPublicGitHubProject(
   } finally {
     client.release();
   }
+}
+
+export async function readProjectGitHubCoordinates(
+  pool: DatabasePool,
+  projectId: string,
+): Promise<ProjectGitHubCoordinates | null> {
+  const result = await pool.query<{
+    github_owner_snapshot: string;
+    github_name_snapshot: string;
+    repository_id: string;
+  }>(
+    `SELECT source.github_owner_snapshot, source.github_name_snapshot, source.repository_id
+     FROM local_repository_sources AS source
+     INNER JOIN projects AS project ON project.id = source.project_id
+     INNER JOIN installations AS installation ON installation.id = project.installation_id
+     WHERE project.id = $1
+       AND project.canonical_project_id IS NULL
+       AND source.attachment_state = 'attached'
+       AND source.github_owner_snapshot IS NOT NULL
+       AND source.github_name_snapshot IS NOT NULL
+       AND installation.singleton = true
+     LIMIT 1`,
+    [projectId],
+  );
+  const row = result.rows[0];
+  return row === undefined
+    ? null
+    : {
+        owner: row.github_owner_snapshot,
+        repository: row.github_name_snapshot,
+        repositoryId: row.repository_id,
+      };
 }

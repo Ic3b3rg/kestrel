@@ -108,11 +108,54 @@ export const OpenPublicGitHubPullRequestCommandSchema = z.strictObject({
   url: PublicGitHubPullRequestUrlSchema,
 });
 
-export const ProviderObservationSchema = z.strictObject({
-  authentication: z.literal("none"),
-  kind: z.literal("public_github"),
-  refresh: z.literal("manual"),
+export const HostGitHubPullRequestGroupSchema = z.enum(["review_requested", "authored", "other"]);
+
+export const HostGitHubStatusSchema = z.strictObject({
+  executableVersion: z.string().min(1).max(128),
+  availability: z.enum(["available", "unavailable"]),
+  host: z.string().min(1).max(253),
+  authentication: z.enum(["authenticated", "needs_authentication", "access_denied"]),
+  account: z.string().min(1).max(100).nullable(),
 });
+
+export const HostGitHubPullRequestSummarySchema = z.strictObject({
+  number: z.number().int().positive().max(9_999_999_999),
+  title: z.string().min(1).max(512),
+  body: z.string().max(65_536),
+  url: PublicGitHubPullRequestUrlSchema,
+  author: z.string().min(1).max(100).nullable(),
+  updatedAt: UtcDateTimeSchema,
+  group: HostGitHubPullRequestGroupSchema,
+});
+
+export const HostGitHubProjectInboxSchema = z.strictObject({
+  schemaVersion: SchemaVersionSchema,
+  projectId: KestrelIdSchema,
+  route: z.literal("host_gh"),
+  limitations: z.array(z.string().min(1).max(256)).max(10),
+  status: HostGitHubStatusSchema,
+  pullRequests: z.array(HostGitHubPullRequestSummarySchema).max(300),
+  observedAt: UtcDateTimeSchema,
+});
+
+export const ObserveHostGitHubPullRequestCommandSchema = z.strictObject({
+  number: z.number().int().positive().max(9_999_999_999),
+});
+
+export const ProviderObservationSchema = z.discriminatedUnion("kind", [
+  z.strictObject({
+    authentication: z.literal("none"),
+    kind: z.literal("public_github"),
+    refresh: z.literal("manual"),
+  }),
+  z.strictObject({
+    authentication: z.literal("host_session"),
+    kind: z.literal("host_gh"),
+    refresh: z.literal("manual"),
+    host: z.string().min(1).max(253),
+    account: z.string().min(1).max(100),
+  }),
+]);
 
 export const RepositorySnapshotSchema = z.strictObject({
   canonicalUrl: z
@@ -214,6 +257,7 @@ export const ProviderObservedChangeProposalSchema = z.strictObject({
   providerId: GitHubOpaqueIdSchema,
   number: z.number().int().positive().max(9_999_999_999),
   title: z.string().min(1).max(512),
+  body: z.string().max(65_536).optional(),
   canonicalUrl: PublicGitHubPullRequestUrlSchema,
   proposalState: z.enum(["open", "merged", "closed", "unknown"]),
   base: GitRevisionPointerSchema,
@@ -497,6 +541,12 @@ export type LocalRepositoryInventoryItem = z.infer<typeof LocalRepositoryInvento
 export type LocalRepositoryReference = z.infer<typeof LocalRepositoryReferenceSchema>;
 export type LocalRepositoryReferences = z.infer<typeof LocalRepositoryReferencesSchema>;
 export type LocalRepositorySource = z.infer<typeof LocalRepositorySourceSchema>;
+export type HostGitHubProjectInbox = z.infer<typeof HostGitHubProjectInboxSchema>;
+export type HostGitHubPullRequestSummary = z.infer<typeof HostGitHubPullRequestSummarySchema>;
+export type HostGitHubStatus = z.infer<typeof HostGitHubStatusSchema>;
+export type ObserveHostGitHubPullRequestCommand = z.infer<
+  typeof ObserveHostGitHubPullRequestCommandSchema
+>;
 export type OpenPublicGitHubPullRequestCommand = z.infer<
   typeof OpenPublicGitHubPullRequestCommandSchema
 >;

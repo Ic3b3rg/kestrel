@@ -20,6 +20,7 @@ import {
   createDatabaseProjectService,
   registerProjectRoutes,
   type ProjectService,
+  type HostGitHubProjectService,
 } from "./routes/projects.js";
 import { registerSessionRoutes } from "./routes/session.js";
 import {
@@ -36,6 +37,7 @@ export interface BuildAppOptions {
   localRepositoryService?: LocalRepositoryService;
   pool: DatabasePool;
   projectService?: ProjectService;
+  hostGitHubProjectService?: HostGitHubProjectService;
   reviewRevisionService?: ReviewRevisionService;
   pwaRoot?: string;
   sessionSigningKey: Buffer;
@@ -116,6 +118,7 @@ export async function buildApp({
     listReferences: () => Promise.reject(new Error("Local repository access is not configured")),
   },
   projectService = createDatabaseProjectService(pool),
+  hostGitHubProjectService,
   reviewRevisionService = {
     retain: () => Promise.reject(new Error("Review Revision acquisition is not configured")),
   },
@@ -174,7 +177,7 @@ export async function buildApp({
   registerHealthRoutes(app, pool);
   registerInstallationRoutes(app, pool);
   registerOpenApiRoute(app);
-  registerProjectRoutes(app, projectService);
+  registerProjectRoutes(app, projectService, hostGitHubProjectService);
   registerLocalRepositoryRoutes(app, localRepositoryService);
   registerReviewRevisionRoutes(app, reviewRevisionService);
   if (pwaRoot !== undefined) {

@@ -514,6 +514,10 @@ export function App() {
           pending={projectPending}
           onAuthenticationError={handleAuthenticationBoundaryError}
           onOpen={(url) => void handleOpenPublicPullRequest(url)}
+          onHostObserved={(project) => {
+            setProjectInbox((current) => withUpsertedProject(current, project));
+            setAnnouncement("Project refreshed through the host GitHub session.");
+          }}
           onLocalAvailable={handleLocalRevisionAvailable}
           onRetry={() => setProjectReloadGeneration((generation) => generation + 1)}
         />

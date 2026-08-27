@@ -7,6 +7,7 @@ import {
   DiagnosticCommandSchema,
   EventCursorSchema,
   HealthStatusSchema,
+  HostGitHubProjectInboxSchema,
   InstallationEventSchema,
   InstallationSnapshotSchema,
   LoginCommandSchema,
@@ -14,6 +15,7 @@ import {
   LocalRepositoryInventorySchema,
   LocalRepositoryReferencesSchema,
   OpenPublicGitHubPullRequestCommandSchema,
+  ObserveHostGitHubPullRequestCommandSchema,
   ProjectInboxSchema,
   ProjectUpsertedSchema,
   RetainReviewRevisionCommandSchema,
@@ -79,6 +81,10 @@ export const openPublicGitHubPullRequestCommandJsonSchema = asJsonSchema(
 );
 export const projectInboxJsonSchema = asJsonSchema(ProjectInboxSchema);
 export const projectUpsertedJsonSchema = asJsonSchema(ProjectUpsertedSchema);
+export const hostGitHubProjectInboxJsonSchema = asJsonSchema(HostGitHubProjectInboxSchema);
+export const observeHostGitHubPullRequestCommandJsonSchema = asJsonSchema(
+  ObserveHostGitHubPullRequestCommandSchema,
+);
 export const localRepositoryInventoryJsonSchema = asJsonSchema(LocalRepositoryInventorySchema);
 export const localRepositoryReferencesJsonSchema = asJsonSchema(LocalRepositoryReferencesSchema);
 export const retainReviewRevisionCommandJsonSchema = asJsonSchema(
@@ -101,6 +107,10 @@ export const contractBundle = sortJson({
     ),
     ProjectInbox: asComponentSchema(projectInboxJsonSchema),
     ProjectUpserted: asComponentSchema(projectUpsertedJsonSchema),
+    HostGitHubProjectInbox: asComponentSchema(hostGitHubProjectInboxJsonSchema),
+    ObserveHostGitHubPullRequestCommand: asComponentSchema(
+      observeHostGitHubPullRequestCommandJsonSchema,
+    ),
     LocalRepositoryInventory: asComponentSchema(localRepositoryInventoryJsonSchema),
     LocalRepositoryReferences: asComponentSchema(localRepositoryReferencesJsonSchema),
     RetainReviewRevisionCommand: asComponentSchema(retainReviewRevisionCommandJsonSchema),
@@ -168,6 +178,10 @@ export const openApiDocument = sortJson({
       ),
       ProjectInbox: asComponentSchema(projectInboxJsonSchema),
       ProjectUpserted: asComponentSchema(projectUpsertedJsonSchema),
+      HostGitHubProjectInbox: asComponentSchema(hostGitHubProjectInboxJsonSchema),
+      ObserveHostGitHubPullRequestCommand: asComponentSchema(
+        observeHostGitHubPullRequestCommandJsonSchema,
+      ),
       LocalRepositoryInventory: asComponentSchema(localRepositoryInventoryJsonSchema),
       LocalRepositoryReferences: asComponentSchema(localRepositoryReferencesJsonSchema),
       RetainReviewRevisionCommand: asComponentSchema(retainReviewRevisionCommandJsonSchema),
@@ -667,6 +681,87 @@ export const openApiDocument = sortJson({
           "503": {
             content: { "application/json": { schema: schemaReference("ApiError") } },
             description: "Public GitHub or Project storage is unavailable",
+          },
+        },
+      },
+    },
+    "/api/v1/projects/{projectId}/provider/github": {
+      get: {
+        description:
+          "Reads a bounded Project-scoped pull-request inbox through the Operator workstation's existing gh session.",
+        operationId: "readHostGitHubProjectInbox",
+        parameters: [
+          {
+            in: "path",
+            name: "projectId",
+            required: true,
+            schema: { format: "uuid", type: "string" },
+          },
+        ],
+        responses: {
+          "200": {
+            content: { "application/json": { schema: schemaReference("HostGitHubProjectInbox") } },
+            description: "Attributed host GitHub pull-request inbox",
+          },
+          "400": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Invalid Project identity",
+          },
+          "401": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Operator authentication is required",
+          },
+          "404": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Project has no supported attached GitHub source",
+          },
+          "503": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Host GitHub observation is unavailable",
+          },
+        },
+      },
+    },
+    "/api/v1/projects/{projectId}/provider/github/pull-requests/observe": {
+      post: {
+        description:
+          "Manually records one exact host-gh pull-request observation on the same local Project.",
+        operationId: "observeHostGitHubPullRequest",
+        parameters: [
+          {
+            in: "path",
+            name: "projectId",
+            required: true,
+            schema: { format: "uuid", type: "string" },
+          },
+          ...authenticatedMutationHeaders(false),
+        ],
+        requestBody: {
+          content: {
+            "application/json": { schema: schemaReference("ObserveHostGitHubPullRequestCommand") },
+          },
+          required: true,
+        },
+        responses: {
+          "200": {
+            content: { "application/json": { schema: schemaReference("ProjectUpserted") } },
+            description: "Provider observation recorded",
+          },
+          "400": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Invalid observation command",
+          },
+          "401": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Operator authentication is required",
+          },
+          "403": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Origin or CSRF validation failed",
+          },
+          "503": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Host GitHub observation is unavailable",
           },
         },
       },
