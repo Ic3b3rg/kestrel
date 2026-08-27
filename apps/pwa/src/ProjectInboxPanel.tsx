@@ -20,6 +20,7 @@ interface ProjectInboxPanelProps {
   onLocalAvailable?: (result: ReviewRevisionAvailable) => void;
   onOpen: (url: PublicGitHubPullRequestUrl) => void;
   onHostObserved?: (project: Project) => void;
+  onHostRefresh?: (projectId: string, number: number) => void;
   onRetry: () => void;
 }
 
@@ -194,7 +195,7 @@ function ChangeProposalRecord({
 }: {
   changeProposal: ChangeProposal;
   disabled: boolean;
-  onRefresh: (url: PublicGitHubPullRequestUrl) => void;
+  onRefresh: () => void;
 }) {
   const revision = changeProposal.reviewRevisions[0];
   if (!isProviderChangeProposal(changeProposal)) {
@@ -246,7 +247,7 @@ function ChangeProposalRecord({
           className="secondary-action proposal-refresh"
           type="button"
           disabled={disabled}
-          onClick={() => onRefresh(changeProposal.canonicalUrl)}
+          onClick={onRefresh}
         >
           Refresh PR #{changeProposal.number}
         </button>
@@ -444,7 +445,18 @@ export function ProjectInboxPanel(props: ProjectInboxPanelProps) {
                     changeProposal={changeProposal}
                     disabled={unavailable}
                     key={changeProposal.id}
-                    onRefresh={props.onOpen}
+                    onRefresh={() => {
+                      if (
+                        project.providerObservation?.kind === "host_gh" &&
+                        isProviderChangeProposal(changeProposal)
+                      ) {
+                        props.onHostRefresh?.(project.id, changeProposal.number);
+                        return;
+                      }
+                      if (isProviderChangeProposal(changeProposal)) {
+                        props.onOpen(changeProposal.canonicalUrl);
+                      }
+                    }}
                   />
                 ))}
               </div>

@@ -19,6 +19,7 @@ import {
   loginOperator,
   logoutOperator,
   openPublicGitHubPullRequest,
+  observeHostGitHubPullRequest,
   runDiagnostic,
   streamInstallationEvents,
   updateOperatorCredentials,
@@ -423,6 +424,28 @@ export function App() {
     setAnnouncement("The exact Review Revision is available.");
   };
 
+  const handleHostPullRequestRefresh = async (projectId: string, number: number): Promise<void> => {
+    const controller = new AbortController();
+    projectCommandController.current?.abort();
+    projectCommandController.current = controller;
+    setProjectPending(true);
+    setProjectError(null);
+    try {
+      const result = await observeHostGitHubPullRequest(projectId, { number }, controller.signal);
+      setProjectInbox((current) => withUpsertedProject(current, result.project));
+      setAnnouncement("Project refreshed through the host GitHub session.");
+    } catch (error) {
+      if (!controller.signal.aborted && !handleAuthenticationBoundaryError(error)) {
+        setProjectError(errorMessage(error, PROJECT_ERROR_MESSAGE));
+      }
+    } finally {
+      if (projectCommandController.current === controller) {
+        projectCommandController.current = null;
+        setProjectPending(false);
+      }
+    }
+  };
+
   const handleLogout = async (): Promise<void> => {
     const controller = new AbortController();
     projectCommandController.current?.abort();
@@ -518,6 +541,9 @@ export function App() {
             setProjectInbox((current) => withUpsertedProject(current, project));
             setAnnouncement("Project refreshed through the host GitHub session.");
           }}
+          onHostRefresh={(projectId, number) =>
+            void handleHostPullRequestRefresh(projectId, number)
+          }
           onLocalAvailable={handleLocalRevisionAvailable}
           onRetry={() => setProjectReloadGeneration((generation) => generation + 1)}
         />

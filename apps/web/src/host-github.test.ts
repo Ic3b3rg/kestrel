@@ -150,4 +150,17 @@ describe("host GitHub CLI", () => {
       cli.observePullRequest({ owner: "Ic3b3rg", repository: "kestrel" }, 1, "operator"),
     ).rejects.toEqual(expect.objectContaining({ kind: "access_denied" }));
   });
+
+  it("observes one pull request using read-only commands only", async () => {
+    const fake = await fakeGh();
+    const observation = await createHostGitHubCli({
+      executable: fake.executable,
+    }).observePullRequest({ owner: "Ic3b3rg", repository: "kestrel" }, 1, "operator");
+    expect(observation.proposal).toMatchObject({ number: 1, body: "body" });
+    const commands = await readFile(fake.log, "utf8");
+    expect(commands).toContain("pr view 1 --repo Ic3b3rg/kestrel");
+    expect(commands).not.toMatch(
+      /(?:--method|-X)\s+(?:POST|PATCH|PUT|DELETE)|\bpr\s+(?:merge|close|comment|review)\b/iu,
+    );
+  });
 });
