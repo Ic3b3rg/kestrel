@@ -18,7 +18,15 @@
                 "INSTALLATION_TRANSITION_CONFLICT",
                 "OPERATOR_VERSION_CONFLICT",
                 "SERVICE_UNAVAILABLE",
-                "INTERNAL_ERROR"
+                "INTERNAL_ERROR",
+                "REPOSITORY_NOT_AVAILABLE",
+                "REFERENCE_NOT_AVAILABLE",
+                "SOURCE_CONTAINMENT_VIOLATION",
+                "REVISION_LIMIT_EXCEEDED",
+                "OBJECT_MISSING",
+                "OBJECT_VERIFICATION_FAILED",
+                "CHANGE_PROPOSAL_MISMATCH",
+                "REVISION_ACQUIRING"
               ],
               "type": "string"
             },
@@ -478,6 +486,132 @@
       ],
       "type": "object"
     },
+    "LocalRepositoryInventory": {
+      "additionalProperties": false,
+      "properties": {
+        "repositories": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "attachmentState": {
+                "enum": [
+                  "unattached",
+                  "attached"
+                ],
+                "type": "string"
+              },
+              "displayName": {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              "repositoryId": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "repositoryId",
+              "displayName",
+              "attachmentState"
+            ],
+            "type": "object"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "type": "number"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "repositories"
+      ],
+      "type": "object"
+    },
+    "LocalRepositoryReferences": {
+      "additionalProperties": false,
+      "properties": {
+        "objectFormat": {
+          "enum": [
+            "sha1",
+            "sha256"
+          ],
+          "type": "string"
+        },
+        "references": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "commitObjectId": {
+                "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                "type": "string"
+              },
+              "commitSubjectSuggestion": {
+                "anyOf": [
+                  {
+                    "maxLength": 512,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "displayName": {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "head",
+                  "local_branch",
+                  "remote_branch",
+                  "tag"
+                ],
+                "type": "string"
+              },
+              "ref": {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "^[^\\p{Cc}]+$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "ref",
+              "displayName",
+              "kind",
+              "commitObjectId",
+              "commitSubjectSuggestion"
+            ],
+            "type": "object"
+          },
+          "maxItems": 500,
+          "type": "array"
+        },
+        "repositoryId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "type": "number"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "repositoryId",
+        "objectFormat",
+        "references"
+      ],
+      "type": "object"
+    },
     "LoginCommand": {
       "additionalProperties": false,
       "properties": {
@@ -527,128 +661,577 @@
             "properties": {
               "changeProposals": {
                 "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "author": {
-                      "anyOf": [
-                        {
+                  "oneOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "author": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "login": {
+                                  "maxLength": 100,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "providerId": {
+                                  "maxLength": 256,
+                                  "minLength": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "login",
+                                "providerId"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "base": {
                           "additionalProperties": false,
                           "properties": {
-                            "login": {
-                              "maxLength": 100,
-                              "minLength": 1,
+                            "objectId": {
+                              "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
                               "type": "string"
                             },
-                            "providerId": {
-                              "maxLength": 256,
+                            "ref": {
+                              "maxLength": 255,
                               "minLength": 1,
+                              "pattern": "^[^\\p{Cc}]+$",
                               "type": "string"
                             }
                           },
                           "required": [
-                            "login",
-                            "providerId"
+                            "objectId",
+                            "ref"
                           ],
                           "type": "object"
                         },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "base": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "objectId": {
-                          "pattern": "^[a-f0-9]{40}$",
+                        "canonicalUrl": {
+                          "maxLength": 256,
+                          "pattern": "^https:\\/\\/github\\.com\\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\\/[A-Za-z0-9._-]{1,100}\\/pull\\/[1-9][0-9]{0,9}$",
                           "type": "string"
                         },
-                        "ref": {
-                          "maxLength": 255,
+                        "changeIntent": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "createdAt": {
+                                  "format": "date-time",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                  "type": "string"
+                                },
+                                "id": {
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                  "type": "string"
+                                },
+                                "text": {
+                                  "maxLength": 20000,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 9007199254740991,
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "version",
+                                "text",
+                                "createdAt"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "head": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "objectId": {
+                              "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                              "type": "string"
+                            },
+                            "ref": {
+                              "maxLength": 255,
+                              "minLength": 1,
+                              "pattern": "^[^\\p{Cc}]+$",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "objectId",
+                            "ref"
+                          ],
+                          "type": "object"
+                        },
+                        "id": {
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                          "type": "string"
+                        },
+                        "kind": {
+                          "const": "provider_observed",
+                          "type": "string"
+                        },
+                        "number": {
+                          "exclusiveMinimum": 0,
+                          "maximum": 9999999999,
+                          "type": "integer"
+                        },
+                        "observedAt": {
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                          "type": "string"
+                        },
+                        "proposalState": {
+                          "enum": [
+                            "open",
+                            "merged",
+                            "closed",
+                            "unknown"
+                          ],
+                          "type": "string"
+                        },
+                        "providerId": {
+                          "maxLength": 256,
                           "minLength": 1,
-                          "pattern": "^[^\\p{Cc}]+$",
+                          "type": "string"
+                        },
+                        "reviewRevisions": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "availableAt": {
+                                "anyOf": [
+                                  {
+                                    "format": "date-time",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "base": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "objectId": {
+                                    "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                                    "type": "string"
+                                  },
+                                  "ref": {
+                                    "maxLength": 255,
+                                    "minLength": 1,
+                                    "pattern": "^[^\\p{Cc}]+$",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "objectId",
+                                  "ref"
+                                ],
+                                "type": "object"
+                              },
+                              "createdAt": {
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                "type": "string"
+                              },
+                              "failureReason": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      "source_not_available",
+                                      "source_containment_violation",
+                                      "reference_not_available",
+                                      "revision_limit_exceeded",
+                                      "object_missing",
+                                      "object_verification_failed",
+                                      "artifact_finalization_failed",
+                                      "acquisition_interrupted"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "head": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "objectId": {
+                                    "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                                    "type": "string"
+                                  },
+                                  "ref": {
+                                    "maxLength": 255,
+                                    "minLength": 1,
+                                    "pattern": "^[^\\p{Cc}]+$",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "objectId",
+                                  "ref"
+                                ],
+                                "type": "object"
+                              },
+                              "id": {
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                "type": "string"
+                              },
+                              "objectCount": {
+                                "anyOf": [
+                                  {
+                                    "maximum": 9007199254740991,
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "objectFormat": {
+                                "enum": [
+                                  "sha1",
+                                  "sha256"
+                                ],
+                                "type": "string"
+                              },
+                              "retainedBytes": {
+                                "anyOf": [
+                                  {
+                                    "maximum": 9007199254740991,
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "state": {
+                                "enum": [
+                                  "acquiring",
+                                  "available",
+                                  "unavailable"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "state",
+                              "objectFormat",
+                              "base",
+                              "head",
+                              "objectCount",
+                              "retainedBytes",
+                              "failureReason",
+                              "createdAt",
+                              "availableAt"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 20,
+                          "type": "array"
+                        },
+                        "title": {
+                          "maxLength": 512,
+                          "minLength": 1,
                           "type": "string"
                         }
                       },
                       "required": [
-                        "objectId",
-                        "ref"
+                        "kind",
+                        "id",
+                        "providerId",
+                        "number",
+                        "title",
+                        "canonicalUrl",
+                        "proposalState",
+                        "base",
+                        "head",
+                        "author",
+                        "observedAt",
+                        "changeIntent",
+                        "reviewRevisions"
                       ],
                       "type": "object"
                     },
-                    "canonicalUrl": {
-                      "maxLength": 256,
-                      "pattern": "^https:\\/\\/github\\.com\\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\\/[A-Za-z0-9._-]{1,100}\\/pull\\/[1-9][0-9]{0,9}$",
-                      "type": "string"
-                    },
-                    "head": {
+                    {
                       "additionalProperties": false,
                       "properties": {
-                        "objectId": {
-                          "pattern": "^[a-f0-9]{40}$",
+                        "base": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "objectId": {
+                              "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                              "type": "string"
+                            },
+                            "ref": {
+                              "maxLength": 255,
+                              "minLength": 1,
+                              "pattern": "^[^\\p{Cc}]+$",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "objectId",
+                            "ref"
+                          ],
+                          "type": "object"
+                        },
+                        "changeIntent": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "createdAt": {
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                              "type": "string"
+                            },
+                            "id": {
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                              "type": "string"
+                            },
+                            "text": {
+                              "maxLength": 20000,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "version": {
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "version",
+                            "text",
+                            "createdAt"
+                          ],
+                          "type": "object"
+                        },
+                        "createdAt": {
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
                           "type": "string"
                         },
-                        "ref": {
-                          "maxLength": 255,
+                        "head": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "objectId": {
+                              "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                              "type": "string"
+                            },
+                            "ref": {
+                              "maxLength": 255,
+                              "minLength": 1,
+                              "pattern": "^[^\\p{Cc}]+$",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "objectId",
+                            "ref"
+                          ],
+                          "type": "object"
+                        },
+                        "id": {
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                          "type": "string"
+                        },
+                        "kind": {
+                          "const": "local",
+                          "type": "string"
+                        },
+                        "reviewRevisions": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "availableAt": {
+                                "anyOf": [
+                                  {
+                                    "format": "date-time",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "base": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "objectId": {
+                                    "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                                    "type": "string"
+                                  },
+                                  "ref": {
+                                    "maxLength": 255,
+                                    "minLength": 1,
+                                    "pattern": "^[^\\p{Cc}]+$",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "objectId",
+                                  "ref"
+                                ],
+                                "type": "object"
+                              },
+                              "createdAt": {
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                "type": "string"
+                              },
+                              "failureReason": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      "source_not_available",
+                                      "source_containment_violation",
+                                      "reference_not_available",
+                                      "revision_limit_exceeded",
+                                      "object_missing",
+                                      "object_verification_failed",
+                                      "artifact_finalization_failed",
+                                      "acquisition_interrupted"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "head": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "objectId": {
+                                    "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                                    "type": "string"
+                                  },
+                                  "ref": {
+                                    "maxLength": 255,
+                                    "minLength": 1,
+                                    "pattern": "^[^\\p{Cc}]+$",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "objectId",
+                                  "ref"
+                                ],
+                                "type": "object"
+                              },
+                              "id": {
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                "type": "string"
+                              },
+                              "objectCount": {
+                                "anyOf": [
+                                  {
+                                    "maximum": 9007199254740991,
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "objectFormat": {
+                                "enum": [
+                                  "sha1",
+                                  "sha256"
+                                ],
+                                "type": "string"
+                              },
+                              "retainedBytes": {
+                                "anyOf": [
+                                  {
+                                    "maximum": 9007199254740991,
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "state": {
+                                "enum": [
+                                  "acquiring",
+                                  "available",
+                                  "unavailable"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "state",
+                              "objectFormat",
+                              "base",
+                              "head",
+                              "objectCount",
+                              "retainedBytes",
+                              "failureReason",
+                              "createdAt",
+                              "availableAt"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 20,
+                          "type": "array"
+                        },
+                        "title": {
+                          "maxLength": 512,
                           "minLength": 1,
-                          "pattern": "^[^\\p{Cc}]+$",
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
                           "type": "string"
                         }
                       },
                       "required": [
-                        "objectId",
-                        "ref"
+                        "kind",
+                        "id",
+                        "title",
+                        "base",
+                        "head",
+                        "changeIntent",
+                        "reviewRevisions",
+                        "createdAt",
+                        "updatedAt"
                       ],
                       "type": "object"
-                    },
-                    "id": {
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-                      "type": "string"
-                    },
-                    "number": {
-                      "exclusiveMinimum": 0,
-                      "maximum": 9999999999,
-                      "type": "integer"
-                    },
-                    "observedAt": {
-                      "format": "date-time",
-                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
-                      "type": "string"
-                    },
-                    "proposalState": {
-                      "enum": [
-                        "open",
-                        "merged",
-                        "closed",
-                        "unknown"
-                      ],
-                      "type": "string"
-                    },
-                    "providerId": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "type": "string"
-                    },
-                    "title": {
-                      "maxLength": 512,
-                      "minLength": 1,
-                      "type": "string"
                     }
-                  },
-                  "required": [
-                    "id",
-                    "providerId",
-                    "number",
-                    "title",
-                    "canonicalUrl",
-                    "proposalState",
-                    "base",
-                    "head",
-                    "author",
-                    "observedAt"
-                  ],
-                  "type": "object"
+                  ]
                 },
                 "maxItems": 100,
                 "type": "array"
@@ -663,6 +1246,67 @@
                 "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
                 "type": "string"
               },
+              "localRepositorySource": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "createdAt": {
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                        "type": "string"
+                      },
+                      "displayName": {
+                        "maxLength": 256,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "id": {
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      "objectFormat": {
+                        "enum": [
+                          "sha1",
+                          "sha256"
+                        ],
+                        "type": "string"
+                      },
+                      "repositoryId": {
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      "state": {
+                        "enum": [
+                          "attached",
+                          "detached"
+                        ],
+                        "type": "string"
+                      },
+                      "updatedAt": {
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "repositoryId",
+                      "displayName",
+                      "state",
+                      "objectFormat",
+                      "createdAt",
+                      "updatedAt"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "modelAccess": {
                 "enum": [
                   "not_configured"
@@ -670,60 +1314,74 @@
                 "type": "string"
               },
               "providerObservation": {
-                "additionalProperties": false,
-                "properties": {
-                  "authentication": {
-                    "const": "none",
-                    "type": "string"
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "authentication": {
+                        "const": "none",
+                        "type": "string"
+                      },
+                      "kind": {
+                        "const": "public_github",
+                        "type": "string"
+                      },
+                      "refresh": {
+                        "const": "manual",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "authentication",
+                      "kind",
+                      "refresh"
+                    ],
+                    "type": "object"
                   },
-                  "kind": {
-                    "const": "public_github",
-                    "type": "string"
-                  },
-                  "refresh": {
-                    "const": "manual",
-                    "type": "string"
+                  {
+                    "type": "null"
                   }
-                },
-                "required": [
-                  "authentication",
-                  "kind",
-                  "refresh"
-                ],
-                "type": "object"
+                ]
               },
               "repository": {
-                "additionalProperties": false,
-                "properties": {
-                  "canonicalUrl": {
-                    "maxLength": 240,
-                    "pattern": "^https:\\/\\/github\\.com\\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\\/[A-Za-z0-9._-]{1,100}$",
-                    "type": "string"
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "canonicalUrl": {
+                        "maxLength": 240,
+                        "pattern": "^https:\\/\\/github\\.com\\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\\/[A-Za-z0-9._-]{1,100}$",
+                        "type": "string"
+                      },
+                      "name": {
+                        "maxLength": 100,
+                        "minLength": 1,
+                        "pattern": "^[A-Za-z0-9._-]+$",
+                        "type": "string"
+                      },
+                      "owner": {
+                        "maxLength": 39,
+                        "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$",
+                        "type": "string"
+                      },
+                      "providerId": {
+                        "maxLength": 256,
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "canonicalUrl",
+                      "name",
+                      "owner",
+                      "providerId"
+                    ],
+                    "type": "object"
                   },
-                  "name": {
-                    "maxLength": 100,
-                    "minLength": 1,
-                    "pattern": "^[A-Za-z0-9._-]+$",
-                    "type": "string"
-                  },
-                  "owner": {
-                    "maxLength": 39,
-                    "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$",
-                    "type": "string"
-                  },
-                  "providerId": {
-                    "maxLength": 256,
-                    "minLength": 1,
-                    "type": "string"
+                  {
+                    "type": "null"
                   }
-                },
-                "required": [
-                  "canonicalUrl",
-                  "name",
-                  "owner",
-                  "providerId"
-                ],
-                "type": "object"
+                ]
               },
               "sourceAvailability": {
                 "enum": [
@@ -743,6 +1401,7 @@
               "id",
               "providerObservation",
               "repository",
+              "localRepositorySource",
               "sourceAvailability",
               "modelAccess",
               "createdAt",
@@ -773,128 +1432,577 @@
           "properties": {
             "changeProposals": {
               "items": {
-                "additionalProperties": false,
-                "properties": {
-                  "author": {
-                    "anyOf": [
-                      {
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "author": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "login": {
+                                "maxLength": 100,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "providerId": {
+                                "maxLength": 256,
+                                "minLength": 1,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "login",
+                              "providerId"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "base": {
                         "additionalProperties": false,
                         "properties": {
-                          "login": {
-                            "maxLength": 100,
-                            "minLength": 1,
+                          "objectId": {
+                            "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
                             "type": "string"
                           },
-                          "providerId": {
-                            "maxLength": 256,
+                          "ref": {
+                            "maxLength": 255,
                             "minLength": 1,
+                            "pattern": "^[^\\p{Cc}]+$",
                             "type": "string"
                           }
                         },
                         "required": [
-                          "login",
-                          "providerId"
+                          "objectId",
+                          "ref"
                         ],
                         "type": "object"
                       },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "base": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "objectId": {
-                        "pattern": "^[a-f0-9]{40}$",
+                      "canonicalUrl": {
+                        "maxLength": 256,
+                        "pattern": "^https:\\/\\/github\\.com\\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\\/[A-Za-z0-9._-]{1,100}\\/pull\\/[1-9][0-9]{0,9}$",
                         "type": "string"
                       },
-                      "ref": {
-                        "maxLength": 255,
+                      "changeIntent": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "createdAt": {
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                "type": "string"
+                              },
+                              "id": {
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                "type": "string"
+                              },
+                              "text": {
+                                "maxLength": 20000,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "version": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "version",
+                              "text",
+                              "createdAt"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "head": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "objectId": {
+                            "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                            "type": "string"
+                          },
+                          "ref": {
+                            "maxLength": 255,
+                            "minLength": 1,
+                            "pattern": "^[^\\p{Cc}]+$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "objectId",
+                          "ref"
+                        ],
+                        "type": "object"
+                      },
+                      "id": {
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      "kind": {
+                        "const": "provider_observed",
+                        "type": "string"
+                      },
+                      "number": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9999999999,
+                        "type": "integer"
+                      },
+                      "observedAt": {
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                        "type": "string"
+                      },
+                      "proposalState": {
+                        "enum": [
+                          "open",
+                          "merged",
+                          "closed",
+                          "unknown"
+                        ],
+                        "type": "string"
+                      },
+                      "providerId": {
+                        "maxLength": 256,
                         "minLength": 1,
-                        "pattern": "^[^\\p{Cc}]+$",
+                        "type": "string"
+                      },
+                      "reviewRevisions": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "availableAt": {
+                              "anyOf": [
+                                {
+                                  "format": "date-time",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "base": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "objectId": {
+                                  "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                                  "type": "string"
+                                },
+                                "ref": {
+                                  "maxLength": 255,
+                                  "minLength": 1,
+                                  "pattern": "^[^\\p{Cc}]+$",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "objectId",
+                                "ref"
+                              ],
+                              "type": "object"
+                            },
+                            "createdAt": {
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                              "type": "string"
+                            },
+                            "failureReason": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "source_not_available",
+                                    "source_containment_violation",
+                                    "reference_not_available",
+                                    "revision_limit_exceeded",
+                                    "object_missing",
+                                    "object_verification_failed",
+                                    "artifact_finalization_failed",
+                                    "acquisition_interrupted"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "head": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "objectId": {
+                                  "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                                  "type": "string"
+                                },
+                                "ref": {
+                                  "maxLength": 255,
+                                  "minLength": 1,
+                                  "pattern": "^[^\\p{Cc}]+$",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "objectId",
+                                "ref"
+                              ],
+                              "type": "object"
+                            },
+                            "id": {
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                              "type": "string"
+                            },
+                            "objectCount": {
+                              "anyOf": [
+                                {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "objectFormat": {
+                              "enum": [
+                                "sha1",
+                                "sha256"
+                              ],
+                              "type": "string"
+                            },
+                            "retainedBytes": {
+                              "anyOf": [
+                                {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "state": {
+                              "enum": [
+                                "acquiring",
+                                "available",
+                                "unavailable"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "state",
+                            "objectFormat",
+                            "base",
+                            "head",
+                            "objectCount",
+                            "retainedBytes",
+                            "failureReason",
+                            "createdAt",
+                            "availableAt"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 20,
+                        "type": "array"
+                      },
+                      "title": {
+                        "maxLength": 512,
+                        "minLength": 1,
                         "type": "string"
                       }
                     },
                     "required": [
-                      "objectId",
-                      "ref"
+                      "kind",
+                      "id",
+                      "providerId",
+                      "number",
+                      "title",
+                      "canonicalUrl",
+                      "proposalState",
+                      "base",
+                      "head",
+                      "author",
+                      "observedAt",
+                      "changeIntent",
+                      "reviewRevisions"
                     ],
                     "type": "object"
                   },
-                  "canonicalUrl": {
-                    "maxLength": 256,
-                    "pattern": "^https:\\/\\/github\\.com\\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\\/[A-Za-z0-9._-]{1,100}\\/pull\\/[1-9][0-9]{0,9}$",
-                    "type": "string"
-                  },
-                  "head": {
+                  {
                     "additionalProperties": false,
                     "properties": {
-                      "objectId": {
-                        "pattern": "^[a-f0-9]{40}$",
+                      "base": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "objectId": {
+                            "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                            "type": "string"
+                          },
+                          "ref": {
+                            "maxLength": 255,
+                            "minLength": 1,
+                            "pattern": "^[^\\p{Cc}]+$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "objectId",
+                          "ref"
+                        ],
+                        "type": "object"
+                      },
+                      "changeIntent": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "createdAt": {
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                            "type": "string"
+                          },
+                          "id": {
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "text": {
+                            "maxLength": 20000,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "version": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "version",
+                          "text",
+                          "createdAt"
+                        ],
+                        "type": "object"
+                      },
+                      "createdAt": {
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
                         "type": "string"
                       },
-                      "ref": {
-                        "maxLength": 255,
+                      "head": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "objectId": {
+                            "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                            "type": "string"
+                          },
+                          "ref": {
+                            "maxLength": 255,
+                            "minLength": 1,
+                            "pattern": "^[^\\p{Cc}]+$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "objectId",
+                          "ref"
+                        ],
+                        "type": "object"
+                      },
+                      "id": {
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      "kind": {
+                        "const": "local",
+                        "type": "string"
+                      },
+                      "reviewRevisions": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "availableAt": {
+                              "anyOf": [
+                                {
+                                  "format": "date-time",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "base": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "objectId": {
+                                  "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                                  "type": "string"
+                                },
+                                "ref": {
+                                  "maxLength": 255,
+                                  "minLength": 1,
+                                  "pattern": "^[^\\p{Cc}]+$",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "objectId",
+                                "ref"
+                              ],
+                              "type": "object"
+                            },
+                            "createdAt": {
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                              "type": "string"
+                            },
+                            "failureReason": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "source_not_available",
+                                    "source_containment_violation",
+                                    "reference_not_available",
+                                    "revision_limit_exceeded",
+                                    "object_missing",
+                                    "object_verification_failed",
+                                    "artifact_finalization_failed",
+                                    "acquisition_interrupted"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "head": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "objectId": {
+                                  "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                                  "type": "string"
+                                },
+                                "ref": {
+                                  "maxLength": 255,
+                                  "minLength": 1,
+                                  "pattern": "^[^\\p{Cc}]+$",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "objectId",
+                                "ref"
+                              ],
+                              "type": "object"
+                            },
+                            "id": {
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                              "type": "string"
+                            },
+                            "objectCount": {
+                              "anyOf": [
+                                {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "objectFormat": {
+                              "enum": [
+                                "sha1",
+                                "sha256"
+                              ],
+                              "type": "string"
+                            },
+                            "retainedBytes": {
+                              "anyOf": [
+                                {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "state": {
+                              "enum": [
+                                "acquiring",
+                                "available",
+                                "unavailable"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "state",
+                            "objectFormat",
+                            "base",
+                            "head",
+                            "objectCount",
+                            "retainedBytes",
+                            "failureReason",
+                            "createdAt",
+                            "availableAt"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 20,
+                        "type": "array"
+                      },
+                      "title": {
+                        "maxLength": 512,
                         "minLength": 1,
-                        "pattern": "^[^\\p{Cc}]+$",
+                        "type": "string"
+                      },
+                      "updatedAt": {
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
                         "type": "string"
                       }
                     },
                     "required": [
-                      "objectId",
-                      "ref"
+                      "kind",
+                      "id",
+                      "title",
+                      "base",
+                      "head",
+                      "changeIntent",
+                      "reviewRevisions",
+                      "createdAt",
+                      "updatedAt"
                     ],
                     "type": "object"
-                  },
-                  "id": {
-                    "format": "uuid",
-                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-                    "type": "string"
-                  },
-                  "number": {
-                    "exclusiveMinimum": 0,
-                    "maximum": 9999999999,
-                    "type": "integer"
-                  },
-                  "observedAt": {
-                    "format": "date-time",
-                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
-                    "type": "string"
-                  },
-                  "proposalState": {
-                    "enum": [
-                      "open",
-                      "merged",
-                      "closed",
-                      "unknown"
-                    ],
-                    "type": "string"
-                  },
-                  "providerId": {
-                    "maxLength": 256,
-                    "minLength": 1,
-                    "type": "string"
-                  },
-                  "title": {
-                    "maxLength": 512,
-                    "minLength": 1,
-                    "type": "string"
                   }
-                },
-                "required": [
-                  "id",
-                  "providerId",
-                  "number",
-                  "title",
-                  "canonicalUrl",
-                  "proposalState",
-                  "base",
-                  "head",
-                  "author",
-                  "observedAt"
-                ],
-                "type": "object"
+                ]
               },
               "maxItems": 100,
               "type": "array"
@@ -909,6 +2017,67 @@
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
               "type": "string"
             },
+            "localRepositorySource": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "createdAt": {
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                      "type": "string"
+                    },
+                    "displayName": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "id": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                      "type": "string"
+                    },
+                    "objectFormat": {
+                      "enum": [
+                        "sha1",
+                        "sha256"
+                      ],
+                      "type": "string"
+                    },
+                    "repositoryId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                      "type": "string"
+                    },
+                    "state": {
+                      "enum": [
+                        "attached",
+                        "detached"
+                      ],
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "repositoryId",
+                    "displayName",
+                    "state",
+                    "objectFormat",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "modelAccess": {
               "enum": [
                 "not_configured"
@@ -916,60 +2085,74 @@
               "type": "string"
             },
             "providerObservation": {
-              "additionalProperties": false,
-              "properties": {
-                "authentication": {
-                  "const": "none",
-                  "type": "string"
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "authentication": {
+                      "const": "none",
+                      "type": "string"
+                    },
+                    "kind": {
+                      "const": "public_github",
+                      "type": "string"
+                    },
+                    "refresh": {
+                      "const": "manual",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "authentication",
+                    "kind",
+                    "refresh"
+                  ],
+                  "type": "object"
                 },
-                "kind": {
-                  "const": "public_github",
-                  "type": "string"
-                },
-                "refresh": {
-                  "const": "manual",
-                  "type": "string"
+                {
+                  "type": "null"
                 }
-              },
-              "required": [
-                "authentication",
-                "kind",
-                "refresh"
-              ],
-              "type": "object"
+              ]
             },
             "repository": {
-              "additionalProperties": false,
-              "properties": {
-                "canonicalUrl": {
-                  "maxLength": 240,
-                  "pattern": "^https:\\/\\/github\\.com\\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\\/[A-Za-z0-9._-]{1,100}$",
-                  "type": "string"
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "canonicalUrl": {
+                      "maxLength": 240,
+                      "pattern": "^https:\\/\\/github\\.com\\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\\/[A-Za-z0-9._-]{1,100}$",
+                      "type": "string"
+                    },
+                    "name": {
+                      "maxLength": 100,
+                      "minLength": 1,
+                      "pattern": "^[A-Za-z0-9._-]+$",
+                      "type": "string"
+                    },
+                    "owner": {
+                      "maxLength": 39,
+                      "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$",
+                      "type": "string"
+                    },
+                    "providerId": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "canonicalUrl",
+                    "name",
+                    "owner",
+                    "providerId"
+                  ],
+                  "type": "object"
                 },
-                "name": {
-                  "maxLength": 100,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._-]+$",
-                  "type": "string"
-                },
-                "owner": {
-                  "maxLength": 39,
-                  "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$",
-                  "type": "string"
-                },
-                "providerId": {
-                  "maxLength": 256,
-                  "minLength": 1,
-                  "type": "string"
+                {
+                  "type": "null"
                 }
-              },
-              "required": [
-                "canonicalUrl",
-                "name",
-                "owner",
-                "providerId"
-              ],
-              "type": "object"
+              ]
             },
             "sourceAvailability": {
               "enum": [
@@ -989,6 +2172,7 @@
             "id",
             "providerObservation",
             "repository",
+            "localRepositorySource",
             "sourceAvailability",
             "modelAccess",
             "createdAt",
@@ -1005,6 +2189,1615 @@
       "required": [
         "schemaVersion",
         "project"
+      ],
+      "type": "object"
+    },
+    "RetainReviewRevisionCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "baseRef": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "^[^\\p{Cc}]+$",
+          "type": "string"
+        },
+        "changeIntent": {
+          "maxLength": 20000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "changeProposalId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        },
+        "headRef": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "^[^\\p{Cc}]+$",
+          "type": "string"
+        },
+        "repositoryId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "repositoryId",
+        "baseRef",
+        "headRef",
+        "changeIntent"
+      ],
+      "type": "object"
+    },
+    "ReviewRevisionAvailable": {
+      "additionalProperties": false,
+      "properties": {
+        "acquisitionChangeIntent": {
+          "additionalProperties": false,
+          "properties": {
+            "createdAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "type": "string"
+            },
+            "id": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "text": {
+              "maxLength": 20000,
+              "minLength": 1,
+              "type": "string"
+            },
+            "version": {
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "id",
+            "version",
+            "text",
+            "createdAt"
+          ],
+          "type": "object"
+        },
+        "changeProposal": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "author": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "login": {
+                          "maxLength": 100,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "providerId": {
+                          "maxLength": 256,
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "login",
+                        "providerId"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "base": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "objectId": {
+                      "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                      "type": "string"
+                    },
+                    "ref": {
+                      "maxLength": 255,
+                      "minLength": 1,
+                      "pattern": "^[^\\p{Cc}]+$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "objectId",
+                    "ref"
+                  ],
+                  "type": "object"
+                },
+                "canonicalUrl": {
+                  "maxLength": 256,
+                  "pattern": "^https:\\/\\/github\\.com\\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\\/[A-Za-z0-9._-]{1,100}\\/pull\\/[1-9][0-9]{0,9}$",
+                  "type": "string"
+                },
+                "changeIntent": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "createdAt": {
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                          "type": "string"
+                        },
+                        "id": {
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                          "type": "string"
+                        },
+                        "text": {
+                          "maxLength": 20000,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "version": {
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "version",
+                        "text",
+                        "createdAt"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "head": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "objectId": {
+                      "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                      "type": "string"
+                    },
+                    "ref": {
+                      "maxLength": 255,
+                      "minLength": 1,
+                      "pattern": "^[^\\p{Cc}]+$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "objectId",
+                    "ref"
+                  ],
+                  "type": "object"
+                },
+                "id": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "provider_observed",
+                  "type": "string"
+                },
+                "number": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 9999999999,
+                  "type": "integer"
+                },
+                "observedAt": {
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                  "type": "string"
+                },
+                "proposalState": {
+                  "enum": [
+                    "open",
+                    "merged",
+                    "closed",
+                    "unknown"
+                  ],
+                  "type": "string"
+                },
+                "providerId": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "reviewRevisions": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "availableAt": {
+                        "anyOf": [
+                          {
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "base": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "objectId": {
+                            "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                            "type": "string"
+                          },
+                          "ref": {
+                            "maxLength": 255,
+                            "minLength": 1,
+                            "pattern": "^[^\\p{Cc}]+$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "objectId",
+                          "ref"
+                        ],
+                        "type": "object"
+                      },
+                      "createdAt": {
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                        "type": "string"
+                      },
+                      "failureReason": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "source_not_available",
+                              "source_containment_violation",
+                              "reference_not_available",
+                              "revision_limit_exceeded",
+                              "object_missing",
+                              "object_verification_failed",
+                              "artifact_finalization_failed",
+                              "acquisition_interrupted"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "head": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "objectId": {
+                            "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                            "type": "string"
+                          },
+                          "ref": {
+                            "maxLength": 255,
+                            "minLength": 1,
+                            "pattern": "^[^\\p{Cc}]+$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "objectId",
+                          "ref"
+                        ],
+                        "type": "object"
+                      },
+                      "id": {
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      "objectCount": {
+                        "anyOf": [
+                          {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "objectFormat": {
+                        "enum": [
+                          "sha1",
+                          "sha256"
+                        ],
+                        "type": "string"
+                      },
+                      "retainedBytes": {
+                        "anyOf": [
+                          {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "state": {
+                        "enum": [
+                          "acquiring",
+                          "available",
+                          "unavailable"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "state",
+                      "objectFormat",
+                      "base",
+                      "head",
+                      "objectCount",
+                      "retainedBytes",
+                      "failureReason",
+                      "createdAt",
+                      "availableAt"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 20,
+                  "type": "array"
+                },
+                "title": {
+                  "maxLength": 512,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "providerId",
+                "number",
+                "title",
+                "canonicalUrl",
+                "proposalState",
+                "base",
+                "head",
+                "author",
+                "observedAt",
+                "changeIntent",
+                "reviewRevisions"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "base": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "objectId": {
+                      "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                      "type": "string"
+                    },
+                    "ref": {
+                      "maxLength": 255,
+                      "minLength": 1,
+                      "pattern": "^[^\\p{Cc}]+$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "objectId",
+                    "ref"
+                  ],
+                  "type": "object"
+                },
+                "changeIntent": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "createdAt": {
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                      "type": "string"
+                    },
+                    "id": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                      "type": "string"
+                    },
+                    "text": {
+                      "maxLength": 20000,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "version",
+                    "text",
+                    "createdAt"
+                  ],
+                  "type": "object"
+                },
+                "createdAt": {
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                  "type": "string"
+                },
+                "head": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "objectId": {
+                      "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                      "type": "string"
+                    },
+                    "ref": {
+                      "maxLength": 255,
+                      "minLength": 1,
+                      "pattern": "^[^\\p{Cc}]+$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "objectId",
+                    "ref"
+                  ],
+                  "type": "object"
+                },
+                "id": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "local",
+                  "type": "string"
+                },
+                "reviewRevisions": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "availableAt": {
+                        "anyOf": [
+                          {
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "base": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "objectId": {
+                            "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                            "type": "string"
+                          },
+                          "ref": {
+                            "maxLength": 255,
+                            "minLength": 1,
+                            "pattern": "^[^\\p{Cc}]+$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "objectId",
+                          "ref"
+                        ],
+                        "type": "object"
+                      },
+                      "createdAt": {
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                        "type": "string"
+                      },
+                      "failureReason": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "source_not_available",
+                              "source_containment_violation",
+                              "reference_not_available",
+                              "revision_limit_exceeded",
+                              "object_missing",
+                              "object_verification_failed",
+                              "artifact_finalization_failed",
+                              "acquisition_interrupted"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "head": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "objectId": {
+                            "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                            "type": "string"
+                          },
+                          "ref": {
+                            "maxLength": 255,
+                            "minLength": 1,
+                            "pattern": "^[^\\p{Cc}]+$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "objectId",
+                          "ref"
+                        ],
+                        "type": "object"
+                      },
+                      "id": {
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      "objectCount": {
+                        "anyOf": [
+                          {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "objectFormat": {
+                        "enum": [
+                          "sha1",
+                          "sha256"
+                        ],
+                        "type": "string"
+                      },
+                      "retainedBytes": {
+                        "anyOf": [
+                          {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "state": {
+                        "enum": [
+                          "acquiring",
+                          "available",
+                          "unavailable"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "state",
+                      "objectFormat",
+                      "base",
+                      "head",
+                      "objectCount",
+                      "retainedBytes",
+                      "failureReason",
+                      "createdAt",
+                      "availableAt"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 20,
+                  "type": "array"
+                },
+                "title": {
+                  "maxLength": 512,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "title",
+                "base",
+                "head",
+                "changeIntent",
+                "reviewRevisions",
+                "createdAt",
+                "updatedAt"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "localRepositorySource": {
+          "additionalProperties": false,
+          "properties": {
+            "createdAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "type": "string"
+            },
+            "displayName": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "id": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "objectFormat": {
+              "enum": [
+                "sha1",
+                "sha256"
+              ],
+              "type": "string"
+            },
+            "repositoryId": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "state": {
+              "enum": [
+                "attached",
+                "detached"
+              ],
+              "type": "string"
+            },
+            "updatedAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "repositoryId",
+            "displayName",
+            "state",
+            "objectFormat",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        "project": {
+          "additionalProperties": false,
+          "properties": {
+            "changeProposals": {
+              "items": {
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "author": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "login": {
+                                "maxLength": 100,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "providerId": {
+                                "maxLength": 256,
+                                "minLength": 1,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "login",
+                              "providerId"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "base": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "objectId": {
+                            "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                            "type": "string"
+                          },
+                          "ref": {
+                            "maxLength": 255,
+                            "minLength": 1,
+                            "pattern": "^[^\\p{Cc}]+$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "objectId",
+                          "ref"
+                        ],
+                        "type": "object"
+                      },
+                      "canonicalUrl": {
+                        "maxLength": 256,
+                        "pattern": "^https:\\/\\/github\\.com\\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\\/[A-Za-z0-9._-]{1,100}\\/pull\\/[1-9][0-9]{0,9}$",
+                        "type": "string"
+                      },
+                      "changeIntent": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "createdAt": {
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                "type": "string"
+                              },
+                              "id": {
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                "type": "string"
+                              },
+                              "text": {
+                                "maxLength": 20000,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "version": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "version",
+                              "text",
+                              "createdAt"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "head": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "objectId": {
+                            "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                            "type": "string"
+                          },
+                          "ref": {
+                            "maxLength": 255,
+                            "minLength": 1,
+                            "pattern": "^[^\\p{Cc}]+$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "objectId",
+                          "ref"
+                        ],
+                        "type": "object"
+                      },
+                      "id": {
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      "kind": {
+                        "const": "provider_observed",
+                        "type": "string"
+                      },
+                      "number": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9999999999,
+                        "type": "integer"
+                      },
+                      "observedAt": {
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                        "type": "string"
+                      },
+                      "proposalState": {
+                        "enum": [
+                          "open",
+                          "merged",
+                          "closed",
+                          "unknown"
+                        ],
+                        "type": "string"
+                      },
+                      "providerId": {
+                        "maxLength": 256,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "reviewRevisions": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "availableAt": {
+                              "anyOf": [
+                                {
+                                  "format": "date-time",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "base": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "objectId": {
+                                  "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                                  "type": "string"
+                                },
+                                "ref": {
+                                  "maxLength": 255,
+                                  "minLength": 1,
+                                  "pattern": "^[^\\p{Cc}]+$",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "objectId",
+                                "ref"
+                              ],
+                              "type": "object"
+                            },
+                            "createdAt": {
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                              "type": "string"
+                            },
+                            "failureReason": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "source_not_available",
+                                    "source_containment_violation",
+                                    "reference_not_available",
+                                    "revision_limit_exceeded",
+                                    "object_missing",
+                                    "object_verification_failed",
+                                    "artifact_finalization_failed",
+                                    "acquisition_interrupted"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "head": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "objectId": {
+                                  "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                                  "type": "string"
+                                },
+                                "ref": {
+                                  "maxLength": 255,
+                                  "minLength": 1,
+                                  "pattern": "^[^\\p{Cc}]+$",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "objectId",
+                                "ref"
+                              ],
+                              "type": "object"
+                            },
+                            "id": {
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                              "type": "string"
+                            },
+                            "objectCount": {
+                              "anyOf": [
+                                {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "objectFormat": {
+                              "enum": [
+                                "sha1",
+                                "sha256"
+                              ],
+                              "type": "string"
+                            },
+                            "retainedBytes": {
+                              "anyOf": [
+                                {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "state": {
+                              "enum": [
+                                "acquiring",
+                                "available",
+                                "unavailable"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "state",
+                            "objectFormat",
+                            "base",
+                            "head",
+                            "objectCount",
+                            "retainedBytes",
+                            "failureReason",
+                            "createdAt",
+                            "availableAt"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 20,
+                        "type": "array"
+                      },
+                      "title": {
+                        "maxLength": 512,
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "id",
+                      "providerId",
+                      "number",
+                      "title",
+                      "canonicalUrl",
+                      "proposalState",
+                      "base",
+                      "head",
+                      "author",
+                      "observedAt",
+                      "changeIntent",
+                      "reviewRevisions"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "base": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "objectId": {
+                            "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                            "type": "string"
+                          },
+                          "ref": {
+                            "maxLength": 255,
+                            "minLength": 1,
+                            "pattern": "^[^\\p{Cc}]+$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "objectId",
+                          "ref"
+                        ],
+                        "type": "object"
+                      },
+                      "changeIntent": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "createdAt": {
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                            "type": "string"
+                          },
+                          "id": {
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "text": {
+                            "maxLength": 20000,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "version": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "version",
+                          "text",
+                          "createdAt"
+                        ],
+                        "type": "object"
+                      },
+                      "createdAt": {
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                        "type": "string"
+                      },
+                      "head": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "objectId": {
+                            "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                            "type": "string"
+                          },
+                          "ref": {
+                            "maxLength": 255,
+                            "minLength": 1,
+                            "pattern": "^[^\\p{Cc}]+$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "objectId",
+                          "ref"
+                        ],
+                        "type": "object"
+                      },
+                      "id": {
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      "kind": {
+                        "const": "local",
+                        "type": "string"
+                      },
+                      "reviewRevisions": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "availableAt": {
+                              "anyOf": [
+                                {
+                                  "format": "date-time",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "base": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "objectId": {
+                                  "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                                  "type": "string"
+                                },
+                                "ref": {
+                                  "maxLength": 255,
+                                  "minLength": 1,
+                                  "pattern": "^[^\\p{Cc}]+$",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "objectId",
+                                "ref"
+                              ],
+                              "type": "object"
+                            },
+                            "createdAt": {
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                              "type": "string"
+                            },
+                            "failureReason": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "source_not_available",
+                                    "source_containment_violation",
+                                    "reference_not_available",
+                                    "revision_limit_exceeded",
+                                    "object_missing",
+                                    "object_verification_failed",
+                                    "artifact_finalization_failed",
+                                    "acquisition_interrupted"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "head": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "objectId": {
+                                  "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                                  "type": "string"
+                                },
+                                "ref": {
+                                  "maxLength": 255,
+                                  "minLength": 1,
+                                  "pattern": "^[^\\p{Cc}]+$",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "objectId",
+                                "ref"
+                              ],
+                              "type": "object"
+                            },
+                            "id": {
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                              "type": "string"
+                            },
+                            "objectCount": {
+                              "anyOf": [
+                                {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "objectFormat": {
+                              "enum": [
+                                "sha1",
+                                "sha256"
+                              ],
+                              "type": "string"
+                            },
+                            "retainedBytes": {
+                              "anyOf": [
+                                {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "state": {
+                              "enum": [
+                                "acquiring",
+                                "available",
+                                "unavailable"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "state",
+                            "objectFormat",
+                            "base",
+                            "head",
+                            "objectCount",
+                            "retainedBytes",
+                            "failureReason",
+                            "createdAt",
+                            "availableAt"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 20,
+                        "type": "array"
+                      },
+                      "title": {
+                        "maxLength": 512,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "updatedAt": {
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "id",
+                      "title",
+                      "base",
+                      "head",
+                      "changeIntent",
+                      "reviewRevisions",
+                      "createdAt",
+                      "updatedAt"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              },
+              "maxItems": 100,
+              "type": "array"
+            },
+            "createdAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "type": "string"
+            },
+            "id": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "localRepositorySource": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "createdAt": {
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                      "type": "string"
+                    },
+                    "displayName": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "id": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                      "type": "string"
+                    },
+                    "objectFormat": {
+                      "enum": [
+                        "sha1",
+                        "sha256"
+                      ],
+                      "type": "string"
+                    },
+                    "repositoryId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                      "type": "string"
+                    },
+                    "state": {
+                      "enum": [
+                        "attached",
+                        "detached"
+                      ],
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "repositoryId",
+                    "displayName",
+                    "state",
+                    "objectFormat",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "modelAccess": {
+              "enum": [
+                "not_configured"
+              ],
+              "type": "string"
+            },
+            "providerObservation": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "authentication": {
+                      "const": "none",
+                      "type": "string"
+                    },
+                    "kind": {
+                      "const": "public_github",
+                      "type": "string"
+                    },
+                    "refresh": {
+                      "const": "manual",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "authentication",
+                    "kind",
+                    "refresh"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "repository": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "canonicalUrl": {
+                      "maxLength": 240,
+                      "pattern": "^https:\\/\\/github\\.com\\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\\/[A-Za-z0-9._-]{1,100}$",
+                      "type": "string"
+                    },
+                    "name": {
+                      "maxLength": 100,
+                      "minLength": 1,
+                      "pattern": "^[A-Za-z0-9._-]+$",
+                      "type": "string"
+                    },
+                    "owner": {
+                      "maxLength": 39,
+                      "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$",
+                      "type": "string"
+                    },
+                    "providerId": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "canonicalUrl",
+                    "name",
+                    "owner",
+                    "providerId"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sourceAvailability": {
+              "enum": [
+                "not_acquired",
+                "available",
+                "unavailable"
+              ],
+              "type": "string"
+            },
+            "updatedAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "providerObservation",
+            "repository",
+            "localRepositorySource",
+            "sourceAvailability",
+            "modelAccess",
+            "createdAt",
+            "updatedAt",
+            "changeProposals"
+          ],
+          "type": "object"
+        },
+        "reviewRevision": {
+          "additionalProperties": false,
+          "properties": {
+            "availableAt": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "base": {
+              "additionalProperties": false,
+              "properties": {
+                "objectId": {
+                  "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                  "type": "string"
+                },
+                "ref": {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "pattern": "^[^\\p{Cc}]+$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "objectId",
+                "ref"
+              ],
+              "type": "object"
+            },
+            "createdAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "type": "string"
+            },
+            "failureReason": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "source_not_available",
+                    "source_containment_violation",
+                    "reference_not_available",
+                    "revision_limit_exceeded",
+                    "object_missing",
+                    "object_verification_failed",
+                    "artifact_finalization_failed",
+                    "acquisition_interrupted"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "head": {
+              "additionalProperties": false,
+              "properties": {
+                "objectId": {
+                  "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                  "type": "string"
+                },
+                "ref": {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "pattern": "^[^\\p{Cc}]+$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "objectId",
+                "ref"
+              ],
+              "type": "object"
+            },
+            "id": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "objectCount": {
+              "anyOf": [
+                {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "objectFormat": {
+              "enum": [
+                "sha1",
+                "sha256"
+              ],
+              "type": "string"
+            },
+            "retainedBytes": {
+              "anyOf": [
+                {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "state": {
+              "enum": [
+                "acquiring",
+                "available",
+                "unavailable"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "state",
+            "objectFormat",
+            "base",
+            "head",
+            "objectCount",
+            "retainedBytes",
+            "failureReason",
+            "createdAt",
+            "availableAt"
+          ],
+          "type": "object"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "type": "number"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "project",
+        "localRepositorySource",
+        "changeProposal",
+        "acquisitionChangeIntent",
+        "reviewRevision"
       ],
       "type": "object"
     },

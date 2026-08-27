@@ -233,7 +233,9 @@ main {
   text-transform: uppercase;
 }
 
-.form-field input {
+.form-field input,
+.form-field select,
+.form-field textarea {
   width: 100%;
   min-height: 2.75rem;
   padding: 0.75rem;
@@ -242,6 +244,145 @@ main {
   color: var(--ink);
   background: white;
   font: inherit;
+}
+
+.form-field textarea {
+  min-height: 8rem;
+  resize: vertical;
+}
+
+.project-local-entry {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding: 1.5rem;
+  border: 0.125rem solid var(--ink);
+  background: var(--surface);
+}
+
+.project-local-entry > button {
+  width: 100%;
+}
+
+.local-repository-dialog {
+  width: min(calc(100% - 2rem), 48rem);
+  max-height: calc(100vh - 2rem);
+  margin: auto;
+  padding: 0;
+  overflow: auto;
+  border: 1px solid var(--ink);
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: 0.75rem 0.75rem 0 rgb(23 32 28 / 28%);
+}
+
+.local-repository-dialog::backdrop {
+  background: rgb(23 32 28 / 72%);
+}
+
+.local-dialog-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.5rem;
+  color: var(--surface);
+  background: var(--ink);
+}
+
+.local-dialog-heading h3,
+.intent-suggestions h4 {
+  margin: 0;
+}
+
+.local-dialog-heading .section-index {
+  color: var(--surface);
+}
+
+.local-dialog-heading .secondary-action:not(:disabled) {
+  width: auto;
+  border-color: var(--surface);
+  color: var(--surface);
+}
+
+.local-dialog-heading + p {
+  margin: 0;
+  padding: 1.5rem 1.5rem 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.local-repository-form {
+  display: grid;
+  gap: 1rem;
+  padding: 1.5rem;
+}
+
+.local-repository-form fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 1rem;
+  border: 1px solid var(--line);
+}
+
+.local-repository-form legend {
+  padding: 0 0.375rem;
+  font-weight: 700;
+}
+
+.local-ref-grid,
+.local-confirmation {
+  display: grid;
+  gap: 1rem;
+}
+
+.intent-suggestions {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-left: 0.25rem solid var(--warning);
+  background: #fbf0d8;
+}
+
+.intent-suggestions p,
+.local-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.intent-suggestions button {
+  width: 100%;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+.local-confirmation {
+  margin: 0;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  background: var(--surface-muted);
+}
+
+.local-confirmation div {
+  min-width: 0;
+}
+
+.local-confirmation dt {
+  margin-bottom: 0.25rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.local-confirmation dd {
+  min-width: 0;
+  margin: 0;
+}
+
+.local-confirmation code {
+  overflow-wrap: anywhere;
 }
 
 .login-error {
@@ -901,6 +1042,11 @@ footer {
   .project-form > .form-help,
   .project-form > .project-form-error {
     grid-column: 1 / -1;
+  }
+
+  .local-ref-grid,
+  .local-confirmation {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .project-facts,

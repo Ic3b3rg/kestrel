@@ -1,4 +1,8 @@
-import { PublicGitHubPullRequestUrlSchema, type Project } from "@kestrel/contracts";
+import {
+  PublicGitHubPullRequestUrlSchema,
+  type ProviderObservedChangeProposal,
+  type RepositorySnapshot,
+} from "@kestrel/contracts";
 import { z } from "zod";
 
 const GITHUB_API_VERSION = "2026-03-10";
@@ -52,11 +56,12 @@ export interface PublicGitHubPullRequestCoordinates {
   repository: string;
 }
 
-type ChangeProposal = Project["changeProposals"][number];
-
 export interface PublicGitHubObservation {
-  proposal: Omit<ChangeProposal, "id" | "observedAt">;
-  repository: Project["repository"];
+  proposal: Omit<
+    ProviderObservedChangeProposal,
+    "id" | "observedAt" | "kind" | "changeIntent" | "reviewRevisions"
+  >;
+  repository: RepositorySnapshot;
 }
 
 export type PublicGitHubReadErrorKind =

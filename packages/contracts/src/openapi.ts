@@ -11,9 +11,13 @@ import {
   InstallationSnapshotSchema,
   LoginCommandSchema,
   LogoutCommandSchema,
+  LocalRepositoryInventorySchema,
+  LocalRepositoryReferencesSchema,
   OpenPublicGitHubPullRequestCommandSchema,
   ProjectInboxSchema,
   ProjectUpsertedSchema,
+  RetainReviewRevisionCommandSchema,
+  ReviewRevisionAvailableSchema,
   SessionSchema,
   StepUpCommandSchema,
   StepUpProofSchema,
@@ -75,6 +79,12 @@ export const openPublicGitHubPullRequestCommandJsonSchema = asJsonSchema(
 );
 export const projectInboxJsonSchema = asJsonSchema(ProjectInboxSchema);
 export const projectUpsertedJsonSchema = asJsonSchema(ProjectUpsertedSchema);
+export const localRepositoryInventoryJsonSchema = asJsonSchema(LocalRepositoryInventorySchema);
+export const localRepositoryReferencesJsonSchema = asJsonSchema(LocalRepositoryReferencesSchema);
+export const retainReviewRevisionCommandJsonSchema = asJsonSchema(
+  RetainReviewRevisionCommandSchema,
+);
+export const reviewRevisionAvailableJsonSchema = asJsonSchema(ReviewRevisionAvailableSchema);
 
 export const contractBundle = sortJson({
   $defs: {
@@ -91,6 +101,10 @@ export const contractBundle = sortJson({
     ),
     ProjectInbox: asComponentSchema(projectInboxJsonSchema),
     ProjectUpserted: asComponentSchema(projectUpsertedJsonSchema),
+    LocalRepositoryInventory: asComponentSchema(localRepositoryInventoryJsonSchema),
+    LocalRepositoryReferences: asComponentSchema(localRepositoryReferencesJsonSchema),
+    RetainReviewRevisionCommand: asComponentSchema(retainReviewRevisionCommandJsonSchema),
+    ReviewRevisionAvailable: asComponentSchema(reviewRevisionAvailableJsonSchema),
     Session: asComponentSchema(sessionJsonSchema),
     StepUpCommand: asComponentSchema(stepUpCommandJsonSchema),
     StepUpProof: asComponentSchema(stepUpProofJsonSchema),
@@ -154,6 +168,10 @@ export const openApiDocument = sortJson({
       ),
       ProjectInbox: asComponentSchema(projectInboxJsonSchema),
       ProjectUpserted: asComponentSchema(projectUpsertedJsonSchema),
+      LocalRepositoryInventory: asComponentSchema(localRepositoryInventoryJsonSchema),
+      LocalRepositoryReferences: asComponentSchema(localRepositoryReferencesJsonSchema),
+      RetainReviewRevisionCommand: asComponentSchema(retainReviewRevisionCommandJsonSchema),
+      ReviewRevisionAvailable: asComponentSchema(reviewRevisionAvailableJsonSchema),
       Session: asComponentSchema(sessionJsonSchema),
       StepUpCommand: asComponentSchema(stepUpCommandJsonSchema),
       StepUpProof: asComponentSchema(stepUpProofJsonSchema),
@@ -508,6 +526,80 @@ export const openApiDocument = sortJson({
         },
       },
     },
+    "/api/v1/local-repository-sources": {
+      get: {
+        operationId: "listLocalRepositorySources",
+        responses: {
+          "200": {
+            content: {
+              "application/json": { schema: schemaReference("LocalRepositoryInventory") },
+            },
+            description: "Bounded authorized local repository inventory",
+          },
+          "401": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Operator authentication is required",
+          },
+          "413": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "The configured repository discovery limit was reached",
+          },
+          "503": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Local repository discovery is unavailable",
+          },
+        },
+      },
+    },
+    "/api/v1/local-repository-sources/{repositoryId}/references": {
+      get: {
+        operationId: "listLocalRepositoryReferences",
+        parameters: [
+          {
+            in: "path",
+            name: "repositoryId",
+            required: true,
+            schema: {
+              format: "uuid",
+              pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              type: "string",
+            },
+          },
+        ],
+        responses: {
+          "200": {
+            content: {
+              "application/json": { schema: schemaReference("LocalRepositoryReferences") },
+            },
+            description: "Bounded committed reference inventory",
+          },
+          "400": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Invalid opaque repository identity",
+          },
+          "401": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Operator authentication is required",
+          },
+          "404": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Repository is no longer available",
+          },
+          "413": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "The configured reference inventory limit was reached",
+          },
+          "422": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Repository containment validation failed",
+          },
+          "503": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Git inspection is unavailable",
+          },
+        },
+      },
+    },
     "/api/v1/projects": {
       get: {
         operationId: "readProjectInbox",
@@ -575,6 +667,68 @@ export const openApiDocument = sortJson({
           "503": {
             content: { "application/json": { schema: schemaReference("ApiError") } },
             description: "Public GitHub or Project storage is unavailable",
+          },
+        },
+      },
+    },
+    "/api/v1/review-revisions": {
+      post: {
+        operationId: "retainReviewRevision",
+        parameters: authenticatedMutationHeaders(false),
+        requestBody: {
+          content: {
+            "application/json": { schema: schemaReference("RetainReviewRevisionCommand") },
+          },
+          required: true,
+        },
+        responses: {
+          "200": {
+            content: {
+              "application/json": { schema: schemaReference("ReviewRevisionAvailable") },
+            },
+            description: "Exact Review Revision was already available",
+          },
+          "201": {
+            content: {
+              "application/json": { schema: schemaReference("ReviewRevisionAvailable") },
+            },
+            description: "Exact Review Revision retained and verified",
+          },
+          "400": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Invalid acquisition command",
+          },
+          "401": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Operator authentication is required",
+          },
+          "403": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Origin or CSRF validation failed",
+          },
+          "404": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Repository, reference, or object is unavailable",
+          },
+          "409": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Exact revision is acquiring or proposal selection does not match",
+          },
+          "413": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Command or retained revision exceeds a configured bound",
+          },
+          "415": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "The command media type is unsupported",
+          },
+          "422": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Source containment or object verification failed",
+          },
+          "503": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Revision storage is unavailable",
           },
         },
       },

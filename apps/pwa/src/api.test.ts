@@ -7,17 +7,22 @@ import type {
   InstallationEvent,
   InstallationSnapshot,
   ProjectInbox,
+  LocalRepositoryInventory,
+  LocalRepositoryReferences,
   Session,
 } from "@kestrel/contracts";
 
 import {
   fetchInstallation,
   fetchProjectInbox,
+  fetchLocalRepositories,
+  fetchLocalRepositoryReferences,
   fetchSession,
   loginOperator,
   logoutOperator,
   openPublicGitHubPullRequest,
   runDiagnostic,
+  retainReviewRevision,
   streamInstallationEvents,
   updateOperatorCredentials,
 } from "./api.js";
@@ -91,17 +96,21 @@ const projectInbox: ProjectInbox = {
           author: { login: "octocat", providerId: "U_kgDOA" },
           base: { objectId: "a".repeat(40), ref: "main" },
           canonicalUrl: "https://github.com/openai/openai-node/pull/1234",
+          changeIntent: null,
           head: { objectId: "b".repeat(40), ref: "provider-observation" },
           id: "018f0f89-9192-755f-aa96-f72094c734dd",
+          kind: "provider_observed",
           number: 1234,
           observedAt: "2026-08-24T12:01:00.000Z",
           proposalState: "open",
           providerId: "PR_kwDOGx",
+          reviewRevisions: [],
           title: "Keep repository access explicit",
         },
       ],
       createdAt: "2026-08-24T12:00:00.000Z",
       id: "018f0f89-949a-75a8-8f61-6df78a843b1e",
+      localRepositorySource: null,
       modelAccess: "not_configured",
       providerObservation: {
         authentication: "none",
@@ -161,6 +170,77 @@ afterEach(() => {
 });
 
 describe("PWA API client", () => {
+  it("uses only opaque local repository identities and enumerated refs", async () => {
+    const inventory: LocalRepositoryInventory = {
+      schemaVersion: 1,
+      repositories: [
+        {
+          repositoryId: "018f0f89-9a1d-7484-b224-866ef9d69990",
+          displayName: "kestrel",
+          attachmentState: "unattached",
+        },
+      ],
+    };
+    const repository = inventory.repositories[0];
+    if (repository === undefined) {
+      throw new Error("Repository fixture is missing");
+    }
+    const references: LocalRepositoryReferences = {
+      schemaVersion: 1,
+      repositoryId: repository.repositoryId,
+      objectFormat: "sha1",
+      references: [
+        {
+          ref: "refs/heads/main",
+          displayName: "main",
+          kind: "local_branch",
+          commitObjectId: "a".repeat(40),
+          commitSubjectSuggestion: null,
+        },
+      ],
+    };
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(inventory))
+      .mockResolvedValueOnce(jsonResponse(references))
+      .mockResolvedValueOnce(jsonResponse({ invalid: true }, 201));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("document", {
+      cookie: `__Host-kestrel-csrf=${"A".repeat(43)}.${"B".repeat(43)}`,
+    });
+
+    await expect(fetchLocalRepositories()).resolves.toEqual(inventory);
+    await expect(fetchLocalRepositoryReferences(repository.repositoryId)).resolves.toEqual(
+      references,
+    );
+    await expect(
+      retainReviewRevision({
+        repositoryId: repository.repositoryId,
+        baseRef: "refs/heads/main",
+        headRef: "refs/heads/topic",
+        changeIntent: "Review authorization boundaries",
+      }),
+    ).rejects.toThrow("invalid Review Revision response");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/v1/local-repository-sources");
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      `/api/v1/local-repository-sources/${repository.repositoryId}/references`,
+    );
+    expect(fetchMock.mock.calls[2]?.[0]).toBe("/api/v1/review-revisions");
+    const mutation = fetchMock.mock.calls[2]?.[1];
+    expect(mutation).toEqual(
+      expect.objectContaining({
+        body: JSON.stringify({
+          repositoryId: repository.repositoryId,
+          baseRef: "refs/heads/main",
+          headRef: "refs/heads/topic",
+          changeIntent: "Review authorization boundaries",
+        }),
+        method: "POST",
+      }),
+    );
+    expect(JSON.stringify(mutation)).not.toContain("path");
+  });
+
   it("reads and creates the Operator session without exposing a token", async () => {
     const fetchMock = vi
       .fn<typeof fetch>()

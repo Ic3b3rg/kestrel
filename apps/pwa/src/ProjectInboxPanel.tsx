@@ -4,7 +4,10 @@ import {
   OpenPublicGitHubPullRequestCommandSchema,
   type ProjectInbox,
   type PublicGitHubPullRequestUrl,
+  type ReviewRevisionAvailable,
 } from "@kestrel/contracts";
+
+import { OpenLocalRepositoryForm } from "./OpenLocalRepositoryForm.js";
 
 interface ProjectInboxPanelProps {
   error: string | null;
@@ -12,12 +15,15 @@ interface ProjectInboxPanelProps {
   loading: boolean;
   online: boolean;
   pending: boolean;
+  onAuthenticationError?: (error: unknown) => boolean;
+  onLocalAvailable?: (result: ReviewRevisionAvailable) => void;
   onOpen: (url: PublicGitHubPullRequestUrl) => void;
   onRetry: () => void;
 }
 
 type Project = ProjectInbox["projects"][number];
 type ChangeProposal = Project["changeProposals"][number];
+type ProviderChangeProposal = Extract<ChangeProposal, { providerId: string }>;
 
 const sourceAvailabilityLabels: Record<Project["sourceAvailability"], string> = {
   available: "Available",
@@ -25,12 +31,38 @@ const sourceAvailabilityLabels: Record<Project["sourceAvailability"], string> = 
   unavailable: "Unavailable",
 };
 
-const proposalStateLabels: Record<ChangeProposal["proposalState"], string> = {
+const reviewRevisionStateLabels = {
+  acquiring: "Acquiring",
+  available: "Available",
+  unavailable: "Unavailable",
+} as const;
+
+const revisionFailureLabels: Record<
+  NonNullable<ReviewRevisionAvailable["reviewRevision"]["failureReason"]>,
+  string
+> = {
+  acquisition_interrupted: "Acquisition was interrupted during restart.",
+  artifact_finalization_failed: "The retained artifact could not be finalized.",
+  object_missing: "A required committed object is missing.",
+  object_verification_failed: "A committed object could not be verified.",
+  reference_not_available: "A selected reference is no longer available.",
+  revision_limit_exceeded: "The configured revision size or object limit was exceeded.",
+  source_containment_violation: "The local source failed safety validation.",
+  source_not_available: "The local source is unavailable.",
+};
+
+const proposalStateLabels: Record<ProviderChangeProposal["proposalState"], string> = {
   closed: "Closed",
   merged: "Merged",
   open: "Open",
   unknown: "Unknown",
 };
+
+function isProviderChangeProposal(
+  changeProposal: ChangeProposal,
+): changeProposal is ProviderChangeProposal {
+  return "providerId" in changeProposal;
+}
 
 function formatObservedAt(value: string): string {
   return new Intl.DateTimeFormat("en-GB", {
@@ -39,28 +71,52 @@ function formatObservedAt(value: string): string {
   }).format(new Date(value));
 }
 
+function ShortObjectId({ label, value }: { label: string; value: string }) {
+  return (
+    <code title={value} aria-label={`${label} object ID ${value}`}>
+      {value.slice(0, 12)}
+    </code>
+  );
+}
+
 function ProjectFacts({ project }: { project: Project }) {
+  const source = project.localRepositorySource;
+  const provider = project.providerObservation;
   return (
     <dl className="project-facts">
       <div>
-        <dt>Source</dt>
+        <dt>Local Repository Source</dt>
+        <dd>
+          <strong>
+            {source === null
+              ? "Not attached"
+              : source.state === "attached"
+                ? "Attached"
+                : "Detached"}
+          </strong>
+          <span>{source?.displayName ?? "No local repository supplies source yet."}</span>
+        </dd>
+      </div>
+      <div>
+        <dt>Provider metadata</dt>
+        <dd>
+          <strong>{provider === null ? "Not observed" : "Public GitHub pull request"}</strong>
+          <span>
+            {provider === null
+              ? "No Provider observation is attached."
+              : "Provider observation is read without a GitHub account or token."}
+          </span>
+        </dd>
+      </div>
+      <div>
+        <dt>Source availability</dt>
         <dd>
           <strong>{sourceAvailabilityLabels[project.sourceAvailability]}</strong>
-          <span>Base and head SHAs are identified; immutable source acquisition comes next.</span>
-        </dd>
-      </div>
-      <div>
-        <dt>Provider observation</dt>
-        <dd>
-          <strong>Public GitHub pull request</strong>
-          <span>Read without a GitHub account or token.</span>
-        </dd>
-      </div>
-      <div>
-        <dt>Refresh</dt>
-        <dd>
-          <strong>Manual only</strong>
-          <span>Kestrel contacts GitHub only when you open or refresh this pull request.</span>
+          <span>
+            {provider === null
+              ? "Exact retained base and head commits are independent of repository attachment."
+              : "Refresh is Manual only; provider metadata never supplies source."}
+          </span>
         </dd>
       </div>
       <div>
@@ -74,6 +130,53 @@ function ProjectFacts({ project }: { project: Project }) {
   );
 }
 
+function RevisionFacts({
+  revision,
+}: {
+  revision: ReviewRevisionAvailable["reviewRevision"] | undefined;
+}) {
+  if (revision === undefined) {
+    return (
+      <div>
+        <dt>Revision State</dt>
+        <dd>Not acquired</dd>
+      </div>
+    );
+  }
+  const pointerLabel = revision.state === "available" ? "Retained" : "Revision";
+  return (
+    <>
+      <div>
+        <dt>Revision State</dt>
+        <dd>{reviewRevisionStateLabels[revision.state]}</dd>
+      </div>
+      <div>
+        <dt>{pointerLabel} base</dt>
+        <dd>
+          <span>{revision.base.ref}</span>
+          <ShortObjectId label={`${pointerLabel} base`} value={revision.base.objectId} />
+        </dd>
+      </div>
+      <div>
+        <dt>{pointerLabel} head</dt>
+        <dd>
+          <span>{revision.head.ref}</span>
+          <ShortObjectId label={`${pointerLabel} head`} value={revision.head.objectId} />
+        </dd>
+      </div>
+      {revision.failureReason === null ? null : (
+        <div>
+          <dt>Failure</dt>
+          <dd>
+            <strong>{revisionFailureLabels[revision.failureReason]}</strong>
+            <span>Open the local repository again to retry this exact revision.</span>
+          </dd>
+        </div>
+      )}
+    </>
+  );
+}
+
 function ChangeProposalRecord({
   changeProposal,
   disabled,
@@ -83,6 +186,41 @@ function ChangeProposalRecord({
   disabled: boolean;
   onRefresh: (url: PublicGitHubPullRequestUrl) => void;
 }) {
+  const revision = changeProposal.reviewRevisions[0];
+  if (!isProviderChangeProposal(changeProposal)) {
+    return (
+      <section className="change-proposal" aria-labelledby={`proposal-${changeProposal.id}`}>
+        <div className="proposal-heading">
+          <div>
+            <p className="proposal-state">Local change proposal</p>
+            <h4 id={`proposal-${changeProposal.id}`}>{changeProposal.title}</h4>
+          </div>
+        </div>
+        <dl className="commit-pointer-list">
+          <div>
+            <dt>Base commit</dt>
+            <dd>
+              <span>{changeProposal.base.ref}</span>
+              <ShortObjectId label="Base commit" value={changeProposal.base.objectId} />
+            </dd>
+          </div>
+          <div>
+            <dt>Head commit</dt>
+            <dd>
+              <span>{changeProposal.head.ref}</span>
+              <ShortObjectId label="Head commit" value={changeProposal.head.objectId} />
+            </dd>
+          </div>
+          <div>
+            <dt>Change Intent v{changeProposal.changeIntent.version}</dt>
+            <dd>{changeProposal.changeIntent.text}</dd>
+          </div>
+          <RevisionFacts revision={revision} />
+        </dl>
+      </section>
+    );
+  }
+
   return (
     <section className="change-proposal" aria-labelledby={`proposal-${changeProposal.id}`}>
       <div className="proposal-heading">
@@ -105,17 +243,17 @@ function ChangeProposalRecord({
       </div>
       <dl className="commit-pointer-list">
         <div>
-          <dt>Base commit</dt>
+          <dt>Observed base</dt>
           <dd>
             <span>{changeProposal.base.ref}</span>
-            <code>{changeProposal.base.objectId}</code>
+            <ShortObjectId label="Observed base" value={changeProposal.base.objectId} />
           </dd>
         </div>
         <div>
-          <dt>Head commit</dt>
+          <dt>Observed head</dt>
           <dd>
             <span>{changeProposal.head.ref}</span>
-            <code>{changeProposal.head.objectId}</code>
+            <ShortObjectId label="Observed head" value={changeProposal.head.objectId} />
           </dd>
         </div>
         <div>
@@ -130,6 +268,16 @@ function ChangeProposalRecord({
             </time>
           </dd>
         </div>
+        <div>
+          <dt>
+            Change Intent
+            {changeProposal.changeIntent === null
+              ? null
+              : ` v${String(changeProposal.changeIntent.version)}`}
+          </dt>
+          <dd>{changeProposal.changeIntent?.text ?? "Not confirmed"}</dd>
+        </div>
+        <RevisionFacts revision={revision} />
       </dl>
     </section>
   );
@@ -141,7 +289,7 @@ export function ProjectInboxPanel(props: ProjectInboxPanelProps) {
   const fieldId = useId();
   const helpId = `${fieldId}-help`;
   const errorId = `${fieldId}-error`;
-  const unavailable = !props.online || props.loading || props.pending;
+  const unavailable = !props.online || props.pending || (props.loading && props.inbox === null);
 
   const handleSubmit = (event: SyntheticEvent<HTMLFormElement, SubmitEvent>) => {
     event.preventDefault();
@@ -161,14 +309,23 @@ export function ProjectInboxPanel(props: ProjectInboxPanelProps) {
       <div className="section-heading projects-heading">
         <div>
           <p className="section-index">03 / PROJECTS</p>
-          <h2 id="projects-title">Public pull requests</h2>
+          <h2 id="projects-title">Projects</h2>
         </div>
         <p className="credential-state">No GitHub credentials</p>
       </div>
 
+      <OpenLocalRepositoryForm
+        disabled={unavailable}
+        projects={props.inbox?.projects ?? []}
+        {...(props.onAuthenticationError === undefined
+          ? {}
+          : { onAuthenticationError: props.onAuthenticationError })}
+        onAvailable={(result) => props.onLocalAvailable?.(result)}
+      />
+
       <form className="project-form" onSubmit={handleSubmit} noValidate>
         <div className="form-field">
-          <label htmlFor={fieldId}>Public GitHub pull request URL</label>
+          <label htmlFor={fieldId}>Optional public GitHub pull request URL</label>
           <input
             id={fieldId}
             type="url"
@@ -188,11 +345,11 @@ export function ProjectInboxPanel(props: ProjectInboxPanelProps) {
           />
         </div>
         <button type="submit" disabled={unavailable}>
-          {props.pending ? "Opening…" : "Open pull request"}
+          {props.pending ? "Adding context…" : "Add provider context"}
         </button>
         <p id={helpId} className="form-help">
-          No GitHub credentials are sent or stored. Only canonical github.com pull request URLs are
-          accepted.
+          Optional metadata only: GitHub never supplies review source. No GitHub credentials are
+          sent or stored, and only canonical github.com pull request URLs are accepted.
         </p>
         {validationError ? (
           <p id={errorId} className="project-form-error" role="alert">
@@ -233,7 +390,7 @@ export function ProjectInboxPanel(props: ProjectInboxPanelProps) {
       ) : props.inbox === null ? null : props.inbox.projects.length === 0 ? (
         <div className="project-empty">
           <h3>No Projects yet</h3>
-          <p>Paste a public pull request URL to create the first Project.</p>
+          <p>Open an authorized local repository to create the first Project.</p>
         </div>
       ) : (
         <div className="project-list">
@@ -241,12 +398,21 @@ export function ProjectInboxPanel(props: ProjectInboxPanelProps) {
             <article className="project-card" key={project.id}>
               <div className="project-identity">
                 <div>
-                  <p>PUBLIC GITHUB / NO AUTHENTICATION</p>
-                  <h3>
-                    <a href={project.repository.canonicalUrl}>
-                      {project.repository.owner}/{project.repository.name}
-                    </a>
-                  </h3>
+                  {project.repository === null ? (
+                    <>
+                      <p>LOCAL REPOSITORY SOURCE</p>
+                      <h3>{project.localRepositorySource?.displayName ?? "Local Project"}</h3>
+                    </>
+                  ) : (
+                    <>
+                      <p>PUBLIC GITHUB / NO AUTHENTICATION</p>
+                      <h3>
+                        <a href={project.repository.canonicalUrl}>
+                          {project.repository.owner}/{project.repository.name}
+                        </a>
+                      </h3>
+                    </>
+                  )}
                 </div>
                 <code>{project.id}</code>
               </div>

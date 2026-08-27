@@ -6,6 +6,11 @@ x-kestrel-app: &kestrel-app
 x-kestrel-runtime-database: &runtime-database-environment
   DATABASE_URL: postgres://kestrel_runtime:${KESTREL_RUNTIME_DATABASE_PASSWORD:-kestrel_runtime_dev}@postgres:5432/kestrel
   EVENT_RETENTION_LIMIT: 1000
+  LOCAL_REPOSITORY_ROOTS: "[]"
+  LOCAL_GIT_EXECUTABLE: /usr/bin/git
+  ARTIFACT_ROOT: /var/lib/kestrel/artifacts
+  REVIEW_REVISION_MAX_BYTES: 268435456
+  REVIEW_REVISION_MAX_OBJECTS: 200000
 
 x-kestrel-owner-database: &owner-database-environment
   DATABASE_URL: postgres://kestrel:${KESTREL_MIGRATOR_DATABASE_PASSWORD:-kestrel_dev}@postgres:5432/kestrel
@@ -73,6 +78,8 @@ services:
     ports:
       - "127.0.0.1:3000:3000"
     restart: unless-stopped
+    volumes:
+      - review-artifacts:/var/lib/kestrel/artifacts
 
   worker:
     <<: *kestrel-app
@@ -108,3 +115,4 @@ services:
 
 volumes:
   postgres-data:
+  review-artifacts:

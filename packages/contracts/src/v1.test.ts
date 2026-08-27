@@ -15,8 +15,13 @@ import {
   InstallationEventSchema,
   InstallationSnapshotSchema,
   LoginCommandSchema,
+  LocalRepositoryInventorySchema,
+  LocalRepositoryReferencesSchema,
   OpenPublicGitHubPullRequestCommandSchema,
   ProjectInboxSchema,
+  RetainReviewRevisionCommandSchema,
+  ReviewRevisionAvailableSchema,
+  ReviewRevisionSchema,
   SessionSchema,
   StepUpCommandSchema,
   StepUpProofSchema,
@@ -181,6 +186,75 @@ describe("V1 public contracts", () => {
     }
   });
 
+  it("accepts only opaque local-repository acquisition input", () => {
+    const command = {
+      repositoryId: "018f0f89-9a1d-7484-b224-866ef9d69990",
+      baseRef: "refs/heads/main",
+      headRef: "refs/heads/review-source",
+      changeIntent: "Review the authorization boundary without changing repository state.",
+    };
+
+    expect(RetainReviewRevisionCommandSchema.parse(command)).toEqual(command);
+    expect(() =>
+      RetainReviewRevisionCommandSchema.parse({
+        ...command,
+        path: "/Users/operator/repository",
+      }),
+    ).toThrow();
+    expect(() =>
+      RetainReviewRevisionCommandSchema.parse({
+        ...command,
+        headObjectId: "b".repeat(40),
+      }),
+    ).toThrow();
+    expect(() =>
+      RetainReviewRevisionCommandSchema.parse({ ...command, headRef: command.baseRef }),
+    ).toThrow("different");
+  });
+
+  it("lists bounded local repositories and committed refs without filesystem paths", () => {
+    const repositoryId = "018f0f89-9a1d-7484-b224-866ef9d69990";
+    const inventory = {
+      schemaVersion: 1,
+      repositories: [
+        {
+          repositoryId,
+          displayName: "kestrel",
+          attachmentState: "unattached",
+        },
+      ],
+    } as const;
+    const references = {
+      schemaVersion: 1,
+      repositoryId,
+      objectFormat: "sha1",
+      references: [
+        {
+          ref: "refs/heads/main",
+          displayName: "main",
+          kind: "local_branch",
+          commitObjectId: "a".repeat(40),
+          commitSubjectSuggestion: "Keep local source read-only",
+        },
+      ],
+    } as const;
+
+    expect(LocalRepositoryInventorySchema.parse(inventory)).toEqual(inventory);
+    expect(LocalRepositoryReferencesSchema.parse(references)).toEqual(references);
+    expect(() =>
+      LocalRepositoryInventorySchema.parse({
+        ...inventory,
+        repositories: [{ ...inventory.repositories[0], path: "/private/repository" }],
+      }),
+    ).toThrow();
+    expect(() =>
+      LocalRepositoryReferencesSchema.parse({
+        ...references,
+        references: [{ ...references.references[0], commitObjectId: "a".repeat(64) }],
+      }),
+    ).toThrow();
+  });
+
   it("keeps a public GitHub Provider Observation separate from source and model access", () => {
     const inbox = ProjectInboxSchema.parse({
       schemaVersion: 1,
@@ -204,18 +278,22 @@ describe("V1 public contracts", () => {
           updatedAt: "2026-08-24T12:01:00.000Z",
           changeProposals: [
             {
+              changeIntent: null,
+              kind: "provider_observed",
               id: "018f0f89-9192-755f-aa96-f72094c734dd",
               providerId: "PR_kwDOGx",
               number: 1234,
               title: "Keep repository access explicit",
               canonicalUrl: "https://github.com/openai/openai-node/pull/1234",
               proposalState: "open",
+              reviewRevisions: [],
               base: { objectId: "a".repeat(40), ref: "main" },
               head: { objectId: "b".repeat(40), ref: "provider-observation" },
               author: { login: "octocat", providerId: "U_kgDOA" },
               observedAt: "2026-08-24T12:01:00.000Z",
             },
           ],
+          localRepositorySource: null,
         },
       ],
     });
@@ -229,6 +307,146 @@ describe("V1 public contracts", () => {
       sourceAvailability: "not_acquired",
     });
     expect(inbox.projects[0]).not.toHaveProperty("repositoryAccess");
+  });
+
+  it("represents local source, Revision State, provider metadata, and model access independently", () => {
+    const project = ProjectInboxSchema.parse({
+      schemaVersion: 1,
+      projects: [
+        {
+          id: "018f0f89-949a-75a8-8f61-6df78a843b1e",
+          providerObservation: null,
+          repository: null,
+          localRepositorySource: {
+            id: "018f0f89-9a1d-7484-b224-866ef9d69990",
+            repositoryId: "018f0f89-9a1e-7d64-a5dd-18cc3e317401",
+            displayName: "kestrel",
+            state: "attached",
+            objectFormat: "sha1",
+            createdAt: "2026-08-24T12:00:00.000Z",
+            updatedAt: "2026-08-24T12:01:00.000Z",
+          },
+          sourceAvailability: "available",
+          modelAccess: "not_configured",
+          createdAt: "2026-08-24T12:00:00.000Z",
+          updatedAt: "2026-08-24T12:01:00.000Z",
+          changeProposals: [
+            {
+              kind: "local",
+              id: "018f0f89-9192-755f-aa96-f72094c734dd",
+              title: "Review local authorization changes",
+              base: { objectId: "a".repeat(40), ref: "refs/heads/main" },
+              head: { objectId: "b".repeat(40), ref: "refs/heads/review-source" },
+              changeIntent: {
+                id: "018f0f89-9a20-79f9-9990-dda80c9b917d",
+                version: 1,
+                text: "Review the authorization boundary.",
+                createdAt: "2026-08-24T12:00:30.000Z",
+              },
+              reviewRevisions: [
+                {
+                  id: "018f0f89-9a21-7271-b92d-f1cb0d48bb47",
+                  state: "available",
+                  objectFormat: "sha1",
+                  base: { objectId: "a".repeat(40), ref: "refs/heads/main" },
+                  head: { objectId: "b".repeat(40), ref: "refs/heads/review-source" },
+                  objectCount: 7,
+                  retainedBytes: 4096,
+                  failureReason: null,
+                  createdAt: "2026-08-24T12:00:30.000Z",
+                  availableAt: "2026-08-24T12:01:00.000Z",
+                },
+              ],
+              createdAt: "2026-08-24T12:00:30.000Z",
+              updatedAt: "2026-08-24T12:01:00.000Z",
+            },
+          ],
+        },
+      ],
+    }).projects[0];
+
+    expect(project).toMatchObject({
+      providerObservation: null,
+      repository: null,
+      localRepositorySource: { state: "attached" },
+      sourceAvailability: "available",
+      modelAccess: "not_configured",
+      changeProposals: [{ kind: "local", reviewRevisions: [{ state: "available" }] }],
+    });
+
+    const localSource = project?.localRepositorySource;
+    const originalProposal = project?.changeProposals[0];
+    if (
+      project === undefined ||
+      localSource === null ||
+      localSource === undefined ||
+      originalProposal?.kind !== "local"
+    ) {
+      throw new Error("Local Review Revision contract fixture is unavailable");
+    }
+    const retainedRevision = originalProposal.reviewRevisions[0];
+    if (retainedRevision === undefined) {
+      throw new Error("Retained Review Revision contract fixture is unavailable");
+    }
+    const acquisitionChangeIntent = originalProposal.changeIntent;
+    const currentChangeIntent = {
+      ...acquisitionChangeIntent,
+      id: "018f0f89-9a20-79f9-9990-dda80c9b917e",
+      text: "Review the next exact revision.",
+      version: 2,
+    };
+    const currentProposal = { ...originalProposal, changeIntent: currentChangeIntent };
+    const published = ReviewRevisionAvailableSchema.parse({
+      schemaVersion: 1,
+      project: { ...project, changeProposals: [currentProposal] },
+      localRepositorySource: localSource,
+      changeProposal: currentProposal,
+      acquisitionChangeIntent,
+      reviewRevision: retainedRevision,
+    });
+
+    expect(published.acquisitionChangeIntent.version).toBe(1);
+    expect(published.changeProposal.changeIntent?.version).toBe(2);
+  });
+
+  it("rejects partial lifecycle fields and publishes only an available Review Revision", () => {
+    const revision = {
+      id: "018f0f89-9a21-7271-b92d-f1cb0d48bb47",
+      state: "available",
+      objectFormat: "sha1",
+      base: { objectId: "a".repeat(40), ref: "refs/heads/main" },
+      head: { objectId: "b".repeat(40), ref: "refs/heads/review-source" },
+      objectCount: 7,
+      retainedBytes: 4096,
+      failureReason: null,
+      createdAt: "2026-08-24T12:00:30.000Z",
+      availableAt: "2026-08-24T12:01:00.000Z",
+    } as const;
+    expect(ReviewRevisionSchema.parse(revision)).toEqual(revision);
+    expect(() =>
+      ReviewRevisionSchema.parse({
+        ...revision,
+        state: "acquiring",
+        objectCount: null,
+        retainedBytes: null,
+        failureReason: "object_missing",
+        availableAt: null,
+      }),
+    ).toThrow();
+    expect(() =>
+      ReviewRevisionSchema.parse({
+        ...revision,
+        state: "unavailable",
+        objectCount: 1,
+        retainedBytes: null,
+        failureReason: "object_missing",
+        availableAt: null,
+      }),
+    ).toThrow();
+    expect(() => ReviewRevisionSchema.parse({ ...revision, objectCount: 0 })).toThrow();
+    expect(() =>
+      ReviewRevisionAvailableSchema.parse({ schemaVersion: 1, reviewRevision: revision }),
+    ).toThrow();
   });
 
   it("generates strict JSON Schema and a deterministic OpenAPI 3.1 document", () => {
@@ -248,6 +466,9 @@ describe("V1 public contracts", () => {
         "/api/v1/session": {},
         "/api/v1/operator/credentials": {},
         "/api/v1/projects": {},
+        "/api/v1/local-repository-sources": {},
+        "/api/v1/local-repository-sources/{repositoryId}/references": {},
+        "/api/v1/review-revisions": {},
         "/api/v1/installation": {},
         "/api/v1/installation/diagnostics": {},
         "/api/v1/events": {},

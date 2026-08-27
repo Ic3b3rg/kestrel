@@ -9,8 +9,12 @@ import {
   InstallationSnapshotSchema,
   LoginCommandSchema,
   OpenPublicGitHubPullRequestCommandSchema,
+  LocalRepositoryInventorySchema,
+  LocalRepositoryReferencesSchema,
   ProjectInboxSchema,
   ProjectUpsertedSchema,
+  RetainReviewRevisionCommandSchema,
+  ReviewRevisionAvailableSchema,
   serializeCredentialChangeCommand,
   SessionSchema,
   StepUpCommandSchema,
@@ -22,8 +26,12 @@ import {
   type InstallationSnapshot,
   type LoginCommand,
   type OpenPublicGitHubPullRequestCommand,
+  type LocalRepositoryInventory,
+  type LocalRepositoryReferences,
   type ProjectInbox,
   type ProjectUpserted,
+  type RetainReviewRevisionCommand,
+  type ReviewRevisionAvailable,
   type Session,
 } from "@kestrel/contracts";
 
@@ -150,6 +158,53 @@ export async function fetchProjectInbox(signal?: AbortSignal): Promise<ProjectIn
     signal: signal ?? null,
   });
   return requireJson(response, ProjectInboxSchema, "Project inbox");
+}
+
+export async function fetchLocalRepositories(
+  signal?: AbortSignal,
+): Promise<LocalRepositoryInventory> {
+  const response = await fetch("/api/v1/local-repository-sources", {
+    credentials: "same-origin",
+    headers: { Accept: "application/json" },
+    method: "GET",
+    signal: signal ?? null,
+  });
+  return requireJson(response, LocalRepositoryInventorySchema, "local repository inventory");
+}
+
+export async function fetchLocalRepositoryReferences(
+  repositoryId: string,
+  signal?: AbortSignal,
+): Promise<LocalRepositoryReferences> {
+  const validatedId =
+    LocalRepositoryInventorySchema.shape.repositories.element.shape.repositoryId.parse(
+      repositoryId,
+    );
+  const response = await fetch(
+    `/api/v1/local-repository-sources/${encodeURIComponent(validatedId)}/references`,
+    {
+      credentials: "same-origin",
+      headers: { Accept: "application/json" },
+      method: "GET",
+      signal: signal ?? null,
+    },
+  );
+  return requireJson(response, LocalRepositoryReferencesSchema, "local repository references");
+}
+
+export async function retainReviewRevision(
+  command: RetainReviewRevisionCommand,
+  signal?: AbortSignal,
+): Promise<ReviewRevisionAvailable> {
+  const validated = RetainReviewRevisionCommandSchema.parse(command);
+  const response = await fetch("/api/v1/review-revisions", {
+    body: JSON.stringify(validated),
+    credentials: "same-origin",
+    headers: authenticatedMutationHeaders(),
+    method: "POST",
+    signal: signal ?? null,
+  });
+  return requireJson(response, ReviewRevisionAvailableSchema, "Review Revision response");
 }
 
 export async function openPublicGitHubPullRequest(
