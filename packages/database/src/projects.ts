@@ -80,12 +80,18 @@ export interface PublicGitHubProjectObservation {
   repository: RepositorySnapshot;
 }
 
-export interface UpsertPublicGitHubProjectInput {
+export interface UpsertGitHubObservedProjectInput {
   actorId: string;
   correlationId: string;
   observation: PublicGitHubProjectObservation;
   route?: { kind: "host_gh"; host: string; account: string };
 }
+
+export type UpsertPublicGitHubProjectInput = Omit<UpsertGitHubObservedProjectInput, "route">;
+
+export type UpsertHostGitHubProjectInput = Omit<UpsertGitHubObservedProjectInput, "route"> & {
+  route: { kind: "host_gh"; host: string; account: string };
+};
 
 export interface ProjectGitHubCoordinates {
   installationId: string;
@@ -771,7 +777,7 @@ async function upsertProviderProposal(
 
 async function upsertGitHubObservedProject(
   pool: DatabasePool,
-  input: UpsertPublicGitHubProjectInput,
+  input: UpsertGitHubObservedProjectInput,
 ): Promise<ProjectUpserted> {
   const client = await pool.connect();
   try {
@@ -844,9 +850,7 @@ export function upsertPublicGitHubProject(
 
 export function upsertHostGitHubProject(
   pool: DatabasePool,
-  input: UpsertPublicGitHubProjectInput & {
-    route: { kind: "host_gh"; host: string; account: string };
-  },
+  input: UpsertHostGitHubProjectInput,
 ): Promise<ProjectUpserted> {
   return upsertGitHubObservedProject(pool, input);
 }
