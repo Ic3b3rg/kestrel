@@ -99,6 +99,46 @@ describe("public GitHub reader", () => {
     expect(fetchImplementation).toHaveBeenCalledOnce();
   });
 
+  it.each([
+    {
+      relationship: "same-repository",
+      repository: {
+        full_name: "openai/openai-node",
+        name: "openai-node",
+        owner: { login: "openai" },
+      },
+    },
+    {
+      relationship: "public-fork",
+      repository: {
+        full_name: "contributor/openai-node-fork",
+        name: "openai-node-fork",
+        owner: { login: "contributor" },
+      },
+    },
+    { relationship: "deleted-or-null-head", repository: null },
+  ])("does not grant $relationship head-repository authority", async ({ repository }) => {
+    const response = pullRequestResponse();
+    const reader = createPublicGitHubReader(() =>
+      Promise.resolve(
+        Response.json({
+          ...response,
+          head: { ...response.head, repo: repository },
+        }),
+      ),
+    );
+
+    const observation = await reader.read(pullRequestUrl);
+
+    expect(observation.repository).toMatchObject({ name: "openai-node", owner: "openai" });
+    expect(observation.proposal.head).toEqual({
+      objectId: "b".repeat(40),
+      ref: "provider-observation",
+    });
+    expect(observation.proposal.head).not.toHaveProperty("repo");
+    expect(observation.proposal.head).not.toHaveProperty("repository");
+  });
+
   it("parses only the canonical contract form", () => {
     expect(parsePublicGitHubPullRequestUrl(pullRequestUrl)).toEqual({
       number: 1234,

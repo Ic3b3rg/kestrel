@@ -173,6 +173,35 @@ describe("Review Revision route", () => {
     expect(ApiErrorSchema.parse(response.json())).toMatchObject({ code: "REVISION_ACQUIRING" });
     expect(response.body).not.toContain("/private/repository");
   });
+
+  it.each([
+    ["base_revision_unresolvable", 404, "BASE_REVISION_UNRESOLVABLE"],
+    ["head_revision_unresolvable", 404, "HEAD_REVISION_UNRESOLVABLE"],
+    ["pull_ref_mismatch", 409, "PULL_REF_MISMATCH"],
+    ["provider_authentication_required", 503, "PROVIDER_AUTHENTICATION_REQUIRED"],
+    ["provider_resource_unavailable", 503, "PROVIDER_RESOURCE_UNAVAILABLE"],
+  ])("maps %s to a distinct safe response", async (errorCode, statusCode, apiCode) => {
+    const error = new Error(`/private/repository: provider stderr`) as Error & { code: string };
+    error.code = errorCode;
+    retain.mockRejectedValueOnce(error);
+
+    const response = await app.inject({
+      headers,
+      method: "POST",
+      payload: {
+        repositoryId,
+        baseRef: "refs/heads/main",
+        headRef: "refs/heads/topic",
+        changeIntent: "Review authorization boundaries",
+      },
+      url: "/api/v1/review-revisions",
+    });
+
+    expect(response.statusCode).toBe(statusCode);
+    expect(ApiErrorSchema.parse(response.json())).toMatchObject({ code: apiCode });
+    expect(response.body).not.toContain("/private/repository");
+    expect(response.body).not.toContain("provider stderr");
+  });
 });
 
 describe("observed Review Revision selection", () => {

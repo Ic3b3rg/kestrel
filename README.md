@@ -138,21 +138,37 @@ branches, gitlink targets, the index, and dirty, staged, ignored, or untracked w
 Symlink blobs are retained as bytes and never followed. The snapshot remains readable if its Local
 Repository Source becomes detached.
 
-Acquisition uses only fixed read-only Git inspection commands with sanitized configuration and
+Local acquisition uses only fixed read-only Git inspection commands with sanitized configuration and
 environment. It never fetches, pulls, clones, checks out, invokes hooks or filters, consults
 credential helpers, SSH agents, provider CLIs, runs a build/test, or executes repository-defined
-commands. It never modifies or deletes the source repository. A failed acquisition publishes no
-partial artifact and records a bounded unavailable reason. If filesystem publication succeeds but
-the database completion is uncertain, Kestrel locks and rereads the revision: an already-available
-artifact is preserved; an acquiring artifact is quarantined before the unavailable transition. An
-acquiring row older than 30 minutes becomes retryable only when its per-revision session lease is no
-longer live; orphaned acquisitions are also reconciled at startup.
+commands. It never modifies or deletes the source repository.
+
+When an attached observed GitHub pull request is missing a captured object locally, Kestrel may
+fetch only the base branch and `refs/pull/<number>/head` from that pull request's canonical base
+repository into disposable Project-scoped bare storage. The captured base/head object IDs remain
+authoritative if either ref moves. Kestrel makes at most one bounded recovery fetch for those exact
+IDs, rejects unexpected refs, Git configuration, replacements, alternates, malformed object graphs,
+and incomplete closure, then removes the disposable repository. Temporary acquisition storage is
+bounded by the configured revision bytes plus fixed, per-object Git storage overhead; the fetched
+object count cannot exceed the configured revision object limit. Host Git credentials may answer the
+canonical HTTPS challenge but are never returned to the browser or stored in the retained artifact.
+Git LFS pointer blobs are retained as pointer bytes and never hydrated; gitlink entries are recorded
+but their submodule target repositories and objects are not fetched or retained.
+
+A failed acquisition publishes no partial artifact and records a bounded unavailable reason. If
+filesystem publication succeeds but the database completion is uncertain, Kestrel locks and rereads
+the revision: an already-available artifact is preserved; an acquiring artifact is quarantined
+before the unavailable transition. An acquiring row older than 30 minutes becomes retryable only
+when its per-revision session lease is no longer live; orphaned acquisitions are also reconciled at
+startup.
 
 Expected public failures use the versioned API envelope and the stable codes
-`REPOSITORY_NOT_AVAILABLE`, `REFERENCE_NOT_AVAILABLE`, `SOURCE_CONTAINMENT_VIOLATION`,
-`REVISION_LIMIT_EXCEEDED`, `OBJECT_MISSING`, `OBJECT_VERIFICATION_FAILED`,
-`CHANGE_PROPOSAL_MISMATCH`, or `REVISION_ACQUIRING`. Messages and logs returned to the browser do
-not include source paths, Git stderr, credentials, or artifact locators.
+`REPOSITORY_NOT_AVAILABLE`, `REFERENCE_NOT_AVAILABLE`, `BASE_REVISION_UNRESOLVABLE`,
+`HEAD_REVISION_UNRESOLVABLE`, `PULL_REF_MISMATCH`, `PROVIDER_AUTHENTICATION_REQUIRED`,
+`PROVIDER_RESOURCE_UNAVAILABLE`, `SOURCE_CONTAINMENT_VIOLATION`, `REVISION_LIMIT_EXCEEDED`,
+`OBJECT_MISSING`, `OBJECT_VERIFICATION_FAILED`, `CHANGE_PROPOSAL_MISMATCH`, or `REVISION_ACQUIRING`.
+Messages and logs returned to the browser do not include source paths, Git stderr, credentials, or
+artifact locators.
 
 ## Observable path
 

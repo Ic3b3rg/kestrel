@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { chmod, lstat, mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readdir, realpath, rm } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, sep } from "node:path";
 
 import type { LocalSourceConfig } from "./config.js";
@@ -18,7 +18,20 @@ const GIT_FETCH_TIMEOUT_MS = 60_000;
 const MAX_GIT_OUTPUT_BYTES = 64 * 1024;
 const MAX_CREDENTIAL_CONFIG_ENTRIES = 32;
 const MAX_CREDENTIAL_CONFIG_BYTES = 4096;
+const ACQUISITION_STORAGE_POLL_MS = 25;
+const ACQUISITION_FIXED_STORAGE_OVERHEAD_BYTES = 64 * 1024;
+const ACQUISITION_OBJECT_STORAGE_OVERHEAD_BYTES = 256;
+const MAX_ACQUISITION_OVERHEAD_OBJECTS = 1_000_000;
 const CREDENTIAL_CONFIG_PATTERN = "^credential(\\..*)?\\.(helper|useHttpPath)$";
+const ACQUISITION_LOCAL_CONFIG_KEYS = new Set([
+  "core.bare",
+  "core.filemode",
+  "core.ignorecase",
+  "core.precomposeunicode",
+  "core.repositoryformatversion",
+  "extensions.compatobjectformat",
+  "extensions.objectformat",
+]);
 const HOST_ENVIRONMENT_KEYS = ["HOME", "PATH", "TMPDIR", "XDG_CONFIG_HOME"] as const;
 const SAFE_GIT_CONFIG_ARGUMENTS = [
   "-c",
@@ -51,6 +64,7 @@ const SAFE_GIT_CONFIG_ARGUMENTS = [
 
 interface GitProcessResult {
   exitCode: number;
+  stderr: Buffer;
   stdout: Buffer;
 }
 
@@ -60,6 +74,7 @@ interface GitProcessOptions {
   failureCode?: LocalSourceErrorCode;
   maxStdoutBytes?: number;
   signal?: AbortSignal | undefined;
+  storageBudget?: { maxBytes: number; rootPath: string };
   timeoutMs?: number;
 }
 
@@ -107,6 +122,31 @@ function hostEnvironment(): NodeJS.ProcessEnv {
   return environment;
 }
 
+async function directoryStorageBytes(rootPath: string, stopAfter: number): Promise<number> {
+  const pending = [rootPath];
+  let total = 0;
+  while (pending.length > 0) {
+    const directory = pending.pop();
+    if (directory === undefined) break;
+    const entries = await readdir(directory, { withFileTypes: true }).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    });
+    for (const entry of entries) {
+      const path = join(directory, entry.name);
+      const metadata = await lstat(path).catch((error: unknown) => {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+        throw error;
+      });
+      if (metadata === null) continue;
+      if (metadata.isDirectory() && !metadata.isSymbolicLink()) pending.push(path);
+      else total += metadata.size;
+      if (total > stopAfter) return total;
+    }
+  }
+  return total;
+}
+
 function safeFetchEnvironment(
   credentialConfig: readonly CredentialConfigEntry[],
 ): NodeJS.ProcessEnv {
@@ -147,10 +187,13 @@ function runGitProcess(
       stdio: ["ignore", "pipe", "pipe"],
     });
     const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
     let stdoutBytes = 0;
     let stderrBytes = 0;
     let failure: LocalSourceErrorCode | null = null;
     let settled = false;
+    let storageCheckRunning = false;
+    let storageTimer: ReturnType<typeof setInterval> | undefined;
 
     const terminate = () => {
       if (process.platform !== "win32" && child.pid !== undefined) {
@@ -167,27 +210,45 @@ function runGitProcess(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      if (storageTimer !== undefined) clearInterval(storageTimer);
       options.signal?.removeEventListener("abort", onAbort);
       if (error !== undefined) rejectPromise(error);
       else if (result !== undefined) resolvePromise(result);
       else rejectPromise(new LocalSourceError("git_inspection_failed"));
     };
-    const onAbort = () => {
-      failure = "acquisition_cancelled";
+    const stopWithFailure = (code: LocalSourceErrorCode) => {
+      if (failure === null) failure = code;
       terminate();
     };
+    const onAbort = () => stopWithFailure("acquisition_cancelled");
     const timer = setTimeout(() => {
-      failure = "git_inspection_failed";
-      terminate();
+      stopWithFailure("git_inspection_failed");
     }, options.timeoutMs ?? GIT_PROCESS_TIMEOUT_MS);
     timer.unref();
     options.signal?.addEventListener("abort", onAbort, { once: true });
+    if (options.storageBudget !== undefined) {
+      const { maxBytes, rootPath } = options.storageBudget;
+      storageTimer = setInterval(() => {
+        if (storageCheckRunning || settled) return;
+        storageCheckRunning = true;
+        void directoryStorageBytes(rootPath, maxBytes)
+          .then((bytes) => {
+            if (!settled && bytes > maxBytes) stopWithFailure("revision_limit_exceeded");
+          })
+          .catch(() => {
+            if (!settled) stopWithFailure("git_inspection_failed");
+          })
+          .finally(() => {
+            storageCheckRunning = false;
+          });
+      }, ACQUISITION_STORAGE_POLL_MS);
+      storageTimer.unref();
+    }
 
     child.stdout.on("data", (chunk: Buffer) => {
       stdoutBytes += chunk.byteLength;
       if (stdoutBytes > (options.maxStdoutBytes ?? MAX_GIT_OUTPUT_BYTES)) {
-        failure = "git_inspection_failed";
-        terminate();
+        stopWithFailure("git_inspection_failed");
         return;
       }
       stdout.push(chunk);
@@ -195,9 +256,10 @@ function runGitProcess(
     child.stderr.on("data", (chunk: Buffer) => {
       stderrBytes += chunk.byteLength;
       if (stderrBytes > MAX_GIT_OUTPUT_BYTES) {
-        failure = "git_inspection_failed";
-        terminate();
+        stopWithFailure("git_inspection_failed");
+        return;
       }
+      stderr.push(chunk);
     });
     child.once("error", () => finish(undefined, new LocalSourceError("git_inspection_failed")));
     child.once("close", (exitCode) => {
@@ -211,7 +273,11 @@ function runGitProcess(
           new LocalSourceError(options.failureCode ?? "git_inspection_failed"),
         );
       }
-      finish({ exitCode, stdout: Buffer.concat(stdout, stdoutBytes) });
+      finish({
+        exitCode,
+        stderr: Buffer.concat(stderr, stderrBytes),
+        stdout: Buffer.concat(stdout, stdoutBytes),
+      });
     });
   });
 }
@@ -221,6 +287,174 @@ function decodeUtf8(value: Buffer): string {
     return new TextDecoder("utf-8", { fatal: true }).decode(value);
   } catch {
     throw new LocalSourceError("git_inspection_failed");
+  }
+}
+
+function fetchAuthenticationFailure(stderr: Buffer): boolean {
+  let message: string;
+  try {
+    message = decodeUtf8(stderr).toLocaleLowerCase("en-US");
+  } catch {
+    return false;
+  }
+  return [
+    "authentication failed",
+    "could not read username",
+    "http basic: access denied",
+    "permission denied",
+    "requested url returned error: 401",
+    "requested url returned error: 403",
+    "single sign-on",
+    "sso",
+  ].some((pattern) => message.includes(pattern));
+}
+
+function fetchProviderResourceFailure(stderr: Buffer): boolean {
+  let message: string;
+  try {
+    message = decodeUtf8(stderr).toLocaleLowerCase("en-US");
+  } catch {
+    return false;
+  }
+  return [
+    "repository not found",
+    "requested url returned error: 404",
+    "returned http code 404",
+    "http 404",
+  ].some((pattern) => message.includes(pattern));
+}
+
+function missingFetchRef(
+  stderr: Buffer,
+  input: GitHubPullRequestObjectAcquisition,
+): "base" | "head" | null {
+  let message: string;
+  try {
+    message = decodeUtf8(stderr);
+  } catch {
+    return null;
+  }
+  if (message.includes(`refs/heads/${input.base.ref}`)) return "base";
+  if (message.includes(`refs/pull/${String(input.pullRequestNumber)}/head`)) return "head";
+  return null;
+}
+
+async function verifyAcquisitionReferences(
+  config: LocalSourceConfig,
+  input: GitHubPullRequestObjectAcquisition,
+  repository: ResolvedRepository,
+): Promise<void> {
+  const result = await runGitProcess(
+    config.gitExecutable,
+    [
+      "--no-lazy-fetch",
+      ...SAFE_GIT_CONFIG_ARGUMENTS,
+      "-C",
+      repository.path,
+      "for-each-ref",
+      "--sort=refname",
+      "--format=%(refname)%00%(objectname)",
+    ],
+    { environment: safeFetchEnvironment([]), signal: input.signal },
+  );
+  const observed = new Map<string, string>();
+  for (const line of decodeUtf8(result.stdout).split("\n")) {
+    if (line === "") continue;
+    const fields = line.split("\0");
+    if (fields.length !== 2 || fields[0] === undefined || fields[1] === undefined) {
+      throw new LocalSourceError("object_verification_failed");
+    }
+    observed.set(fields[0], fields[1]);
+  }
+  const expected = new Map([
+    ["refs/kestrel/base", input.base.objectId],
+    ["refs/kestrel/head", input.head.objectId],
+  ]);
+  if (
+    observed.size !== expected.size ||
+    [...expected].some(([ref, objectId]) => observed.get(ref) !== objectId)
+  ) {
+    throw new LocalSourceError("object_verification_failed");
+  }
+}
+
+async function verifyAcquisitionConfiguration(
+  config: LocalSourceConfig,
+  input: GitHubPullRequestObjectAcquisition,
+  repository: ResolvedRepository,
+): Promise<void> {
+  const result = await runGitProcess(
+    config.gitExecutable,
+    [
+      "--no-lazy-fetch",
+      ...SAFE_GIT_CONFIG_ARGUMENTS,
+      "-C",
+      repository.path,
+      "config",
+      "--local",
+      "--no-includes",
+      "--null",
+      "--list",
+    ],
+    { environment: safeFetchEnvironment([]), signal: input.signal },
+  );
+  const records = decodeUtf8(result.stdout).split("\0");
+  if (records.at(-1) === "") records.pop();
+  for (const record of records) {
+    const separator = record.indexOf("\n");
+    const key = separator === -1 ? "" : record.slice(0, separator).toLocaleLowerCase("en-US");
+    if (!ACQUISITION_LOCAL_CONFIG_KEYS.has(key)) {
+      throw new LocalSourceError("object_verification_failed");
+    }
+  }
+}
+
+function acquisitionStorageBudget(config: LocalSourceConfig): number {
+  const objectOverhead =
+    Math.min(config.maxObjects, MAX_ACQUISITION_OVERHEAD_OBJECTS) *
+    ACQUISITION_OBJECT_STORAGE_OVERHEAD_BYTES;
+  const overhead = ACQUISITION_FIXED_STORAGE_OVERHEAD_BYTES + objectOverhead;
+  return config.maxBytes > Number.MAX_SAFE_INTEGER - overhead
+    ? Number.MAX_SAFE_INTEGER
+    : config.maxBytes + overhead;
+}
+
+async function verifyAcquisitionStorageBudget(
+  repository: ResolvedRepository,
+  maxStorageBytes: number,
+): Promise<void> {
+  if ((await directoryStorageBytes(repository.rootPath, maxStorageBytes)) > maxStorageBytes) {
+    throw new LocalSourceError("revision_limit_exceeded");
+  }
+}
+
+async function verifyAcquisitionBudget(
+  config: LocalSourceConfig,
+  input: GitHubPullRequestObjectAcquisition,
+  repository: ResolvedRepository,
+  maxStorageBytes: number,
+): Promise<void> {
+  await verifyAcquisitionStorageBudget(repository, maxStorageBytes);
+  const result = await runGitProcess(
+    config.gitExecutable,
+    ["--no-lazy-fetch", ...SAFE_GIT_CONFIG_ARGUMENTS, "-C", repository.path, "count-objects", "-v"],
+    { environment: safeFetchEnvironment([]), signal: input.signal },
+  );
+  const counts = new Map<string, number>();
+  for (const line of decodeUtf8(result.stdout).split("\n")) {
+    const match = /^(count|in-pack): ([0-9]+)$/u.exec(line);
+    if (match?.[1] === undefined || match[2] === undefined) continue;
+    const value = Number(match[2]);
+    if (!Number.isSafeInteger(value)) throw new LocalSourceError("object_verification_failed");
+    counts.set(match[1], value);
+  }
+  const loose = counts.get("count");
+  const packed = counts.get("in-pack");
+  if (loose === undefined || packed === undefined) {
+    throw new LocalSourceError("object_verification_failed");
+  }
+  if (loose > config.maxObjects || packed > config.maxObjects - loose) {
+    throw new LocalSourceError("revision_limit_exceeded");
   }
 }
 
@@ -263,22 +497,9 @@ async function readCredentialConfiguration(
   return entries;
 }
 
-function validateInput(input: GitHubPullRequestObjectAcquisition): void {
-  const objectIdPattern = input.objectFormat === "sha1" ? /^[a-f0-9]{40}$/u : /^[a-f0-9]{64}$/u;
-  if (
-    !UUID_V7.test(input.projectId) ||
-    !Number.isSafeInteger(input.pullRequestNumber) ||
-    input.pullRequestNumber < 1 ||
-    input.pullRequestNumber > 9_999_999_999 ||
-    !/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/u.test(input.repository.owner) ||
-    !/^[A-Za-z0-9._-]{1,100}$/u.test(input.repository.name) ||
-    !objectIdPattern.test(input.base.objectId) ||
-    !objectIdPattern.test(input.head.objectId)
-  ) {
-    throw new LocalSourceError("reference_not_available");
-  }
-  const branchRef = `refs/heads/${input.base.ref}`;
-  if (
+function validBranchRef(branch: string): boolean {
+  const branchRef = `refs/heads/${branch}`;
+  return !(
     Buffer.byteLength(branchRef, "utf8") > 255 ||
     /[\0-\x20\x7f~^:?*[\\]/u.test(branchRef) ||
     branchRef.includes("..") ||
@@ -289,6 +510,22 @@ function validateInput(input: GitHubPullRequestObjectAcquisition): void {
     branchRef
       .split("/")
       .some((component) => component.startsWith(".") || component.endsWith(".lock"))
+  );
+}
+
+function validateInput(input: GitHubPullRequestObjectAcquisition): void {
+  const objectIdPattern = input.objectFormat === "sha1" ? /^[a-f0-9]{40}$/u : /^[a-f0-9]{64}$/u;
+  if (
+    !UUID_V7.test(input.projectId) ||
+    !Number.isSafeInteger(input.pullRequestNumber) ||
+    input.pullRequestNumber < 1 ||
+    input.pullRequestNumber > 9_999_999_999 ||
+    !/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/u.test(input.repository.owner) ||
+    !/^[A-Za-z0-9._-]{1,100}$/u.test(input.repository.name) ||
+    !objectIdPattern.test(input.base.objectId) ||
+    !objectIdPattern.test(input.head.objectId) ||
+    !validBranchRef(input.base.ref) ||
+    !validBranchRef(input.head.ref)
   ) {
     throw new LocalSourceError("reference_not_available");
   }
@@ -397,43 +634,69 @@ async function fetchExactPullRequest(
 ): Promise<RepositoryInspection> {
   const remote = `https://github.com/${input.repository.owner}/${input.repository.name}.git`;
   const credentialConfig = await readCredentialConfiguration(config, input.signal);
-  await runGitProcess(
-    config.gitExecutable,
-    [
-      "--no-lazy-fetch",
-      ...SAFE_GIT_CONFIG_ARGUMENTS,
-      "-C",
-      repository.path,
-      "fetch",
-      "--atomic",
-      "--depth=1",
-      "--no-auto-maintenance",
-      "--no-recurse-submodules",
-      "--no-tags",
-      "--no-write-fetch-head",
-      "--quiet",
-      "--refmap=",
-      "--",
-      remote,
-      `+refs/heads/${input.base.ref}:refs/kestrel/base`,
-      `+refs/pull/${String(input.pullRequestNumber)}/head:refs/kestrel/head`,
-    ],
-    {
-      environment: safeFetchEnvironment(credentialConfig),
-      failureCode: "reference_not_available",
-      signal: input.signal,
-      timeoutMs: GIT_FETCH_TIMEOUT_MS,
-    },
-  );
-  const inspection = await inspectRepository(config, repository, input.signal);
-  if (inspection.objectFormat !== input.objectFormat) {
-    throw new LocalSourceError("object_verification_failed");
+  const maxStorageBytes = acquisitionStorageBudget(config);
+  const fetch = async (refspecs: readonly string[]) => {
+    const result = await runGitProcess(
+      config.gitExecutable,
+      [
+        "--no-lazy-fetch",
+        ...SAFE_GIT_CONFIG_ARGUMENTS,
+        "-C",
+        repository.path,
+        "fetch",
+        "--atomic",
+        "--depth=1",
+        "--no-auto-maintenance",
+        "--no-recurse-submodules",
+        "--no-tags",
+        "--no-write-fetch-head",
+        "--quiet",
+        "--refmap=",
+        "--",
+        remote,
+        ...refspecs,
+      ],
+      {
+        allowedExitCodes: [0, 1, 128],
+        environment: safeFetchEnvironment(credentialConfig),
+        signal: input.signal,
+        storageBudget: { maxBytes: maxStorageBytes, rootPath: repository.rootPath },
+        timeoutMs: GIT_FETCH_TIMEOUT_MS,
+      },
+    );
+    await verifyAcquisitionStorageBudget(repository, maxStorageBytes);
+    return result;
+  };
+  const initialFetch = await fetch([
+    `+refs/heads/${input.base.ref}:refs/kestrel/base`,
+    `+refs/pull/${String(input.pullRequestNumber)}/head:refs/kestrel/head`,
+  ]);
+  if (initialFetch.exitCode !== 0) {
+    if (fetchAuthenticationFailure(initialFetch.stderr)) {
+      throw new LocalSourceError("provider_authentication_required");
+    }
+    const missing = missingFetchRef(initialFetch.stderr, input);
+    if (missing === null) {
+      throw new LocalSourceError("provider_resource_unavailable");
+    }
+    const recovery = await fetch([
+      `+${input.base.objectId}:refs/kestrel/base`,
+      `+${input.head.objectId}:refs/kestrel/head`,
+    ]);
+    if (recovery.exitCode !== 0) {
+      if (fetchAuthenticationFailure(recovery.stderr)) {
+        throw new LocalSourceError("provider_authentication_required");
+      }
+      if (fetchProviderResourceFailure(recovery.stderr)) {
+        throw new LocalSourceError("provider_resource_unavailable");
+      }
+      throw new LocalSourceError(
+        missing === "base" ? "base_revision_unresolvable" : "head_revision_unresolvable",
+      );
+    }
   }
-  for (const [ref, expected] of [
-    ["refs/kestrel/base", input.base.objectId],
-    ["refs/kestrel/head", input.head.objectId],
-  ] as const) {
-    const resolved = decodeUtf8(
+  const readFetchedRef = async (ref: string) =>
+    decodeUtf8(
       (
         await runGitProcess(
           config.gitExecutable,
@@ -451,10 +714,74 @@ async function fetchExactPullRequest(
         )
       ).stdout,
     ).trim();
-    if (resolved !== expected) {
-      throw new LocalSourceError("reference_not_available");
+  const expectedRefs = [
+    ["refs/kestrel/base", input.base.objectId],
+    ["refs/kestrel/head", input.head.objectId],
+  ] as const;
+  const mismatched = [] as Array<(typeof expectedRefs)[number]>;
+  for (const expectedRef of expectedRefs) {
+    if ((await readFetchedRef(expectedRef[0])) !== expectedRef[1]) mismatched.push(expectedRef);
+  }
+  if (mismatched.length > 0) {
+    const recovery = await fetch(mismatched.map(([ref, expected]) => `+${expected}:${ref}`));
+    if (recovery.exitCode !== 0) {
+      if (fetchAuthenticationFailure(recovery.stderr)) {
+        throw new LocalSourceError("provider_authentication_required");
+      }
+      if (fetchProviderResourceFailure(recovery.stderr)) {
+        throw new LocalSourceError("provider_resource_unavailable");
+      }
+      if (mismatched.some(([ref]) => ref === "refs/kestrel/head")) {
+        throw new LocalSourceError("pull_ref_mismatch");
+      }
+      if (mismatched.some(([ref]) => ref === "refs/kestrel/base")) {
+        throw new LocalSourceError("base_revision_unresolvable");
+      }
+      throw new LocalSourceError("provider_resource_unavailable");
+    }
+    for (const [ref, expected] of expectedRefs) {
+      if ((await readFetchedRef(ref)) !== expected) {
+        throw new LocalSourceError("reference_not_available");
+      }
     }
   }
+  await verifyAcquisitionConfiguration(config, input, repository);
+  const inspection = await inspectRepository(config, repository, input.signal);
+  if (inspection.objectFormat !== input.objectFormat) {
+    throw new LocalSourceError("object_verification_failed");
+  }
+  const primaryObjectDirectory = await realpath(join(repository.path, "objects")).catch(() => {
+    throw new LocalSourceError("object_verification_failed");
+  });
+  if (
+    inspection.objectDirectories.length !== 1 ||
+    inspection.objectDirectories[0] !== primaryObjectDirectory
+  ) {
+    throw new LocalSourceError("object_verification_failed");
+  }
+  await verifyAcquisitionBudget(config, input, repository, maxStorageBytes);
+  await verifyAcquisitionReferences(config, input, repository);
+  await runGitProcess(
+    config.gitExecutable,
+    [
+      "--no-lazy-fetch",
+      ...SAFE_GIT_CONFIG_ARGUMENTS,
+      "-C",
+      repository.path,
+      "fsck",
+      "--full",
+      "--strict",
+      "--no-reflogs",
+      "--no-dangling",
+      "--no-progress",
+    ],
+    {
+      environment: safeFetchEnvironment([]),
+      failureCode: "object_verification_failed",
+      signal: input.signal,
+      timeoutMs: GIT_FETCH_TIMEOUT_MS,
+    },
+  );
   return inspection;
 }
 

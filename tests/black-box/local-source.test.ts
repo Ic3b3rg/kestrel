@@ -1,3 +1,8 @@
+import { execFile } from "node:child_process";
+import { rename } from "node:fs/promises";
+import { join } from "node:path";
+import { promisify } from "node:util";
+
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -18,6 +23,15 @@ import {
   type GitFixture,
   type MissingPullRequestFixture,
 } from "./support/git-fixture.js";
+
+const execFileAsync = promisify(execFile);
+
+async function runFixtureGit(repository: string, args: readonly string[]): Promise<string> {
+  const { stdout } = await execFileAsync("/usr/bin/git", ["-C", repository, ...args], {
+    encoding: "utf8",
+  });
+  return stdout.trim();
+}
 
 async function retainedFile(
   stack: RunningStack,
@@ -1894,16 +1908,50 @@ describe("exact local Review Revision", () => {
 describe("observed GitHub pull request acquisition", () => {
   const repositoryName = "observed-pr";
   const pullRequestNumber = 50;
+  const movedRepositoryName = "observed-pr-moved";
+  const movedPullRequestNumber = 51;
   let fixture: GitFixture | undefined;
   let pullRequest: MissingPullRequestFixture | undefined;
+  let movedPullRequest: MissingPullRequestFixture | undefined;
   let stack: RunningStack | undefined;
 
   beforeAll(async () => {
     fixture = await createGitFixture();
-    pullRequest = await fixture.createMissingPullRequestClone(repositoryName, pullRequestNumber);
+    const [primary, moved] = await Promise.all([
+      fixture.createMissingPullRequestClone(repositoryName, pullRequestNumber),
+      fixture.createMissingPullRequestClone(movedRepositoryName, movedPullRequestNumber),
+    ]);
+    pullRequest = primary;
+    movedPullRequest = moved;
+    const movedProviderPath = join(fixture.rootPath, moved.providerRelativePath);
+    await runFixtureGit(movedProviderPath, ["symbolic-ref", "HEAD", "refs/heads/main"]);
+    await runFixtureGit(movedProviderPath, [
+      "update-ref",
+      `refs/pull/${String(movedPullRequestNumber)}/head`,
+      moved.baseObjectId,
+      moved.headObjectId,
+    ]);
+    await runFixtureGit(movedProviderPath, [
+      "update-ref",
+      "-d",
+      "refs/heads/review-source",
+      moved.headObjectId,
+    ]);
+    await runFixtureGit(movedProviderPath, [
+      "update-ref",
+      "-d",
+      "refs/tags/head-alias",
+      moved.headObjectId,
+    ]);
+    await runFixtureGit(movedProviderPath, ["reflog", "expire", "--expire=now", "--all"]);
+    await runFixtureGit(movedProviderPath, ["gc", "--prune=now"]);
+    await expect(
+      runFixtureGit(movedProviderPath, ["cat-file", "-e", `${moved.headObjectId}^{commit}`]),
+    ).rejects.toThrow();
     stack = await startStack({
       gitHubRemoteMappings: {
-        [`https://github.com/Ic3b3rg/${repositoryName}.git`]: `/fixtures/repositories/${pullRequest.providerRelativePath}`,
+        [`https://github.com/Ic3b3rg/${repositoryName}.git`]: `/fixtures/repositories/${primary.providerRelativePath}`,
+        [`https://github.com/Ic3b3rg/${movedRepositoryName}.git`]: `/fixtures/repositories/${moved.providerRelativePath}`,
       },
       repositoryRoot: fixture.rootPath,
     });
@@ -2022,6 +2070,23 @@ describe("observed GitHub pull request acquisition", () => {
       retainedFile(stack, first.reviewRevision.id, "head", "review.txt"),
     ).resolves.toEqual({ content: "committed head observed-pr-provider\n" });
 
+    const providerPath = join(fixture.rootPath, pullRequest.providerRelativePath);
+    const unavailableProviderPath = `${providerPath}-unavailable`;
+    await rename(providerPath, unavailableProviderPath);
+    try {
+      const retainedRetry = await activeStack.fetchApi("/api/v1/review-revisions", {
+        body: JSON.stringify(command),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      expect(retainedRetry.status).toBe(200);
+      expect(
+        ReviewRevisionAvailableSchema.parse(await retainedRetry.json()).reviewRevision,
+      ).toMatchObject({ id: first.reviewRevision.id, state: "available" });
+    } finally {
+      await rename(unavailableProviderPath, providerPath);
+    }
+
     const boundary = JSON.parse(
       await stack.executeWebModule(`
         import { lstat, readFile, readdir } from 'node:fs/promises';
@@ -2078,6 +2143,126 @@ describe("observed GitHub pull request acquisition", () => {
     expect(boundary.environment).not.toContain(pullRequest.repositoryPath);
     expect(boundary.acquisitionEntries).toEqual([]);
     expect(boundary.canaryInvoked).toBe(false);
+  }, 60_000);
+
+  it("fails closed when a moved pull ref no longer exposes the captured head", async () => {
+    if (stack === undefined || fixture === undefined || movedPullRequest === undefined) {
+      throw new Error("Moved pull-request fixture is unavailable");
+    }
+    const inventory = LocalRepositoryInventorySchema.parse(
+      await (await stack.fetchApi("/api/v1/local-repository-sources")).json(),
+    );
+    const repository = inventory.repositories.find(
+      ({ displayName }) => displayName === movedRepositoryName,
+    );
+    if (repository === undefined) throw new Error("Moved pull-request clone is unavailable");
+    const beforeFingerprint = await fixture.snapshotRepository(movedPullRequest.repositoryPath);
+
+    const localResponse = await stack.fetchApi("/api/v1/review-revisions", {
+      body: JSON.stringify({
+        repositoryId: repository.repositoryId,
+        baseRef: "refs/heads/main",
+        headRef: "refs/heads/attachment-source",
+        changeIntent: "Attach the authorized clone before testing pull-ref movement",
+      }),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    });
+    expect(localResponse.status).toBe(201);
+    const local = ReviewRevisionAvailableSchema.parse(await localResponse.json());
+
+    const observed = await observePublicGitHubProject(stack, {
+      baseObjectId: movedPullRequest.baseObjectId,
+      headObjectId: movedPullRequest.headObjectId,
+      name: movedRepositoryName,
+      number: movedPullRequestNumber,
+      suffix: "remote_moved",
+      title: "Reject a moved pull request revision",
+    });
+    expect(observed.project.id).toBe(local.project.id);
+    const proposal = observed.project.changeProposals.find(
+      (candidate) =>
+        "providerId" in candidate && candidate.providerId === "PR_issue90_remote_moved",
+    );
+    if (proposal === undefined) throw new Error("Moved pull-request proposal is unavailable");
+
+    const response = await stack.fetchApi("/api/v1/review-revisions", {
+      body: JSON.stringify({
+        projectId: observed.project.id,
+        changeProposalId: proposal.id,
+        changeIntent: "Retain only the exact captured head after pull-ref movement",
+      }),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    });
+    const body = await response.text();
+    expect(response.status, body).toBe(409);
+    expect(ApiErrorSchema.parse(JSON.parse(body))).toMatchObject({ code: "PULL_REF_MISMATCH" });
+    expect(body).not.toContain(join(fixture.rootPath, movedPullRequest.providerRelativePath));
+
+    const persisted = JSON.parse(
+      await stack.executeWebModule(`
+        import { createPool } from '@kestrel/database';
+        const pool = createPool(process.env.DATABASE_URL, 'kestrel-pull-ref-mismatch-test');
+        try {
+          const result = await pool.query(
+            "SELECT revision_state, failure_reason, artifact_locator, manifest_digest FROM review_revisions WHERE head_object_id = $1",
+            [${JSON.stringify(movedPullRequest.headObjectId)}]
+          );
+          process.stdout.write(JSON.stringify(result.rows));
+        } finally {
+          await pool.end();
+        }
+      `),
+    ) as Array<{
+      artifact_locator: string | null;
+      failure_reason: string;
+      manifest_digest: string | null;
+      revision_state: string;
+    }>;
+    expect(persisted).toEqual([
+      {
+        artifact_locator: null,
+        failure_reason: "pull_ref_mismatch",
+        manifest_digest: null,
+        revision_state: "unavailable",
+      },
+    ]);
+
+    const boundary = JSON.parse(
+      await stack.executeWebModule(`
+        import { readFile, readdir } from 'node:fs/promises';
+        import { join } from 'node:path';
+        import { readLocalSourceConfig } from '@kestrel/local-source';
+        const commands = (await readFile('/tmp/kestrel-git-commands.log', 'utf8'))
+          .split(/\\r?\\n/u)
+          .filter((candidate) => candidate.includes(${JSON.stringify(
+            `https://github.com/Ic3b3rg/${movedRepositoryName}.git`,
+          )}));
+        const config = await readLocalSourceConfig();
+        const acquisitionRoot = join(
+          config.artifactRoot,
+          'projects',
+          ${JSON.stringify(observed.project.id)},
+          'acquisition-repositories',
+        );
+        const acquisitionEntries = await readdir(acquisitionRoot).catch((error) => {
+          if (error?.code === 'ENOENT') return [];
+          throw error;
+        });
+        process.stdout.write(JSON.stringify({ acquisitionEntries, commands }));
+      `),
+    ) as { acquisitionEntries: string[]; commands: string[] };
+    expect(boundary.commands).toHaveLength(2);
+    expect(boundary.commands[0]).toContain(
+      `+refs/pull/${String(movedPullRequestNumber)}/head:refs/kestrel/head`,
+    );
+    expect(boundary.commands[1]).toContain(`+${movedPullRequest.headObjectId}:refs/kestrel/head`);
+    expect(boundary.commands.join(" ")).not.toContain(movedPullRequest.providerRelativePath);
+    expect(boundary.acquisitionEntries).toEqual([]);
+    expect(await fixture.snapshotRepository(movedPullRequest.repositoryPath)).toBe(
+      beforeFingerprint,
+    );
   }, 60_000);
 });
 

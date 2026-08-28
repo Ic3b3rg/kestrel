@@ -566,6 +566,7 @@ function validateTreePath(pathBytes: Buffer): string {
   const segments = path.split("/");
   if (
     path.startsWith("/") ||
+    /\p{Cc}/u.test(path) ||
     segments.some((segment) => segment === "" || segment === "." || segment === "..")
   ) {
     throw new LocalSourceError("repository_invalid");

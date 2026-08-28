@@ -228,6 +228,8 @@ describe("V1 public contracts", () => {
       { baseObjectId: "a".repeat(40) },
       { headObjectId: "b".repeat(40) },
       { remoteUrl: "https://github.com/kestrel/review-source.git" },
+      { headRepositoryUrl: "https://github.com/untrusted/fork.git" },
+      { headRepository: { name: "fork", owner: "untrusted" } },
       { pullRequestNumber: 42 },
     ]) {
       expect(() =>
@@ -447,6 +449,24 @@ describe("V1 public contracts", () => {
       availableAt: "2026-08-24T12:01:00.000Z",
     } as const;
     expect(ReviewRevisionSchema.parse(revision)).toEqual(revision);
+    for (const failureReason of [
+      "base_revision_unresolvable",
+      "head_revision_unresolvable",
+      "pull_ref_mismatch",
+      "provider_authentication_required",
+      "provider_resource_unavailable",
+    ] as const) {
+      expect(
+        ReviewRevisionSchema.parse({
+          ...revision,
+          state: "unavailable",
+          objectCount: null,
+          retainedBytes: null,
+          failureReason,
+          availableAt: null,
+        }),
+      ).toMatchObject({ failureReason, state: "unavailable" });
+    }
     expect(() =>
       ReviewRevisionSchema.parse({
         ...revision,

@@ -20,9 +20,11 @@ than introduce another review path.
 The Local Repository Source remains the Operator-authorized access gate and the first object source.
 When that attached source matches an observed GitHub pull request but lacks one of its captured
 exact objects, Kestrel may supplement it with a fixed fetch from the server-derived canonical GitHub
-remote into a disposable, Project-scoped Kestrel bare repository. Only the captured base branch and
-pull request refs are fetched; the Operator's repository is not read from or written to by the
-fetch. Git may consult the host's existing credential helpers, but credentials remain inside Git's
-credential flow and are neither imported nor retained by Kestrel. Provider metadata alone still
-grants no source authority, and the retained, locally verified Review Revision remains the sole
-review input.
+remote into a disposable, Project-scoped Kestrel bare repository. The initial fetch requests only
+the captured base branch and pull request refs. If either ref is absent or has moved, Kestrel may
+make one bounded recovery fetch for the captured exact object IDs through that same canonical base
+repository; it never contacts a head repository or substitutes a newly observed object. The
+Operator's repository is not read from or written to by either fetch. Git may consult the host's
+existing credential helpers, but credentials remain inside Git's credential flow and are neither
+imported nor retained by Kestrel. Provider metadata alone still grants no source authority, and the
+retained, locally verified Review Revision remains the sole review input.

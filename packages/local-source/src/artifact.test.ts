@@ -366,6 +366,12 @@ describe("exact Review Revision retention", () => {
     await chmod(join(repository, "executable.sh"), 0o755);
     await writeFile(join(repository, "café.txt"), "unicode retained\n", "utf8");
     await writeFile(join(repository, "binary.bin"), Buffer.from([0x00, 0xff, 0x10, 0x80]));
+    const lfsPointer =
+      "version https://git-lfs.github.com/spec/v1\n" +
+      `oid sha256:${"a".repeat(64)}\n` +
+      "size 1234\n";
+    await writeFile(join(repository, "large.lfs"), lfsPointer, "utf8");
+    await git(repository, ["add", "large.lfs"]);
     await writeFile(
       join(repository, "canary-command"),
       "#!/bin/sh\nprintf 'invoked\\n' > command-canary-invoked\nexit 86\n",
@@ -582,6 +588,14 @@ describe("exact Review Revision retention", () => {
         path: "binary.bin",
       }),
     ).resolves.toEqual(Buffer.from([0x00, 0xff, 0x10, 0x80]));
+    await expect(
+      readRetainedFile(config, {
+        artifactLocator: retained.artifactLocator,
+        manifestDigest: retained.manifestDigest,
+        side: "head",
+        path: "large.lfs",
+      }),
+    ).resolves.toEqual(Buffer.from(lfsPointer));
     for (const path of ["staged.txt", "untracked.txt", "ignored.txt"]) {
       await expect(
         readRetainedFile(config, {
