@@ -8,7 +8,7 @@ const operatorId = "018f0f89-a21d-7e31-8d27-aa4383f22991";
 
 describe("Change Intent persistence", () => {
   it("creates one source-backed version and advances the Proposal atomically", async () => {
-    const query = vi.fn(async (statement: string, parameters?: readonly unknown[]) => {
+    const query = vi.fn((statement: string, parameters?: readonly unknown[]) => {
       if (statement === "BEGIN" || statement === "COMMIT") return { rowCount: null, rows: [] };
       if (statement.includes("AS canonical_proposal_id") && statement.includes("FOR UPDATE")) {
         return {
@@ -89,7 +89,7 @@ describe("Change Intent persistence", () => {
     const release = vi.fn();
 
     const result = await createChangeIntentVersion(
-      { connect: vi.fn(async () => ({ query, release })) } as never,
+      { connect: vi.fn(() => ({ query, release })) } as never,
       {
         actorId: operatorId,
         changeProposalId: proposalId,

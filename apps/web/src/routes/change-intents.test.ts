@@ -126,12 +126,17 @@ describe("Change Intent routes", () => {
 
     expect(response.statusCode).toBe(201);
     expect(ChangeIntentVersionCreatedSchema.parse(response.json())).toEqual(created);
-    expect(service.createVersion).toHaveBeenCalledWith(command, {
+    expect(service.createVersion).toHaveBeenCalledOnce();
+    const invocation = service.createVersion.mock.calls[0];
+    if (invocation === undefined) throw new Error("Change Intent service was not invoked");
+    expect(invocation[0]).toEqual(command);
+    expect(invocation[1]).toMatchObject({
       actorId: operatorId,
       changeProposalId,
-      correlationId: expect.any(String),
       projectId,
     });
+    expect(typeof invocation[1].correlationId).toBe("string");
+    expect(invocation[1].correlationId).not.toBe("");
   });
 
   it("rejects forged source snapshots before invoking persistence", async () => {

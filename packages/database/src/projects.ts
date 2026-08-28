@@ -54,7 +54,7 @@ export interface ProjectDatabaseRow {
   local_object_format?: "sha1" | "sha256" | null;
   local_source_created_at?: Date | null;
   local_source_updated_at?: Date | null;
-  proposal_kind?: "local" | "provider_observed";
+  proposal_kind?: string | null;
   proposal_created_at?: Date;
   proposal_updated_at?: Date;
   intent_id?: string | null;

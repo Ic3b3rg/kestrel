@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type SyntheticEvent } from "react";
 
 import {
   CreateChangeIntentVersionCommandSchema,
@@ -154,7 +154,7 @@ export function ChangeIntentEditor({
     issue.kind === "missing" ? draftIssueFieldLabels[issue.field] : issue.kind,
   );
 
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
     const parsed = CreateChangeIntentVersionCommandSchema.safeParse(command);
     if (!parsed.success) {
@@ -192,7 +192,7 @@ export function ChangeIntentEditor({
           <h5>
             {current === null
               ? "Curate the first version"
-              : `Curate version ${current.version + 1}`}
+              : `Curate version ${String(current.version + 1)}`}
           </h5>
         </div>
         <strong className={draftResolved ? "intent-resolved" : "intent-unresolved"}>
@@ -203,13 +203,13 @@ export function ChangeIntentEditor({
       {current === null ? null : (
         <section
           className="current-intent"
-          aria-label={`Current Change Intent version ${current.version}`}
+          aria-label={`Current Change Intent version ${String(current.version)}`}
         >
           <strong>{current.resolution.state === "resolved" ? "Resolved" : "Unresolved"}</strong>
           <span>Current v{current.version}</span>
           <code>Source digest {current.sourceDigest}</code>
           {current.resolution.issues.map((issue, index) => (
-            <span key={`${issue.kind}:${index}`}>{currentIssue(issue)}</span>
+            <span key={`${issue.kind}:${String(index)}`}>{currentIssue(issue)}</span>
           ))}
           {current.sources.map((source) => (
             <SourceSnapshot key={source.id} source={source} />

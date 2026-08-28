@@ -97,7 +97,7 @@ export function registerChangeIntentRoutes(
           correlationId: request.id,
           projectId: parsedProjectId.data,
         });
-        return reply.code(201).send(ChangeIntentVersionCreatedSchema.parse(result));
+        return await reply.code(201).send(ChangeIntentVersionCreatedSchema.parse(result));
       } catch (error) {
         if (error instanceof ChangeIntentPersistenceError) {
           switch (error.code) {

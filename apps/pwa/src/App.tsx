@@ -576,7 +576,7 @@ export function App() {
             setProjectReloadGeneration((generation) => generation + 1);
             setProjectError(null);
             setAnnouncement(
-              `Change Intent version ${result.changeIntent.version} created as ${result.changeIntent.resolution.state}.`,
+              `Change Intent version ${String(result.changeIntent.version)} created as ${result.changeIntent.resolution.state}.`,
             );
           }}
           onLocalAvailable={handleLocalRevisionAvailable}

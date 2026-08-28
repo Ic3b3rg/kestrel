@@ -61,16 +61,25 @@ const providerProposal: Proposal = {
   version: 3,
 };
 
-function findControl<T extends HTMLInputElement | HTMLTextAreaElement>(
+function findControl(
   container: HTMLElement,
   label: string,
-): T {
+): HTMLInputElement | HTMLTextAreaElement {
   const element = [...container.querySelectorAll("label")].find((item) =>
-    item.textContent?.includes(label),
+    item.textContent.includes(label),
   );
   const id = element?.htmlFor;
-  const control = id === undefined || id === "" ? null : container.querySelector<T>(`#${id}`);
+  const control =
+    id === undefined || id === ""
+      ? null
+      : container.querySelector<HTMLInputElement | HTMLTextAreaElement>(`#${id}`);
   if (control === null) throw new Error(`Control not found: ${label}`);
+  return control;
+}
+
+function findInputControl(container: HTMLElement, label: string): HTMLInputElement {
+  const control = findControl(container, label);
+  if (!(control instanceof HTMLInputElement)) throw new Error(`Input not found: ${label}`);
   return control;
 }
 
@@ -143,8 +152,8 @@ describe("ChangeIntentEditor", () => {
     >(() => new Promise(() => undefined));
     await renderEditor({ createVersion });
 
-    await check(findControl<HTMLInputElement>(container, "GitHub title"));
-    await check(findControl<HTMLInputElement>(container, "Head commit message"));
+    await check(findInputControl(container, "GitHub title"));
+    await check(findInputControl(container, "Head commit message"));
     await changeValue(findControl(container, "Objective"), "Keep repository access read-only");
     await changeValue(findControl(container, "Scope boundaries"), "No provider writes\nNo secrets");
     await changeValue(
@@ -275,6 +284,6 @@ describe("ChangeIntentEditor", () => {
 
     await renderEditor({ proposal });
 
-    expect(findControl<HTMLInputElement>(container, "GitHub title").checked).toBe(false);
+    expect(findInputControl(container, "GitHub title").checked).toBe(false);
   });
 });

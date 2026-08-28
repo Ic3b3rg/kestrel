@@ -232,7 +232,8 @@ describe("PWA API client", () => {
       `/api/v1/projects/${projectId}/change-proposals/${proposalId}/change-intents`,
     );
     expect(fetchMock.mock.calls[0]?.[1]).toEqual(expect.objectContaining({ method: "POST" }));
-    const body = String(fetchMock.mock.calls[0]?.[1]?.body);
+    const body = fetchMock.mock.calls[0]?.[1]?.body;
+    if (typeof body !== "string") throw new Error("Change Intent request body is unavailable");
     expect(JSON.parse(body)).toEqual(command);
     expect(body).not.toContain("provenance");
   });

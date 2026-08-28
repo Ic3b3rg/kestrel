@@ -27,6 +27,11 @@ const intentId = "018f0f89-9a20-79f9-9990-dda80c9b917d";
 const revisionId = "018f0f89-9a21-7271-b92d-f1cb0d48bb47";
 const timestamp = new Date("2026-08-24T12:00:30.000Z");
 
+function parseJsonParameter(value: unknown): unknown {
+  if (typeof value !== "string") throw new Error("Expected a serialized JSON parameter");
+  return JSON.parse(value) as unknown;
+}
+
 function acquisitionPool(
   options: {
     existingSource?: boolean;
@@ -196,12 +201,12 @@ function acquisitionPool(
             version: "1",
             intent_text: "Review authorization boundaries",
             objective: values?.[4],
-            scope_boundaries: JSON.parse(String(values?.[5])),
-            acceptance_outcomes: JSON.parse(String(values?.[6])),
-            selected_sources: JSON.parse(String(values?.[7])),
+            scope_boundaries: parseJsonParameter(values?.[5]),
+            acceptance_outcomes: parseJsonParameter(values?.[6]),
+            selected_sources: parseJsonParameter(values?.[7]),
             source_digest: values?.[8],
             resolution_state: values?.[9],
-            resolution_issues: JSON.parse(String(values?.[10])),
+            resolution_issues: parseJsonParameter(values?.[10]),
             created_at: timestamp,
           },
         ],

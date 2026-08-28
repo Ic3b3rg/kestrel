@@ -289,7 +289,7 @@ function ChangeProposalRecord({
           <RevisionFacts revision={revision} />
         </dl>
         <ChangeIntentEditor
-          key={`${changeProposal.id}:${changeProposal.version}`}
+          key={`${changeProposal.id}:${String(changeProposal.version)}`}
           disabled={disabled}
           projectId={projectId}
           proposal={changeProposal}
@@ -359,7 +359,7 @@ function ChangeProposalRecord({
         <RevisionFacts revision={revision} />
       </dl>
       <ChangeIntentEditor
-        key={`${changeProposal.id}:${changeProposal.version}`}
+        key={`${changeProposal.id}:${String(changeProposal.version)}`}
         disabled={disabled}
         projectId={projectId}
         proposal={changeProposal}

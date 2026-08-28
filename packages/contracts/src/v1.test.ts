@@ -277,7 +277,7 @@ describe("V1 public contracts", () => {
     expect(() =>
       CreateChangeIntentVersionCommandSchema.parse({
         ...command,
-        selectedSourceIds: Array.from({ length: 20 }, (_, index) => `source_${index}`),
+        selectedSourceIds: Array.from({ length: 20 }, (_, index) => `source_${String(index)}`),
       }),
     ).toThrow("20 selected sources");
     expect(() =>
