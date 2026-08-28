@@ -255,13 +255,6 @@ export const ChangeIntentSourceProvenanceSchema = z.discriminatedUnion("kind", [
     canonicalUrl: PublicGitHubPullRequestUrlSchema,
   }),
   z.strictObject({
-    kind: z.literal("linked_record"),
-    provider: z.string().min(1).max(64),
-    recordId: z.string().min(1).max(256),
-    observedAt: UtcDateTimeSchema,
-    canonicalUrl: z.url().max(2_048),
-  }),
-  z.strictObject({
     kind: z.literal("commit_author"),
     side: z.enum(["base", "head"]),
     objectId: GitObjectIdSchema,
@@ -281,13 +274,7 @@ export const ChangeIntentSourceProvenanceSchema = z.discriminatedUnion("kind", [
 export const ChangeIntentSourceSchema = z
   .strictObject({
     id: ChangeIntentSourceIdSchema,
-    kind: z.enum([
-      "provider_field",
-      "linked_record",
-      "commit_author",
-      "commit_message",
-      "operator_input",
-    ]),
+    kind: z.enum(["provider_field", "commit_author", "commit_message", "operator_input"]),
     label: z.string().trim().min(1).max(256),
     text: ChangeIntentSourceTextSchema,
     version: z.string().min(1).max(128),
@@ -317,6 +304,30 @@ export const ChangeIntentResolutionIssueSchema = z.discriminatedUnion("kind", [
     description: ChangeIntentTextSchema,
   }),
 ]);
+
+export interface ChangeIntentResolutionMaterial {
+  acceptanceOutcomes: readonly string[];
+  objective: string | null;
+  scopeBoundaries: readonly string[];
+  sourceCount: number;
+  unresolvedIssues: readonly z.infer<typeof ChangeIntentUnresolvedIssueInputSchema>[];
+}
+
+export function evaluateChangeIntentResolution(
+  material: ChangeIntentResolutionMaterial,
+): z.infer<typeof ChangeIntentResolutionSchema> {
+  const issues: z.infer<typeof ChangeIntentResolutionIssueSchema>[] = [];
+  if (material.objective === null) issues.push({ kind: "missing", field: "objective" });
+  if (material.scopeBoundaries.length === 0) {
+    issues.push({ kind: "missing", field: "scope_boundaries" });
+  }
+  if (material.acceptanceOutcomes.length === 0) {
+    issues.push({ kind: "missing", field: "acceptance_outcomes" });
+  }
+  if (material.sourceCount === 0) issues.push({ kind: "missing", field: "sources" });
+  issues.push(...material.unresolvedIssues);
+  return { state: issues.length === 0 ? "resolved" : "unresolved", issues };
+}
 
 export const ChangeIntentResolutionSchema = z
   .strictObject({
@@ -360,13 +371,14 @@ export const ChangeIntentSchema = z
       }
       seen.add(source.id);
     }
-    if (
-      value.resolution.state === "resolved" &&
-      (value.objective === null ||
-        value.scopeBoundaries.length === 0 ||
-        value.acceptanceOutcomes.length === 0 ||
-        value.sources.length === 0)
-    ) {
+    const materialResolution = evaluateChangeIntentResolution({
+      acceptanceOutcomes: value.acceptanceOutcomes,
+      objective: value.objective,
+      scopeBoundaries: value.scopeBoundaries,
+      sourceCount: value.sources.length,
+      unresolvedIssues: [],
+    });
+    if (value.resolution.state === "resolved" && materialResolution.state !== "resolved") {
       context.addIssue({
         code: "custom",
         message: "Resolved Change Intent fields are incomplete",

@@ -7,7 +7,7 @@ import {
   ChangeIntentSourceSchema,
   ChangeIntentVersionCreatedSchema,
   CreateChangeIntentVersionCommandSchema,
-  type ChangeIntent,
+  evaluateChangeIntentResolution,
   type ChangeIntentSource,
   type ChangeIntentVersionCreated,
   type CreateChangeIntentVersionCommand,
@@ -157,26 +157,6 @@ export function buildChangeIntentCandidates(
   return [...providerSources(proposal), ...commitSources(revision)];
 }
 
-function createResolution(
-  command: CreateChangeIntentVersionCommand,
-  sourceCount: number,
-): ChangeIntent["resolution"] {
-  const issues: ChangeIntent["resolution"]["issues"] = [];
-  if (command.objective === null) issues.push({ kind: "missing", field: "objective" });
-  if (command.scopeBoundaries.length === 0) {
-    issues.push({ kind: "missing", field: "scope_boundaries" });
-  }
-  if (command.acceptanceOutcomes.length === 0) {
-    issues.push({ kind: "missing", field: "acceptance_outcomes" });
-  }
-  if (sourceCount === 0) issues.push({ kind: "missing", field: "sources" });
-  issues.push(...command.unresolvedIssues);
-  return {
-    state: issues.length === 0 ? "resolved" : "unresolved",
-    issues,
-  };
-}
-
 function digestSources(sources: readonly ChangeIntentSource[]): string {
   return createHash("sha256").update(JSON.stringify(sources), "utf8").digest("hex");
 }
@@ -304,7 +284,13 @@ async function createChangeIntentVersionInTransaction(
       }),
     );
   }
-  const resolution = createResolution(command, sources.length);
+  const resolution = evaluateChangeIntentResolution({
+    acceptanceOutcomes: command.acceptanceOutcomes,
+    objective: command.objective,
+    scopeBoundaries: command.scopeBoundaries,
+    sourceCount: sources.length,
+    unresolvedIssues: command.unresolvedIssues,
+  });
   const sourceDigest = digestSources(sources);
   const text = command.objective ?? command.operatorInput ?? sources[0]?.text;
   if (text === undefined) {

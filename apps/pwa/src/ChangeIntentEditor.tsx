@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from "rea
 
 import {
   CreateChangeIntentVersionCommandSchema,
+  evaluateChangeIntentResolution,
   type ChangeIntentSource,
   type ChangeIntentVersionCreated,
   type CreateChangeIntentVersionCommand,
@@ -28,6 +29,13 @@ const issueFieldLabels = {
   sources: "Selected sources",
 } as const;
 
+const draftIssueFieldLabels = {
+  acceptance_outcomes: "ordered acceptance outcomes",
+  objective: "objective",
+  scope_boundaries: "scope boundaries",
+  sources: "selected sources or Operator input",
+} as const;
+
 function lines(value: string): string[] {
   return value
     .split("\n")
@@ -40,8 +48,6 @@ function sourceProvenance(source: ChangeIntentSource): string {
   switch (provenance.kind) {
     case "provider_field":
       return `GitHub ${provenance.field} · observed ${provenance.observedAt} · ${provenance.canonicalUrl}`;
-    case "linked_record":
-      return `${provenance.provider} record ${provenance.recordId} · observed ${provenance.observedAt} · ${provenance.canonicalUrl}`;
     case "commit_author":
     case "commit_message":
       return `${provenance.side} ${provenance.objectId.slice(0, 12)} · ${provenance.ref}`;
@@ -136,15 +142,17 @@ export function ChangeIntentEditor({
     }),
     [ambiguity, contradiction, objective, operatorInput, outcomes, proposal, scope, selected],
   );
-  const missing = [
-    ...(command.objective === null ? ["objective"] : []),
-    ...(command.scopeBoundaries.length === 0 ? ["scope boundaries"] : []),
-    ...(command.acceptanceOutcomes.length === 0 ? ["ordered acceptance outcomes"] : []),
-    ...(command.selectedSourceIds.length === 0 && command.operatorInput === null
-      ? ["selected sources or Operator input"]
-      : []),
-  ];
-  const draftResolved = missing.length === 0 && command.unresolvedIssues.length === 0;
+  const draftResolution = evaluateChangeIntentResolution({
+    acceptanceOutcomes: command.acceptanceOutcomes,
+    objective: command.objective,
+    scopeBoundaries: command.scopeBoundaries,
+    sourceCount: command.selectedSourceIds.length + (command.operatorInput === null ? 0 : 1),
+    unresolvedIssues: command.unresolvedIssues,
+  });
+  const draftResolved = draftResolution.state === "resolved";
+  const draftProblems = draftResolution.issues.map((issue) =>
+    issue.kind === "missing" ? draftIssueFieldLabels[issue.field] : issue.kind,
+  );
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -290,7 +298,7 @@ export function ChangeIntentEditor({
       <p className="intent-resolution-preview">
         {draftResolved
           ? "This version can resolve when saved."
-          : `This version will remain unresolved: ${[...missing, ...command.unresolvedIssues.map(({ kind }) => kind)].join(", ")}.`}
+          : `This version will remain unresolved: ${draftProblems.join(", ")}.`}
       </p>
       {error === null ? null : (
         <p className="project-form-error" role="alert">

@@ -244,7 +244,9 @@ describe("ChangeIntentEditor", () => {
 
   it("requires renewed selection when a candidate source version changes", async () => {
     const candidate = providerProposal.changeIntentCandidates[0];
-    if (candidate === undefined) throw new Error("Provider title candidate is unavailable");
+    if (candidate?.kind !== "provider_field" || candidate.provenance.kind !== "provider_field") {
+      throw new Error("Provider title candidate is unavailable");
+    }
     const proposal: Proposal = {
       ...providerProposal,
       changeIntent: {
