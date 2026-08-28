@@ -104,7 +104,24 @@ test.describe("observable Installation PWA", () => {
              'U_kgDOA',
              'octocat'
       FROM project;
+    `);
+  });
 
+  test.afterAll(async () => {
+    await stack?.close();
+  });
+
+  test.afterEach(async () => {
+    await stack?.executeSql(`
+      DELETE FROM local_repository_sources
+      WHERE source_identity = '${"e".repeat(64)}';
+    `);
+  });
+
+  test("the Operator acquires an observed pull request from its Project", async ({ page }) => {
+    if (stack === undefined) throw new Error("Observed pull-request browser stack is unavailable");
+    const runningStack = stack;
+    await runningStack.executeRuntimeSql(`
       INSERT INTO local_repository_sources (
         installation_id,
         project_id,
@@ -132,15 +149,6 @@ test.describe("observable Installation PWA", () => {
       FROM projects
       WHERE provider_repository_id = 'R_kgDOGx';
     `);
-  });
-
-  test.afterAll(async () => {
-    await stack?.close();
-  });
-
-  test("the Operator acquires an observed pull request from its Project", async ({ page }) => {
-    if (stack === undefined) throw new Error("Observed pull-request browser stack is unavailable");
-    const runningStack = stack;
     const inbox = ProjectInboxSchema.parse(
       await (await runningStack.fetchApi("/api/v1/projects")).json(),
     );

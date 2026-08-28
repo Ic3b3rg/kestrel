@@ -80,6 +80,14 @@ async function withEnvironment<T>(
   }
 }
 
+async function waitForFile(path: string): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if ((await lstat(path).catch(() => null)) !== null) return;
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 10));
+  }
+  throw new Error(`Timed out waiting for ${path}`);
+}
+
 afterEach(async () => {
   await Promise.all(
     temporaryDirectories.splice(0).map(async (directory) => {
@@ -90,6 +98,77 @@ afterEach(async () => {
 });
 
 describe("exact Review Revision retention", () => {
+  it("cancels an in-flight object reader without publishing a Revision artifact", async () => {
+    const fixture = await mkdtemp(join(tmpdir(), "kestrel-local-source-cancel-"));
+    temporaryDirectories.push(fixture);
+    const root = join(fixture, "root");
+    const repository = join(root, "kestrel");
+    const artifacts = join(fixture, "artifacts");
+    const gitWrapper = join(fixture, "git-wrapper.cjs");
+    const objectReadArmed = join(fixture, "object-read-armed");
+    const objectReadStarted = join(fixture, "object-read-started");
+    await mkdir(repository, { recursive: true });
+    await mkdir(artifacts, { mode: 0o700 });
+    await chmod(artifacts, 0o700);
+    await git(repository, ["init", "--initial-branch=main"]);
+    await git(repository, ["config", "user.name", "Kestrel Test"]);
+    await git(repository, ["config", "user.email", "kestrel@example.invalid"]);
+    await writeFile(join(repository, "review.txt"), "base\n", "utf8");
+    await git(repository, ["add", "review.txt"]);
+    await git(repository, ["commit", "-m", "Base"]);
+    await git(repository, ["switch", "-c", "review-source"]);
+    await writeFile(join(repository, "review.txt"), "head\n", "utf8");
+    await git(repository, ["commit", "-am", "Head"]);
+    await writeFile(
+      gitWrapper,
+      `#!${process.execPath}\n` +
+        `const { existsSync, writeFileSync } = require("node:fs");\n` +
+        `const { spawnSync } = require("node:child_process");\n` +
+        `const args = process.argv.slice(2);\n` +
+        `if (existsSync(${JSON.stringify(objectReadArmed)}) && args.includes("cat-file") && args.includes("--batch")) {\n` +
+        `  writeFileSync(${JSON.stringify(objectReadStarted)}, "started");\n` +
+        `  setInterval(() => {}, 1000);\n` +
+        `} else {\n` +
+        `  const result = spawnSync("/usr/bin/git", args, { env: process.env, stdio: "inherit" });\n` +
+        `  process.exit(result.status ?? 1);\n` +
+        `}\n`,
+      { mode: 0o700 },
+    );
+    await chmod(gitWrapper, 0o700);
+    const config = await readLocalSourceConfig({
+      ARTIFACT_ROOT: artifacts,
+      LOCAL_GIT_EXECUTABLE: gitWrapper,
+      LOCAL_REPOSITORY_ROOTS: JSON.stringify([root]),
+      REVIEW_REVISION_MAX_BYTES: "1048576",
+      REVIEW_REVISION_MAX_OBJECTS: "1000",
+    });
+    const [candidate] = await discoverRepositories(config);
+    if (candidate === undefined) throw new Error("Cancellation fixture was not discovered");
+    const resolved = await resolveRepository(config, candidate.repositoryId);
+    const inventory = await listRepositoryReferences(config, resolved);
+    const selected = await resolveSelectedRevision(config, resolved, inventory, {
+      baseRef: "refs/heads/main",
+      headRef: "refs/heads/review-source",
+    });
+    const projectId = "018f0f89-949a-75a8-8f61-6df78a843b1e";
+    const revisionId = "018f0f89-9a21-7271-b92d-f1cb0d48bb48";
+    const controller = new AbortController();
+    await writeFile(objectReadArmed, "armed");
+    const retention = retainRevision(config, {
+      projectId,
+      revisionId,
+      selected,
+      signal: controller.signal,
+    });
+    await waitForFile(objectReadStarted);
+    controller.abort();
+
+    await expect(retention).rejects.toMatchObject({ code: "acquisition_cancelled" });
+    await expect(
+      lstat(join(artifacts, "projects", projectId, "revisions", revisionId)),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("retains and reads SHA-256 repositories with exact 64-character object IDs", async () => {
     const fixture = await mkdtemp(join(tmpdir(), "kestrel-local-source-sha256-"));
     temporaryDirectories.push(fixture);

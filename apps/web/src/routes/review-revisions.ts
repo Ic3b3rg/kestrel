@@ -269,6 +269,7 @@ export function createReviewRevisionService(
           const project = await readProject(pool, command.projectId);
           prepared = await source.prepareObserved(
             resolveObservedReviewRevisionSelection(project, command),
+            context.signal,
           );
         }
       } catch (error) {

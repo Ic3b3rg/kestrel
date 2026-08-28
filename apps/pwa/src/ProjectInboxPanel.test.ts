@@ -128,6 +128,7 @@ describe("ProjectInboxPanel", () => {
     const html = render({ schemaVersion: 1, projects: [] });
 
     expect(html).toContain("Optional public GitHub pull request URL");
+    expect(html).toContain("GitHub metadata does not by itself authorize or acquire review source");
     expect(html).toContain("No GitHub credentials are sent or stored");
     expect(html).toContain("No Projects yet");
     expect(html).toContain("60 unauthenticated GitHub API requests per hour");

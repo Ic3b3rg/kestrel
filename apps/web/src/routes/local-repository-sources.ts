@@ -61,7 +61,10 @@ export interface LocalRepositoryService {
 
 export interface LocalReviewRevisionSourceService extends LocalRepositoryService {
   prepare(command: RetainLocalReviewRevisionCommand): Promise<PreparedReviewRevision>;
-  prepareObserved(selection: ObservedReviewRevisionSelection): Promise<PreparedReviewRevision>;
+  prepareObserved(
+    selection: ObservedReviewRevisionSelection,
+    signal?: AbortSignal,
+  ): Promise<PreparedReviewRevision>;
   quarantine(artifactLocator: string): Promise<void>;
   retain(input: {
     prepared: PreparedReviewRevision;
@@ -185,9 +188,9 @@ export function createLocalRepositoryService(
         source: preparedSource(repository, selected),
       };
     },
-    async prepareObserved(selection) {
+    async prepareObserved(selection, signal) {
       const repository = await resolveRepository(config, selection.repositoryId);
-      const inspection = await inspectRepository(config, repository);
+      const inspection = await inspectRepository(config, repository, signal);
       if (
         inspection.objectFormat !== selection.objectFormat ||
         !sameGitHubRepository(inspection.githubRepository, selection.repository)
@@ -221,7 +224,12 @@ export function createLocalRepositoryService(
         maxObjects: prepared.maxObjects,
       };
       const retainLocal = () =>
-        retainRevision(retentionConfig, { projectId, revisionId, selected: prepared.selected });
+        retainRevision(retentionConfig, {
+          projectId,
+          revisionId,
+          selected: prepared.selected,
+          ...(signal === undefined ? {} : { signal }),
+        });
       if (prepared.acquisition.kind === "local") return retainLocal();
       if (prepared.acquisition.expectedProjectId !== projectId) {
         throw new LocalSourceError("repository_not_available");
@@ -231,7 +239,11 @@ export function createLocalRepositoryService(
       } catch (error) {
         if (!(error instanceof LocalSourceError) || error.code !== "object_missing") throw error;
       }
-      const currentInspection = await inspectRepository(config, prepared.selected.repository);
+      const currentInspection = await inspectRepository(
+        config,
+        prepared.selected.repository,
+        signal,
+      );
       if (
         !sameGitHubRepository(currentInspection.githubRepository, prepared.acquisition.repository)
       ) {
@@ -250,10 +262,11 @@ export function createLocalRepositoryService(
         },
         (acquired) =>
           retainRevision(retentionConfig, {
-            fallbackSources: [acquired],
+            fallbackSource: acquired,
             projectId,
             revisionId,
             selected: prepared.selected,
+            ...(signal === undefined ? {} : { signal }),
           }),
       );
     },

@@ -127,7 +127,7 @@ function ProjectFacts({ project }: { project: Project }) {
           <span>
             {provider === null
               ? "Exact retained base and head commits are independent of repository attachment."
-              : "Refresh is Manual only; provider metadata never supplies source."}
+              : "Refresh is Manual only; provider metadata alone never authorizes source."}
           </span>
         </dd>
       </div>
@@ -378,8 +378,9 @@ export function ProjectInboxPanel(props: ProjectInboxPanelProps) {
           {props.pending ? "Adding context…" : "Add provider context"}
         </button>
         <p id={helpId} className="form-help">
-          Optional metadata only: GitHub never supplies review source. No GitHub credentials are
-          sent or stored, and only canonical github.com pull request URLs are accepted.
+          GitHub metadata does not by itself authorize or acquire review source. No GitHub
+          credentials are sent or stored, and only canonical github.com pull request URLs are
+          accepted.
         </p>
         {validationError ? (
           <p id={errorId} className="project-form-error" role="alert">

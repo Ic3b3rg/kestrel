@@ -55,10 +55,11 @@ interface RevisionManifest {
 }
 
 export interface RetainRevisionInput {
-  fallbackSources?: readonly RetainRevisionObjectSource[];
+  fallbackSource?: RetainRevisionObjectSource;
   projectId: string;
   revisionId: string;
   selected: SelectedRevision;
+  signal?: AbortSignal;
 }
 
 export interface RetainRevisionObjectSource {
@@ -78,6 +79,10 @@ export interface ReadRetainedFileInput {
   manifestDigest: string;
   path: string;
   side: "base" | "head";
+}
+
+function throwIfCancelled(signal?: AbortSignal): void {
+  if (signal?.aborted === true) throw new LocalSourceError("acquisition_cancelled");
 }
 
 function createSerialExecutor() {
@@ -270,10 +275,12 @@ async function retainRevisionExclusive(
   if (!UUID_V7.test(input.projectId) || !UUID_V7.test(input.revisionId)) {
     throw new LocalSourceError("source_containment_violation");
   }
-  if ((input.fallbackSources?.length ?? 0) > 1) {
-    throw new LocalSourceError("revision_limit_exceeded");
-  }
-  const currentInspection = await inspectRepository(config, input.selected.repository);
+  throwIfCancelled(input.signal);
+  const currentInspection = await inspectRepository(
+    config,
+    input.selected.repository,
+    input.signal,
+  );
   if (
     currentInspection.sourceIdentity !== input.selected.sourceIdentity ||
     currentInspection.objectFormat !== input.selected.objectFormat
@@ -284,15 +291,16 @@ async function retainRevisionExclusive(
     inspection: RepositoryInspection;
     repository: ResolvedRepository;
   }> = [{ inspection: currentInspection, repository: input.selected.repository }];
-  for (const source of input.fallbackSources ?? []) {
-    const inspection = await inspectRepository(config, source.repository);
+  const fallbackSource = input.fallbackSource;
+  if (fallbackSource !== undefined) {
+    const inspection = await inspectRepository(config, fallbackSource.repository, input.signal);
     if (
-      inspection.sourceIdentity !== source.inspection.sourceIdentity ||
+      inspection.sourceIdentity !== fallbackSource.inspection.sourceIdentity ||
       inspection.objectFormat !== input.selected.objectFormat
     ) {
       throw new LocalSourceError("repository_not_available");
     }
-    objectSources.push({ inspection, repository: source.repository });
+    objectSources.push({ inspection, repository: fallbackSource.repository });
   }
 
   const format = input.selected.objectFormat;
@@ -305,6 +313,7 @@ async function retainRevisionExclusive(
       const source = objectSources[index];
       if (source === undefined) {
         const readObject: GitObjectReader = async (objectId) => {
+          throwIfCancelled(input.signal);
           const cached = cache.get(objectId);
           if (cached !== undefined) return cached;
           for (const reader of readers) {
@@ -334,6 +343,8 @@ async function retainRevisionExclusive(
             readers.pop();
           }
         },
+        "revision_limit_exceeded",
+        input.signal,
       );
     };
     return openSource(0);
@@ -414,6 +425,7 @@ async function retainRevisionExclusive(
       return { baseEntries, headEntries, objects, retainedBytes };
     },
   );
+  throwIfCancelled(input.signal);
 
   const manifest: RevisionManifest = {
     schemaVersion: 1,
@@ -444,11 +456,13 @@ async function retainRevisionExclusive(
   let finalized = false;
 
   try {
+    throwIfCancelled(input.signal);
     await mkdir(staging, { mode: 0o700 });
     const objectsDirectory = join(staging, "objects");
     await mkdir(objectsDirectory, { mode: 0o700 });
     directories.add(objectsDirectory);
     for (const object of objects.values()) {
+      throwIfCancelled(input.signal);
       const prefixDirectory = join(objectsDirectory, object.id.slice(0, 2));
       if (!directories.has(prefixDirectory)) {
         await mkdir(prefixDirectory, { mode: 0o700 });
@@ -457,15 +471,18 @@ async function retainRevisionExclusive(
       await writeExclusive(objectPath(staging, object.id), object.content, 0o600);
     }
     const manifestPath = join(staging, MANIFEST_NAME);
+    throwIfCancelled(input.signal);
     await writeExclusive(manifestPath, manifestBytes, 0o600);
 
     for (const object of objects.values()) {
+      throwIfCancelled(input.signal);
       const retainedContent = await readFile(objectPath(staging, object.id));
       const retainedObject = { ...object, content: retainedContent };
       verifyRawObject(format, retainedObject);
       await chmod(objectPath(staging, object.id), 0o400);
       await syncFile(objectPath(staging, object.id));
     }
+    throwIfCancelled(input.signal);
     if (
       createHash("sha256")
         .update(await readFile(manifestPath))
@@ -476,15 +493,18 @@ async function retainRevisionExclusive(
     await chmod(manifestPath, 0o400);
     await syncFile(manifestPath);
     for (const directory of [...directories].reverse()) {
+      throwIfCancelled(input.signal);
       await chmod(directory, 0o500);
       await syncDirectory(directory);
     }
     if ((await lstat(final).catch(() => null)) !== null) {
       throw new LocalSourceError("object_verification_failed");
     }
+    throwIfCancelled(input.signal);
     await rename(staging, final);
     finalized = true;
     await syncDirectory(parent);
+    throwIfCancelled(input.signal);
   } catch (error) {
     if (finalized) {
       try {
@@ -519,6 +539,7 @@ export function retainRevision(
   config: LocalSourceConfig,
   input: RetainRevisionInput,
 ): Promise<RetainedArtifact> {
+  throwIfCancelled(input.signal);
   return serializeRetention(() => retainRevisionExclusive(config, input));
 }
 

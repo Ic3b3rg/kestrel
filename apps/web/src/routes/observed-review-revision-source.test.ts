@@ -123,9 +123,18 @@ describe("observed Review Revision source orchestration", () => {
       }),
       expect.any(Function),
     );
-    expect(mocks.retainRevision.mock.calls[1]?.[1]).toMatchObject({
-      fallbackSources: [acquired],
+    expect(mocks.retainRevision.mock.calls[0]?.[1]).toMatchObject({
+      signal: controller.signal,
     });
+    expect(mocks.retainRevision.mock.calls[1]?.[1]).toMatchObject({
+      fallbackSource: acquired,
+      signal: controller.signal,
+    });
+    expect(mocks.inspectRepository).toHaveBeenLastCalledWith(
+      expect.anything(),
+      repository,
+      controller.signal,
+    );
   });
 
   it("refuses network acquisition after the clone GitHub identity changes", async () => {

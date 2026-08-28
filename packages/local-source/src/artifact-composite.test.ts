@@ -105,7 +105,7 @@ describe("composite Review Revision retention", () => {
     ).rejects.toMatchObject({ code: "object_missing" });
 
     const retained = await retainRevision(config, {
-      fallbackSources: [{ inspection: acquiredInspection, repository: acquiredRepository }],
+      fallbackSource: { inspection: acquiredInspection, repository: acquiredRepository },
       projectId: "018f0f89-949a-75a8-8f61-6df78a843b1e",
       revisionId: "018f0f89-9a21-7271-b92d-f1cb0d48bb48",
       selected,

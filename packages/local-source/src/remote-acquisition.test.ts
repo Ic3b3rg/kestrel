@@ -1,7 +1,8 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
@@ -11,6 +12,87 @@ import { readLocalSourceConfig, readRawGitObject, withGitHubPullRequestObjects }
 
 const execFileAsync = promisify(execFile);
 const temporaryDirectories: string[] = [];
+const servers: Server[] = [];
+
+async function startAuthenticatedGitServer(repositoryRoot: string): Promise<{
+  remote: string;
+  stats: { authenticatedRequests: number; challenges: number };
+}> {
+  const expectedAuthorization = `Basic ${Buffer.from("kestrel:private-review").toString("base64")}`;
+  const stats = { authenticatedRequests: 0, challenges: 0 };
+  const server = createServer((request, response) => {
+    if (request.headers.authorization !== expectedAuthorization) {
+      stats.challenges += 1;
+      response.writeHead(401, { "WWW-Authenticate": 'Basic realm="Kestrel test"' });
+      response.end();
+      return;
+    }
+    stats.authenticatedRequests += 1;
+    const requestUrl = new URL(request.url ?? "/", "http://127.0.0.1");
+    const gitProtocol = request.headers["git-protocol"];
+    const backend = spawn("/usr/bin/git", ["http-backend"], {
+      env: {
+        ...process.env,
+        CONTENT_LENGTH: request.headers["content-length"] ?? "",
+        CONTENT_TYPE: request.headers["content-type"] ?? "",
+        GIT_HTTP_EXPORT_ALL: "1",
+        GIT_PROJECT_ROOT: repositoryRoot,
+        HTTP_GIT_PROTOCOL: typeof gitProtocol === "string" ? gitProtocol : "",
+        PATH_INFO: requestUrl.pathname,
+        QUERY_STRING: requestUrl.search.slice(1),
+        REMOTE_ADDR: request.socket.remoteAddress ?? "127.0.0.1",
+        REMOTE_USER: "kestrel",
+        REQUEST_METHOD: request.method ?? "GET",
+        SERVER_NAME: "127.0.0.1",
+        SERVER_PORT: String(request.socket.localPort ?? 80),
+        SERVER_PROTOCOL: `HTTP/${request.httpVersion}`,
+      },
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const stdout: Buffer[] = [];
+    backend.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
+    backend.stderr.resume();
+    backend.once("error", (error) => response.destroy(error));
+    backend.once("close", (exitCode) => {
+      if (exitCode !== 0) {
+        response.writeHead(500);
+        response.end();
+        return;
+      }
+      const output = Buffer.concat(stdout);
+      const separator = output.indexOf(Buffer.from("\r\n\r\n"));
+      const fallbackSeparator = separator === -1 ? output.indexOf(Buffer.from("\n\n")) : -1;
+      const headerEnd = separator === -1 ? fallbackSeparator : separator;
+      const separatorBytes = separator === -1 ? 2 : 4;
+      if (headerEnd === -1) {
+        response.writeHead(500);
+        response.end();
+        return;
+      }
+      let status = 200;
+      for (const line of output.subarray(0, headerEnd).toString("utf8").split(/\r?\n/u)) {
+        const headerSeparator = line.indexOf(":");
+        if (headerSeparator === -1) continue;
+        const name = line.slice(0, headerSeparator);
+        const value = line.slice(headerSeparator + 1).trim();
+        if (name.toLowerCase() === "status") status = Number.parseInt(value, 10);
+        else response.setHeader(name, value);
+      }
+      response.writeHead(status);
+      response.end(output.subarray(headerEnd + separatorBytes));
+    });
+    request.pipe(backend.stdin);
+  });
+  await new Promise<void>((resolvePromise, rejectPromise) => {
+    server.once("error", rejectPromise);
+    server.listen(0, "127.0.0.1", () => resolvePromise());
+  });
+  servers.push(server);
+  const address = server.address();
+  if (address === null || typeof address === "string")
+    throw new Error("Git test server unavailable");
+  return { remote: `http://127.0.0.1:${String(address.port)}/remote.git`, stats };
+}
 
 async function git(repository: string, args: readonly string[]): Promise<string> {
   const { stdout } = await execFileAsync("/usr/bin/git", ["-C", repository, ...args], {
@@ -19,7 +101,7 @@ async function git(repository: string, args: readonly string[]): Promise<string>
   return stdout.trim();
 }
 
-async function createFixture(options: { hangOnFetch?: boolean } = {}) {
+async function createFixture(options: { authenticated?: boolean; hangOnFetch?: boolean } = {}) {
   const fixture = await mkdtemp(join(tmpdir(), "kestrel-remote-acquisition-"));
   temporaryDirectories.push(fixture);
   const artifacts = join(fixture, "artifacts");
@@ -28,6 +110,8 @@ async function createFixture(options: { hangOnFetch?: boolean } = {}) {
   const remote = join(fixture, "remote.git");
   const log = join(fixture, "git-log.jsonl");
   const fetchStarted = join(fixture, "fetch-started");
+  const credentialHelper = join(fixture, "credential-helper.cjs");
+  const credentialHelperLog = join(fixture, "credential-helper.log");
   const wrapper = join(fixture, "git-wrapper.cjs");
   await Promise.all([
     mkdir(artifacts, { mode: 0o700 }),
@@ -52,6 +136,18 @@ async function createFixture(options: { hangOnFetch?: boolean } = {}) {
   await git(source, ["push", remote, "review-source:refs/pull/42/head"]);
 
   const canonicalRemote = "https://github.com/kestrel/review-source.git";
+  const authenticatedServer =
+    options.authenticated === true ? await startAuthenticatedGitServer(fixture) : null;
+  await writeFile(
+    credentialHelper,
+    `#!${process.execPath}\n` +
+      `const { appendFileSync } = require("node:fs");\n` +
+      `const action = process.argv[2] ?? "";\n` +
+      `appendFileSync(${JSON.stringify(credentialHelperLog)}, action + "\\n");\n` +
+      `if (action === "get") process.stdout.write("username=kestrel\\npassword=private-review\\n");\n`,
+    { mode: 0o700 },
+  );
+  await chmod(credentialHelper, 0o700);
   await writeFile(
     wrapper,
     `#!${process.execPath}\n` +
@@ -63,14 +159,16 @@ async function createFixture(options: { hangOnFetch?: boolean } = {}) {
       `  if (key.startsWith("GIT_CONFIG_") || key === "GIT_TERMINAL_PROMPT" || key === "GIT_ASKPASS") config[key] = value;\n` +
       `}\n` +
       `appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args, config }) + "\\n");\n` +
-      `if (args.includes("--global") && args.includes("--get-all")) {\n` +
-      `  if (args.at(-1) === "credential.https://github.com.helper") { process.stdout.write("test-keychain\\0"); process.exit(0); }\n` +
+      `if (args.includes("config") && args.includes("--get-regexp")) {\n` +
+      (options.authenticated === true
+        ? `  if (args.includes("--system")) { process.stdout.write(${JSON.stringify(`credential.helper\n${credentialHelper}\0`)}); process.exit(0); }\n`
+        : `  if (args.includes("--global")) { process.stdout.write("credential.https://github.com.helper\\ntest-keychain\\0"); process.exit(0); }\n`) +
       `  process.exit(1);\n` +
       `}\n` +
       (options.hangOnFetch === true
         ? `if (args.includes("fetch")) { writeFileSync(${JSON.stringify(fetchStarted)}, "started"); setInterval(() => {}, 1000); }\n`
         : "") +
-      `const mapped = args.map((value) => value === ${JSON.stringify(canonicalRemote)} ? ${JSON.stringify(pathToFileURL(remote).href)} : value === "protocol.file.allow=never" ? "protocol.file.allow=always" : value);\n` +
+      `const mapped = args.map((value) => value === ${JSON.stringify(canonicalRemote)} ? ${JSON.stringify(authenticatedServer?.remote ?? pathToFileURL(remote).href)} : value === ${JSON.stringify(options.authenticated === true ? "protocol.http.allow=never" : "protocol.file.allow=never")} ? ${JSON.stringify(options.authenticated === true ? "protocol.http.allow=always" : "protocol.file.allow=always")} : value);\n` +
       `const result = spawnSync("/usr/bin/git", mapped, { env: process.env, stdio: "inherit" });\n` +
       `process.exit(result.status ?? 1);\n`,
     { mode: 0o700 },
@@ -89,10 +187,13 @@ async function createFixture(options: { hangOnFetch?: boolean } = {}) {
     baseObjectId,
     canonicalRemote,
     config,
+    credentialHelper,
+    credentialHelperLog,
     fetchStarted,
     headObjectId,
     log,
     remote,
+    serverStats: authenticatedServer?.stats ?? null,
   };
 }
 
@@ -105,6 +206,15 @@ async function waitForFile(path: string): Promise<void> {
 }
 
 afterEach(async () => {
+  await Promise.all(
+    servers.splice(0).map(
+      (server) =>
+        new Promise<void>((resolvePromise) => {
+          server.close(() => resolvePromise());
+          server.closeAllConnections();
+        }),
+    ),
+  );
   await Promise.all(
     temporaryDirectories
       .splice(0)
@@ -179,7 +289,65 @@ describe("GitHub pull-request object acquisition", () => {
       GIT_CONFIG_GLOBAL: "/dev/null",
       GIT_TERMINAL_PROMPT: "0",
     });
+    expect(Object.values(fetch?.config ?? {})).toContain("credential.https://github.com.helper");
     expect(Object.values(fetch?.config ?? {})).toContain("test-keychain");
+  });
+
+  it("uses a system-scoped host helper to answer an authenticated private fetch challenge", async () => {
+    const fixture = await createFixture({ authenticated: true });
+
+    await expect(
+      withGitHubPullRequestObjects(
+        fixture.config,
+        {
+          base: { objectId: fixture.baseObjectId, ref: "main" },
+          head: { objectId: fixture.headObjectId, ref: "review-source" },
+          objectFormat: "sha1",
+          projectId: "018f0f89-949a-75a8-8f61-6df78a843b1e",
+          pullRequestNumber: 42,
+          repository: { name: "review-source", owner: "kestrel" },
+        },
+        () => Promise.resolve(undefined),
+      ),
+    ).resolves.toBeUndefined();
+
+    if (fixture.serverStats === null) throw new Error("Authenticated Git server unavailable");
+    expect(fixture.serverStats.authenticatedRequests).toBeGreaterThan(0);
+    expect(fixture.serverStats.challenges).toBeGreaterThan(0);
+    await expect(readFile(fixture.credentialHelperLog, "utf8")).resolves.toContain("get\n");
+    const executionLog = await readFile(fixture.log, "utf8");
+    expect(executionLog).toContain(fixture.credentialHelper);
+    expect(executionLog).not.toContain("private-review");
+  });
+
+  it("does not turn a completed action into failure when disposable cleanup fails", async () => {
+    const fixture = await createFixture();
+    let acquisitionParent = "";
+    let acquisitionPath = "";
+    try {
+      await expect(
+        withGitHubPullRequestObjects(
+          fixture.config,
+          {
+            base: { objectId: fixture.baseObjectId, ref: "main" },
+            head: { objectId: fixture.headObjectId, ref: "review-source" },
+            objectFormat: "sha1",
+            projectId: "018f0f89-949a-75a8-8f61-6df78a843b1e",
+            pullRequestNumber: 42,
+            repository: { name: "review-source", owner: "kestrel" },
+          },
+          async (acquired) => {
+            acquisitionPath = acquired.repository.rootPath;
+            acquisitionParent = dirname(acquisitionPath);
+            await chmod(acquisitionParent, 0o500);
+            return "published";
+          },
+        ),
+      ).resolves.toBe("published");
+    } finally {
+      if (acquisitionParent !== "") await chmod(acquisitionParent, 0o700);
+      if (acquisitionPath !== "") await rm(acquisitionPath, { force: true, recursive: true });
+    }
   });
 
   it("rejects a missing pull-request ref without leaving a usable repository", async () => {

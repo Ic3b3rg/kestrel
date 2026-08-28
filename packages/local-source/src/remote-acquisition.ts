@@ -16,8 +16,9 @@ const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f
 const GIT_PROCESS_TIMEOUT_MS = 10_000;
 const GIT_FETCH_TIMEOUT_MS = 60_000;
 const MAX_GIT_OUTPUT_BYTES = 64 * 1024;
-const MAX_CREDENTIAL_HELPERS = 16;
-const MAX_CREDENTIAL_HELPER_BYTES = 4096;
+const MAX_CREDENTIAL_CONFIG_ENTRIES = 32;
+const MAX_CREDENTIAL_CONFIG_BYTES = 4096;
+const CREDENTIAL_CONFIG_PATTERN = "^credential(\\..*)?\\.(helper|useHttpPath)$";
 const HOST_ENVIRONMENT_KEYS = ["HOME", "PATH", "TMPDIR", "XDG_CONFIG_HOME"] as const;
 const SAFE_GIT_CONFIG_ARGUMENTS = [
   "-c",
@@ -62,6 +63,11 @@ interface GitProcessOptions {
   timeoutMs?: number;
 }
 
+interface CredentialConfigEntry {
+  key: string;
+  value: string;
+}
+
 export interface GitHubPullRequestObjectAcquisition {
   base: { objectId: string; ref: string };
   head: { objectId: string; ref: string };
@@ -101,7 +107,9 @@ function hostEnvironment(): NodeJS.ProcessEnv {
   return environment;
 }
 
-function safeFetchEnvironment(credentialHelpers: readonly string[]): NodeJS.ProcessEnv {
+function safeFetchEnvironment(
+  credentialConfig: readonly CredentialConfigEntry[],
+): NodeJS.ProcessEnv {
   const environment: NodeJS.ProcessEnv = {
     ...hostEnvironment(),
     GCM_GUI_PROMPT: "false",
@@ -114,11 +122,10 @@ function safeFetchEnvironment(credentialHelpers: readonly string[]): NodeJS.Proc
     GIT_OPTIONAL_LOCKS: "0",
     GIT_PAGER: "cat",
   };
-  const helpers = ["", ...credentialHelpers];
-  environment.GIT_CONFIG_COUNT = String(helpers.length);
-  for (const [index, helper] of helpers.entries()) {
-    environment[`GIT_CONFIG_KEY_${String(index)}`] = "credential.helper";
-    environment[`GIT_CONFIG_VALUE_${String(index)}`] = helper;
+  environment.GIT_CONFIG_COUNT = String(credentialConfig.length);
+  for (const [index, entry] of credentialConfig.entries()) {
+    environment[`GIT_CONFIG_KEY_${String(index)}`] = entry.key;
+    environment[`GIT_CONFIG_VALUE_${String(index)}`] = entry.value;
   }
   return environment;
 }
@@ -217,20 +224,15 @@ function decodeUtf8(value: Buffer): string {
   }
 }
 
-async function readCredentialHelpers(
+async function readCredentialConfiguration(
   config: LocalSourceConfig,
-  remote: string,
   signal?: AbortSignal,
-): Promise<readonly string[]> {
-  const helpers: string[] = [];
-  for (const key of [
-    "credential.helper",
-    "credential.https://github.com.helper",
-    `credential.${remote}.helper`,
-  ]) {
+): Promise<readonly CredentialConfigEntry[]> {
+  const entries: CredentialConfigEntry[] = [];
+  for (const scope of ["--system", "--global"] as const) {
     const result = await runGitProcess(
       config.gitExecutable,
-      ["config", "--global", "--null", "--get-all", key],
+      ["config", scope, "--includes", "--null", "--get-regexp", CREDENTIAL_CONFIG_PATTERN],
       {
         allowedExitCodes: [0, 1],
         environment: hostEnvironment(),
@@ -238,20 +240,27 @@ async function readCredentialHelpers(
       },
     );
     if (result.exitCode === 1) continue;
-    const values = decodeUtf8(result.stdout).split("\0");
-    if (values.at(-1) === "") values.pop();
-    helpers.push(...values);
+    const records = decodeUtf8(result.stdout).split("\0");
+    if (records.at(-1) === "") records.pop();
+    for (const record of records) {
+      const separator = record.indexOf("\n");
+      const key = separator === -1 ? "" : record.slice(0, separator);
+      const value = separator === -1 ? "" : record.slice(separator + 1);
+      if (
+        !/^credential(?:\.[^\0\r\n]+)?\.(?:helper|usehttppath)$/iu.test(key) ||
+        /\p{Cc}/u.test(value) ||
+        Buffer.byteLength(key, "utf8") > MAX_CREDENTIAL_CONFIG_BYTES ||
+        Buffer.byteLength(value, "utf8") > MAX_CREDENTIAL_CONFIG_BYTES
+      ) {
+        throw new LocalSourceError("git_inspection_failed");
+      }
+      entries.push({ key, value });
+    }
   }
-  if (
-    helpers.length > MAX_CREDENTIAL_HELPERS ||
-    helpers.some(
-      (helper) =>
-        Buffer.byteLength(helper, "utf8") > MAX_CREDENTIAL_HELPER_BYTES || /\p{Cc}/u.test(helper),
-    )
-  ) {
+  if (entries.length > MAX_CREDENTIAL_CONFIG_ENTRIES) {
     throw new LocalSourceError("git_inspection_failed");
   }
-  return helpers;
+  return entries;
 }
 
 function validateInput(input: GitHubPullRequestObjectAcquisition): void {
@@ -387,7 +396,7 @@ async function fetchExactPullRequest(
   repository: ResolvedRepository,
 ): Promise<RepositoryInspection> {
   const remote = `https://github.com/${input.repository.owner}/${input.repository.name}.git`;
-  const credentialHelpers = await readCredentialHelpers(config, remote, input.signal);
+  const credentialConfig = await readCredentialConfiguration(config, input.signal);
   await runGitProcess(
     config.gitExecutable,
     [
@@ -410,13 +419,13 @@ async function fetchExactPullRequest(
       `+refs/pull/${String(input.pullRequestNumber)}/head:refs/kestrel/head`,
     ],
     {
-      environment: safeFetchEnvironment(credentialHelpers),
+      environment: safeFetchEnvironment(credentialConfig),
       failureCode: "reference_not_available",
       signal: input.signal,
       timeoutMs: GIT_FETCH_TIMEOUT_MS,
     },
   );
-  const inspection = await inspectRepository(config, repository);
+  const inspection = await inspectRepository(config, repository, input.signal);
   if (inspection.objectFormat !== input.objectFormat) {
     throw new LocalSourceError("object_verification_failed");
   }
@@ -467,7 +476,12 @@ export async function withGitHubPullRequestObjects<T>(
   } catch (reason) {
     outcome = { reason, status: "rejected" };
   }
-  await removeAcquisitionRepository(config, input.projectId, created.acquisitionPath);
+  try {
+    await removeAcquisitionRepository(config, input.projectId, created.acquisitionPath);
+  } catch {
+    if (outcome.status === "rejected") throw outcome.reason;
+    return outcome.value;
+  }
   if (outcome.status === "rejected") throw outcome.reason;
   return outcome.value;
 }
