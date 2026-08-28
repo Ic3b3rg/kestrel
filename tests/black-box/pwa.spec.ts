@@ -323,7 +323,7 @@ test.describe("observable Installation PWA", () => {
     releaseResponse();
     await expect(page.getByRole("status")).toContainText("The exact Review Revision is available.");
     await expect(page.getByRole("button", { name: "Acquire exact PR #1234" })).toHaveCount(0);
-    await expect(page.getByText(changeIntentText, { exact: true })).toBeVisible();
+    await expect(page.getByRole("definition").filter({ hasText: changeIntentText })).toBeVisible();
     await expect(page.getByText("Available", { exact: true })).toHaveCount(2);
     const accessibility = await new AxeBuilder({ page }).include(".projects-section").analyze();
     expect(accessibility.violations).toEqual([]);
