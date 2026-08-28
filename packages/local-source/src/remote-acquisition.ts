@@ -128,16 +128,14 @@ async function directoryStorageBytes(rootPath: string, stopAfter: number): Promi
   while (pending.length > 0) {
     const directory = pending.pop();
     if (directory === undefined) break;
-    const entries = await readdir(directory, { withFileTypes: true }).catch(
-      (error: NodeJS.ErrnoException) => {
-        if (error.code === "ENOENT") return [];
-        throw error;
-      },
-    );
+    const entries = await readdir(directory, { withFileTypes: true }).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    });
     for (const entry of entries) {
       const path = join(directory, entry.name);
-      const metadata = await lstat(path).catch((error: NodeJS.ErrnoException) => {
-        if (error.code === "ENOENT") return null;
+      const metadata = await lstat(path).catch((error: unknown) => {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
         throw error;
       });
       if (metadata === null) continue;
