@@ -99,7 +99,12 @@ export function ChangeIntentEditor({
     () =>
       new Set(
         proposal.changeIntentCandidates
-          .filter((candidate) => current?.sources.some(({ id }) => id === candidate.id) === true)
+          .filter(
+            (candidate) =>
+              current?.sources.some(
+                ({ id, version }) => id === candidate.id && version === candidate.version,
+              ) === true,
+          )
           .map(({ id }) => id),
       ),
   );

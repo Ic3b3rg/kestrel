@@ -241,4 +241,38 @@ describe("ChangeIntentEditor", () => {
       expect.any(AbortSignal),
     );
   });
+
+  it("requires renewed selection when a candidate source version changes", async () => {
+    const candidate = providerProposal.changeIntentCandidates[0];
+    if (candidate === undefined) throw new Error("Provider title candidate is unavailable");
+    const proposal: Proposal = {
+      ...providerProposal,
+      changeIntent: {
+        acceptanceOutcomes: ["The source remains explicit"],
+        createdAt: "2026-08-24T12:00:30.000Z",
+        id: "018f0f89-9a20-79f9-9990-dda80c9b917d",
+        objective: "Review the provider title",
+        resolution: { state: "resolved", issues: [] },
+        scopeBoundaries: ["Provider title only"],
+        sourceDigest: "a".repeat(64),
+        sources: [
+          {
+            ...candidate,
+            text: "Previous provider title",
+            version: "2026-08-24T11:59:00.000Z",
+            provenance: {
+              ...candidate.provenance,
+              observedAt: "2026-08-24T11:59:00.000Z",
+            },
+          },
+        ],
+        text: "Review the provider title",
+        version: 1,
+      },
+    };
+
+    await renderEditor({ proposal });
+
+    expect(findControl<HTMLInputElement>(container, "GitHub title").checked).toBe(false);
+  });
 });

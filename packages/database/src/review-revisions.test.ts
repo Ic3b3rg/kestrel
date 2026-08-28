@@ -505,7 +505,7 @@ describe("Review Revision persistence", () => {
     ]);
   });
 
-  it("publishes a verified artifact and Project availability in one transaction", async () => {
+  it("publishes a verified artifact, Project availability, and Proposal version in one transaction", async () => {
     const statements: string[] = [];
     const parameters: unknown[][] = [];
     const query = vi.fn((statement: string, values: unknown[] = []) => {
@@ -534,6 +534,12 @@ describe("Review Revision persistence", () => {
         };
       }
       if (normalized.startsWith("UPDATE projects")) {
+        return { rowCount: 1, rows: [] };
+      }
+      if (
+        normalized.startsWith("UPDATE change_proposals AS canonical") &&
+        normalized.includes("optimistic_version")
+      ) {
         return { rowCount: 1, rows: [] };
       }
       if (normalized.includes("pg_advisory_xact_lock")) {
@@ -580,6 +586,12 @@ describe("Review Revision persistence", () => {
     expect(
       statements.findIndex((value) => value.startsWith("UPDATE review_revisions")),
     ).toBeLessThan(statements.findIndex((value) => value.startsWith("UPDATE projects")));
+    expect(statements.findIndex((value) => value.startsWith("UPDATE projects"))).toBeLessThan(
+      statements.findIndex((value) => value.startsWith("UPDATE change_proposals AS canonical")),
+    );
+    expect(
+      statements.find((value) => value.startsWith("UPDATE change_proposals AS canonical")),
+    ).toContain("COALESCE(storage.canonical_change_proposal_id, storage.id)");
     expect(statements.find((value) => value.startsWith("UPDATE review_revisions"))).toContain(
       "base_commit_author_snapshot",
     );

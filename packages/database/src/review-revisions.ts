@@ -1749,6 +1749,25 @@ export async function completeReviewRevision(
     if (project.rowCount !== 1) {
       throw new Error("Review Revision Project availability update failed");
     }
+    const proposal = await client.query(
+      `
+        UPDATE change_proposals AS canonical
+        SET optimistic_version = canonical.optimistic_version + 1,
+            updated_at = clock_timestamp()
+        WHERE canonical.id = (
+          SELECT COALESCE(storage.canonical_change_proposal_id, storage.id)
+          FROM review_revisions AS revision
+          INNER JOIN change_proposals AS storage
+            ON storage.id = revision.change_proposal_id
+          WHERE revision.id = $1
+            AND revision.project_id = $2
+        )
+      `,
+      [input.revisionId, input.projectId],
+    );
+    if (proposal.rowCount !== 1) {
+      throw new Error("Review Revision Change Proposal version advance failed");
+    }
     await appendAuditRecordInTransaction(client, {
       actorId: input.actorId,
       actorType: "operator",

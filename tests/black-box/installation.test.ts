@@ -149,6 +149,7 @@ describe("observable Kestrel Installation", () => {
             head: { ref: "provider-observation", sha: "${"b".repeat(40)}" },
             merged: false,
             merged_at: null,
+            body: "Keep provider descriptions available for Change Intent curation.",
             node_id: "PR_kwDOGx",
             number: 1234,
             state: "open",
@@ -220,7 +221,15 @@ describe("observable Kestrel Installation", () => {
     if (project === undefined || proposal === undefined) {
       throw new Error("The Change Intent integration fixture is unavailable");
     }
-    expect(proposal.changeIntentCandidates.map(({ id }) => id)).toContain("provider_title");
+    expect(proposal.changeIntentCandidates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "provider_title" }),
+        expect.objectContaining({
+          id: "provider_description",
+          text: "Keep provider descriptions available for Change Intent curation.",
+        }),
+      ]),
+    );
     const path = `/api/v1/projects/${project.id}/change-proposals/${proposal.id}/change-intents`;
     const firstCommand = {
       acceptanceOutcomes: ["The selected source remains attributable."],
