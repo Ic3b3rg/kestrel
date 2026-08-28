@@ -310,6 +310,36 @@ describe("Review Revision persistence", () => {
     expect(database.release).toHaveBeenCalledOnce();
   });
 
+  it("rejects acquisition when the attached source resolves to another expected Project", async () => {
+    const database = acquisitionPool({ existingSource: true });
+
+    await expect(
+      beginReviewRevision(database.pool, {
+        actorId: operatorId,
+        correlationId: "0c14b018-0260-4aa0-a5e9-61d212b948ce",
+        changeIntent: "Review authorization boundaries",
+        expectedProjectId: "018f0f89-a22a-7d63-b6f7-108b7b4bf52f",
+        maxBytes: 1_048_576,
+        maxObjects: 1_000,
+        base: { objectId: "a".repeat(40), ref: "refs/heads/main" },
+        head: { objectId: "b".repeat(40), ref: "refs/heads/review-source" },
+        source: {
+          displayName: "kestrel",
+          githubRepository: null,
+          objectFormat: "sha1",
+          relativePath: "kestrel",
+          repositoryId: "018f0f89-9a1e-7d64-a5dd-18cc3e317401",
+          rootId: "018f0f89-9a1f-72ae-82c4-ef8ee27d6932",
+          sourceIdentity: "c".repeat(64),
+        },
+      }),
+    ).rejects.toMatchObject({ code: "change_proposal_mismatch" });
+    expect(database.statements).not.toContain(
+      expect.stringMatching(/^UPDATE local_repository_sources/u),
+    );
+    expect(database.statements.at(-1)).toBe("ROLLBACK");
+  });
+
   it("atomically reclaims and retries a stale acquiring exact revision", async () => {
     const database = acquisitionPool({ existingSource: true, staleAcquiringRevision: true });
 

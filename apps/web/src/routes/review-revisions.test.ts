@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ApiErrorSchema, type ReviewRevisionAvailable } from "@kestrel/contracts";
+import { ApiErrorSchema, type Project, type ReviewRevisionAvailable } from "@kestrel/contracts";
 
 import { buildApp } from "../app.js";
 import {
@@ -12,12 +12,15 @@ import {
 import {
   buildReviewRevisionResponse,
   recoverCompletionFailure,
+  resolveObservedReviewRevisionSelection,
   type ReviewRevisionService,
 } from "./review-revisions.js";
 
 const signingKey = Buffer.alloc(32, 7);
 const operatorId = "018f0f89-949a-75a8-8f61-6df78a843b1e";
 const repositoryId = "018f0f89-9a1d-7484-b224-866ef9d69990";
+const projectId = "018f0f89-9a22-7864-aac2-8df71bf60420";
+const proposalId = "018f0f89-9192-755f-aa96-f72094c734dd";
 const session = createSessionToken(
   { credentialVersion: "1", id: operatorId, sessionGeneration: "1", username: "operator" },
   signingKey,
@@ -130,6 +133,26 @@ describe("Review Revision route", () => {
     expect(retain).toHaveBeenCalledOnce();
   });
 
+  it("accepts an opaque observed-PR command and propagates request cancellation", async () => {
+    const command = {
+      projectId,
+      changeProposalId: proposalId,
+      changeIntent: "Review the exact observed pull request",
+    };
+    const response = await app.inject({
+      headers,
+      method: "POST",
+      payload: command,
+      url: "/api/v1/review-revisions",
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(retain).toHaveBeenCalledWith(
+      command,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+
   it("maps an acquiring conflict without exposing local details", async () => {
     const error = new Error("/private/repository is acquiring") as Error & { code: string };
     error.code = "revision_acquiring";
@@ -148,6 +171,86 @@ describe("Review Revision route", () => {
     expect(response.statusCode).toBe(409);
     expect(ApiErrorSchema.parse(response.json())).toMatchObject({ code: "REVISION_ACQUIRING" });
     expect(response.body).not.toContain("/private/repository");
+  });
+});
+
+describe("observed Review Revision selection", () => {
+  const project = {
+    id: projectId,
+    providerObservation: {
+      authentication: "host_session",
+      kind: "host_gh",
+      refresh: "manual",
+      host: "github.com",
+      account: "operator",
+    },
+    repository: {
+      canonicalUrl: "https://github.com/kestrel/review-source",
+      name: "review-source",
+      owner: "kestrel",
+      providerId: "R_123",
+    },
+    localRepositorySource: {
+      id: "018f0f89-a51b-7b6e-94e8-0a4113f61370",
+      repositoryId,
+      displayName: "review-source",
+      state: "attached",
+      objectFormat: "sha1",
+      createdAt: "2026-08-24T12:00:00.000Z",
+      updatedAt: "2026-08-24T12:00:00.000Z",
+    },
+    sourceAvailability: "not_acquired",
+    modelAccess: "not_configured",
+    createdAt: "2026-08-24T12:00:00.000Z",
+    updatedAt: "2026-08-24T12:00:00.000Z",
+    changeProposals: [
+      {
+        kind: "provider_observed",
+        id: proposalId,
+        providerId: "PR_123",
+        number: 42,
+        title: "Review exact source",
+        canonicalUrl: "https://github.com/kestrel/review-source/pull/42",
+        proposalState: "open",
+        base: { objectId: "a".repeat(40), ref: "main" },
+        head: { objectId: "b".repeat(40), ref: "review-source" },
+        author: null,
+        observedAt: "2026-08-24T12:00:00.000Z",
+        changeIntent: null,
+        reviewRevisions: [],
+      },
+    ],
+  } satisfies Project;
+
+  it("derives every Git pointer and remote coordinate from the expected Project", () => {
+    expect(
+      resolveObservedReviewRevisionSelection(project, {
+        projectId,
+        changeProposalId: proposalId,
+        changeIntent: "Review exact source",
+      }),
+    ).toEqual({
+      base: { objectId: "a".repeat(40), ref: "main" },
+      head: { objectId: "b".repeat(40), ref: "review-source" },
+      objectFormat: "sha1",
+      projectId,
+      pullRequestNumber: 42,
+      repository: { name: "review-source", owner: "kestrel" },
+      repositoryId,
+    });
+  });
+
+  it("rejects a proposal whose canonical URL retargets another repository", () => {
+    const mismatched = structuredClone(project);
+    mismatched.changeProposals[0]!.canonicalUrl = "https://github.com/kestrel/other/pull/42";
+
+    expect(() =>
+      resolveObservedReviewRevisionSelection(mismatched, {
+        projectId,
+        changeProposalId: proposalId,
+        changeIntent: "Review exact source",
+      }),
+    ).toThrow(expect.objectContaining({ code: "change_proposal_mismatch" }));
   });
 });
 

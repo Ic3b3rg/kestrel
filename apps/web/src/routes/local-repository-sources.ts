@@ -11,7 +11,7 @@ import {
   localRepositoryReferencesJsonSchema,
   type LocalRepositoryInventory,
   type LocalRepositoryReferences,
-  type RetainReviewRevisionCommand,
+  type RetainLocalReviewRevisionCommand,
 } from "@kestrel/contracts";
 import type { DatabasePool, LocalRepositorySourceObservation } from "@kestrel/database";
 import {
@@ -23,16 +23,35 @@ import {
   resolveRepository,
   resolveSelectedRevision,
   retainRevision,
+  withGitHubPullRequestObjects,
   type LocalSourceConfig,
   type RetainedArtifact,
   type SelectedRevision,
 } from "@kestrel/local-source";
 
 export interface PreparedReviewRevision {
+  acquisition:
+    | { kind: "local" }
+    | {
+        kind: "github_pull_request";
+        expectedProjectId: string;
+        pullRequestNumber: number;
+        repository: { name: string; owner: string };
+      };
   maxBytes: number;
   maxObjects: number;
   selected: SelectedRevision;
   source: LocalRepositorySourceObservation;
+}
+
+export interface ObservedReviewRevisionSelection {
+  base: { objectId: string; ref: string };
+  head: { objectId: string; ref: string };
+  objectFormat: "sha1" | "sha256";
+  projectId: string;
+  pullRequestNumber: number;
+  repository: { name: string; owner: string };
+  repositoryId: string;
 }
 
 export interface LocalRepositoryService {
@@ -41,13 +60,41 @@ export interface LocalRepositoryService {
 }
 
 export interface LocalReviewRevisionSourceService extends LocalRepositoryService {
-  prepare(command: RetainReviewRevisionCommand): Promise<PreparedReviewRevision>;
+  prepare(command: RetainLocalReviewRevisionCommand): Promise<PreparedReviewRevision>;
+  prepareObserved(selection: ObservedReviewRevisionSelection): Promise<PreparedReviewRevision>;
   quarantine(artifactLocator: string): Promise<void>;
   retain(input: {
     prepared: PreparedReviewRevision;
     projectId: string;
     revisionId: string;
+    signal?: AbortSignal | undefined;
   }): Promise<RetainedArtifact>;
+}
+
+function sameGitHubRepository(
+  left: { name: string; owner: string } | null,
+  right: { name: string; owner: string },
+): boolean {
+  return (
+    left !== null &&
+    left.owner.toLocaleLowerCase("en-US") === right.owner.toLocaleLowerCase("en-US") &&
+    left.name.toLocaleLowerCase("en-US") === right.name.toLocaleLowerCase("en-US")
+  );
+}
+
+function preparedSource(
+  repository: Awaited<ReturnType<typeof resolveRepository>>,
+  selected: SelectedRevision,
+): LocalRepositorySourceObservation {
+  return {
+    displayName: repository.displayName,
+    githubRepository: selected.githubRepository,
+    objectFormat: selected.objectFormat,
+    relativePath: repository.relativePath,
+    repositoryId: repository.repositoryId,
+    rootId: repository.rootId,
+    sourceIdentity: selected.sourceIdentity,
+  };
 }
 
 export function isSkippableRepositoryInspectionError(error: unknown): boolean {
@@ -131,26 +178,85 @@ export function createLocalRepositoryService(
       const inventory = await listRepositoryReferences(config, repository);
       const selected = await resolveSelectedRevision(config, repository, inventory, command);
       return {
+        acquisition: { kind: "local" },
         maxBytes: config.maxBytes,
         maxObjects: config.maxObjects,
         selected,
-        source: {
-          displayName: repository.displayName,
-          githubRepository: selected.githubRepository,
-          objectFormat: selected.objectFormat,
-          relativePath: repository.relativePath,
-          repositoryId: repository.repositoryId,
-          rootId: repository.rootId,
-          sourceIdentity: selected.sourceIdentity,
+        source: preparedSource(repository, selected),
+      };
+    },
+    async prepareObserved(selection) {
+      const repository = await resolveRepository(config, selection.repositoryId);
+      const inspection = await inspectRepository(config, repository);
+      if (
+        inspection.objectFormat !== selection.objectFormat ||
+        !sameGitHubRepository(inspection.githubRepository, selection.repository)
+      ) {
+        throw new LocalSourceError("repository_not_available");
+      }
+      const selected: SelectedRevision = {
+        ...inspection,
+        base: selection.base,
+        head: selection.head,
+        repository,
+      };
+      return {
+        acquisition: {
+          expectedProjectId: selection.projectId,
+          kind: "github_pull_request",
+          pullRequestNumber: selection.pullRequestNumber,
+          repository: selection.repository,
         },
+        maxBytes: config.maxBytes,
+        maxObjects: config.maxObjects,
+        selected,
+        source: preparedSource(repository, selected),
       };
     },
     quarantine: (artifactLocator) => quarantineUnattachedArtifact(config, artifactLocator),
-    retain: ({ prepared, projectId, revisionId }) =>
-      retainRevision(
-        { ...config, maxBytes: prepared.maxBytes, maxObjects: prepared.maxObjects },
-        { projectId, revisionId, selected: prepared.selected },
-      ),
+    async retain({ prepared, projectId, revisionId, signal }) {
+      const retentionConfig = {
+        ...config,
+        maxBytes: prepared.maxBytes,
+        maxObjects: prepared.maxObjects,
+      };
+      const retainLocal = () =>
+        retainRevision(retentionConfig, { projectId, revisionId, selected: prepared.selected });
+      if (prepared.acquisition.kind === "local") return retainLocal();
+      if (prepared.acquisition.expectedProjectId !== projectId) {
+        throw new LocalSourceError("repository_not_available");
+      }
+      try {
+        return await retainLocal();
+      } catch (error) {
+        if (!(error instanceof LocalSourceError) || error.code !== "object_missing") throw error;
+      }
+      const currentInspection = await inspectRepository(config, prepared.selected.repository);
+      if (
+        !sameGitHubRepository(currentInspection.githubRepository, prepared.acquisition.repository)
+      ) {
+        throw new LocalSourceError("repository_not_available");
+      }
+      return withGitHubPullRequestObjects(
+        retentionConfig,
+        {
+          base: prepared.selected.base,
+          head: prepared.selected.head,
+          objectFormat: prepared.selected.objectFormat,
+          projectId,
+          pullRequestNumber: prepared.acquisition.pullRequestNumber,
+          repository: prepared.acquisition.repository,
+          ...(signal === undefined ? {} : { signal }),
+        },
+        (acquired) =>
+          retainRevision(retentionConfig, {
+            fallbackSources: [acquired],
+            projectId,
+            revisionId,
+            selected: prepared.selected,
+          }),
+      );
+    },
   };
 }
 
