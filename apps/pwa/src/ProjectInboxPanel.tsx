@@ -9,6 +9,7 @@ import {
 
 import { OpenLocalRepositoryForm } from "./OpenLocalRepositoryForm.js";
 import { HostGitHubProjectPanel } from "./HostGitHubProjectPanel.js";
+import { AcquireObservedReviewRevisionForm } from "./AcquireObservedReviewRevisionForm.js";
 
 interface ProjectInboxPanelProps {
   error: string | null;
@@ -126,7 +127,7 @@ function ProjectFacts({ project }: { project: Project }) {
           <span>
             {provider === null
               ? "Exact retained base and head commits are independent of repository attachment."
-              : "Refresh is Manual only; provider metadata never supplies source."}
+              : "Refresh is Manual only; provider metadata alone never authorizes source."}
           </span>
         </dd>
       </div>
@@ -189,13 +190,21 @@ function RevisionFacts({
 }
 
 function ChangeProposalRecord({
+  canAcquire,
   changeProposal,
   disabled,
+  onAuthenticationError,
+  onAvailable,
   onRefresh,
+  projectId,
 }: {
+  canAcquire: boolean;
   changeProposal: ChangeProposal;
   disabled: boolean;
+  onAuthenticationError?: (error: unknown) => boolean;
+  onAvailable: (result: ReviewRevisionAvailable) => void;
   onRefresh: () => void;
+  projectId: string;
 }) {
   const revision = changeProposal.reviewRevisions[0];
   if (!isProviderChangeProposal(changeProposal)) {
@@ -290,6 +299,16 @@ function ChangeProposalRecord({
         </div>
         <RevisionFacts revision={revision} />
       </dl>
+      {canAcquire ? (
+        <AcquireObservedReviewRevisionForm
+          key={`${changeProposal.id}:${String(changeProposal.changeIntent?.version ?? 0)}:${revision?.id ?? "none"}:${revision?.state ?? "none"}`}
+          disabled={disabled}
+          projectId={projectId}
+          proposal={changeProposal}
+          {...(onAuthenticationError === undefined ? {} : { onAuthenticationError })}
+          onAvailable={onAvailable}
+        />
+      ) : null}
     </section>
   );
 }
@@ -322,7 +341,7 @@ export function ProjectInboxPanel(props: ProjectInboxPanelProps) {
           <p className="section-index">03 / PROJECTS</p>
           <h2 id="projects-title">Projects</h2>
         </div>
-        <p className="credential-state">No GitHub credentials</p>
+        <p className="credential-state">Credentials stay with host Git</p>
       </div>
 
       <OpenLocalRepositoryForm
@@ -359,8 +378,9 @@ export function ProjectInboxPanel(props: ProjectInboxPanelProps) {
           {props.pending ? "Adding context…" : "Add provider context"}
         </button>
         <p id={helpId} className="form-help">
-          Optional metadata only: GitHub never supplies review source. No GitHub credentials are
-          sent or stored, and only canonical github.com pull request URLs are accepted.
+          GitHub metadata does not by itself authorize or acquire review source. No GitHub
+          credentials are sent or stored, and only canonical github.com pull request URLs are
+          accepted.
         </p>
         {validationError ? (
           <p id={errorId} className="project-form-error" role="alert">
@@ -442,9 +462,15 @@ export function ProjectInboxPanel(props: ProjectInboxPanelProps) {
               <div className="proposal-list">
                 {project.changeProposals.map((changeProposal) => (
                   <ChangeProposalRecord
+                    canAcquire={project.localRepositorySource?.state === "attached"}
                     changeProposal={changeProposal}
                     disabled={unavailable}
                     key={changeProposal.id}
+                    projectId={project.id}
+                    {...(props.onAuthenticationError === undefined
+                      ? {}
+                      : { onAuthenticationError: props.onAuthenticationError })}
+                    onAvailable={(result) => props.onLocalAvailable?.(result)}
                     onRefresh={() => {
                       if (
                         project.providerObservation?.kind === "host_gh" &&

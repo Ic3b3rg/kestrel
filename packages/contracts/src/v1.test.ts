@@ -212,6 +212,30 @@ describe("V1 public contracts", () => {
     ).toThrow("different");
   });
 
+  it("accepts only opaque observed pull-request acquisition input", () => {
+    const command = {
+      projectId: "018f0f89-a21d-7e31-8d27-aa4383f22991",
+      changeProposalId: "018f0f89-a3fb-75ee-bccc-08c031ce5f10",
+      changeIntent: "Review the observed pull request from the attached local repository source.",
+    };
+
+    expect(RetainReviewRevisionCommandSchema.parse(command)).toEqual(command);
+
+    for (const untrustedPointer of [
+      { repositoryId: "018f0f89-9a1d-7484-b224-866ef9d69990" },
+      { baseRef: "refs/heads/main" },
+      { headRef: "refs/pull/42/head" },
+      { baseObjectId: "a".repeat(40) },
+      { headObjectId: "b".repeat(40) },
+      { remoteUrl: "https://github.com/kestrel/review-source.git" },
+      { pullRequestNumber: 42 },
+    ]) {
+      expect(() =>
+        RetainReviewRevisionCommandSchema.parse({ ...command, ...untrustedPointer }),
+      ).toThrow();
+    }
+  });
+
   it("lists bounded local repositories and committed refs without filesystem paths", () => {
     const repositoryId = "018f0f89-9a1d-7484-b224-866ef9d69990";
     const inventory = {

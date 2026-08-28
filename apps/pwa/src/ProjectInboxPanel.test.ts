@@ -128,6 +128,7 @@ describe("ProjectInboxPanel", () => {
     const html = render({ schemaVersion: 1, projects: [] });
 
     expect(html).toContain("Optional public GitHub pull request URL");
+    expect(html).toContain("GitHub metadata does not by itself authorize or acquire review source");
     expect(html).toContain("No GitHub credentials are sent or stored");
     expect(html).toContain("No Projects yet");
     expect(html).toContain("60 unauthenticated GitHub API requests per hour");
@@ -243,6 +244,23 @@ describe("ProjectInboxPanel", () => {
     expect(html).toContain(">aaaaaaaaaaaa</code>");
     expect(html).toContain("c".repeat(40));
     expect(html).toContain("a".repeat(40));
+  });
+
+  it("offers exact observed-PR acquisition only when a local source is attached", () => {
+    const project = populatedInbox.projects[0];
+    const localSource = localInbox.projects[0]?.localRepositorySource;
+    if (project === undefined || localSource === null || localSource === undefined) {
+      throw new Error("Attached provider fixture is unavailable");
+    }
+    const html = render({
+      schemaVersion: 1,
+      projects: [{ ...project, localRepositorySource: localSource }],
+    });
+
+    expect(html).toContain("Confirm Change Intent for PR #1234");
+    expect(html).toContain("Acquire exact PR #1234");
+    expect(html).toContain("host credential helper");
+    expect(render(populatedInbox)).not.toContain("Acquire exact PR #1234");
   });
 
   it("renders an unavailable revision as retryable without claiming an artifact was retained", () => {

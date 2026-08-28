@@ -37,6 +37,7 @@ export const TEST_OPERATOR_CREDENTIALS: OperatorTestCredentials = {
 };
 
 export interface StartStackOptions {
+  gitHubRemoteMappings?: Readonly<Record<string, string>>;
   repositoryRoot?: string;
   reviewRevisionMaxBytes?: number;
   reviewRevisionMaxObjects?: number;
@@ -153,9 +154,37 @@ export async function startStack(options: StartStackOptions = {}): Promise<Runni
   const repositoryRoot = await realpath(configuredRepositoryRoot);
   const generatedGitToolsRoot = await mkdtemp(join(tmpdir(), "kestrel-black-box-git-tools-"));
   const gitRecorder = join(generatedGitToolsRoot, "git-recorder");
+  const gitHubRemoteMappings = options.gitHubRemoteMappings ?? {};
   await writeFile(
     gitRecorder,
-    "#!/bin/sh\nprintf '%s\\n' \"$*\" >> /tmp/kestrel-git-commands.log\n/usr/bin/env >> /tmp/kestrel-git-environment.log\nprintf '%s\\n' '-- invocation --' >> /tmp/kestrel-git-environment.log\nexec /usr/bin/git \"$@\"\n",
+    `#!/usr/local/bin/node
+const { appendFileSync } = require("node:fs");
+const { spawnSync } = require("node:child_process");
+
+const originalArgs = process.argv.slice(2);
+appendFileSync("/tmp/kestrel-git-commands.log", originalArgs.join(" ") + "\\n");
+appendFileSync(
+  "/tmp/kestrel-git-environment.log",
+  Object.entries(process.env).map(([key, value]) => key + "=" + value).join("\\n") +
+    "\\n-- invocation --\\n",
+);
+
+const remoteMappings = ${JSON.stringify(gitHubRemoteMappings)};
+let mappedRemote = false;
+const args = originalArgs.map((argument) => {
+  if (!Object.prototype.hasOwnProperty.call(remoteMappings, argument)) return argument;
+  mappedRemote = true;
+  return remoteMappings[argument];
+});
+if (mappedRemote) {
+  const fileProtocol = args.indexOf("protocol.file.allow=never");
+  if (fileProtocol !== -1) args[fileProtocol] = "protocol.file.allow=always";
+}
+
+const result = spawnSync("/usr/bin/git", args, { env: process.env, stdio: "inherit" });
+if (result.error) throw result.error;
+process.exit(result.status ?? 1);
+`,
     { mode: 0o755 },
   );
   const canonicalGitToolsRoot = await realpath(generatedGitToolsRoot);

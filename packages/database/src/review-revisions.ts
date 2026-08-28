@@ -26,6 +26,7 @@ export interface BeginReviewRevisionInput {
   changeIntent: string;
   changeProposalId?: string;
   correlationId: string;
+  expectedProjectId?: string;
   head: { objectId: string; ref: string };
   maxBytes: number;
   maxObjects: number;
@@ -235,6 +236,7 @@ function normalizeIntent(value: string): string {
 
 function validateExactRevision(input: BeginReviewRevisionInput): void {
   const objectId = input.source.objectFormat === "sha1" ? /^[a-f0-9]{40}$/u : /^[a-f0-9]{64}$/u;
+  const uuidV7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
   if (
     !objectId.test(input.base.objectId) ||
     !objectId.test(input.head.objectId) ||
@@ -242,6 +244,7 @@ function validateExactRevision(input: BeginReviewRevisionInput): void {
     input.base.ref.length > 255 ||
     input.head.ref.length === 0 ||
     input.head.ref.length > 255 ||
+    (input.expectedProjectId !== undefined && !uuidV7.test(input.expectedProjectId)) ||
     !Number.isSafeInteger(input.maxBytes) ||
     input.maxBytes < 1 ||
     !Number.isSafeInteger(input.maxObjects) ||
@@ -1152,14 +1155,14 @@ async function reclaimStaleAcquiringRevision(
     `
       WITH lease AS MATERIALIZED (
         SELECT pg_try_advisory_xact_lock(
-          hashtextextended('kestrel-review-revision:' || $1, 0)
+          hashtextextended('kestrel-review-revision:' || $1::uuid::text, 0)
         ) AS acquired
       )
       UPDATE review_revisions
       SET revision_state = 'unavailable',
           failure_reason = 'acquisition_interrupted',
           updated_at = clock_timestamp()
-      WHERE id = $1
+      WHERE id = $1::uuid
         AND revision_state = 'acquiring'
         AND updated_at <= clock_timestamp() - interval '30 minutes'
         AND (SELECT acquired FROM lease)
@@ -1297,6 +1300,9 @@ async function beginReviewRevisionOnClient(
     if (sourceRow === undefined) {
       const providerMatch = await findProviderMatch(client, installationId, input);
       projectId = providerMatch?.projectId ?? (await createLocalProject(client, installationId));
+      if (input.expectedProjectId !== undefined && projectId !== input.expectedProjectId) {
+        throw new ReviewRevisionPersistenceError("change_proposal_mismatch");
+      }
       proposalId = providerMatch?.proposalId ?? undefined;
       sourceId = await attachSource(client, installationId, projectId, input);
       sourceAttached = true;
@@ -1314,6 +1320,9 @@ async function beginReviewRevisionOnClient(
         input,
       );
       projectId = reconciledProject.projectId;
+      if (input.expectedProjectId !== undefined && projectId !== input.expectedProjectId) {
+        throw new ReviewRevisionPersistenceError("change_proposal_mismatch");
+      }
       const canonicalInput =
         reconciledProject.changeProposalId === undefined
           ? input

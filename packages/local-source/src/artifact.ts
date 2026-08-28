@@ -13,16 +13,19 @@ import {
 import { isAbsolute, join, relative, sep } from "node:path";
 
 import type { LocalSourceConfig } from "./config.js";
+import type { ResolvedRepository } from "./discovery.js";
 import { LocalSourceError } from "./errors.js";
 import {
   inspectRepository,
   listCommitTreeEntries,
   withGitObjectReader,
   type GitObjectFormat,
+  type GitObjectReader,
   type GitObjectType,
   type GitTreeEntry,
   type GitTreeTraversalBudget,
   type RawGitObject,
+  type RepositoryInspection,
   type SelectedRevision,
 } from "./git.js";
 
@@ -52,9 +55,16 @@ interface RevisionManifest {
 }
 
 export interface RetainRevisionInput {
+  fallbackSource?: RetainRevisionObjectSource;
   projectId: string;
   revisionId: string;
   selected: SelectedRevision;
+  signal?: AbortSignal;
+}
+
+export interface RetainRevisionObjectSource {
+  inspection: RepositoryInspection;
+  repository: ResolvedRepository;
 }
 
 export interface RetainedArtifact {
@@ -69,6 +79,10 @@ export interface ReadRetainedFileInput {
   manifestDigest: string;
   path: string;
   side: "base" | "head";
+}
+
+function throwIfCancelled(signal?: AbortSignal): void {
+  if (signal?.aborted === true) throw new LocalSourceError("acquisition_cancelled");
 }
 
 function createSerialExecutor() {
@@ -261,20 +275,81 @@ async function retainRevisionExclusive(
   if (!UUID_V7.test(input.projectId) || !UUID_V7.test(input.revisionId)) {
     throw new LocalSourceError("source_containment_violation");
   }
-  const currentInspection = await inspectRepository(config, input.selected.repository);
+  throwIfCancelled(input.signal);
+  const currentInspection = await inspectRepository(
+    config,
+    input.selected.repository,
+    input.signal,
+  );
   if (
     currentInspection.sourceIdentity !== input.selected.sourceIdentity ||
     currentInspection.objectFormat !== input.selected.objectFormat
   ) {
     throw new LocalSourceError("repository_not_available");
   }
+  const objectSources: Array<{
+    inspection: RepositoryInspection;
+    repository: ResolvedRepository;
+  }> = [{ inspection: currentInspection, repository: input.selected.repository }];
+  const fallbackSource = input.fallbackSource;
+  if (fallbackSource !== undefined) {
+    const inspection = await inspectRepository(config, fallbackSource.repository, input.signal);
+    if (
+      inspection.sourceIdentity !== fallbackSource.inspection.sourceIdentity ||
+      inspection.objectFormat !== input.selected.objectFormat
+    ) {
+      throw new LocalSourceError("repository_not_available");
+    }
+    objectSources.push({ inspection, repository: fallbackSource.repository });
+  }
 
   const format = input.selected.objectFormat;
-  const { baseEntries, headEntries, objects, retainedBytes } = await withGitObjectReader(
-    config,
-    input.selected.repository,
-    format,
-    currentInspection.objectDirectories,
+  const withObjectSources = async <T>(
+    action: (readObject: GitObjectReader) => Promise<T>,
+  ): Promise<T> => {
+    const readers: GitObjectReader[] = [];
+    const cache = new Map<string, RawGitObject>();
+    const openSource = async (index: number): Promise<T> => {
+      const source = objectSources[index];
+      if (source === undefined) {
+        const readObject: GitObjectReader = async (objectId) => {
+          throwIfCancelled(input.signal);
+          const cached = cache.get(objectId);
+          if (cached !== undefined) return cached;
+          for (const reader of readers) {
+            try {
+              const object = await reader(objectId);
+              cache.set(objectId, object);
+              return object;
+            } catch (error) {
+              if (error instanceof LocalSourceError && error.code === "object_missing") continue;
+              throw error;
+            }
+          }
+          throw new LocalSourceError("object_missing");
+        };
+        return action(readObject);
+      }
+      return withGitObjectReader(
+        config,
+        source.repository,
+        format,
+        source.inspection.objectDirectories,
+        async (reader) => {
+          readers.push(reader);
+          try {
+            return await openSource(index + 1);
+          } finally {
+            readers.pop();
+          }
+        },
+        "revision_limit_exceeded",
+        input.signal,
+      );
+    };
+    return openSource(0);
+  };
+  const { baseEntries, headEntries, objects, retainedBytes } = await withObjectSources(
     async (readObject) => {
       const commits = new Map<string, RawGitObject>();
       for (const objectId of [input.selected.base.objectId, input.selected.head.objectId]) {
@@ -344,9 +419,13 @@ async function retainRevisionExclusive(
           objects.set(objectId, object);
         }
       }
+      if (retainedBytes > config.maxBytes) {
+        throw new LocalSourceError("revision_limit_exceeded");
+      }
       return { baseEntries, headEntries, objects, retainedBytes };
     },
   );
+  throwIfCancelled(input.signal);
 
   const manifest: RevisionManifest = {
     schemaVersion: 1,
@@ -377,11 +456,13 @@ async function retainRevisionExclusive(
   let finalized = false;
 
   try {
+    throwIfCancelled(input.signal);
     await mkdir(staging, { mode: 0o700 });
     const objectsDirectory = join(staging, "objects");
     await mkdir(objectsDirectory, { mode: 0o700 });
     directories.add(objectsDirectory);
     for (const object of objects.values()) {
+      throwIfCancelled(input.signal);
       const prefixDirectory = join(objectsDirectory, object.id.slice(0, 2));
       if (!directories.has(prefixDirectory)) {
         await mkdir(prefixDirectory, { mode: 0o700 });
@@ -390,15 +471,18 @@ async function retainRevisionExclusive(
       await writeExclusive(objectPath(staging, object.id), object.content, 0o600);
     }
     const manifestPath = join(staging, MANIFEST_NAME);
+    throwIfCancelled(input.signal);
     await writeExclusive(manifestPath, manifestBytes, 0o600);
 
     for (const object of objects.values()) {
+      throwIfCancelled(input.signal);
       const retainedContent = await readFile(objectPath(staging, object.id));
       const retainedObject = { ...object, content: retainedContent };
       verifyRawObject(format, retainedObject);
       await chmod(objectPath(staging, object.id), 0o400);
       await syncFile(objectPath(staging, object.id));
     }
+    throwIfCancelled(input.signal);
     if (
       createHash("sha256")
         .update(await readFile(manifestPath))
@@ -409,15 +493,18 @@ async function retainRevisionExclusive(
     await chmod(manifestPath, 0o400);
     await syncFile(manifestPath);
     for (const directory of [...directories].reverse()) {
+      throwIfCancelled(input.signal);
       await chmod(directory, 0o500);
       await syncDirectory(directory);
     }
     if ((await lstat(final).catch(() => null)) !== null) {
       throw new LocalSourceError("object_verification_failed");
     }
+    throwIfCancelled(input.signal);
     await rename(staging, final);
     finalized = true;
     await syncDirectory(parent);
+    throwIfCancelled(input.signal);
   } catch (error) {
     if (finalized) {
       try {
@@ -452,6 +539,7 @@ export function retainRevision(
   config: LocalSourceConfig,
   input: RetainRevisionInput,
 ): Promise<RetainedArtifact> {
+  throwIfCancelled(input.signal);
   return serializeRetention(() => retainRevisionExclusive(config, input));
 }
 

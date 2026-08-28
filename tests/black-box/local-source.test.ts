@@ -16,6 +16,7 @@ import {
   createGitFixture,
   LOCAL_SOURCE_COMMAND_CANARY_PATH,
   type GitFixture,
+  type MissingPullRequestFixture,
 } from "./support/git-fixture.js";
 
 async function retainedFile(
@@ -1888,6 +1889,196 @@ describe("exact local Review Revision", () => {
       },
     });
   });
+});
+
+describe("observed GitHub pull request acquisition", () => {
+  const repositoryName = "observed-pr";
+  const pullRequestNumber = 50;
+  let fixture: GitFixture | undefined;
+  let pullRequest: MissingPullRequestFixture | undefined;
+  let stack: RunningStack | undefined;
+
+  beforeAll(async () => {
+    fixture = await createGitFixture();
+    pullRequest = await fixture.createMissingPullRequestClone(repositoryName, pullRequestNumber);
+    stack = await startStack({
+      gitHubRemoteMappings: {
+        [`https://github.com/Ic3b3rg/${repositoryName}.git`]: `/fixtures/repositories/${pullRequest.providerRelativePath}`,
+      },
+      repositoryRoot: fixture.rootPath,
+    });
+    await stack.authenticateOperator();
+  });
+
+  afterAll(async () => {
+    if (stack !== undefined) await stack.close();
+    if (fixture !== undefined) await fixture.close();
+  });
+
+  it("fetches only missing observed PR objects into an isolated repository", async () => {
+    if (stack === undefined || fixture === undefined || pullRequest === undefined) {
+      throw new Error("Observed pull-request fixture is unavailable");
+    }
+    const activeStack = stack;
+    const inventory = LocalRepositoryInventorySchema.parse(
+      await (await stack.fetchApi("/api/v1/local-repository-sources")).json(),
+    );
+    const repository = inventory.repositories.find(
+      ({ displayName }) => displayName === repositoryName,
+    );
+    if (repository === undefined) throw new Error("Observed pull-request clone is unavailable");
+    const beforeFingerprint = await fixture.snapshotRepository(pullRequest.repositoryPath);
+
+    const localResponse = await stack.fetchApi("/api/v1/review-revisions", {
+      body: JSON.stringify({
+        repositoryId: repository.repositoryId,
+        baseRef: "refs/heads/main",
+        headRef: "refs/heads/attachment-source",
+        changeIntent: "Attach the authorized clone before observing the provider proposal",
+      }),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    });
+    expect(localResponse.status).toBe(201);
+    const local = ReviewRevisionAvailableSchema.parse(await localResponse.json());
+    expect(local.reviewRevision).toMatchObject({
+      base: { objectId: pullRequest.baseObjectId },
+      head: { objectId: pullRequest.localHeadObjectId },
+    });
+
+    const observed = await observePublicGitHubProject(stack, {
+      baseObjectId: pullRequest.baseObjectId,
+      headObjectId: pullRequest.headObjectId,
+      name: repositoryName,
+      number: pullRequestNumber,
+      suffix: "remote_acquisition",
+      title: "Acquire a missing observed pull request revision",
+    });
+    expect(observed.project.id).toBe(local.project.id);
+    const proposal = observed.project.changeProposals.find(
+      (candidate) =>
+        "providerId" in candidate && candidate.providerId === "PR_issue90_remote_acquisition",
+    );
+    if (proposal === undefined) throw new Error("Observed pull-request proposal is unavailable");
+
+    const command = {
+      projectId: observed.project.id,
+      changeProposalId: proposal.id,
+      changeIntent: "Review the exact provider-observed pull request revision",
+    };
+    expect(Object.keys(command).sort()).toEqual(["changeIntent", "changeProposalId", "projectId"]);
+    const [firstResponse, repeatedResponse] = await Promise.all([
+      activeStack.fetchApi("/api/v1/review-revisions", {
+        body: JSON.stringify(command),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      }),
+      activeStack.fetchApi("/api/v1/review-revisions", {
+        body: JSON.stringify(command),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      }),
+    ]);
+    const [firstBody, repeatedBody]: [unknown, unknown] = await Promise.all([
+      firstResponse.json() as Promise<unknown>,
+      repeatedResponse.json() as Promise<unknown>,
+    ]);
+    expect(
+      [firstResponse.status, repeatedResponse.status].sort(),
+      JSON.stringify({ firstBody, repeatedBody }),
+    ).toEqual([201, 409]);
+    const concurrentResults: Array<{ body: unknown; status: number }> = [
+      { body: firstBody, status: firstResponse.status },
+      { body: repeatedBody, status: repeatedResponse.status },
+    ];
+    const createdResult = concurrentResults.find(({ status }) => status === 201);
+    const acquiringResult = concurrentResults.find(({ status }) => status === 409);
+    if (createdResult === undefined || acquiringResult === undefined) {
+      throw new Error("Observed pull-request concurrency result is unavailable");
+    }
+    const first = ReviewRevisionAvailableSchema.parse(createdResult.body);
+    expect(ApiErrorSchema.parse(acquiringResult.body)).toMatchObject({
+      code: "REVISION_ACQUIRING",
+    });
+    const retryResponse = await activeStack.fetchApi("/api/v1/review-revisions", {
+      body: JSON.stringify(command),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    });
+    expect(retryResponse.status).toBe(200);
+    const repeated = ReviewRevisionAvailableSchema.parse(await retryResponse.json());
+    expect(repeated.reviewRevision.id).toBe(first.reviewRevision.id);
+    expect(first.reviewRevision).toMatchObject({
+      state: "available",
+      base: { objectId: pullRequest.baseObjectId },
+      head: { objectId: pullRequest.headObjectId },
+    });
+    expect(first.changeProposal.id).toBe(proposal.id);
+    expect(await fixture.snapshotRepository(pullRequest.repositoryPath)).toBe(beforeFingerprint);
+    await expect(
+      retainedFile(stack, first.reviewRevision.id, "base", "review.txt"),
+    ).resolves.toEqual({ content: "committed base observed-pr-provider\n" });
+    await expect(
+      retainedFile(stack, first.reviewRevision.id, "head", "review.txt"),
+    ).resolves.toEqual({ content: "committed head observed-pr-provider\n" });
+
+    const boundary = JSON.parse(
+      await stack.executeWebModule(`
+        import { lstat, readFile, readdir } from 'node:fs/promises';
+        import { join } from 'node:path';
+        import { readLocalSourceConfig } from '@kestrel/local-source';
+        const commands = (await readFile('/tmp/kestrel-git-commands.log', 'utf8'))
+          .split(/\\r?\\n/u)
+          .filter(Boolean);
+        const environment = await readFile('/tmp/kestrel-git-environment.log', 'utf8');
+        const canaryInvoked = await lstat(${JSON.stringify(LOCAL_SOURCE_COMMAND_CANARY_PATH)})
+          .then(() => true)
+          .catch((error) => {
+            if (error?.code === 'ENOENT') return false;
+            throw error;
+          });
+        const config = await readLocalSourceConfig();
+        const acquisitionRoot = join(
+          config.artifactRoot,
+          'projects',
+          ${JSON.stringify(observed.project.id)},
+          'acquisition-repositories',
+        );
+        const acquisitionEntries = await readdir(acquisitionRoot)
+          .catch((error) => {
+            if (error?.code === 'ENOENT') return [];
+            throw error;
+          });
+        process.stdout.write(JSON.stringify({
+          acquisitionEntries,
+          canaryInvoked,
+          commands,
+          environment,
+        }));
+      `),
+    ) as {
+      acquisitionEntries: string[];
+      canaryInvoked: boolean;
+      commands: string[];
+      environment: string;
+    };
+    const fetchCommands = boundary.commands.filter((candidate) => candidate.includes(" fetch "));
+    expect(fetchCommands).toHaveLength(1);
+    expect(fetchCommands[0]).toContain("core.hooksPath=/dev/null");
+    expect(fetchCommands[0]).toContain("credential.interactive=never");
+    expect(fetchCommands[0]).toContain("protocol.file.allow=never");
+    expect(fetchCommands[0]).toContain("--atomic --depth=1");
+    expect(fetchCommands[0]).toContain("--no-recurse-submodules --no-tags");
+    expect(fetchCommands[0]).toContain("--refmap= --");
+    expect(fetchCommands[0]).toContain(
+      `https://github.com/Ic3b3rg/${repositoryName}.git +refs/heads/main:refs/kestrel/base +refs/pull/${String(pullRequestNumber)}/head:refs/kestrel/head`,
+    );
+    expect(fetchCommands[0]).not.toContain(pullRequest.providerRelativePath);
+    expect(boundary.environment).not.toContain("provider-client-canary");
+    expect(boundary.environment).not.toContain(pullRequest.repositoryPath);
+    expect(boundary.acquisitionEntries).toEqual([]);
+    expect(boundary.canaryInvoked).toBe(false);
+  }, 60_000);
 });
 
 describe("bounded local Review Revision failure", () => {

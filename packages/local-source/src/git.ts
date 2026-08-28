@@ -105,8 +105,13 @@ async function runGit(
   timeoutMs = GIT_TIMEOUT_MS,
   stdoutLimitCode: LocalSourceErrorCode = "git_inspection_failed",
   unexpectedExitCode: LocalSourceErrorCode = "repository_invalid",
+  signal?: AbortSignal,
 ): Promise<GitResult> {
   return new Promise<GitResult>((resolvePromise, rejectPromise) => {
+    if (signal?.aborted === true) {
+      rejectPromise(new LocalSourceError("acquisition_cancelled"));
+      return;
+    }
     const child = spawn(config.gitExecutable, repositoryGitArguments(repository, args), {
       detached: process.platform !== "win32",
       env: SAFE_GIT_ENV,
@@ -119,6 +124,8 @@ async function runGit(
     let stderrBytes = 0;
     let rejected = false;
     let timedOut = false;
+    let cancelled = false;
+    let settled = false;
 
     const terminate = () => {
       if (process.platform !== "win32" && child.pid !== undefined) {
@@ -137,6 +144,20 @@ async function runGit(
       terminate();
     }, timeoutMs);
     timer.unref();
+    const finish = (result?: GitResult, error?: LocalSourceError) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      if (error !== undefined) rejectPromise(error);
+      else if (result !== undefined) resolvePromise(result);
+      else rejectPromise(new LocalSourceError("git_inspection_failed"));
+    };
+    const onAbort = () => {
+      cancelled = true;
+      terminate();
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
 
     child.stdin.on("error", () => {
       rejected = true;
@@ -161,14 +182,15 @@ async function runGit(
       }
       stderr.push(chunk);
     });
-    child.once("error", () => {
-      clearTimeout(timer);
-      rejectPromise(new LocalSourceError("git_inspection_failed"));
-    });
+    child.once("error", () => finish(undefined, new LocalSourceError("git_inspection_failed")));
     child.once("close", (exitCode) => {
-      clearTimeout(timer);
+      if (cancelled) {
+        finish(undefined, new LocalSourceError("acquisition_cancelled"));
+        return;
+      }
       if (rejected || timedOut || exitCode === null) {
-        rejectPromise(
+        finish(
+          undefined,
           new LocalSourceError(
             rejected && stdoutBytes > maxStdoutBytes ? stdoutLimitCode : "git_inspection_failed",
           ),
@@ -176,12 +198,33 @@ async function runGit(
         return;
       }
       if (!allowedExitCodes.includes(exitCode)) {
-        rejectPromise(new LocalSourceError(unexpectedExitCode));
+        finish(undefined, new LocalSourceError(unexpectedExitCode));
         return;
       }
-      resolvePromise({ exitCode, stdout: Buffer.concat(stdout, stdoutBytes) });
+      finish({ exitCode, stdout: Buffer.concat(stdout, stdoutBytes) });
     });
   });
+}
+
+function runInspectionGit(
+  config: LocalSourceConfig,
+  repository: ResolvedRepository,
+  args: readonly string[],
+  signal?: AbortSignal,
+  allowedExitCodes: readonly number[] = [0],
+): Promise<GitResult> {
+  return runGit(
+    config,
+    repository,
+    args,
+    allowedExitCodes,
+    undefined,
+    MAX_GIT_STDOUT_BYTES,
+    GIT_TIMEOUT_MS,
+    "git_inspection_failed",
+    "repository_invalid",
+    signal,
+  );
 }
 
 export type GitObjectType = "blob" | "commit" | "tag" | "tree";
@@ -330,7 +373,9 @@ export async function withGitObjectReader<T>(
   objectDirectories: readonly string[],
   action: (readObject: GitObjectReader) => Promise<T>,
   limitCode: LocalSourceErrorCode = "revision_limit_exceeded",
+  signal?: AbortSignal,
 ): Promise<T> {
+  if (signal?.aborted === true) throw new LocalSourceError("acquisition_cancelled");
   const child = spawn(
     config.gitExecutable,
     repositoryGitArguments(repository, ["cat-file", "--batch"]),
@@ -352,6 +397,18 @@ export async function withGitObjectReader<T>(
     }
     child.kill("SIGKILL");
   };
+  let cancelled = false;
+  let rejectCancellation: (error: LocalSourceError) => void = () => undefined;
+  const cancellation = new Promise<never>((_resolvePromise, rejectPromise) => {
+    rejectCancellation = rejectPromise;
+  });
+  const onAbort = () => {
+    cancelled = true;
+    terminate();
+    rejectCancellation(new LocalSourceError("acquisition_cancelled"));
+  };
+  const isCancelled = () => cancelled || signal?.aborted === true;
+  signal?.addEventListener("abort", onAbort, { once: true });
   let stderrBytes = 0;
   child.stdin.on("error", () => {
     terminate();
@@ -388,6 +445,9 @@ export async function withGitObjectReader<T>(
   let retainedBytes = 0;
 
   const writeObjectRequest = async (objectId: string): Promise<void> => {
+    if (isCancelled()) {
+      throw new LocalSourceError("acquisition_cancelled");
+    }
     if (child.stdin.destroyed || child.stdin.errored !== null) {
       throw new LocalSourceError("git_inspection_failed");
     }
@@ -411,6 +471,9 @@ export async function withGitObjectReader<T>(
   };
 
   const readObject: GitObjectReader = async (objectId) => {
+    if (isCancelled()) {
+      throw new LocalSourceError("acquisition_cancelled");
+    }
     validateObjectId(objectId, objectFormat);
     const cached = cache.get(objectId);
     if (cached !== undefined) return cached;
@@ -454,9 +517,15 @@ export async function withGitObjectReader<T>(
   };
 
   try {
-    const result = await action(readObject);
+    const result = await Promise.race([action(readObject), cancellation]);
+    if (isCancelled()) {
+      throw new LocalSourceError("acquisition_cancelled");
+    }
     child.stdin.end();
     const exitCode = await completion;
+    if (isCancelled()) {
+      throw new LocalSourceError("acquisition_cancelled");
+    }
     if (child.stdin.errored !== null || exitCode !== 0) {
       throw new LocalSourceError("git_inspection_failed");
     }
@@ -464,9 +533,13 @@ export async function withGitObjectReader<T>(
   } catch (error) {
     terminate();
     await completion;
+    if (isCancelled()) {
+      throw new LocalSourceError("acquisition_cancelled");
+    }
     throw error;
   } finally {
     clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
   }
 }
 
@@ -664,8 +737,9 @@ async function canonicalGitPath(
   config: LocalSourceConfig,
   repository: ResolvedRepository,
   args: readonly string[],
+  signal?: AbortSignal,
 ): Promise<string> {
-  const path = oneLine((await runGit(config, repository, args)).stdout);
+  const path = oneLine((await runInspectionGit(config, repository, args, signal)).stdout);
   return canonicalContainedDirectory(repository, path);
 }
 
@@ -941,12 +1015,14 @@ async function validateObjectStorage(
 async function validateWorkTree(
   config: LocalSourceConfig,
   repository: ResolvedRepository,
+  signal?: AbortSignal,
 ): Promise<void> {
   const bare = oneLine(
-    (await runGit(config, repository, ["rev-parse", "--is-bare-repository"])).stdout,
+    (await runInspectionGit(config, repository, ["rev-parse", "--is-bare-repository"], signal))
+      .stdout,
   );
   if (bare === "false") {
-    await canonicalGitPath(config, repository, ["rev-parse", "--show-toplevel"]);
+    await canonicalGitPath(config, repository, ["rev-parse", "--show-toplevel"], signal);
   } else if (bare !== "true") {
     throw new LocalSourceError("repository_invalid");
   }
@@ -957,8 +1033,9 @@ async function requireMatchingGitPath(
   repository: ResolvedRepository,
   expected: string,
   args: readonly string[],
+  signal?: AbortSignal,
 ): Promise<void> {
-  if ((await canonicalGitPath(config, repository, args)) !== expected) {
+  if ((await canonicalGitPath(config, repository, args, signal)) !== expected) {
     throw new LocalSourceError("source_containment_violation");
   }
 }
@@ -1007,11 +1084,13 @@ function sanitizeGitHubRemote(value: string): GitHubRepositoryIdentity | null {
 async function readGitHubRepository(
   config: LocalSourceConfig,
   repository: ResolvedRepository,
+  signal?: AbortSignal,
 ): Promise<GitHubRepositoryIdentity | null> {
-  const result = await runGit(
+  const result = await runInspectionGit(
     config,
     repository,
     ["config", "--local", "--no-includes", "--get-regexp", "^remote\\..*\\.url$"],
+    signal,
     [0, 1],
   );
   if (result.exitCode === 1) {
@@ -1048,31 +1127,44 @@ async function readGitHubRepository(
 export async function inspectRepository(
   config: LocalSourceConfig,
   repository: ResolvedRepository,
+  signal?: AbortSignal,
 ): Promise<RepositoryInspection> {
   const administrativePaths = await deriveAdministrativePaths(repository);
-  await validateWorkTree(config, repository);
+  await validateWorkTree(config, repository, signal);
   const objectFormatValue = oneLine(
-    (await runGit(config, repository, ["rev-parse", "--show-object-format=storage"])).stdout,
+    (
+      await runInspectionGit(
+        config,
+        repository,
+        ["rev-parse", "--show-object-format=storage"],
+        signal,
+      )
+    ).stdout,
   );
   if (objectFormatValue !== "sha1" && objectFormatValue !== "sha256") {
     throw new LocalSourceError("repository_invalid");
   }
   const objectFormat: GitObjectFormat = objectFormatValue;
-  await requireMatchingGitPath(config, repository, administrativePaths.gitDirectory, [
-    "rev-parse",
-    "--absolute-git-dir",
-  ]);
-  await requireMatchingGitPath(config, repository, administrativePaths.commonGitDirectory, [
-    "rev-parse",
-    "--path-format=absolute",
-    "--git-common-dir",
-  ]);
-  const objectDirectory = await canonicalGitPath(config, repository, [
-    "rev-parse",
-    "--path-format=absolute",
-    "--git-path",
-    "objects",
-  ]);
+  await requireMatchingGitPath(
+    config,
+    repository,
+    administrativePaths.gitDirectory,
+    ["rev-parse", "--absolute-git-dir"],
+    signal,
+  );
+  await requireMatchingGitPath(
+    config,
+    repository,
+    administrativePaths.commonGitDirectory,
+    ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    signal,
+  );
+  const objectDirectory = await canonicalGitPath(
+    config,
+    repository,
+    ["rev-parse", "--path-format=absolute", "--git-path", "objects"],
+    signal,
+  );
   const expectedObjectDirectory = await canonicalContainedDirectory(
     repository,
     join(administrativePaths.commonGitDirectory, "objects"),
@@ -1090,7 +1182,7 @@ export async function inspectRepository(
     .update(objectFormat)
     .digest("hex");
   return {
-    githubRepository: await readGitHubRepository(config, repository),
+    githubRepository: await readGitHubRepository(config, repository, signal),
     objectDirectories,
     objectFormat,
     sourceIdentity,

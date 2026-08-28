@@ -18,6 +18,14 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 export const LOCAL_SOURCE_COMMAND_CANARY_PATH = "/tmp/kestrel-local-source-command-canary";
 
+export interface MissingPullRequestFixture {
+  baseObjectId: string;
+  headObjectId: string;
+  localHeadObjectId: string;
+  providerRelativePath: string;
+  repositoryPath: string;
+}
+
 export interface GitFixture {
   baseObjectId: string;
   detachedRepositoryPath: string;
@@ -47,9 +55,14 @@ export interface GitFixture {
     headObjectId: string;
     repositoryPath: string;
   }>;
+  createMissingPullRequestClone(
+    name: string,
+    pullRequestNumber: number,
+  ): Promise<MissingPullRequestFixture>;
   detach(): Promise<void>;
   setCoreWorktree(repositoryPath: string, worktreePath: string): Promise<void>;
   setGitHubRemote(repositoryPath: string, githubName: string): Promise<void>;
+  snapshotRepository(repositoryPath: string): Promise<string>;
   snapshotSource(): Promise<string>;
 }
 
@@ -202,6 +215,91 @@ async function cloneRepository(
   };
 }
 
+async function createMissingPullRequestClone(
+  rootPath: string,
+  name: string,
+  pullRequestNumber: number,
+): Promise<MissingPullRequestFixture> {
+  const provider = await initializeRepository(rootPath, `${name}-provider`, name);
+  await git(provider.repositoryPath, [
+    "update-ref",
+    `refs/pull/${String(pullRequestNumber)}/head`,
+    provider.headObjectId,
+  ]);
+
+  const repositoryPath = join(rootPath, name);
+  await execFileAsync("/usr/bin/git", [
+    "clone",
+    "--no-local",
+    "--single-branch",
+    "--branch",
+    "main",
+    provider.repositoryPath,
+    repositoryPath,
+  ]);
+  await git(repositoryPath, [
+    "remote",
+    "set-url",
+    "origin",
+    `https://github.com/Ic3b3rg/${name}.git`,
+  ]);
+  await git(repositoryPath, ["config", "user.name", "Kestrel Test"]);
+  await git(repositoryPath, ["config", "user.email", "kestrel@example.invalid"]);
+  await git(repositoryPath, ["switch", "-c", "attachment-source"]);
+  await writeFile(join(repositoryPath, "attachment.txt"), "local attachment only\n", "utf8");
+  await git(repositoryPath, ["add", "attachment.txt"]);
+  await git(repositoryPath, ["commit", "-m", "Local attachment source"]);
+  const localHeadObjectId = await git(repositoryPath, ["rev-parse", "HEAD"]);
+
+  const remoteHeadIsPresent = await git(repositoryPath, [
+    "cat-file",
+    "-e",
+    `${provider.headObjectId}^{commit}`,
+  ]).then(
+    () => true,
+    () => false,
+  );
+  if (remoteHeadIsPresent) {
+    throw new Error("The missing pull-request fixture unexpectedly contains the provider head");
+  }
+
+  const canaryScript = join(repositoryPath, ".git", "kestrel-command-canary");
+  await writeFile(
+    canaryScript,
+    `#!/bin/sh\nprintf 'invoked\\n' >> ${LOCAL_SOURCE_COMMAND_CANARY_PATH}\nexit 86\n`,
+    { mode: 0o755 },
+  );
+  await git(repositoryPath, [
+    "config",
+    "--replace-all",
+    "remote.origin.fetch",
+    "+refs/heads/*:refs/heads/kestrel-operator-overwrite/*",
+  ]);
+  await git(repositoryPath, [
+    "config",
+    "url.file:///tmp/kestrel-url-rewrite-canary.insteadOf",
+    "https://github.com/",
+  ]);
+  await git(repositoryPath, [
+    "config",
+    "credential.helper",
+    `!/fixtures/repositories/${name}/.git/kestrel-command-canary`,
+  ]);
+  await git(repositoryPath, [
+    "config",
+    "core.hooksPath",
+    `/fixtures/repositories/${name}/.git/hooks`,
+  ]);
+
+  return {
+    baseObjectId: provider.baseObjectId,
+    headObjectId: provider.headObjectId,
+    localHeadObjectId,
+    providerRelativePath: relative(rootPath, provider.repositoryPath),
+    repositoryPath,
+  };
+}
+
 export async function createGitFixture(): Promise<GitFixture> {
   const fixtureRoot = await mkdtemp(join(tmpdir(), "kestrel-black-box-local-source-"));
   const rootPath = join(fixtureRoot, "repositories");
@@ -221,6 +319,8 @@ export async function createGitFixture(): Promise<GitFixture> {
     createClone: (sourceRepositoryPath, name, githubName) =>
       cloneRepository(rootPath, sourceRepositoryPath, name, githubName),
     createFreshClone: (name) => cloneRepository(rootPath, detachedRepositoryPath, name, "kestrel"),
+    createMissingPullRequestClone: (name, pullRequestNumber) =>
+      createMissingPullRequestClone(rootPath, name, pullRequestNumber),
     createSibling: (name, githubName) => initializeRepository(rootPath, name, githubName),
     detach: () => rename(repositoryPath, detachedRepositoryPath),
     setCoreWorktree: async (targetRepositoryPath, worktreePath) => {
@@ -234,6 +334,7 @@ export async function createGitFixture(): Promise<GitFixture> {
         `https://github.com/Ic3b3rg/${githubName}.git`,
       ]);
     },
+    snapshotRepository: fingerprint,
     snapshotSource: () => fingerprint(repositoryPath),
   };
 }

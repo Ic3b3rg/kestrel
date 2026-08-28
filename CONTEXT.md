@@ -4,15 +4,19 @@ Kestrel is the domain of understanding and governing software change across proj
 
 ## Implemented local-source boundary
 
-Review First V1 now retains an exact Review Revision only from a Local Repository Source beneath an
+Review First V1 retains an exact Review Revision through a Local Repository Source beneath an
 Installation-configured read-only root. The Operator selects an opaque repository identity and two
-enumerated committed refs, then supplies or explicitly confirms Change Intent. Kestrel records the
-resolved base/head object IDs before retaining a verified, project-scoped commit/tree/blob closure;
-working-tree and index state are never source.
+enumerated committed refs, then supplies or explicitly confirms Change Intent. For an attached
+source and a matching observed GitHub pull request, Kestrel reads the source first and may fetch only
+missing captured base/head objects from the server-derived canonical GitHub remote into disposable,
+Project-scoped Kestrel storage. The Operator's repository remains untouched, host Git keeps custody
+of any credential, and Kestrel verifies the exact object IDs and commit/tree/blob closure before
+retention; working-tree and index state are never source.
 
 Local Repository Source attachment, optional Provider Observation metadata, Revision State, and
-Model Access Availability remain independent Project facts. A matching public GitHub observation
-enriches the same Change Proposal but never supplies source. Detaching or losing the repository
+Model Access Availability remain independent Project facts. A matching GitHub observation enriches
+the same Change Proposal but neither authorizes source by itself nor replaces the attached Local
+Repository Source as the local-first access gate. Detaching or losing the repository
 changes only source attachment state: an Available Review Revision remains immutable and usable.
 When independently created local and provider-first records later identify the same repository,
 Kestrel converges them behind one canonical Project and canonical Change Proposal while retaining
@@ -185,7 +189,7 @@ An Operator-initiated, bounded read of Change Proposal metadata from a Repositor
 _Avoid_: Provider Synchronization, Repository Provider Connection, source acquisition
 
 **Local Repository Source**:
-An Operator-authorized Git repository on the Kestrel workstation that supplies exact commits for every Review First V1 Review Revision. It carries no provider identity itself, never includes uncommitted working-tree state, and remains untouched even when its Change Proposal has optional provider metadata.
+An Operator-authorized Git repository on the Kestrel workstation that is the local-first source and authorization gate for every Review First V1 Review Revision. For a matching observed GitHub pull request, missing captured objects may be fetched only into disposable Project-scoped Kestrel storage; the repository remains untouched, carries no provider identity itself, and never includes uncommitted working-tree state.
 _Avoid_: Workspace, Repository Provider Connection, working tree
 
 **Repository Access**:

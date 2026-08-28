@@ -1,4 +1,5 @@
 export type LocalSourceErrorCode =
+  | "acquisition_cancelled"
   | "configuration_invalid"
   | "discovery_limit_exceeded"
   | "git_inspection_failed"

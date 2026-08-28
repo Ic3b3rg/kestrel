@@ -241,6 +241,28 @@ describe("PWA API client", () => {
     expect(JSON.stringify(mutation)).not.toContain("path");
   });
 
+  it("sends only opaque Project and proposal IDs for observed PR acquisition", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ invalid: true }, 201));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("document", {
+      cookie: `__Host-kestrel-csrf=${"A".repeat(43)}.${"B".repeat(43)}`,
+    });
+    const command = {
+      projectId: "018f0f89-9a22-7864-aac2-8df71bf60420",
+      changeProposalId: "018f0f89-9192-755f-aa96-f72094c734dd",
+      changeIntent: "Review the exact observed pull request",
+    };
+
+    await expect(retainReviewRevision(command)).rejects.toThrow("invalid Review Revision response");
+    const mutation = fetchMock.mock.calls[0]?.[1];
+    expect(mutation).toEqual(
+      expect.objectContaining({ body: JSON.stringify(command), method: "POST" }),
+    );
+    expect(JSON.stringify(mutation)).not.toMatch(/objectId|remote|ref|repository|url/iu);
+  });
+
   it("reads and creates the Operator session without exposing a token", async () => {
     const fetchMock = vi
       .fn<typeof fetch>()

@@ -9,6 +9,8 @@ import {
   retainReviewRevisionCommandJsonSchema,
   reviewRevisionAvailableJsonSchema,
   type ApiError,
+  type Project,
+  type RetainObservedReviewRevisionCommand,
   type RetainReviewRevisionCommand,
   type ReviewRevisionAvailable,
   type ReviewRevisionFailureReason,
@@ -27,12 +29,14 @@ import { LocalSourceError, type LocalSourceErrorCode } from "@kestrel/local-sour
 import { AUTHENTICATED_MUTATION_ROUTE_CONFIG } from "../authentication.js";
 import type {
   LocalReviewRevisionSourceService,
+  ObservedReviewRevisionSelection,
   PreparedReviewRevision,
 } from "./local-repository-sources.js";
 
 export interface ReviewRevisionServiceContext {
   actorId: string;
   correlationId: string;
+  signal?: AbortSignal | undefined;
 }
 
 export interface ReviewRevisionServiceResult {
@@ -85,6 +89,7 @@ function reviewRevisionLogMetadata(error: unknown): ReviewRevisionLogMetadata {
 }
 
 const REVIEW_REVISION_ROUTE_ERROR_CODES = new Set<ReviewRevisionRouteErrorCode>([
+  "acquisition_cancelled",
   "configuration_invalid",
   "discovery_limit_exceeded",
   "git_inspection_failed",
@@ -134,6 +139,8 @@ function artifactFailureReason(error: unknown): ReviewRevisionFailureReason {
     return "artifact_finalization_failed";
   }
   switch (error.code) {
+    case "acquisition_cancelled":
+      return "acquisition_interrupted";
     case "repository_not_available":
       return "source_not_available";
     case "source_containment_violation":
@@ -152,6 +159,51 @@ function artifactFailureReason(error: unknown): ReviewRevisionFailureReason {
     default:
       return "artifact_finalization_failed";
   }
+}
+
+function observedSelectionMismatch(): never {
+  throw new ReviewRevisionRouteError("change_proposal_mismatch");
+}
+
+export function resolveObservedReviewRevisionSelection(
+  project: Project,
+  command: RetainObservedReviewRevisionCommand,
+): ObservedReviewRevisionSelection {
+  const repository = project.repository;
+  const localSource = project.localRepositorySource;
+  const proposal = project.changeProposals.find(({ id }) => id === command.changeProposalId);
+  if (
+    project.id !== command.projectId ||
+    repository === null ||
+    project.providerObservation === null ||
+    localSource === null ||
+    localSource.state !== "attached" ||
+    proposal?.kind !== "provider_observed"
+  ) {
+    return observedSelectionMismatch();
+  }
+  const repositoryUrl = `https://github.com/${repository.owner}/${repository.name}`;
+  const proposalUrl = `${repositoryUrl}/pull/${String(proposal.number)}`;
+  const objectIdPattern =
+    localSource.objectFormat === "sha1" ? /^[a-f0-9]{40}$/u : /^[a-f0-9]{64}$/u;
+  if (
+    repository.canonicalUrl.toLocaleLowerCase("en-US") !==
+      repositoryUrl.toLocaleLowerCase("en-US") ||
+    proposal.canonicalUrl.toLocaleLowerCase("en-US") !== proposalUrl.toLocaleLowerCase("en-US") ||
+    !objectIdPattern.test(proposal.base.objectId) ||
+    !objectIdPattern.test(proposal.head.objectId)
+  ) {
+    return observedSelectionMismatch();
+  }
+  return {
+    base: proposal.base,
+    head: proposal.head,
+    objectFormat: localSource.objectFormat,
+    projectId: project.id,
+    pullRequestNumber: proposal.number,
+    repository: { name: repository.name, owner: repository.owner },
+    repositoryId: localSource.repositoryId,
+  };
 }
 
 export function buildReviewRevisionResponse(
@@ -211,7 +263,15 @@ export function createReviewRevisionService(
     async retain(command, context) {
       let prepared: PreparedReviewRevision;
       try {
-        prepared = await source.prepare(command);
+        if ("repositoryId" in command) {
+          prepared = await source.prepare(command);
+        } else {
+          const project = await readProject(pool, command.projectId);
+          prepared = await source.prepareObserved(
+            resolveObservedReviewRevisionSelection(project, command),
+            context.signal,
+          );
+        }
       } catch (error) {
         if (error instanceof LocalSourceError) {
           throw new ReviewRevisionRouteError(error.code);
@@ -225,6 +285,9 @@ export function createReviewRevisionService(
             actorId: context.actorId,
             base: prepared.selected.base,
             changeIntent: command.changeIntent,
+            ...(prepared.acquisition.kind === "github_pull_request"
+              ? { expectedProjectId: prepared.acquisition.expectedProjectId }
+              : {}),
             ...(command.changeProposalId === undefined
               ? {}
               : { changeProposalId: command.changeProposalId }),
@@ -286,6 +349,7 @@ export function createReviewRevisionService(
                   prepared: acquisition,
                   projectId: begun.artifactProjectId,
                   revisionId: begun.revision.id,
+                  ...(context.signal === undefined ? {} : { signal: context.signal }),
                 });
               } catch (error) {
                 await recordReviewRevisionFailure(lockedPool, pool, {
@@ -473,6 +537,23 @@ function sendExpectedError(
   }
 }
 
+async function withRequestCancellation<T>(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  task: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  request.raw.once("aborted", abort);
+  reply.raw.once("close", abort);
+  try {
+    return await task(controller.signal);
+  } finally {
+    request.raw.removeListener("aborted", abort);
+    reply.raw.removeListener("close", abort);
+  }
+}
+
 export function registerReviewRevisionRoutes(
   app: FastifyInstance,
   service: ReviewRevisionService,
@@ -515,10 +596,13 @@ export function registerReviewRevisionRoutes(
         throw new Error("Authenticated Review Revision route has no Operator session");
       }
       try {
-        const result = await service.retain(command, {
-          actorId: session.operator.id,
-          correlationId: request.id,
-        });
+        const result = await withRequestCancellation(request, reply, (signal) =>
+          service.retain(command, {
+            actorId: session.operator.id,
+            correlationId: request.id,
+            signal,
+          }),
+        );
         request.log.info({
           correlationId: request.id,
           created: result.created,
