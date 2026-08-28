@@ -2,6 +2,8 @@ import { createParser } from "eventsource-parser";
 
 import {
   ApiErrorSchema,
+  ChangeIntentVersionCreatedSchema,
+  CreateChangeIntentVersionCommandSchema,
   CredentialChangeCommandSchema,
   DiagnosticAcceptedSchema,
   EventCursorSchema,
@@ -22,6 +24,8 @@ import {
   StepUpCommandSchema,
   StepUpProofSchema,
   type ApiError,
+  type ChangeIntentVersionCreated,
+  type CreateChangeIntentVersionCommand,
   type DiagnosticAccepted,
   type EventCursor,
   type InstallationEvent,
@@ -162,6 +166,29 @@ export async function fetchProjectInbox(signal?: AbortSignal): Promise<ProjectIn
     signal: signal ?? null,
   });
   return requireJson(response, ProjectInboxSchema, "Project inbox");
+}
+
+export async function createChangeIntentVersion(
+  projectId: string,
+  changeProposalId: string,
+  command: CreateChangeIntentVersionCommand,
+  signal?: AbortSignal,
+): Promise<ChangeIntentVersionCreated> {
+  const idSchema = ProjectInboxSchema.shape.projects.element.shape.id;
+  const validatedProjectId = idSchema.parse(projectId);
+  const validatedProposalId = idSchema.parse(changeProposalId);
+  const validatedCommand = CreateChangeIntentVersionCommandSchema.parse(command);
+  const response = await fetch(
+    `/api/v1/projects/${encodeURIComponent(validatedProjectId)}/change-proposals/${encodeURIComponent(validatedProposalId)}/change-intents`,
+    {
+      body: JSON.stringify(validatedCommand),
+      credentials: "same-origin",
+      headers: authenticatedMutationHeaders(),
+      method: "POST",
+      signal: signal ?? null,
+    },
+  );
+  return requireJson(response, ChangeIntentVersionCreatedSchema, "Change Intent version response");
 }
 
 export async function fetchHostGitHubProjectInbox(

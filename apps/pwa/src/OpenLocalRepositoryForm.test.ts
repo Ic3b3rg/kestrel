@@ -174,15 +174,38 @@ describe("Open local repository command", () => {
         {
           kind: "local",
           id: proposalId,
+          version: 1,
           title: `Proposal ${proposalId}`,
           base: { objectId: "a".repeat(40), ref: "refs/heads/main" },
           head: { objectId: "b".repeat(40), ref: "refs/heads/topic" },
           changeIntent: {
+            acceptanceOutcomes: [],
             id: "018f0f89-9a20-79f9-9990-dda80c9b917d",
+            objective: "Review authorization boundaries",
+            resolution: {
+              state: "unresolved",
+              issues: [
+                { kind: "missing", field: "scope_boundaries" },
+                { kind: "missing", field: "acceptance_outcomes" },
+              ],
+            },
+            scopeBoundaries: [],
+            sourceDigest: "a".repeat(64),
+            sources: [
+              {
+                id: "operator_input",
+                kind: "operator_input",
+                label: "Operator input",
+                provenance: { kind: "operator_input" },
+                text: "Review authorization boundaries",
+                version: "1",
+              },
+            ],
             version: 1,
             text: "Review authorization boundaries",
             createdAt: "2026-08-24T12:00:30.000Z",
           },
+          changeIntentCandidates: [],
           reviewRevisions: [],
           createdAt: "2026-08-24T12:00:30.000Z",
           updatedAt: "2026-08-24T12:01:00.000Z",

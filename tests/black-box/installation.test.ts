@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 
 import {
   ApiErrorSchema,
+  ChangeIntentVersionCreatedSchema,
   InstallationSnapshotSchema,
   ProjectInboxSchema,
   ProjectUpsertedSchema,
@@ -208,6 +209,103 @@ describe("observable Kestrel Installation", () => {
     expect(ProjectInboxSchema.parse(await getJson(runningStack, "/api/v1/projects"))).toEqual(
       beforeRestart,
     );
+  }, 60_000);
+
+  it("appends immutable source-backed Change Intent versions with optimistic concurrency", async () => {
+    expect(stack).toBeDefined();
+    const runningStack = stack as RunningStack;
+    const inbox = ProjectInboxSchema.parse(await getJson(runningStack, "/api/v1/projects"));
+    const project = inbox.projects[0];
+    const proposal = project?.changeProposals[0];
+    if (project === undefined || proposal === undefined) {
+      throw new Error("The Change Intent integration fixture is unavailable");
+    }
+    expect(proposal.changeIntentCandidates.map(({ id }) => id)).toContain("provider_title");
+    const path = `/api/v1/projects/${project.id}/change-proposals/${proposal.id}/change-intents`;
+    const firstCommand = {
+      acceptanceOutcomes: ["The selected source remains attributable."],
+      expectedProposalVersion: proposal.version,
+      objective: "Keep repository access explicit and read-only.",
+      operatorInput: null,
+      scopeBoundaries: ["Do not add provider write authority."],
+      selectedSourceIds: ["provider_title"],
+      unresolvedIssues: [],
+    };
+    const firstResponse = await runningStack.fetchApi(path, {
+      body: JSON.stringify(firstCommand),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    });
+    expect(firstResponse.status).toBe(201);
+    const first = ChangeIntentVersionCreatedSchema.parse(await firstResponse.json());
+    expect(first.changeIntent).toMatchObject({
+      objective: firstCommand.objective,
+      resolution: { state: "resolved", issues: [] },
+      sources: [{ id: "provider_title", text: "Keep repository access explicit" }],
+      version: 1,
+    });
+
+    const secondResponse = await runningStack.fetchApi(path, {
+      body: JSON.stringify({
+        ...firstCommand,
+        expectedProposalVersion: first.proposalVersion,
+        objective: "Clarify the authorization boundary.",
+        operatorInput: "Resolve the conflicting provider and repository context.",
+        unresolvedIssues: [
+          { kind: "contradictory", description: "Provider and repository scope disagree." },
+        ],
+      }),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    });
+    expect(secondResponse.status).toBe(201);
+    const second = ChangeIntentVersionCreatedSchema.parse(await secondResponse.json());
+    expect(second.changeIntent).toMatchObject({
+      resolution: {
+        state: "unresolved",
+        issues: [{ kind: "contradictory" }],
+      },
+      version: 2,
+    });
+    expect(second.proposalVersion).toBe(first.proposalVersion + 1);
+
+    const stale = await runningStack.fetchApi(path, {
+      body: JSON.stringify(firstCommand),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    });
+    expect(stale.status).toBe(409);
+    expect(ApiErrorSchema.parse(await stale.json())).toMatchObject({
+      code: "CHANGE_PROPOSAL_VERSION_CONFLICT",
+    });
+
+    const persisted = JSON.parse(
+      await runningStack.executeWebModule(`
+        import { createPool } from "@kestrel/database";
+        const pool = createPool(process.env.DATABASE_URL, "change-intent-black-box", { max: 1 });
+        try {
+          const result = await pool.query(
+            "SELECT version, objective, resolution_state, selected_sources, source_digest FROM change_intents WHERE change_proposal_id = $1 ORDER BY version",
+            [${JSON.stringify(proposal.id)}],
+          );
+          console.log(JSON.stringify(result.rows));
+        } finally {
+          await pool.end();
+        }
+      `),
+    ) as Array<Record<string, unknown>>;
+    expect(persisted).toHaveLength(2);
+    expect(persisted[0]).toMatchObject({
+      objective: firstCommand.objective,
+      resolution_state: "resolved",
+      version: "1",
+    });
+    expect(persisted[1]).toMatchObject({
+      objective: "Clarify the authorization boundary.",
+      resolution_state: "unresolved",
+      version: "2",
+    });
+    expect(persisted[0]?.source_digest).toMatch(/^[a-f0-9]{64}$/u);
   }, 60_000);
 
   it("backfills a conservative replay floor when upgrading retained schema 002 state", async () => {
