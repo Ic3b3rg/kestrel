@@ -1,4 +1,5 @@
 import { execFile, spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
@@ -8,7 +9,12 @@ import { promisify } from "node:util";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { readLocalSourceConfig, readRawGitObject, withGitHubPullRequestObjects } from "./index.js";
+import {
+  readLocalSourceConfig,
+  readRawGitObject,
+  withGitHubPullRequestObjects,
+  type GitHubPullRequestObjectAcquisition,
+} from "./index.js";
 
 const execFileAsync = promisify(execFile);
 const temporaryDirectories: string[] = [];
@@ -110,6 +116,11 @@ async function createFixture(
     injectAlternate?: boolean;
     injectReplacementRef?: boolean;
     injectUnsafeConfig?: boolean;
+    injectUnsafeConfigOnRecovery?: boolean;
+    maxBytes?: number;
+    maxObjects?: number;
+    oversizedBlobBytes?: number;
+    recoveryFetchFailure?: string;
   } = {},
 ) {
   const fixture = await mkdtemp(join(tmpdir(), "kestrel-remote-acquisition-"));
@@ -139,6 +150,10 @@ async function createFixture(
   const baseObjectId = await git(source, ["rev-parse", "HEAD"]);
   await git(source, ["switch", "-c", "review-source"]);
   await writeFile(join(source, "review.txt"), "head\n", "utf8");
+  if (options.oversizedBlobBytes !== undefined) {
+    await writeFile(join(source, "oversized.bin"), randomBytes(options.oversizedBlobBytes));
+    await git(source, ["add", "oversized.bin"]);
+  }
   await git(source, ["commit", "-am", "Head"]);
   const headObjectId = await git(source, ["rev-parse", "HEAD"]);
   await git(remote, ["init", "--bare"]);
@@ -181,6 +196,9 @@ async function createFixture(
       (options.fetchFailure === undefined
         ? ""
         : `if (args.includes("fetch")) { process.stderr.write(${JSON.stringify(options.fetchFailure)}); process.exit(128); }\n`) +
+      (options.recoveryFetchFailure === undefined
+        ? ""
+        : `if (args.includes("fetch") && args.some((value) => /^\\+[a-f0-9]{40,64}:refs\\/kestrel\\//u.test(value))) { process.stderr.write(${JSON.stringify(options.recoveryFetchFailure)}); process.exit(128); }\n`) +
       (options.failFsck === true
         ? `if (args.includes("fsck")) { process.stderr.write("invalid object graph\\n"); process.exit(1); }\n`
         : "") +
@@ -195,6 +213,9 @@ async function createFixture(
       (options.injectUnsafeConfig === true
         ? `if (result.status === 0 && args.includes("fetch")) { const repository = args[args.indexOf("-C") + 1]; spawnSync("/usr/bin/git", ["-C", repository, "config", "credential.helper", "!credential-canary"], { env: process.env, stdio: "inherit" }); }\n`
         : "") +
+      (options.injectUnsafeConfigOnRecovery === true
+        ? `if (result.status === 0 && args.includes("fetch") && args.some((value) => /^\\+[a-f0-9]{40,64}:refs\\/kestrel\\//u.test(value))) { const repository = args[args.indexOf("-C") + 1]; spawnSync("/usr/bin/git", ["-C", repository, "config", "credential.helper", "!recovery-canary"], { env: process.env, stdio: "inherit" }); }\n`
+        : "") +
       `process.exit(result.status ?? 1);\n`,
     { mode: 0o700 },
   );
@@ -204,8 +225,8 @@ async function createFixture(
     ARTIFACT_ROOT: artifacts,
     LOCAL_GIT_EXECUTABLE: wrapper,
     LOCAL_REPOSITORY_ROOTS: JSON.stringify([localRoot]),
-    REVIEW_REVISION_MAX_BYTES: "1048576",
-    REVIEW_REVISION_MAX_OBJECTS: "1000",
+    REVIEW_REVISION_MAX_BYTES: String(options.maxBytes ?? 1_048_576),
+    REVIEW_REVISION_MAX_OBJECTS: String(options.maxObjects ?? 1000),
   });
   return {
     artifacts,
@@ -220,6 +241,46 @@ async function createFixture(
     remote,
     serverStats: authenticatedServer?.stats ?? null,
   };
+}
+
+type Fixture = Awaited<ReturnType<typeof createFixture>>;
+type AcquisitionInputOverrides = Partial<
+  Omit<GitHubPullRequestObjectAcquisition, "base" | "head">
+> & {
+  base?: Partial<GitHubPullRequestObjectAcquisition["base"]>;
+  head?: Partial<GitHubPullRequestObjectAcquisition["head"]>;
+};
+
+function acquisitionInput(
+  fixture: Fixture,
+  overrides: AcquisitionInputOverrides = {},
+): GitHubPullRequestObjectAcquisition {
+  return {
+    objectFormat: "sha1",
+    projectId: "018f0f89-949a-75a8-8f61-6df78a843b1e",
+    pullRequestNumber: 42,
+    repository: { name: "review-source", owner: "kestrel" },
+    ...overrides,
+    base: { objectId: fixture.baseObjectId, ref: "main", ...overrides.base },
+    head: { objectId: fixture.headObjectId, ref: "review-source", ...overrides.head },
+  };
+}
+
+interface GitInvocation {
+  args: string[];
+  config: Record<string, string>;
+}
+
+async function readGitInvocations(fixture: Fixture): Promise<GitInvocation[]> {
+  return (await readFile(fixture.log, "utf8"))
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as GitInvocation);
+}
+
+async function readFetchInvocations(fixture: Fixture): Promise<GitInvocation[]> {
+  return (await readGitInvocations(fixture)).filter(({ args }) => args.includes("fetch"));
 }
 
 async function waitForFile(path: string): Promise<void> {
@@ -255,14 +316,10 @@ describe("GitHub pull-request object acquisition", () => {
     await expect(
       withGitHubPullRequestObjects(
         fixture.config,
-        {
-          base: { objectId: fixture.baseObjectId, ref: "main" },
-          head: { objectId: fixture.headObjectId, ref: "review-source\n--upload-pack=evil" },
-          objectFormat: "sha1",
+        acquisitionInput(fixture, {
+          head: { ref: "review-source\n--upload-pack=evil" },
           projectId,
-          pullRequestNumber: 42,
-          repository: { name: "review-source", owner: "kestrel" },
-        },
+        }),
         () => Promise.resolve(undefined),
       ),
     ).rejects.toMatchObject({ code: "reference_not_available" });
@@ -278,14 +335,7 @@ describe("GitHub pull-request object acquisition", () => {
 
     const contents = await withGitHubPullRequestObjects(
       fixture.config,
-      {
-        base: { objectId: fixture.baseObjectId, ref: "main" },
-        head: { objectId: fixture.headObjectId, ref: "review-source" },
-        objectFormat: "sha1",
-        projectId,
-        pullRequestNumber: 42,
-        repository: { name: "review-source", owner: "kestrel" },
-      },
+      acquisitionInput(fixture, { projectId }),
       async (acquired) => {
         acquiredPath = acquired.repository.path;
         expect(
@@ -314,10 +364,7 @@ describe("GitHub pull-request object acquisition", () => {
     expect(contents).toEqual(["commit", "commit"]);
     await expect(lstat(acquiredPath)).rejects.toMatchObject({ code: "ENOENT" });
 
-    const entries = (await readFile(fixture.log, "utf8"))
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line) as { args: string[]; config: Record<string, string> });
+    const entries = await readGitInvocations(fixture);
     const fetch = entries.find(({ args }) => args.includes("fetch"));
     expect(fetch?.args).toEqual(
       expect.arrayContaining([
@@ -354,14 +401,7 @@ describe("GitHub pull-request object acquisition", () => {
     await expect(
       withGitHubPullRequestObjects(
         fixture.config,
-        {
-          base: { objectId: fixture.baseObjectId, ref: "main" },
-          head: { objectId: fixture.headObjectId, ref: "review-source" },
-          objectFormat: "sha1",
-          projectId: "018f0f89-949a-75a8-8f61-6df78a843b1e",
-          pullRequestNumber: 42,
-          repository: { name: "review-source", owner: "kestrel" },
-        },
+        acquisitionInput(fixture),
         async ({ inspection, repository }) =>
           (
             await readRawGitObject(
@@ -375,11 +415,7 @@ describe("GitHub pull-request object acquisition", () => {
       ),
     ).resolves.toBe(fixture.headObjectId);
 
-    const fetches = (await readFile(fixture.log, "utf8"))
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line) as { args: string[] })
-      .filter(({ args }) => args.includes("fetch"));
+    const fetches = await readFetchInvocations(fixture);
     expect(fetches).toHaveLength(2);
     expect(fetches[0]?.args).toContain("+refs/pull/42/head:refs/kestrel/head");
     expect(fetches[1]?.args).toContain(`+${fixture.headObjectId}:refs/kestrel/head`);
@@ -392,24 +428,54 @@ describe("GitHub pull-request object acquisition", () => {
     await expect(
       withGitHubPullRequestObjects(
         fixture.config,
-        {
-          base: { objectId: fixture.baseObjectId, ref: "main" },
-          head: { objectId: "f".repeat(40), ref: "review-source" },
-          objectFormat: "sha1",
-          projectId: "018f0f89-949a-75a8-8f61-6df78a843b1e",
-          pullRequestNumber: 42,
-          repository: { name: "review-source", owner: "kestrel" },
-        },
+        acquisitionInput(fixture, { head: { objectId: "f".repeat(40) } }),
         () => Promise.resolve(undefined),
       ),
     ).rejects.toMatchObject({ code: "pull_ref_mismatch" });
 
-    const fetches = (await readFile(fixture.log, "utf8"))
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line) as { args: string[] })
-      .filter(({ args }) => args.includes("fetch"));
+    const fetches = await readFetchInvocations(fixture);
     expect(fetches).toHaveLength(2);
+  });
+
+  it.each(["moved", "deleted"] as const)(
+    "keeps an ambiguous provider 404 distinct when exact-head recovery follows a %s pull ref",
+    async (pullRefState) => {
+      const fixture = await createFixture({
+        recoveryFetchFailure: "remote: Repository not found.\nfatal: repository not found\n",
+      });
+      await git(
+        fixture.remote,
+        pullRefState === "moved"
+          ? ["update-ref", "refs/pull/42/head", fixture.baseObjectId, fixture.headObjectId]
+          : ["update-ref", "-d", "refs/pull/42/head"],
+      );
+
+      await expect(
+        withGitHubPullRequestObjects(fixture.config, acquisitionInput(fixture), () =>
+          Promise.resolve(undefined),
+        ),
+      ).rejects.toMatchObject({ code: "provider_resource_unavailable" });
+    },
+  );
+
+  it.each([
+    { budget: "byte", fixtureOptions: { maxBytes: 1024, oversizedBlobBytes: 512 * 1024 } },
+    { budget: "object-count", fixtureOptions: { maxObjects: 2 } },
+  ])("stops a remote over the $budget budget before the acquisition action", async (testCase) => {
+    const fixture = await createFixture(testCase.fixtureOptions);
+    const projectId = "018f0f89-949a-75a8-8f61-6df78a843b1e";
+    let actionCalled = false;
+
+    await expect(
+      withGitHubPullRequestObjects(fixture.config, acquisitionInput(fixture, { projectId }), () => {
+        actionCalled = true;
+        return Promise.resolve(undefined);
+      }),
+    ).rejects.toMatchObject({ code: "revision_limit_exceeded" });
+    expect(actionCalled).toBe(false);
+    await expect(
+      readdir(join(fixture.config.artifactRoot, "projects", projectId, "acquisition-repositories")),
+    ).resolves.toEqual([]);
   });
 
   it("reports an unresolvable base without accepting the branch's newer commit", async () => {
@@ -418,14 +484,7 @@ describe("GitHub pull-request object acquisition", () => {
     await expect(
       withGitHubPullRequestObjects(
         fixture.config,
-        {
-          base: { objectId: "f".repeat(40), ref: "main" },
-          head: { objectId: fixture.headObjectId, ref: "review-source" },
-          objectFormat: "sha1",
-          projectId: "018f0f89-949a-75a8-8f61-6df78a843b1e",
-          pullRequestNumber: 42,
-          repository: { name: "review-source", owner: "kestrel" },
-        },
+        acquisitionInput(fixture, { base: { objectId: "f".repeat(40) } }),
         () => Promise.resolve(undefined),
       ),
     ).rejects.toMatchObject({ code: "base_revision_unresolvable" });
@@ -449,17 +508,8 @@ describe("GitHub pull-request object acquisition", () => {
     const fixture = await createFixture({ fetchFailure: failure });
 
     await expect(
-      withGitHubPullRequestObjects(
-        fixture.config,
-        {
-          base: { objectId: fixture.baseObjectId, ref: "main" },
-          head: { objectId: fixture.headObjectId, ref: "review-source" },
-          objectFormat: "sha1",
-          projectId: "018f0f89-949a-75a8-8f61-6df78a843b1e",
-          pullRequestNumber: 42,
-          repository: { name: "review-source", owner: "kestrel" },
-        },
-        () => Promise.resolve(undefined),
+      withGitHubPullRequestObjects(fixture.config, acquisitionInput(fixture), () =>
+        Promise.resolve(undefined),
       ),
     ).rejects.toMatchObject({ code, message: `Local source operation failed: ${code}` });
   });
@@ -468,17 +518,8 @@ describe("GitHub pull-request object acquisition", () => {
     const fixture = await createFixture({ failFsck: true });
 
     await expect(
-      withGitHubPullRequestObjects(
-        fixture.config,
-        {
-          base: { objectId: fixture.baseObjectId, ref: "main" },
-          head: { objectId: fixture.headObjectId, ref: "review-source" },
-          objectFormat: "sha1",
-          projectId: "018f0f89-949a-75a8-8f61-6df78a843b1e",
-          pullRequestNumber: 42,
-          repository: { name: "review-source", owner: "kestrel" },
-        },
-        () => Promise.resolve(undefined),
+      withGitHubPullRequestObjects(fixture.config, acquisitionInput(fixture), () =>
+        Promise.resolve(undefined),
       ),
     ).rejects.toMatchObject({ code: "object_verification_failed" });
   });
@@ -487,17 +528,8 @@ describe("GitHub pull-request object acquisition", () => {
     const fixture = await createFixture({ injectReplacementRef: true });
 
     await expect(
-      withGitHubPullRequestObjects(
-        fixture.config,
-        {
-          base: { objectId: fixture.baseObjectId, ref: "main" },
-          head: { objectId: fixture.headObjectId, ref: "review-source" },
-          objectFormat: "sha1",
-          projectId: "018f0f89-949a-75a8-8f61-6df78a843b1e",
-          pullRequestNumber: 42,
-          repository: { name: "review-source", owner: "kestrel" },
-        },
-        () => Promise.resolve(undefined),
+      withGitHubPullRequestObjects(fixture.config, acquisitionInput(fixture), () =>
+        Promise.resolve(undefined),
       ),
     ).rejects.toMatchObject({ code: "object_verification_failed" });
   });
@@ -506,17 +538,8 @@ describe("GitHub pull-request object acquisition", () => {
     const fixture = await createFixture({ injectAlternate: true });
 
     await expect(
-      withGitHubPullRequestObjects(
-        fixture.config,
-        {
-          base: { objectId: fixture.baseObjectId, ref: "main" },
-          head: { objectId: fixture.headObjectId, ref: "review-source" },
-          objectFormat: "sha1",
-          projectId: "018f0f89-949a-75a8-8f61-6df78a843b1e",
-          pullRequestNumber: 42,
-          repository: { name: "review-source", owner: "kestrel" },
-        },
-        () => Promise.resolve(undefined),
+      withGitHubPullRequestObjects(fixture.config, acquisitionInput(fixture), () =>
+        Promise.resolve(undefined),
       ),
     ).rejects.toMatchObject({ code: "object_verification_failed" });
   });
@@ -525,35 +548,35 @@ describe("GitHub pull-request object acquisition", () => {
     const fixture = await createFixture({ injectUnsafeConfig: true });
 
     await expect(
-      withGitHubPullRequestObjects(
-        fixture.config,
-        {
-          base: { objectId: fixture.baseObjectId, ref: "main" },
-          head: { objectId: fixture.headObjectId, ref: "review-source" },
-          objectFormat: "sha1",
-          projectId: "018f0f89-949a-75a8-8f61-6df78a843b1e",
-          pullRequestNumber: 42,
-          repository: { name: "review-source", owner: "kestrel" },
-        },
-        () => Promise.resolve(undefined),
+      withGitHubPullRequestObjects(fixture.config, acquisitionInput(fixture), () =>
+        Promise.resolve(undefined),
       ),
     ).rejects.toMatchObject({ code: "object_verification_failed" });
   });
 
-  it("uses a system-scoped host helper to answer an authenticated private fetch challenge", async () => {
+  it("revalidates repository-local configuration after exact-object recovery", async () => {
+    const fixture = await createFixture({ injectUnsafeConfigOnRecovery: true });
+    await git(fixture.remote, [
+      "update-ref",
+      "refs/pull/42/head",
+      fixture.baseObjectId,
+      fixture.headObjectId,
+    ]);
+
+    await expect(
+      withGitHubPullRequestObjects(fixture.config, acquisitionInput(fixture), () =>
+        Promise.resolve(undefined),
+      ),
+    ).rejects.toMatchObject({ code: "object_verification_failed" });
+  });
+
+  it("acquires a private-fork head through the authenticated base pull ref only", async () => {
     const fixture = await createFixture({ authenticated: true });
 
     await expect(
       withGitHubPullRequestObjects(
         fixture.config,
-        {
-          base: { objectId: fixture.baseObjectId, ref: "main" },
-          head: { objectId: fixture.headObjectId, ref: "review-source" },
-          objectFormat: "sha1",
-          projectId: "018f0f89-949a-75a8-8f61-6df78a843b1e",
-          pullRequestNumber: 42,
-          repository: { name: "review-source", owner: "kestrel" },
-        },
+        acquisitionInput(fixture, { head: { ref: "private-fork/review-source" } }),
         () => Promise.resolve(undefined),
       ),
     ).resolves.toBeUndefined();
@@ -565,6 +588,9 @@ describe("GitHub pull-request object acquisition", () => {
     const executionLog = await readFile(fixture.log, "utf8");
     expect(executionLog).toContain(fixture.credentialHelper);
     expect(executionLog).not.toContain("private-review");
+    expect(executionLog).toContain(fixture.canonicalRemote);
+    expect(executionLog).toContain("+refs/pull/42/head:refs/kestrel/head");
+    expect(executionLog).not.toContain("private-fork");
   });
 
   it("does not turn a completed action into failure when disposable cleanup fails", async () => {
@@ -575,14 +601,7 @@ describe("GitHub pull-request object acquisition", () => {
       await expect(
         withGitHubPullRequestObjects(
           fixture.config,
-          {
-            base: { objectId: fixture.baseObjectId, ref: "main" },
-            head: { objectId: fixture.headObjectId, ref: "review-source" },
-            objectFormat: "sha1",
-            projectId: "018f0f89-949a-75a8-8f61-6df78a843b1e",
-            pullRequestNumber: 42,
-            repository: { name: "review-source", owner: "kestrel" },
-          },
+          acquisitionInput(fixture),
           async (acquired) => {
             acquisitionPath = acquired.repository.rootPath;
             acquisitionParent = dirname(acquisitionPath);
@@ -603,24 +622,11 @@ describe("GitHub pull-request object acquisition", () => {
     await git(fixture.remote, ["update-ref", "-d", "refs/pull/42/head"]);
 
     await expect(
-      withGitHubPullRequestObjects(
-        fixture.config,
-        {
-          base: { objectId: fixture.baseObjectId, ref: "main" },
-          head: { objectId: fixture.headObjectId, ref: "review-source" },
-          objectFormat: "sha1",
-          projectId,
-          pullRequestNumber: 42,
-          repository: { name: "review-source", owner: "kestrel" },
-        },
-        () => Promise.resolve(undefined),
+      withGitHubPullRequestObjects(fixture.config, acquisitionInput(fixture, { projectId }), () =>
+        Promise.resolve(undefined),
       ),
     ).resolves.toBeUndefined();
-    const fetches = (await readFile(fixture.log, "utf8"))
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line) as { args: string[] })
-      .filter(({ args }) => args.includes("fetch"));
+    const fetches = await readFetchInvocations(fixture);
     expect(fetches).toHaveLength(2);
     expect(fetches[1]?.args).toContain(`+${fixture.headObjectId}:refs/kestrel/head`);
     await expect(
@@ -636,17 +642,8 @@ describe("GitHub pull-request object acquisition", () => {
     await git(fixture.remote, ["gc", "--prune=now"]);
 
     await expect(
-      withGitHubPullRequestObjects(
-        fixture.config,
-        {
-          base: { objectId: fixture.baseObjectId, ref: "main" },
-          head: { objectId: fixture.headObjectId, ref: "review-source" },
-          objectFormat: "sha1",
-          projectId,
-          pullRequestNumber: 42,
-          repository: { name: "review-source", owner: "kestrel" },
-        },
-        () => Promise.resolve(undefined),
+      withGitHubPullRequestObjects(fixture.config, acquisitionInput(fixture, { projectId }), () =>
+        Promise.resolve(undefined),
       ),
     ).rejects.toMatchObject({ code: "head_revision_unresolvable" });
     await expect(
@@ -660,15 +657,7 @@ describe("GitHub pull-request object acquisition", () => {
     const controller = new AbortController();
     const acquisition = withGitHubPullRequestObjects(
       fixture.config,
-      {
-        base: { objectId: fixture.baseObjectId, ref: "main" },
-        head: { objectId: fixture.headObjectId, ref: "review-source" },
-        objectFormat: "sha1",
-        projectId,
-        pullRequestNumber: 42,
-        repository: { name: "review-source", owner: "kestrel" },
-        signal: controller.signal,
-      },
+      acquisitionInput(fixture, { projectId, signal: controller.signal }),
       () => Promise.resolve(undefined),
     );
     await waitForFile(fixture.fetchStarted);

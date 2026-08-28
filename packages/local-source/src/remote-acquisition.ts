@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { chmod, lstat, mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readdir, realpath, rm } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, sep } from "node:path";
 
 import type { LocalSourceConfig } from "./config.js";
@@ -18,6 +18,10 @@ const GIT_FETCH_TIMEOUT_MS = 60_000;
 const MAX_GIT_OUTPUT_BYTES = 64 * 1024;
 const MAX_CREDENTIAL_CONFIG_ENTRIES = 32;
 const MAX_CREDENTIAL_CONFIG_BYTES = 4096;
+const ACQUISITION_STORAGE_POLL_MS = 25;
+const ACQUISITION_FIXED_STORAGE_OVERHEAD_BYTES = 64 * 1024;
+const ACQUISITION_OBJECT_STORAGE_OVERHEAD_BYTES = 256;
+const MAX_ACQUISITION_OVERHEAD_OBJECTS = 1_000_000;
 const CREDENTIAL_CONFIG_PATTERN = "^credential(\\..*)?\\.(helper|useHttpPath)$";
 const ACQUISITION_LOCAL_CONFIG_KEYS = new Set([
   "core.bare",
@@ -70,6 +74,7 @@ interface GitProcessOptions {
   failureCode?: LocalSourceErrorCode;
   maxStdoutBytes?: number;
   signal?: AbortSignal | undefined;
+  storageBudget?: { maxBytes: number; rootPath: string };
   timeoutMs?: number;
 }
 
@@ -117,6 +122,33 @@ function hostEnvironment(): NodeJS.ProcessEnv {
   return environment;
 }
 
+async function directoryStorageBytes(rootPath: string, stopAfter: number): Promise<number> {
+  const pending = [rootPath];
+  let total = 0;
+  while (pending.length > 0) {
+    const directory = pending.pop();
+    if (directory === undefined) break;
+    const entries = await readdir(directory, { withFileTypes: true }).catch(
+      (error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return [];
+        throw error;
+      },
+    );
+    for (const entry of entries) {
+      const path = join(directory, entry.name);
+      const metadata = await lstat(path).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return null;
+        throw error;
+      });
+      if (metadata === null) continue;
+      if (metadata.isDirectory() && !metadata.isSymbolicLink()) pending.push(path);
+      else total += metadata.size;
+      if (total > stopAfter) return total;
+    }
+  }
+  return total;
+}
+
 function safeFetchEnvironment(
   credentialConfig: readonly CredentialConfigEntry[],
 ): NodeJS.ProcessEnv {
@@ -162,6 +194,8 @@ function runGitProcess(
     let stderrBytes = 0;
     let failure: LocalSourceErrorCode | null = null;
     let settled = false;
+    let storageCheckRunning = false;
+    let storageTimer: ReturnType<typeof setInterval> | undefined;
 
     const terminate = () => {
       if (process.platform !== "win32" && child.pid !== undefined) {
@@ -178,27 +212,45 @@ function runGitProcess(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      if (storageTimer !== undefined) clearInterval(storageTimer);
       options.signal?.removeEventListener("abort", onAbort);
       if (error !== undefined) rejectPromise(error);
       else if (result !== undefined) resolvePromise(result);
       else rejectPromise(new LocalSourceError("git_inspection_failed"));
     };
-    const onAbort = () => {
-      failure = "acquisition_cancelled";
+    const stopWithFailure = (code: LocalSourceErrorCode) => {
+      if (failure === null) failure = code;
       terminate();
     };
+    const onAbort = () => stopWithFailure("acquisition_cancelled");
     const timer = setTimeout(() => {
-      failure = "git_inspection_failed";
-      terminate();
+      stopWithFailure("git_inspection_failed");
     }, options.timeoutMs ?? GIT_PROCESS_TIMEOUT_MS);
     timer.unref();
     options.signal?.addEventListener("abort", onAbort, { once: true });
+    if (options.storageBudget !== undefined) {
+      const { maxBytes, rootPath } = options.storageBudget;
+      storageTimer = setInterval(() => {
+        if (storageCheckRunning || settled) return;
+        storageCheckRunning = true;
+        void directoryStorageBytes(rootPath, maxBytes)
+          .then((bytes) => {
+            if (!settled && bytes > maxBytes) stopWithFailure("revision_limit_exceeded");
+          })
+          .catch(() => {
+            if (!settled) stopWithFailure("git_inspection_failed");
+          })
+          .finally(() => {
+            storageCheckRunning = false;
+          });
+      }, ACQUISITION_STORAGE_POLL_MS);
+      storageTimer.unref();
+    }
 
     child.stdout.on("data", (chunk: Buffer) => {
       stdoutBytes += chunk.byteLength;
       if (stdoutBytes > (options.maxStdoutBytes ?? MAX_GIT_OUTPUT_BYTES)) {
-        failure = "git_inspection_failed";
-        terminate();
+        stopWithFailure("git_inspection_failed");
         return;
       }
       stdout.push(chunk);
@@ -206,8 +258,7 @@ function runGitProcess(
     child.stderr.on("data", (chunk: Buffer) => {
       stderrBytes += chunk.byteLength;
       if (stderrBytes > MAX_GIT_OUTPUT_BYTES) {
-        failure = "git_inspection_failed";
-        terminate();
+        stopWithFailure("git_inspection_failed");
         return;
       }
       stderr.push(chunk);
@@ -257,6 +308,21 @@ function fetchAuthenticationFailure(stderr: Buffer): boolean {
     "requested url returned error: 403",
     "single sign-on",
     "sso",
+  ].some((pattern) => message.includes(pattern));
+}
+
+function fetchProviderResourceFailure(stderr: Buffer): boolean {
+  let message: string;
+  try {
+    message = decodeUtf8(stderr).toLocaleLowerCase("en-US");
+  } catch {
+    return false;
+  }
+  return [
+    "repository not found",
+    "requested url returned error: 404",
+    "returned http code 404",
+    "http 404",
   ].some((pattern) => message.includes(pattern));
 }
 
@@ -342,6 +408,55 @@ async function verifyAcquisitionConfiguration(
     if (!ACQUISITION_LOCAL_CONFIG_KEYS.has(key)) {
       throw new LocalSourceError("object_verification_failed");
     }
+  }
+}
+
+function acquisitionStorageBudget(config: LocalSourceConfig): number {
+  const objectOverhead =
+    Math.min(config.maxObjects, MAX_ACQUISITION_OVERHEAD_OBJECTS) *
+    ACQUISITION_OBJECT_STORAGE_OVERHEAD_BYTES;
+  const overhead = ACQUISITION_FIXED_STORAGE_OVERHEAD_BYTES + objectOverhead;
+  return config.maxBytes > Number.MAX_SAFE_INTEGER - overhead
+    ? Number.MAX_SAFE_INTEGER
+    : config.maxBytes + overhead;
+}
+
+async function verifyAcquisitionStorageBudget(
+  repository: ResolvedRepository,
+  maxStorageBytes: number,
+): Promise<void> {
+  if ((await directoryStorageBytes(repository.rootPath, maxStorageBytes)) > maxStorageBytes) {
+    throw new LocalSourceError("revision_limit_exceeded");
+  }
+}
+
+async function verifyAcquisitionBudget(
+  config: LocalSourceConfig,
+  input: GitHubPullRequestObjectAcquisition,
+  repository: ResolvedRepository,
+  maxStorageBytes: number,
+): Promise<void> {
+  await verifyAcquisitionStorageBudget(repository, maxStorageBytes);
+  const result = await runGitProcess(
+    config.gitExecutable,
+    ["--no-lazy-fetch", ...SAFE_GIT_CONFIG_ARGUMENTS, "-C", repository.path, "count-objects", "-v"],
+    { environment: safeFetchEnvironment([]), signal: input.signal },
+  );
+  const counts = new Map<string, number>();
+  for (const line of decodeUtf8(result.stdout).split("\n")) {
+    const match = /^(count|in-pack): ([0-9]+)$/u.exec(line);
+    if (match?.[1] === undefined || match[2] === undefined) continue;
+    const value = Number(match[2]);
+    if (!Number.isSafeInteger(value)) throw new LocalSourceError("object_verification_failed");
+    counts.set(match[1], value);
+  }
+  const loose = counts.get("count");
+  const packed = counts.get("in-pack");
+  if (loose === undefined || packed === undefined) {
+    throw new LocalSourceError("object_verification_failed");
+  }
+  if (loose > config.maxObjects || packed > config.maxObjects - loose) {
+    throw new LocalSourceError("revision_limit_exceeded");
   }
 }
 
@@ -521,8 +636,9 @@ async function fetchExactPullRequest(
 ): Promise<RepositoryInspection> {
   const remote = `https://github.com/${input.repository.owner}/${input.repository.name}.git`;
   const credentialConfig = await readCredentialConfiguration(config, input.signal);
-  const fetch = (refspecs: readonly string[]) =>
-    runGitProcess(
+  const maxStorageBytes = acquisitionStorageBudget(config);
+  const fetch = async (refspecs: readonly string[]) => {
+    const result = await runGitProcess(
       config.gitExecutable,
       [
         "--no-lazy-fetch",
@@ -546,9 +662,13 @@ async function fetchExactPullRequest(
         allowedExitCodes: [0, 1, 128],
         environment: safeFetchEnvironment(credentialConfig),
         signal: input.signal,
+        storageBudget: { maxBytes: maxStorageBytes, rootPath: repository.rootPath },
         timeoutMs: GIT_FETCH_TIMEOUT_MS,
       },
     );
+    await verifyAcquisitionStorageBudget(repository, maxStorageBytes);
+    return result;
+  };
   const initialFetch = await fetch([
     `+refs/heads/${input.base.ref}:refs/kestrel/base`,
     `+refs/pull/${String(input.pullRequestNumber)}/head:refs/kestrel/head`,
@@ -569,24 +689,13 @@ async function fetchExactPullRequest(
       if (fetchAuthenticationFailure(recovery.stderr)) {
         throw new LocalSourceError("provider_authentication_required");
       }
+      if (fetchProviderResourceFailure(recovery.stderr)) {
+        throw new LocalSourceError("provider_resource_unavailable");
+      }
       throw new LocalSourceError(
         missing === "base" ? "base_revision_unresolvable" : "head_revision_unresolvable",
       );
     }
-  }
-  await verifyAcquisitionConfiguration(config, input, repository);
-  const inspection = await inspectRepository(config, repository, input.signal);
-  if (inspection.objectFormat !== input.objectFormat) {
-    throw new LocalSourceError("object_verification_failed");
-  }
-  const primaryObjectDirectory = await realpath(join(repository.path, "objects")).catch(() => {
-    throw new LocalSourceError("object_verification_failed");
-  });
-  if (
-    inspection.objectDirectories.length !== 1 ||
-    inspection.objectDirectories[0] !== primaryObjectDirectory
-  ) {
-    throw new LocalSourceError("object_verification_failed");
   }
   const readFetchedRef = async (ref: string) =>
     decodeUtf8(
@@ -621,6 +730,9 @@ async function fetchExactPullRequest(
       if (fetchAuthenticationFailure(recovery.stderr)) {
         throw new LocalSourceError("provider_authentication_required");
       }
+      if (fetchProviderResourceFailure(recovery.stderr)) {
+        throw new LocalSourceError("provider_resource_unavailable");
+      }
       if (mismatched.some(([ref]) => ref === "refs/kestrel/head")) {
         throw new LocalSourceError("pull_ref_mismatch");
       }
@@ -635,6 +747,21 @@ async function fetchExactPullRequest(
       }
     }
   }
+  await verifyAcquisitionConfiguration(config, input, repository);
+  const inspection = await inspectRepository(config, repository, input.signal);
+  if (inspection.objectFormat !== input.objectFormat) {
+    throw new LocalSourceError("object_verification_failed");
+  }
+  const primaryObjectDirectory = await realpath(join(repository.path, "objects")).catch(() => {
+    throw new LocalSourceError("object_verification_failed");
+  });
+  if (
+    inspection.objectDirectories.length !== 1 ||
+    inspection.objectDirectories[0] !== primaryObjectDirectory
+  ) {
+    throw new LocalSourceError("object_verification_failed");
+  }
+  await verifyAcquisitionBudget(config, input, repository, maxStorageBytes);
   await verifyAcquisitionReferences(config, input, repository);
   await runGitProcess(
     config.gitExecutable,

@@ -148,7 +148,9 @@ fetch only the base branch and `refs/pull/<number>/head` from that pull request'
 repository into disposable Project-scoped bare storage. The captured base/head object IDs remain
 authoritative if either ref moves. Kestrel makes at most one bounded recovery fetch for those exact
 IDs, rejects unexpected refs, Git configuration, replacements, alternates, malformed object graphs,
-and incomplete closure, then removes the disposable repository. Host Git credentials may answer the
+and incomplete closure, then removes the disposable repository. Temporary acquisition storage is
+bounded by the configured revision bytes plus fixed, per-object Git storage overhead; the fetched
+object count cannot exceed the configured revision object limit. Host Git credentials may answer the
 canonical HTTPS challenge but are never returned to the browser or stored in the retained artifact.
 Git LFS pointer blobs are retained as pointer bytes and never hydrated; gitlink entries are recorded
 but their submodule target repositories and objects are not fetched or retained.

@@ -228,6 +228,8 @@ describe("V1 public contracts", () => {
       { baseObjectId: "a".repeat(40) },
       { headObjectId: "b".repeat(40) },
       { remoteUrl: "https://github.com/kestrel/review-source.git" },
+      { headRepositoryUrl: "https://github.com/untrusted/fork.git" },
+      { headRepository: { name: "fork", owner: "untrusted" } },
       { pullRequestNumber: 42 },
     ]) {
       expect(() =>
