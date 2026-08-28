@@ -198,7 +198,7 @@ describe("GitHub pull-request object acquisition", () => {
           pullRequestNumber: 42,
           repository: { name: "review-source", owner: "kestrel" },
         },
-        async () => undefined,
+        () => Promise.resolve(undefined),
       ),
     ).rejects.toMatchObject({ code: "reference_not_available" });
     await expect(
@@ -221,7 +221,7 @@ describe("GitHub pull-request object acquisition", () => {
         repository: { name: "review-source", owner: "kestrel" },
         signal: controller.signal,
       },
-      async () => undefined,
+      () => Promise.resolve(undefined),
     );
     await waitForFile(fixture.fetchStarted);
     controller.abort();

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type * as LocalSourceModule from "@kestrel/local-source";
 import { LocalSourceError } from "@kestrel/local-source";
 
 const mocks = vi.hoisted(() => ({
@@ -10,7 +11,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@kestrel/local-source", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@kestrel/local-source")>()),
+  ...(await importOriginal<typeof LocalSourceModule>()),
   inspectRepository: mocks.inspectRepository,
   resolveRepository: mocks.resolveRepository,
   retainRevision: mocks.retainRevision,

@@ -329,21 +329,6 @@ async function createAcquisitionRepository(
     throw new LocalSourceError("source_containment_violation");
   }
   const repositoryPath = join(canonicalAcquisition, "repository.git");
-  await mkdir(repositoryPath, { mode: 0o700 });
-  await runGitProcess(
-    config.gitExecutable,
-    [
-      "--no-lazy-fetch",
-      ...SAFE_GIT_CONFIG_ARGUMENTS,
-      "-C",
-      repositoryPath,
-      "init",
-      "--bare",
-      `--object-format=${input.objectFormat}`,
-      "--template=",
-    ],
-    { environment: safeFetchEnvironment([]), signal: input.signal },
-  );
   return {
     acquisitionPath: canonicalAcquisition,
     repository: {
@@ -355,6 +340,45 @@ async function createAcquisitionRepository(
       rootPath: canonicalAcquisition,
     },
   };
+}
+
+async function initializeAcquisitionRepository(
+  config: LocalSourceConfig,
+  input: GitHubPullRequestObjectAcquisition,
+  repository: ResolvedRepository,
+): Promise<void> {
+  await mkdir(repository.path, { mode: 0o700 });
+  await runGitProcess(
+    config.gitExecutable,
+    [
+      "--no-lazy-fetch",
+      ...SAFE_GIT_CONFIG_ARGUMENTS,
+      "-C",
+      repository.path,
+      "init",
+      "--bare",
+      `--object-format=${input.objectFormat}`,
+      "--template=",
+    ],
+    { environment: safeFetchEnvironment([]), signal: input.signal },
+  );
+}
+
+async function removeAcquisitionRepository(
+  config: LocalSourceConfig,
+  projectId: string,
+  acquisitionPath: string,
+): Promise<void> {
+  const acquisitions = join(config.artifactRoot, "projects", projectId, "acquisition-repositories");
+  if (
+    !isContained(acquisitions, acquisitionPath) ||
+    !basename(acquisitionPath).startsWith(".acquiring-")
+  ) {
+    throw new LocalSourceError("source_containment_violation");
+  }
+  await rm(acquisitionPath, { force: true, recursive: true }).catch(() => {
+    throw new LocalSourceError("source_containment_violation");
+  });
 }
 
 async function fetchExactPullRequest(
@@ -431,29 +455,19 @@ export async function withGitHubPullRequestObjects<T>(
   action: (source: AcquiredGitObjectSource) => Promise<T>,
 ): Promise<T> {
   validateInput(input);
-  let acquisitionPath: string | null = null;
+  const created = await createAcquisitionRepository(config, input);
+  let outcome: PromiseSettledResult<T>;
   try {
-    const created = await createAcquisitionRepository(config, input);
-    acquisitionPath = created.acquisitionPath;
+    await initializeAcquisitionRepository(config, input, created.repository);
     const inspection = await fetchExactPullRequest(config, input, created.repository);
-    return await action({ inspection, repository: created.repository });
-  } finally {
-    if (acquisitionPath !== null) {
-      const acquisitions = join(
-        config.artifactRoot,
-        "projects",
-        input.projectId,
-        "acquisition-repositories",
-      );
-      if (
-        !isContained(acquisitions, acquisitionPath) ||
-        !basename(acquisitionPath).startsWith(".acquiring-")
-      ) {
-        throw new LocalSourceError("source_containment_violation");
-      }
-      await rm(acquisitionPath, { force: true, recursive: true }).catch(() => {
-        throw new LocalSourceError("source_containment_violation");
-      });
-    }
+    outcome = {
+      status: "fulfilled",
+      value: await action({ inspection, repository: created.repository }),
+    };
+  } catch (reason) {
+    outcome = { reason, status: "rejected" };
   }
+  await removeAcquisitionRepository(config, input.projectId, created.acquisitionPath);
+  if (outcome.status === "rejected") throw outcome.reason;
+  return outcome.value;
 }

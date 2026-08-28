@@ -147,10 +147,11 @@ describe("Review Revision route", () => {
     });
 
     expect(response.statusCode).toBe(503);
-    expect(retain).toHaveBeenCalledWith(
-      command,
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    );
+    expect(retain).toHaveBeenCalledOnce();
+    const call = retain.mock.calls[0];
+    if (call === undefined) throw new Error("Review Revision retention was not invoked");
+    expect(call[0]).toEqual(command);
+    expect(call[1].signal).toBeInstanceOf(AbortSignal);
   });
 
   it("maps an acquiring conflict without exposing local details", async () => {
@@ -242,7 +243,11 @@ describe("observed Review Revision selection", () => {
 
   it("rejects a proposal whose canonical URL retargets another repository", () => {
     const mismatched = structuredClone(project);
-    mismatched.changeProposals[0]!.canonicalUrl = "https://github.com/kestrel/other/pull/42";
+    const proposal = mismatched.changeProposals[0];
+    if (proposal?.kind !== "provider_observed") {
+      throw new Error("Provider proposal fixture is unavailable");
+    }
+    proposal.canonicalUrl = "https://github.com/kestrel/other/pull/42";
 
     expect(() =>
       resolveObservedReviewRevisionSelection(mismatched, {
