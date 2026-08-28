@@ -59,7 +59,13 @@ export interface PublicGitHubPullRequestCoordinates {
 export interface PublicGitHubObservation {
   proposal: Omit<
     ProviderObservedChangeProposal,
-    "id" | "observedAt" | "kind" | "changeIntent" | "reviewRevisions"
+    | "id"
+    | "observedAt"
+    | "kind"
+    | "version"
+    | "changeIntent"
+    | "changeIntentCandidates"
+    | "reviewRevisions"
   >;
   repository: RepositorySnapshot;
 }

@@ -6,6 +6,11 @@ import { ApiErrorSchema } from "@kestrel/contracts";
 import type { DatabasePool, DiagnosticJobSender } from "@kestrel/database";
 
 import { registerDiagnosticRoutes } from "./routes/diagnostics.js";
+import {
+  createDatabaseChangeIntentService,
+  registerChangeIntentRoutes,
+  type ChangeIntentService,
+} from "./routes/change-intents.js";
 import { registerEventRoutes } from "./routes/events.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerInstallationRoutes } from "./routes/installation.js";
@@ -31,6 +36,7 @@ import { registerAuthentication } from "./authentication.js";
 
 export interface BuildAppOptions {
   boss: DiagnosticJobSender;
+  changeIntentService?: ChangeIntentService;
   eventPool?: DatabasePool;
   eventRetentionLimit: number;
   logger?: boolean;
@@ -111,6 +117,7 @@ export async function buildApp({
   eventRetentionLimit,
   logger = true,
   pool,
+  changeIntentService = createDatabaseChangeIntentService(pool),
   eventPool = pool,
   pwaRoot,
   localRepositoryService = {
@@ -178,6 +185,7 @@ export async function buildApp({
   registerInstallationRoutes(app, pool);
   registerOpenApiRoute(app);
   registerProjectRoutes(app, projectService, hostGitHubProjectService);
+  registerChangeIntentRoutes(app, changeIntentService);
   registerLocalRepositoryRoutes(app, localRepositoryService);
   registerReviewRevisionRoutes(app, reviewRevisionService);
   if (pwaRoot !== undefined) {
