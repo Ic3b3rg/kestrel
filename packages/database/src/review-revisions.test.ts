@@ -363,20 +363,15 @@ describe("Review Revision persistence", () => {
         },
       }),
     ).resolves.toMatchObject({ outcome: "acquire", revision: { id: revisionId } });
-    expect(
-      database.statements.find(
-        (statement) =>
-          statement.includes("UPDATE review_revisions") &&
-          statement.includes("acquisition_interrupted"),
-      ),
-    ).toContain("interval '30 minutes'");
-    expect(
-      database.statements.find(
-        (statement) =>
-          statement.includes("UPDATE review_revisions") &&
-          statement.includes("acquisition_interrupted"),
-      ),
-    ).toContain("pg_try_advisory_xact_lock");
+    const reclaimStatement = database.statements.find(
+      (statement) =>
+        statement.includes("UPDATE review_revisions") &&
+        statement.includes("acquisition_interrupted"),
+    );
+    expect(reclaimStatement).toContain("interval '30 minutes'");
+    expect(reclaimStatement).toContain("pg_try_advisory_xact_lock");
+    expect(reclaimStatement).toContain("'kestrel-review-revision:' || $1::uuid::text");
+    expect(reclaimStatement).toContain("WHERE id = $1::uuid");
     expect(
       database.statements.filter((statement) =>
         statement.startsWith("INSERT INTO installation_audit_records"),

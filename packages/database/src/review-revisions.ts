@@ -1155,14 +1155,14 @@ async function reclaimStaleAcquiringRevision(
     `
       WITH lease AS MATERIALIZED (
         SELECT pg_try_advisory_xact_lock(
-          hashtextextended('kestrel-review-revision:' || $1, 0)
+          hashtextextended('kestrel-review-revision:' || $1::uuid::text, 0)
         ) AS acquired
       )
       UPDATE review_revisions
       SET revision_state = 'unavailable',
           failure_reason = 'acquisition_interrupted',
           updated_at = clock_timestamp()
-      WHERE id = $1
+      WHERE id = $1::uuid
         AND revision_state = 'acquiring'
         AND updated_at <= clock_timestamp() - interval '30 minutes'
         AND (SELECT acquired FROM lease)
