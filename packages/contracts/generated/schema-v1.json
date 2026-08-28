@@ -2456,43 +2456,73 @@
       "type": "object"
     },
     "RetainReviewRevisionCommand": {
-      "additionalProperties": false,
-      "properties": {
-        "baseRef": {
-          "maxLength": 255,
-          "minLength": 1,
-          "pattern": "^[^\\p{Cc}]+$",
-          "type": "string"
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "baseRef": {
+              "maxLength": 255,
+              "minLength": 1,
+              "pattern": "^[^\\p{Cc}]+$",
+              "type": "string"
+            },
+            "changeIntent": {
+              "maxLength": 20000,
+              "minLength": 1,
+              "type": "string"
+            },
+            "changeProposalId": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "headRef": {
+              "maxLength": 255,
+              "minLength": 1,
+              "pattern": "^[^\\p{Cc}]+$",
+              "type": "string"
+            },
+            "repositoryId": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "repositoryId",
+            "baseRef",
+            "headRef",
+            "changeIntent"
+          ],
+          "type": "object"
         },
-        "changeIntent": {
-          "maxLength": 20000,
-          "minLength": 1,
-          "type": "string"
-        },
-        "changeProposalId": {
-          "format": "uuid",
-          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-          "type": "string"
-        },
-        "headRef": {
-          "maxLength": 255,
-          "minLength": 1,
-          "pattern": "^[^\\p{Cc}]+$",
-          "type": "string"
-        },
-        "repositoryId": {
-          "format": "uuid",
-          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-          "type": "string"
+        {
+          "additionalProperties": false,
+          "properties": {
+            "changeIntent": {
+              "maxLength": 20000,
+              "minLength": 1,
+              "type": "string"
+            },
+            "changeProposalId": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "projectId": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "projectId",
+            "changeProposalId",
+            "changeIntent"
+          ],
+          "type": "object"
         }
-      },
-      "required": [
-        "repositoryId",
-        "baseRef",
-        "headRef",
-        "changeIntent"
-      ],
-      "type": "object"
+      ]
     },
     "ReviewRevisionAvailable": {
       "additionalProperties": false,

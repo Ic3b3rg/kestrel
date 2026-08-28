@@ -45,7 +45,7 @@ export const ChangeIntentTextSchema = z
     message: "Change Intent must be at most 20000 UTF-8 bytes",
   });
 
-export const RetainReviewRevisionCommandSchema = z
+export const RetainLocalReviewRevisionCommandSchema = z
   .strictObject({
     repositoryId: KestrelIdSchema,
     baseRef: GitReferenceSchema,
@@ -57,6 +57,17 @@ export const RetainReviewRevisionCommandSchema = z
     message: "Base and head references must be different",
     path: ["headRef"],
   });
+
+export const RetainObservedReviewRevisionCommandSchema = z.strictObject({
+  projectId: KestrelIdSchema,
+  changeProposalId: KestrelIdSchema,
+  changeIntent: ChangeIntentTextSchema,
+});
+
+export const RetainReviewRevisionCommandSchema = z.union([
+  RetainLocalReviewRevisionCommandSchema,
+  RetainObservedReviewRevisionCommandSchema,
+]);
 
 export const LocalRepositoryInventoryItemSchema = z.strictObject({
   repositoryId: KestrelIdSchema,
@@ -549,6 +560,12 @@ export type ObserveHostGitHubPullRequestCommand = z.infer<
 >;
 export type OpenPublicGitHubPullRequestCommand = z.infer<
   typeof OpenPublicGitHubPullRequestCommandSchema
+>;
+export type RetainLocalReviewRevisionCommand = z.infer<
+  typeof RetainLocalReviewRevisionCommandSchema
+>;
+export type RetainObservedReviewRevisionCommand = z.infer<
+  typeof RetainObservedReviewRevisionCommandSchema
 >;
 export type RetainReviewRevisionCommand = z.infer<typeof RetainReviewRevisionCommandSchema>;
 export type NewOperatorPassword = z.infer<typeof NewOperatorPasswordSchema>;
