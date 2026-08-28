@@ -397,43 +397,44 @@ async function fetchExactPullRequest(
 ): Promise<RepositoryInspection> {
   const remote = `https://github.com/${input.repository.owner}/${input.repository.name}.git`;
   const credentialConfig = await readCredentialConfiguration(config, input.signal);
-  await runGitProcess(
-    config.gitExecutable,
-    [
-      "--no-lazy-fetch",
-      ...SAFE_GIT_CONFIG_ARGUMENTS,
-      "-C",
-      repository.path,
-      "fetch",
-      "--atomic",
-      "--depth=1",
-      "--no-auto-maintenance",
-      "--no-recurse-submodules",
-      "--no-tags",
-      "--no-write-fetch-head",
-      "--quiet",
-      "--refmap=",
-      "--",
-      remote,
-      `+refs/heads/${input.base.ref}:refs/kestrel/base`,
-      `+refs/pull/${String(input.pullRequestNumber)}/head:refs/kestrel/head`,
-    ],
-    {
-      environment: safeFetchEnvironment(credentialConfig),
-      failureCode: "reference_not_available",
-      signal: input.signal,
-      timeoutMs: GIT_FETCH_TIMEOUT_MS,
-    },
-  );
+  const fetch = (refspecs: readonly string[]) =>
+    runGitProcess(
+      config.gitExecutable,
+      [
+        "--no-lazy-fetch",
+        ...SAFE_GIT_CONFIG_ARGUMENTS,
+        "-C",
+        repository.path,
+        "fetch",
+        "--atomic",
+        "--depth=1",
+        "--no-auto-maintenance",
+        "--no-recurse-submodules",
+        "--no-tags",
+        "--no-write-fetch-head",
+        "--quiet",
+        "--refmap=",
+        "--",
+        remote,
+        ...refspecs,
+      ],
+      {
+        environment: safeFetchEnvironment(credentialConfig),
+        failureCode: "reference_not_available",
+        signal: input.signal,
+        timeoutMs: GIT_FETCH_TIMEOUT_MS,
+      },
+    );
+  await fetch([
+    `+refs/heads/${input.base.ref}:refs/kestrel/base`,
+    `+refs/pull/${String(input.pullRequestNumber)}/head:refs/kestrel/head`,
+  ]);
   const inspection = await inspectRepository(config, repository, input.signal);
   if (inspection.objectFormat !== input.objectFormat) {
     throw new LocalSourceError("object_verification_failed");
   }
-  for (const [ref, expected] of [
-    ["refs/kestrel/base", input.base.objectId],
-    ["refs/kestrel/head", input.head.objectId],
-  ] as const) {
-    const resolved = decodeUtf8(
+  const readFetchedRef = async (ref: string) =>
+    decodeUtf8(
       (
         await runGitProcess(
           config.gitExecutable,
@@ -451,8 +452,20 @@ async function fetchExactPullRequest(
         )
       ).stdout,
     ).trim();
-    if (resolved !== expected) {
-      throw new LocalSourceError("reference_not_available");
+  const expectedRefs = [
+    ["refs/kestrel/base", input.base.objectId],
+    ["refs/kestrel/head", input.head.objectId],
+  ] as const;
+  const mismatched = [] as Array<(typeof expectedRefs)[number]>;
+  for (const expectedRef of expectedRefs) {
+    if ((await readFetchedRef(expectedRef[0])) !== expectedRef[1]) mismatched.push(expectedRef);
+  }
+  if (mismatched.length > 0) {
+    await fetch(mismatched.map(([ref, expected]) => `+${expected}:${ref}`));
+    for (const [ref, expected] of expectedRefs) {
+      if ((await readFetchedRef(ref)) !== expected) {
+        throw new LocalSourceError("reference_not_available");
+      }
     }
   }
   return inspection;

@@ -193,6 +193,7 @@ async function createFixture(options: { authenticated?: boolean; hangOnFetch?: b
     headObjectId,
     log,
     remote,
+    source,
     serverStats: authenticatedServer?.stats ?? null,
   };
 }
@@ -291,6 +292,51 @@ describe("GitHub pull-request object acquisition", () => {
     });
     expect(Object.values(fetch?.config ?? {})).toContain("credential.https://github.com.helper");
     expect(Object.values(fetch?.config ?? {})).toContain("test-keychain");
+  });
+
+  it("recovers the captured head once without substituting a moved pull ref", async () => {
+    const fixture = await createFixture();
+    await git(fixture.remote, ["update-ref", "refs/kestrel/captured-head", fixture.headObjectId]);
+    await git(fixture.remote, [
+      "update-ref",
+      "refs/pull/42/head",
+      fixture.baseObjectId,
+      fixture.headObjectId,
+    ]);
+
+    await expect(
+      withGitHubPullRequestObjects(
+        fixture.config,
+        {
+          base: { objectId: fixture.baseObjectId, ref: "main" },
+          head: { objectId: fixture.headObjectId, ref: "review-source" },
+          objectFormat: "sha1",
+          projectId: "018f0f89-949a-75a8-8f61-6df78a843b1e",
+          pullRequestNumber: 42,
+          repository: { name: "review-source", owner: "kestrel" },
+        },
+        async ({ inspection, repository }) =>
+          (
+            await readRawGitObject(
+              fixture.config,
+              repository,
+              inspection.objectFormat,
+              fixture.headObjectId,
+              inspection.objectDirectories,
+            )
+          ).id,
+      ),
+    ).resolves.toBe(fixture.headObjectId);
+
+    const fetches = (await readFile(fixture.log, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { args: string[] })
+      .filter(({ args }) => args.includes("fetch"));
+    expect(fetches).toHaveLength(2);
+    expect(fetches[0]?.args).toContain("+refs/pull/42/head:refs/kestrel/head");
+    expect(fetches[1]?.args).toContain(`+${fixture.headObjectId}:refs/kestrel/head`);
+    expect(fetches[1]?.args.join(" ")).not.toContain("refs/kestrel/captured-head");
   });
 
   it("uses a system-scoped host helper to answer an authenticated private fetch challenge", async () => {
