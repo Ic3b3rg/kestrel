@@ -41,46 +41,62 @@ const reviewRevisionStateLabels = {
   unavailable: "Unavailable",
 } as const;
 
-const revisionFailureLabels: Record<
+const revisionFailureDetails: Record<
   NonNullable<ReviewRevisionAvailable["reviewRevision"]["failureReason"]>,
-  string
+  { action: string; label: string }
 > = {
-  acquisition_interrupted: "Acquisition was interrupted during restart.",
-  artifact_finalization_failed: "The retained artifact could not be finalized.",
-  base_revision_unresolvable: "The captured base revision is no longer resolvable.",
-  head_revision_unresolvable: "The captured head revision is no longer resolvable.",
-  object_missing: "A required committed object is missing.",
-  object_verification_failed: "A committed object could not be verified.",
-  reference_not_available: "A selected reference is no longer available.",
-  provider_authentication_required: "Host Git authentication is required for this repository.",
-  provider_resource_unavailable: "The provider resource is unavailable or inaccessible.",
-  pull_ref_mismatch: "The pull request moved and its captured head could not be recovered.",
-  revision_limit_exceeded: "The configured revision size or object limit was exceeded.",
-  source_containment_violation: "The local source failed safety validation.",
-  source_not_available: "The local source is unavailable.",
-};
-
-const revisionFailureActions: Record<
-  NonNullable<ReviewRevisionAvailable["reviewRevision"]["failureReason"]>,
-  string
-> = {
-  acquisition_interrupted: "Retry this exact revision after Kestrel has recovered.",
-  artifact_finalization_failed: "Retry this exact revision after checking local artifact storage.",
-  base_revision_unresolvable:
-    "Retry if the captured object becomes available, or refresh the pull request.",
-  head_revision_unresolvable:
-    "Retry if the captured object becomes available, or refresh the pull request.",
-  object_missing: "Retry after restoring access to the required committed object.",
-  object_verification_failed: "Inspect the source integrity before retrying this exact revision.",
-  provider_authentication_required:
-    "Restore host Git authentication or SSO access, then retry this exact revision.",
-  provider_resource_unavailable:
-    "Confirm repository access or availability, then retry this exact revision.",
-  pull_ref_mismatch: "Refresh the pull request to observe its current exact head.",
-  reference_not_available: "Open the local repository again to select committed references.",
-  revision_limit_exceeded: "Adjust the configured revision limits before retrying.",
-  source_containment_violation: "Correct the local-source safety condition before retrying.",
-  source_not_available: "Reattach the matching Local Repository Source before retrying.",
+  acquisition_interrupted: {
+    action: "Retry this exact revision after Kestrel has recovered.",
+    label: "Acquisition was interrupted during restart.",
+  },
+  artifact_finalization_failed: {
+    action: "Retry this exact revision after checking local artifact storage.",
+    label: "The retained artifact could not be finalized.",
+  },
+  base_revision_unresolvable: {
+    action: "Retry if the captured object becomes available, or refresh the pull request.",
+    label: "The captured base revision is no longer resolvable.",
+  },
+  head_revision_unresolvable: {
+    action: "Retry if the captured object becomes available, or refresh the pull request.",
+    label: "The captured head revision is no longer resolvable.",
+  },
+  object_missing: {
+    action: "Retry after restoring access to the required committed object.",
+    label: "A required committed object is missing.",
+  },
+  object_verification_failed: {
+    action: "Inspect the source integrity before retrying this exact revision.",
+    label: "A committed object could not be verified.",
+  },
+  provider_authentication_required: {
+    action: "Restore host Git authentication or SSO access, then retry this exact revision.",
+    label: "Host Git authentication is required for this repository.",
+  },
+  provider_resource_unavailable: {
+    action: "Confirm repository access or availability, then retry this exact revision.",
+    label: "The provider resource is unavailable or inaccessible.",
+  },
+  pull_ref_mismatch: {
+    action: "Refresh the pull request to observe its current exact head.",
+    label: "The pull request moved and its captured head could not be recovered.",
+  },
+  reference_not_available: {
+    action: "Open the local repository again to select committed references.",
+    label: "A selected reference is no longer available.",
+  },
+  revision_limit_exceeded: {
+    action: "Adjust the configured revision limits before retrying.",
+    label: "The configured revision size or object limit was exceeded.",
+  },
+  source_containment_violation: {
+    action: "Correct the local-source safety condition before retrying.",
+    label: "The local source failed safety validation.",
+  },
+  source_not_available: {
+    action: "Reattach the matching Local Repository Source before retrying.",
+    label: "The local source is unavailable.",
+  },
 };
 
 const proposalStateLabels: Record<ProviderChangeProposal["proposalState"], string> = {
@@ -184,6 +200,8 @@ function RevisionFacts({
     );
   }
   const pointerLabel = revision.state === "available" ? "Retained" : "Revision";
+  const failure =
+    revision.failureReason === null ? null : revisionFailureDetails[revision.failureReason];
   return (
     <>
       <div>
@@ -204,12 +222,12 @@ function RevisionFacts({
           <ShortObjectId label={`${pointerLabel} head`} value={revision.head.objectId} />
         </dd>
       </div>
-      {revision.failureReason === null ? null : (
+      {failure === null ? null : (
         <div>
           <dt>Failure</dt>
           <dd>
-            <strong>{revisionFailureLabels[revision.failureReason]}</strong>
-            <span>{revisionFailureActions[revision.failureReason]}</span>
+            <strong>{failure.label}</strong>
+            <span>{failure.action}</span>
           </dd>
         </div>
       )}
