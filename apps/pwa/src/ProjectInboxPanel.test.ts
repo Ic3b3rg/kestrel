@@ -245,6 +245,23 @@ describe("ProjectInboxPanel", () => {
     expect(html).toContain("a".repeat(40));
   });
 
+  it("offers exact observed-PR acquisition only when a local source is attached", () => {
+    const project = populatedInbox.projects[0];
+    const localSource = localInbox.projects[0]?.localRepositorySource;
+    if (project === undefined || localSource === null || localSource === undefined) {
+      throw new Error("Attached provider fixture is unavailable");
+    }
+    const html = render({
+      schemaVersion: 1,
+      projects: [{ ...project, localRepositorySource: localSource }],
+    });
+
+    expect(html).toContain("Confirm Change Intent for PR #1234");
+    expect(html).toContain("Acquire exact PR #1234");
+    expect(html).toContain("host credential helper");
+    expect(render(populatedInbox)).not.toContain("Acquire exact PR #1234");
+  });
+
   it("renders an unavailable revision as retryable without claiming an artifact was retained", () => {
     const project = localInbox.projects[0];
     const proposal = project?.changeProposals[0];
