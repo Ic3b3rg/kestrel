@@ -1,7 +1,11 @@
 import { AxeBuilder } from "@axe-core/playwright";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Route } from "@playwright/test";
 
-import type { ProjectUpserted } from "@kestrel/contracts";
+import {
+  ProjectInboxSchema,
+  ReviewRevisionAvailableSchema,
+  type ProjectUpserted,
+} from "@kestrel/contracts";
 
 import { startStack, TEST_OPERATOR_CREDENTIALS, type RunningStack } from "./support/compose.js";
 
@@ -51,7 +55,7 @@ test.describe("observable Installation PWA", () => {
 
   test.beforeAll(async () => {
     stack = await startStack();
-    await stack.bootstrapOperator(TEST_OPERATOR_CREDENTIALS);
+    await stack.authenticateOperator(TEST_OPERATOR_CREDENTIALS);
     await stack.executeRuntimeSql(`
       WITH project AS (
         INSERT INTO projects (
@@ -100,11 +104,198 @@ test.describe("observable Installation PWA", () => {
              'U_kgDOA',
              'octocat'
       FROM project;
+
+      INSERT INTO local_repository_sources (
+        installation_id,
+        project_id,
+        source_identity,
+        repository_id,
+        root_id,
+        repository_relative_locator,
+        display_name_snapshot,
+        object_format,
+        github_owner_snapshot,
+        github_name_snapshot,
+        attachment_state
+      )
+      SELECT installation_id,
+             id,
+             '${"e".repeat(64)}',
+             '018f0f89-9a1e-7d64-a5dd-18cc3e317401',
+             '018f0f89-9a1f-72ae-82c4-ef8ee27d6932',
+             'openai-node',
+             'openai-node',
+             'sha1',
+             'openai',
+             'openai-node',
+             'attached'
+      FROM projects
+      WHERE provider_repository_id = 'R_kgDOGx';
     `);
   });
 
   test.afterAll(async () => {
     await stack?.close();
+  });
+
+  test("the Operator acquires an observed pull request from its Project", async ({ page }) => {
+    if (stack === undefined) throw new Error("Observed pull-request browser stack is unavailable");
+    const runningStack = stack;
+    const inbox = ProjectInboxSchema.parse(
+      await (await runningStack.fetchApi("/api/v1/projects")).json(),
+    );
+    const project = inbox.projects.find(
+      (candidate) => candidate.repository?.name === "openai-node",
+    );
+    const proposal = project?.changeProposals.find(
+      (candidate) => candidate.kind === "provider_observed" && candidate.number === 1234,
+    );
+    if (project === undefined || proposal?.kind !== "provider_observed") {
+      throw new Error("Observed pull-request browser fixture is unavailable");
+    }
+    if (project.localRepositorySource === null) {
+      throw new Error("Observed pull-request browser source is unavailable");
+    }
+    const changeIntentText = "Review the exact provider-observed pull request revision";
+    const acquisitionChangeIntent = {
+      createdAt: "2026-08-28T12:05:00.000Z",
+      id: "018f0f89-9a25-7d63-b6f7-108b7b4bf52f",
+      text: changeIntentText,
+      version: 1,
+    };
+    const reviewRevision = {
+      availableAt: "2026-08-28T12:05:01.000Z",
+      base: proposal.base,
+      createdAt: "2026-08-28T12:05:00.000Z",
+      failureReason: null,
+      head: proposal.head,
+      id: "018f0f89-9a26-7d63-b6f7-108b7b4bf52f",
+      objectCount: 8,
+      objectFormat: project.localRepositorySource.objectFormat,
+      retainedBytes: 923,
+      state: "available" as const,
+    };
+    const availableProposal = {
+      ...proposal,
+      changeIntent: acquisitionChangeIntent,
+      reviewRevisions: [reviewRevision],
+    };
+    const availableProject = {
+      ...project,
+      changeProposals: project.changeProposals.map((candidate) =>
+        candidate.id === proposal.id ? availableProposal : candidate,
+      ),
+      sourceAvailability: "available" as const,
+      updatedAt: "2026-08-28T12:05:01.000Z",
+    };
+    const available = ReviewRevisionAvailableSchema.parse({
+      schemaVersion: 1,
+      acquisitionChangeIntent,
+      changeProposal: availableProposal,
+      localRepositorySource: project.localRepositorySource,
+      project: availableProject,
+      reviewRevision,
+    });
+
+    let acquired = false;
+    await page.route("**/api/v1/projects", async (route: Route) => {
+      if (route.request().method() === "GET" && acquired) {
+        await route.fulfill({ json: { schemaVersion: 1, projects: [available.project] } });
+        return;
+      }
+      await route.continue();
+    });
+    await page.route("**/api/v1/projects/*/provider/github", async (route: Route) => {
+      await route.fulfill({
+        json: {
+          schemaVersion: 1,
+          projectId: project.id,
+          route: "host_gh",
+          limitations: ["The observed-acquisition browser test does not exercise host gh."],
+          status: {
+            executableVersion: null,
+            availability: "unavailable",
+            host: "github.com",
+            authentication: "unknown",
+            account: null,
+          },
+          pullRequests: [],
+          observedAt: "2026-08-28T12:00:00.000Z",
+        },
+        status: 200,
+      });
+    });
+    let markRequestObserved: () => void = () => undefined;
+    const requestObserved = new Promise<void>((resolve) => {
+      markRequestObserved = resolve;
+    });
+    let releaseResponse: () => void = () => undefined;
+    const responseGate = new Promise<void>((resolve) => {
+      releaseResponse = resolve;
+    });
+    await page.route("**/api/v1/review-revisions", async (route: Route) => {
+      const request = route.request();
+      if (request.method() !== "POST") {
+        await route.continue();
+        return;
+      }
+      const command: unknown = request.postDataJSON();
+      expect(command).toEqual({
+        changeIntent: changeIntentText,
+        changeProposalId: proposal.id,
+        projectId: project.id,
+      });
+      expect(Object.keys(command as Record<string, unknown>).sort()).toEqual([
+        "changeIntent",
+        "changeProposalId",
+        "projectId",
+      ]);
+      expect(request.headers()["x-kestrel-csrf"]).toBeTruthy();
+      expect(request.headers().authorization).toBeUndefined();
+      markRequestObserved();
+      await responseGate;
+      acquired = true;
+      await route.fulfill({ json: available, status: 201 });
+    });
+
+    const browserErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error" || message.type() === "warning") {
+        const text = message.text();
+        if (
+          text !==
+          "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+        ) {
+          browserErrors.push(text);
+        }
+      }
+    });
+    page.on("pageerror", (error) => browserErrors.push(error.message));
+    await page.goto(runningStack.pwaUrl);
+    await page.getByLabel("Username").fill(TEST_OPERATOR_CREDENTIALS.username);
+    await page.getByLabel("Password").fill(TEST_OPERATOR_CREDENTIALS.password);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page.getByRole("heading", { name: "Kestrel Installation" })).toBeVisible();
+    await expect(page.getByText("Credentials stay with host Git", { exact: true })).toBeVisible();
+    const intent = page.getByLabel("Confirm Change Intent for PR #1234");
+    await expect(intent).toHaveValue("");
+    await expect(page.getByRole("button", { name: "Acquire exact PR #1234" })).toBeDisabled();
+    await expect(page.getByText(/host credential helper/u)).toBeVisible();
+    await expect(page.getByText(/never receives or stores the credential/u)).toBeVisible();
+    await intent.fill(changeIntentText);
+    const acquire = page.getByRole("button", { name: "Acquire exact PR #1234" });
+    await acquire.click();
+    await requestObserved;
+    await expect(page.getByRole("button", { name: "Acquiring…" })).toBeDisabled();
+    await expect(intent).toBeDisabled();
+    releaseResponse();
+    await expect(page.getByRole("status")).toContainText("The exact Review Revision is available.");
+    await expect(page.getByRole("button", { name: "Acquire exact PR #1234" })).toHaveCount(0);
+    await expect(page.getByText(changeIntentText, { exact: true })).toBeVisible();
+    await expect(page.getByText("Available", { exact: true })).toHaveCount(2);
+    const accessibility = await new AxeBuilder({ page }).include(".projects-section").analyze();
+    expect(accessibility.violations).toEqual([]);
+    expect(browserErrors).toEqual([]);
   });
 
   test("the Operator runs and observes a diagnostic", async ({ context, page }) => {
