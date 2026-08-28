@@ -13,16 +13,19 @@ import {
 import { isAbsolute, join, relative, sep } from "node:path";
 
 import type { LocalSourceConfig } from "./config.js";
+import type { ResolvedRepository } from "./discovery.js";
 import { LocalSourceError } from "./errors.js";
 import {
   inspectRepository,
   listCommitTreeEntries,
   withGitObjectReader,
   type GitObjectFormat,
+  type GitObjectReader,
   type GitObjectType,
   type GitTreeEntry,
   type GitTreeTraversalBudget,
   type RawGitObject,
+  type RepositoryInspection,
   type SelectedRevision,
 } from "./git.js";
 
@@ -52,9 +55,15 @@ interface RevisionManifest {
 }
 
 export interface RetainRevisionInput {
+  fallbackSources?: readonly RetainRevisionObjectSource[];
   projectId: string;
   revisionId: string;
   selected: SelectedRevision;
+}
+
+export interface RetainRevisionObjectSource {
+  inspection: RepositoryInspection;
+  repository: ResolvedRepository;
 }
 
 export interface RetainedArtifact {
@@ -261,6 +270,9 @@ async function retainRevisionExclusive(
   if (!UUID_V7.test(input.projectId) || !UUID_V7.test(input.revisionId)) {
     throw new LocalSourceError("source_containment_violation");
   }
+  if ((input.fallbackSources?.length ?? 0) > 1) {
+    throw new LocalSourceError("revision_limit_exceeded");
+  }
   const currentInspection = await inspectRepository(config, input.selected.repository);
   if (
     currentInspection.sourceIdentity !== input.selected.sourceIdentity ||
@@ -268,13 +280,65 @@ async function retainRevisionExclusive(
   ) {
     throw new LocalSourceError("repository_not_available");
   }
+  const objectSources: Array<{
+    inspection: RepositoryInspection;
+    repository: ResolvedRepository;
+  }> = [{ inspection: currentInspection, repository: input.selected.repository }];
+  for (const source of input.fallbackSources ?? []) {
+    const inspection = await inspectRepository(config, source.repository);
+    if (
+      inspection.sourceIdentity !== source.inspection.sourceIdentity ||
+      inspection.objectFormat !== input.selected.objectFormat
+    ) {
+      throw new LocalSourceError("repository_not_available");
+    }
+    objectSources.push({ inspection, repository: source.repository });
+  }
 
   const format = input.selected.objectFormat;
-  const { baseEntries, headEntries, objects, retainedBytes } = await withGitObjectReader(
-    config,
-    input.selected.repository,
-    format,
-    currentInspection.objectDirectories,
+  const withObjectSources = async <T>(
+    action: (readObject: GitObjectReader) => Promise<T>,
+  ): Promise<T> => {
+    const readers: GitObjectReader[] = [];
+    const cache = new Map<string, RawGitObject>();
+    const openSource = async (index: number): Promise<T> => {
+      const source = objectSources[index];
+      if (source === undefined) {
+        const readObject: GitObjectReader = async (objectId) => {
+          const cached = cache.get(objectId);
+          if (cached !== undefined) return cached;
+          for (const reader of readers) {
+            try {
+              const object = await reader(objectId);
+              cache.set(objectId, object);
+              return object;
+            } catch (error) {
+              if (error instanceof LocalSourceError && error.code === "object_missing") continue;
+              throw error;
+            }
+          }
+          throw new LocalSourceError("object_missing");
+        };
+        return action(readObject);
+      }
+      return withGitObjectReader(
+        config,
+        source.repository,
+        format,
+        source.inspection.objectDirectories,
+        async (reader) => {
+          readers.push(reader);
+          try {
+            return await openSource(index + 1);
+          } finally {
+            readers.pop();
+          }
+        },
+      );
+    };
+    return openSource(0);
+  };
+  const { baseEntries, headEntries, objects, retainedBytes } = await withObjectSources(
     async (readObject) => {
       const commits = new Map<string, RawGitObject>();
       for (const objectId of [input.selected.base.objectId, input.selected.head.objectId]) {
@@ -343,6 +407,9 @@ async function retainRevisionExclusive(
           retainedBytes += object.size;
           objects.set(objectId, object);
         }
+      }
+      if (retainedBytes > config.maxBytes) {
+        throw new LocalSourceError("revision_limit_exceeded");
       }
       return { baseEntries, headEntries, objects, retainedBytes };
     },
