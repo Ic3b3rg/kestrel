@@ -455,7 +455,7 @@ describe("fixed read-only Git inspection", () => {
     );
   });
 
-  it("rejects duplicate and overlong committed tree paths", async () => {
+  it("rejects duplicate, overlong, and control-character committed tree paths", async () => {
     const { artifacts, root } = await makeRepositoryFixture(
       "kestrel-local-source-invalid-tree-paths-",
     );
@@ -500,6 +500,20 @@ describe("fixed read-only Git inspection", () => {
     const overlongTree = treeEntry("x".repeat(4097), firstBlobId);
     await expect(
       listCommitTreeEntries(config, resolved, "sha1", commitObjectId, [], readTree(overlongTree)),
+    ).rejects.toEqual(
+      expect.objectContaining<Partial<LocalSourceError>>({ code: "repository_invalid" }),
+    );
+
+    const controlCharacterTree = treeEntry("line\nbreak.txt", firstBlobId);
+    await expect(
+      listCommitTreeEntries(
+        config,
+        resolved,
+        "sha1",
+        commitObjectId,
+        [],
+        readTree(controlCharacterTree),
+      ),
     ).rejects.toEqual(
       expect.objectContaining<Partial<LocalSourceError>>({ code: "repository_invalid" }),
     );

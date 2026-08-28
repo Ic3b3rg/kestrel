@@ -19,6 +19,15 @@ const MAX_GIT_OUTPUT_BYTES = 64 * 1024;
 const MAX_CREDENTIAL_CONFIG_ENTRIES = 32;
 const MAX_CREDENTIAL_CONFIG_BYTES = 4096;
 const CREDENTIAL_CONFIG_PATTERN = "^credential(\\..*)?\\.(helper|useHttpPath)$";
+const ACQUISITION_LOCAL_CONFIG_KEYS = new Set([
+  "core.bare",
+  "core.filemode",
+  "core.ignorecase",
+  "core.precomposeunicode",
+  "core.repositoryformatversion",
+  "extensions.compatobjectformat",
+  "extensions.objectformat",
+]);
 const HOST_ENVIRONMENT_KEYS = ["HOME", "PATH", "TMPDIR", "XDG_CONFIG_HOME"] as const;
 const SAFE_GIT_CONFIG_ARGUMENTS = [
   "-c",
@@ -51,6 +60,7 @@ const SAFE_GIT_CONFIG_ARGUMENTS = [
 
 interface GitProcessResult {
   exitCode: number;
+  stderr: Buffer;
   stdout: Buffer;
 }
 
@@ -147,6 +157,7 @@ function runGitProcess(
       stdio: ["ignore", "pipe", "pipe"],
     });
     const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
     let stdoutBytes = 0;
     let stderrBytes = 0;
     let failure: LocalSourceErrorCode | null = null;
@@ -197,7 +208,9 @@ function runGitProcess(
       if (stderrBytes > MAX_GIT_OUTPUT_BYTES) {
         failure = "git_inspection_failed";
         terminate();
+        return;
       }
+      stderr.push(chunk);
     });
     child.once("error", () => finish(undefined, new LocalSourceError("git_inspection_failed")));
     child.once("close", (exitCode) => {
@@ -211,7 +224,11 @@ function runGitProcess(
           new LocalSourceError(options.failureCode ?? "git_inspection_failed"),
         );
       }
-      finish({ exitCode, stdout: Buffer.concat(stdout, stdoutBytes) });
+      finish({
+        exitCode,
+        stderr: Buffer.concat(stderr, stderrBytes),
+        stdout: Buffer.concat(stdout, stdoutBytes),
+      });
     });
   });
 }
@@ -221,6 +238,110 @@ function decodeUtf8(value: Buffer): string {
     return new TextDecoder("utf-8", { fatal: true }).decode(value);
   } catch {
     throw new LocalSourceError("git_inspection_failed");
+  }
+}
+
+function fetchAuthenticationFailure(stderr: Buffer): boolean {
+  let message: string;
+  try {
+    message = decodeUtf8(stderr).toLocaleLowerCase("en-US");
+  } catch {
+    return false;
+  }
+  return [
+    "authentication failed",
+    "could not read username",
+    "http basic: access denied",
+    "permission denied",
+    "requested url returned error: 401",
+    "requested url returned error: 403",
+    "single sign-on",
+    "sso",
+  ].some((pattern) => message.includes(pattern));
+}
+
+function missingFetchRef(
+  stderr: Buffer,
+  input: GitHubPullRequestObjectAcquisition,
+): "base" | "head" | null {
+  let message: string;
+  try {
+    message = decodeUtf8(stderr);
+  } catch {
+    return null;
+  }
+  if (message.includes(`refs/heads/${input.base.ref}`)) return "base";
+  if (message.includes(`refs/pull/${String(input.pullRequestNumber)}/head`)) return "head";
+  return null;
+}
+
+async function verifyAcquisitionReferences(
+  config: LocalSourceConfig,
+  input: GitHubPullRequestObjectAcquisition,
+  repository: ResolvedRepository,
+): Promise<void> {
+  const result = await runGitProcess(
+    config.gitExecutable,
+    [
+      "--no-lazy-fetch",
+      ...SAFE_GIT_CONFIG_ARGUMENTS,
+      "-C",
+      repository.path,
+      "for-each-ref",
+      "--sort=refname",
+      "--format=%(refname)%00%(objectname)",
+    ],
+    { environment: safeFetchEnvironment([]), signal: input.signal },
+  );
+  const observed = new Map<string, string>();
+  for (const line of decodeUtf8(result.stdout).split("\n")) {
+    if (line === "") continue;
+    const fields = line.split("\0");
+    if (fields.length !== 2 || fields[0] === undefined || fields[1] === undefined) {
+      throw new LocalSourceError("object_verification_failed");
+    }
+    observed.set(fields[0], fields[1]);
+  }
+  const expected = new Map([
+    ["refs/kestrel/base", input.base.objectId],
+    ["refs/kestrel/head", input.head.objectId],
+  ]);
+  if (
+    observed.size !== expected.size ||
+    [...expected].some(([ref, objectId]) => observed.get(ref) !== objectId)
+  ) {
+    throw new LocalSourceError("object_verification_failed");
+  }
+}
+
+async function verifyAcquisitionConfiguration(
+  config: LocalSourceConfig,
+  input: GitHubPullRequestObjectAcquisition,
+  repository: ResolvedRepository,
+): Promise<void> {
+  const result = await runGitProcess(
+    config.gitExecutable,
+    [
+      "--no-lazy-fetch",
+      ...SAFE_GIT_CONFIG_ARGUMENTS,
+      "-C",
+      repository.path,
+      "config",
+      "--local",
+      "--no-includes",
+      "--null",
+      "--list",
+    ],
+    { environment: safeFetchEnvironment([]), signal: input.signal },
+  );
+  const records = decodeUtf8(result.stdout).split("\0");
+  if (records.at(-1) === "") records.pop();
+  for (const record of records) {
+    const separator = record.indexOf("\n");
+    const key = separator === -1 ? "" : record.slice(0, separator).toLocaleLowerCase("en-US");
+    if (!ACQUISITION_LOCAL_CONFIG_KEYS.has(key)) {
+      throw new LocalSourceError("object_verification_failed");
+    }
   }
 }
 
@@ -263,22 +384,9 @@ async function readCredentialConfiguration(
   return entries;
 }
 
-function validateInput(input: GitHubPullRequestObjectAcquisition): void {
-  const objectIdPattern = input.objectFormat === "sha1" ? /^[a-f0-9]{40}$/u : /^[a-f0-9]{64}$/u;
-  if (
-    !UUID_V7.test(input.projectId) ||
-    !Number.isSafeInteger(input.pullRequestNumber) ||
-    input.pullRequestNumber < 1 ||
-    input.pullRequestNumber > 9_999_999_999 ||
-    !/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/u.test(input.repository.owner) ||
-    !/^[A-Za-z0-9._-]{1,100}$/u.test(input.repository.name) ||
-    !objectIdPattern.test(input.base.objectId) ||
-    !objectIdPattern.test(input.head.objectId)
-  ) {
-    throw new LocalSourceError("reference_not_available");
-  }
-  const branchRef = `refs/heads/${input.base.ref}`;
-  if (
+function validBranchRef(branch: string): boolean {
+  const branchRef = `refs/heads/${branch}`;
+  return !(
     Buffer.byteLength(branchRef, "utf8") > 255 ||
     /[\0-\x20\x7f~^:?*[\\]/u.test(branchRef) ||
     branchRef.includes("..") ||
@@ -289,6 +397,22 @@ function validateInput(input: GitHubPullRequestObjectAcquisition): void {
     branchRef
       .split("/")
       .some((component) => component.startsWith(".") || component.endsWith(".lock"))
+  );
+}
+
+function validateInput(input: GitHubPullRequestObjectAcquisition): void {
+  const objectIdPattern = input.objectFormat === "sha1" ? /^[a-f0-9]{40}$/u : /^[a-f0-9]{64}$/u;
+  if (
+    !UUID_V7.test(input.projectId) ||
+    !Number.isSafeInteger(input.pullRequestNumber) ||
+    input.pullRequestNumber < 1 ||
+    input.pullRequestNumber > 9_999_999_999 ||
+    !/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/u.test(input.repository.owner) ||
+    !/^[A-Za-z0-9._-]{1,100}$/u.test(input.repository.name) ||
+    !objectIdPattern.test(input.base.objectId) ||
+    !objectIdPattern.test(input.head.objectId) ||
+    !validBranchRef(input.base.ref) ||
+    !validBranchRef(input.head.ref)
   ) {
     throw new LocalSourceError("reference_not_available");
   }
@@ -419,18 +543,49 @@ async function fetchExactPullRequest(
         ...refspecs,
       ],
       {
+        allowedExitCodes: [0, 1, 128],
         environment: safeFetchEnvironment(credentialConfig),
-        failureCode: "reference_not_available",
         signal: input.signal,
         timeoutMs: GIT_FETCH_TIMEOUT_MS,
       },
     );
-  await fetch([
+  const initialFetch = await fetch([
     `+refs/heads/${input.base.ref}:refs/kestrel/base`,
     `+refs/pull/${String(input.pullRequestNumber)}/head:refs/kestrel/head`,
   ]);
+  if (initialFetch.exitCode !== 0) {
+    if (fetchAuthenticationFailure(initialFetch.stderr)) {
+      throw new LocalSourceError("provider_authentication_required");
+    }
+    const missing = missingFetchRef(initialFetch.stderr, input);
+    if (missing === null) {
+      throw new LocalSourceError("provider_resource_unavailable");
+    }
+    const recovery = await fetch([
+      `+${input.base.objectId}:refs/kestrel/base`,
+      `+${input.head.objectId}:refs/kestrel/head`,
+    ]);
+    if (recovery.exitCode !== 0) {
+      if (fetchAuthenticationFailure(recovery.stderr)) {
+        throw new LocalSourceError("provider_authentication_required");
+      }
+      throw new LocalSourceError(
+        missing === "base" ? "base_revision_unresolvable" : "head_revision_unresolvable",
+      );
+    }
+  }
+  await verifyAcquisitionConfiguration(config, input, repository);
   const inspection = await inspectRepository(config, repository, input.signal);
   if (inspection.objectFormat !== input.objectFormat) {
+    throw new LocalSourceError("object_verification_failed");
+  }
+  const primaryObjectDirectory = await realpath(join(repository.path, "objects")).catch(() => {
+    throw new LocalSourceError("object_verification_failed");
+  });
+  if (
+    inspection.objectDirectories.length !== 1 ||
+    inspection.objectDirectories[0] !== primaryObjectDirectory
+  ) {
     throw new LocalSourceError("object_verification_failed");
   }
   const readFetchedRef = async (ref: string) =>
@@ -461,13 +616,47 @@ async function fetchExactPullRequest(
     if ((await readFetchedRef(expectedRef[0])) !== expectedRef[1]) mismatched.push(expectedRef);
   }
   if (mismatched.length > 0) {
-    await fetch(mismatched.map(([ref, expected]) => `+${expected}:${ref}`));
+    const recovery = await fetch(mismatched.map(([ref, expected]) => `+${expected}:${ref}`));
+    if (recovery.exitCode !== 0) {
+      if (fetchAuthenticationFailure(recovery.stderr)) {
+        throw new LocalSourceError("provider_authentication_required");
+      }
+      if (mismatched.some(([ref]) => ref === "refs/kestrel/head")) {
+        throw new LocalSourceError("pull_ref_mismatch");
+      }
+      if (mismatched.some(([ref]) => ref === "refs/kestrel/base")) {
+        throw new LocalSourceError("base_revision_unresolvable");
+      }
+      throw new LocalSourceError("provider_resource_unavailable");
+    }
     for (const [ref, expected] of expectedRefs) {
       if ((await readFetchedRef(ref)) !== expected) {
         throw new LocalSourceError("reference_not_available");
       }
     }
   }
+  await verifyAcquisitionReferences(config, input, repository);
+  await runGitProcess(
+    config.gitExecutable,
+    [
+      "--no-lazy-fetch",
+      ...SAFE_GIT_CONFIG_ARGUMENTS,
+      "-C",
+      repository.path,
+      "fsck",
+      "--full",
+      "--strict",
+      "--no-reflogs",
+      "--no-dangling",
+      "--no-progress",
+    ],
+    {
+      environment: safeFetchEnvironment([]),
+      failureCode: "object_verification_failed",
+      signal: input.signal,
+      timeoutMs: GIT_FETCH_TIMEOUT_MS,
+    },
+  );
   return inspection;
 }
 
