@@ -18,6 +18,7 @@ import { LocalSourceError } from "./errors.js";
 import {
   inspectRepository,
   listCommitTreeEntries,
+  readCommitSuggestions,
   withGitObjectReader,
   type GitObjectFormat,
   type GitObjectReader,
@@ -69,6 +70,10 @@ export interface RetainRevisionObjectSource {
 
 export interface RetainedArtifact {
   artifactLocator: string;
+  baseCommitAuthor: string | null;
+  baseCommitSubject: string | null;
+  headCommitAuthor: string | null;
+  headCommitSubject: string | null;
   manifestDigest: string;
   objectCount: number;
   retainedBytes: number;
@@ -427,6 +432,14 @@ async function retainRevisionExclusive(
   );
   throwIfCancelled(input.signal);
 
+  const baseCommit = objects.get(input.selected.base.objectId);
+  const headCommit = objects.get(input.selected.head.objectId);
+  if (baseCommit === undefined || headCommit === undefined) {
+    throw new LocalSourceError("object_verification_failed");
+  }
+  const baseSuggestions = readCommitSuggestions(baseCommit);
+  const headSuggestions = readCommitSuggestions(headCommit);
+
   const manifest: RevisionManifest = {
     schemaVersion: 1,
     objectFormat: format,
@@ -529,6 +542,10 @@ async function retainRevisionExclusive(
 
   return {
     artifactLocator: `projects/${input.projectId}/revisions/${input.revisionId}`,
+    baseCommitAuthor: baseSuggestions.author,
+    baseCommitSubject: baseSuggestions.subject,
+    headCommitAuthor: headSuggestions.author,
+    headCommitSubject: headSuggestions.subject,
     manifestDigest,
     objectCount: objects.size,
     retainedBytes,

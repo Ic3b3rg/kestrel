@@ -1,8 +1,13 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import type { PoolClient } from "pg";
 
-import type { ChangeIntent, ReviewRevision } from "@kestrel/contracts";
+import {
+  ChangeIntentSchema,
+  ChangeIntentSourceSchema,
+  type ChangeIntent,
+  type ReviewRevision,
+} from "@kestrel/contracts";
 
 import { appendAuditRecordInTransaction } from "./audit.js";
 import type { DatabasePool } from "./pool.js";
@@ -47,6 +52,10 @@ export interface BeginReviewRevisionResult {
 
 export interface RetainedArtifactObservation {
   artifactLocator: string;
+  baseCommitAuthor: string | null;
+  baseCommitSubject: string | null;
+  headCommitAuthor: string | null;
+  headCommitSubject: string | null;
   manifestDigest: string;
   objectCount: number;
   retainedBytes: number;
@@ -125,10 +134,17 @@ interface ProviderProposalAliasRow {
 }
 
 interface IntentRow {
+  acceptance_outcomes: unknown;
   change_proposal_id?: string;
   created_at: Date;
   id: string;
   intent_text: string;
+  objective: string | null;
+  resolution_issues: unknown;
+  resolution_state: "resolved" | "unresolved";
+  scope_boundaries: unknown;
+  selected_sources: unknown;
+  source_digest: string;
   max_version?: string;
   version: string;
 }
@@ -170,11 +186,45 @@ function isCapacityConstraint(error: unknown): boolean {
 }
 
 function mapIntent(row: IntentRow): ChangeIntent {
-  return {
+  return ChangeIntentSchema.parse({
+    acceptanceOutcomes: row.acceptance_outcomes,
     createdAt: row.created_at.toISOString(),
     id: row.id,
+    objective: row.objective,
+    resolution: { state: row.resolution_state, issues: row.resolution_issues },
+    scopeBoundaries: row.scope_boundaries,
+    sourceDigest: row.source_digest,
+    sources: row.selected_sources,
     text: row.intent_text,
     version: Number(row.version),
+  });
+}
+
+function acquisitionIntentFields(intentText: string, version: number) {
+  const sources = [
+    ChangeIntentSourceSchema.parse({
+      id: "operator_input",
+      kind: "operator_input",
+      label: "Operator input",
+      text: intentText,
+      version: String(version),
+      provenance: { kind: "operator_input" },
+    }),
+  ];
+  const resolution = {
+    state: "unresolved" as const,
+    issues: [
+      { kind: "missing" as const, field: "scope_boundaries" as const },
+      { kind: "missing" as const, field: "acceptance_outcomes" as const },
+    ],
+  };
+  return {
+    acceptanceOutcomes: [] as string[],
+    objective: intentText,
+    resolution,
+    scopeBoundaries: [] as string[],
+    sourceDigest: createHash("sha256").update(JSON.stringify(sources), "utf8").digest("hex"),
+    sources,
   };
 }
 
@@ -1015,12 +1065,34 @@ async function appendOrReuseIntent(
   actorId: string,
   intentText: string,
 ): Promise<ChangeIntent> {
+  const family = await client.query<{ canonical_proposal_id: string }>(
+    `
+      SELECT canonical.id AS canonical_proposal_id
+      FROM change_proposals AS target
+      INNER JOIN change_proposals AS canonical
+        ON canonical.id = COALESCE(target.canonical_change_proposal_id, target.id)
+      WHERE target.id = $1
+      FOR UPDATE OF canonical
+    `,
+    [targetProposalId],
+  );
+  const canonicalProposalId = family.rows[0]?.canonical_proposal_id;
+  if (family.rowCount !== 1 || canonicalProposalId === undefined) {
+    throw new Error("Change Proposal family is unavailable");
+  }
   const current = await client.query<IntentRow>(
     `
       SELECT intent.id,
              intent.change_proposal_id,
              intent.version,
              intent.intent_text,
+             intent.objective,
+             intent.scope_boundaries,
+             intent.acceptance_outcomes,
+             intent.selected_sources,
+             intent.source_digest,
+             intent.resolution_state,
+             intent.resolution_issues,
              intent.created_at,
              max(intent.version) OVER () AS max_version
       FROM change_intents AS intent
@@ -1051,22 +1123,64 @@ async function appendOrReuseIntent(
     throw new Error("Change Intent version is invalid");
   }
   const nextVersion = currentMaxVersion + 1;
+  const structured = acquisitionIntentFields(intentText, nextVersion);
   const inserted = await client.query<IntentRow>(
     `
       INSERT INTO change_intents (
         change_proposal_id,
         version,
         intent_text,
-        submitted_by_operator_id
+        submitted_by_operator_id,
+        objective,
+        scope_boundaries,
+        acceptance_outcomes,
+        selected_sources,
+        source_digest,
+        resolution_state,
+        resolution_issues
       )
-      VALUES ($1, $2, $3, $4)
-      RETURNING id, version, intent_text, created_at
+      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9, $10, $11::jsonb)
+      RETURNING id,
+                version,
+                intent_text,
+                objective,
+                scope_boundaries,
+                acceptance_outcomes,
+                selected_sources,
+                source_digest,
+                resolution_state,
+                resolution_issues,
+                created_at
     `,
-    [targetProposalId, nextVersion, intentText, actorId],
+    [
+      targetProposalId,
+      nextVersion,
+      intentText,
+      actorId,
+      structured.objective,
+      JSON.stringify(structured.scopeBoundaries),
+      JSON.stringify(structured.acceptanceOutcomes),
+      JSON.stringify(structured.sources),
+      structured.sourceDigest,
+      structured.resolution.state,
+      JSON.stringify(structured.resolution.issues),
+    ],
   );
   const row = inserted.rows[0];
   if (inserted.rowCount !== 1 || row === undefined) {
     throw new Error("Change Intent append failed");
+  }
+  const advanced = await client.query(
+    `
+      UPDATE change_proposals
+      SET optimistic_version = optimistic_version + 1,
+          updated_at = clock_timestamp()
+      WHERE id = $1
+    `,
+    [canonicalProposalId],
+  );
+  if (advanced.rowCount !== 1) {
+    throw new Error("Change Proposal version advance failed");
   }
   return mapIntent(row);
 }
@@ -1074,7 +1188,17 @@ async function appendOrReuseIntent(
 async function readIntent(client: PoolClient, intentId: string): Promise<ChangeIntent> {
   const result = await client.query<IntentRow>(
     `
-      SELECT id, version, intent_text, created_at
+      SELECT id,
+             version,
+             intent_text,
+             objective,
+             scope_boundaries,
+             acceptance_outcomes,
+             selected_sources,
+             source_digest,
+             resolution_state,
+             resolution_issues,
+             created_at
       FROM change_intents
       WHERE id = $1
     `,
@@ -1546,8 +1670,14 @@ function validateArtifact(
   projectId: string,
   revisionId: string,
 ): void {
+  const validSnapshot = (value: string | null, maximumLength: number) =>
+    value === null || (value.length >= 1 && value.length <= maximumLength);
   if (
     artifact.artifactLocator !== `projects/${projectId}/revisions/${revisionId}` ||
+    !validSnapshot(artifact.baseCommitAuthor, 256) ||
+    !validSnapshot(artifact.baseCommitSubject, 512) ||
+    !validSnapshot(artifact.headCommitAuthor, 256) ||
+    !validSnapshot(artifact.headCommitSubject, 512) ||
     !/^[a-f0-9]{64}$/u.test(artifact.manifestDigest) ||
     !Number.isSafeInteger(artifact.objectCount) ||
     artifact.objectCount < 1 ||
@@ -1574,6 +1704,10 @@ export async function completeReviewRevision(
             retained_bytes = $4,
             artifact_locator = $5,
             manifest_digest = $6,
+            base_commit_author_snapshot = $7,
+            base_commit_subject_snapshot = $8,
+            head_commit_author_snapshot = $9,
+            head_commit_subject_snapshot = $10,
             failure_reason = NULL,
             available_at = clock_timestamp(),
             updated_at = clock_timestamp()
@@ -1590,6 +1724,10 @@ export async function completeReviewRevision(
         input.artifact.retainedBytes,
         input.artifact.artifactLocator,
         input.artifact.manifestDigest,
+        input.artifact.baseCommitAuthor,
+        input.artifact.baseCommitSubject,
+        input.artifact.headCommitAuthor,
+        input.artifact.headCommitSubject,
       ],
     );
     const row = result.rows[0];

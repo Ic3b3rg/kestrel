@@ -11,11 +11,13 @@ import {
   listCommitTreeEntries,
   listRepositoryReferences,
   readLocalSourceConfig,
+  readCommitSuggestions,
   readRawGitObject,
   resolveRepository,
   resolveSelectedRevision,
 } from "./index.js";
 import type { LocalSourceError } from "./index.js";
+import type { RawGitObject } from "./index.js";
 
 const execFileAsync = promisify(execFile);
 const temporaryDirectories: string[] = [];
@@ -36,6 +38,22 @@ afterEach(async () => {
 });
 
 describe("fixed read-only Git inspection", () => {
+  it("treats malformed commit attribution as an unavailable optional suggestion", () => {
+    const content = Buffer.concat([
+      Buffer.from("tree ", "ascii"),
+      Buffer.from([0xff]),
+      Buffer.from("\n\nValid subject\n", "ascii"),
+    ]);
+    const commit = {
+      content,
+      id: "a".repeat(40),
+      size: content.byteLength,
+      type: "commit",
+    } satisfies RawGitObject;
+
+    expect(readCommitSuggestions(commit)).toEqual({ author: null, subject: "Valid subject" });
+  });
+
   async function makeRepositoryFixture(prefix: string): Promise<{
     artifacts: string;
     fixture: string;

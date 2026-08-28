@@ -22,6 +22,8 @@ function projectRow(overrides: Partial<ProjectDatabaseRow> = {}): ProjectDatabas
     proposal_provider_id: "PR_kwDOGx",
     proposal_state: "open",
     proposal_title: "Keep repository access explicit",
+    proposal_body: "Keep provider metadata optional.",
+    proposal_optimistic_version: "1",
     provider: "github",
     provider_repository_id: "R_kgDOGx",
     provider_observation_kind: "public_github",
@@ -54,6 +56,7 @@ function localProjectRow(): ProjectDatabaseRow {
     proposal_provider_id: null,
     proposal_number: null,
     proposal_canonical_url: null,
+    proposal_body: null,
     proposal_state: null,
     author_login_snapshot: null,
     author_provider_id: null,
@@ -61,6 +64,25 @@ function localProjectRow(): ProjectDatabaseRow {
     intent_id: "018f0f89-9a20-79f9-9990-dda80c9b917d",
     intent_version: "1",
     intent_text: "Review the authorization boundary.",
+    intent_objective: "Review the authorization boundary.",
+    intent_scope_boundaries: [],
+    intent_acceptance_outcomes: [],
+    intent_selected_sources: [
+      {
+        id: "operator_input",
+        kind: "operator_input",
+        label: "Operator input",
+        text: "Review the authorization boundary.",
+        version: "1",
+        provenance: { kind: "operator_input" },
+      },
+    ],
+    intent_source_digest: "b".repeat(64),
+    intent_resolution_state: "unresolved",
+    intent_resolution_issues: [
+      { kind: "missing", field: "scope_boundaries" },
+      { kind: "missing", field: "acceptance_outcomes" },
+    ],
     intent_created_at: new Date("2026-08-24T12:00:30.000Z"),
     revision_id: "018f0f89-9a21-7271-b92d-f1cb0d48bb47",
     revision_state: "available",
@@ -74,6 +96,15 @@ function localProjectRow(): ProjectDatabaseRow {
     revision_failure_reason: null,
     revision_created_at: new Date("2026-08-24T12:00:30.000Z"),
     revision_available_at: new Date("2026-08-24T12:01:00.000Z"),
+    candidate_revision_id: "018f0f89-9a21-7271-b92d-f1cb0d48bb47",
+    candidate_base_commit_author: "Base Author",
+    candidate_base_commit_subject: "Establish the source boundary",
+    candidate_base_object_id: "a".repeat(40),
+    candidate_base_ref: "refs/heads/main",
+    candidate_head_commit_author: "Head Author",
+    candidate_head_commit_subject: "Keep repository access explicit",
+    candidate_head_object_id: "b".repeat(40),
+    candidate_head_ref: "refs/heads/review-source",
   } as unknown as ProjectDatabaseRow;
 }
 
@@ -146,6 +177,12 @@ describe("Project persistence mapping", () => {
     expect(proposal?.id).toBe(proposalId);
     expect(proposal?.changeIntent?.version).toBe(1);
     expect(proposal?.changeIntent?.text).toBe("Review the authorization boundary.");
+    expect(proposal?.changeIntentCandidates.map(({ id }) => id)).toEqual([
+      "base_commit_author",
+      "base_commit_message",
+      "head_commit_author",
+      "head_commit_message",
+    ]);
     expect(proposal?.reviewRevisions[0]?.state).toBe("available");
     expect(proposal?.reviewRevisions[0]?.objectCount).toBe(7);
   });

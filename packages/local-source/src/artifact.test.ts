@@ -531,6 +531,10 @@ describe("exact Review Revision retention", () => {
 
     expect(retained.artifactLocator).not.toContain(artifacts);
     expect(retained.objectCount).toBeGreaterThan(0);
+    expect(retained.baseCommitAuthor).toBe("Kestrel Test");
+    expect(retained.baseCommitSubject).toBe("Base source");
+    expect(retained.headCommitAuthor).toBe("Kestrel Test");
+    expect(retained.headCommitSubject).toBe("Head source");
     await expect(reconcileArtifactRoot(config, [retained.artifactLocator])).resolves.toEqual({
       quarantined: 0,
       removedStaging: 0,
