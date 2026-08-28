@@ -447,6 +447,24 @@ describe("V1 public contracts", () => {
       availableAt: "2026-08-24T12:01:00.000Z",
     } as const;
     expect(ReviewRevisionSchema.parse(revision)).toEqual(revision);
+    for (const failureReason of [
+      "base_revision_unresolvable",
+      "head_revision_unresolvable",
+      "pull_ref_mismatch",
+      "provider_authentication_required",
+      "provider_resource_unavailable",
+    ] as const) {
+      expect(
+        ReviewRevisionSchema.parse({
+          ...revision,
+          state: "unavailable",
+          objectCount: null,
+          retainedBytes: null,
+          failureReason,
+          availableAt: null,
+        }),
+      ).toMatchObject({ failureReason, state: "unavailable" });
+    }
     expect(() =>
       ReviewRevisionSchema.parse({
         ...revision,

@@ -90,12 +90,17 @@ function reviewRevisionLogMetadata(error: unknown): ReviewRevisionLogMetadata {
 
 const REVIEW_REVISION_ROUTE_ERROR_CODES = new Set<ReviewRevisionRouteErrorCode>([
   "acquisition_cancelled",
+  "base_revision_unresolvable",
   "configuration_invalid",
   "discovery_limit_exceeded",
   "git_inspection_failed",
+  "head_revision_unresolvable",
   "object_missing",
   "object_verification_failed",
   "path_not_retained",
+  "pull_ref_mismatch",
+  "provider_authentication_required",
+  "provider_resource_unavailable",
   "reference_limit_exceeded",
   "reference_not_available",
   "repository_invalid",
@@ -148,6 +153,16 @@ function artifactFailureReason(error: unknown): ReviewRevisionFailureReason {
       return "source_containment_violation";
     case "reference_not_available":
       return "reference_not_available";
+    case "base_revision_unresolvable":
+      return "base_revision_unresolvable";
+    case "head_revision_unresolvable":
+      return "head_revision_unresolvable";
+    case "pull_ref_mismatch":
+      return "pull_ref_mismatch";
+    case "provider_authentication_required":
+      return "provider_authentication_required";
+    case "provider_resource_unavailable":
+      return "provider_resource_unavailable";
     case "discovery_limit_exceeded":
     case "reference_limit_exceeded":
     case "revision_limit_exceeded":
@@ -465,6 +480,56 @@ function sendExpectedError(
       return reply
         .code(404)
         .send(responseError(request, "REFERENCE_NOT_AVAILABLE", "The reference is unavailable"));
+    case "base_revision_unresolvable":
+      return reply
+        .code(404)
+        .send(
+          responseError(
+            request,
+            "BASE_REVISION_UNRESOLVABLE",
+            "The captured base revision is unavailable",
+          ),
+        );
+    case "head_revision_unresolvable":
+      return reply
+        .code(404)
+        .send(
+          responseError(
+            request,
+            "HEAD_REVISION_UNRESOLVABLE",
+            "The captured head revision is unavailable",
+          ),
+        );
+    case "pull_ref_mismatch":
+      return reply
+        .code(409)
+        .send(
+          responseError(
+            request,
+            "PULL_REF_MISMATCH",
+            "The pull request moved and its captured head could not be recovered",
+          ),
+        );
+    case "provider_authentication_required":
+      return reply
+        .code(503)
+        .send(
+          responseError(
+            request,
+            "PROVIDER_AUTHENTICATION_REQUIRED",
+            "Host Git authentication is required for this repository",
+          ),
+        );
+    case "provider_resource_unavailable":
+      return reply
+        .code(503)
+        .send(
+          responseError(
+            request,
+            "PROVIDER_RESOURCE_UNAVAILABLE",
+            "The provider resource is unavailable or inaccessible",
+          ),
+        );
     case "object_missing":
       return reply
         .code(404)

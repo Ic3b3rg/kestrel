@@ -300,6 +300,43 @@ describe("ProjectInboxPanel", () => {
     expect(html).toContain("Revision head");
     expect(html).not.toContain("Retained base");
     expect(html).toContain("configured revision size or object limit was exceeded");
-    expect(html).toContain("Open the local repository again to retry this exact revision");
+    expect(html).toContain("Adjust the configured revision limits before retrying");
+  });
+
+  it("gives an actionable provider-authentication failure without exposing provider details", () => {
+    const project = localInbox.projects[0];
+    const proposal = project?.changeProposals[0];
+    const revision = proposal?.reviewRevisions[0];
+    if (project === undefined || proposal?.kind !== "local" || revision === undefined) {
+      throw new Error("Local unavailable revision fixture is unavailable");
+    }
+    const html = render({
+      schemaVersion: 1,
+      projects: [
+        {
+          ...project,
+          sourceAvailability: "unavailable",
+          changeProposals: [
+            {
+              ...proposal,
+              reviewRevisions: [
+                {
+                  ...revision,
+                  state: "unavailable",
+                  objectCount: null,
+                  retainedBytes: null,
+                  failureReason: "provider_authentication_required",
+                  availableAt: null,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(html).toContain("Host Git authentication is required for this repository");
+    expect(html).toContain("Restore host Git authentication or SSO access");
+    expect(html).not.toContain("stderr");
   });
 });

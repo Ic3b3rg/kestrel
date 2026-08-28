@@ -47,12 +47,40 @@ const revisionFailureLabels: Record<
 > = {
   acquisition_interrupted: "Acquisition was interrupted during restart.",
   artifact_finalization_failed: "The retained artifact could not be finalized.",
+  base_revision_unresolvable: "The captured base revision is no longer resolvable.",
+  head_revision_unresolvable: "The captured head revision is no longer resolvable.",
   object_missing: "A required committed object is missing.",
   object_verification_failed: "A committed object could not be verified.",
   reference_not_available: "A selected reference is no longer available.",
+  provider_authentication_required: "Host Git authentication is required for this repository.",
+  provider_resource_unavailable: "The provider resource is unavailable or inaccessible.",
+  pull_ref_mismatch: "The pull request moved and its captured head could not be recovered.",
   revision_limit_exceeded: "The configured revision size or object limit was exceeded.",
   source_containment_violation: "The local source failed safety validation.",
   source_not_available: "The local source is unavailable.",
+};
+
+const revisionFailureActions: Record<
+  NonNullable<ReviewRevisionAvailable["reviewRevision"]["failureReason"]>,
+  string
+> = {
+  acquisition_interrupted: "Retry this exact revision after Kestrel has recovered.",
+  artifact_finalization_failed: "Retry this exact revision after checking local artifact storage.",
+  base_revision_unresolvable:
+    "Retry if the captured object becomes available, or refresh the pull request.",
+  head_revision_unresolvable:
+    "Retry if the captured object becomes available, or refresh the pull request.",
+  object_missing: "Retry after restoring access to the required committed object.",
+  object_verification_failed: "Inspect the source integrity before retrying this exact revision.",
+  provider_authentication_required:
+    "Restore host Git authentication or SSO access, then retry this exact revision.",
+  provider_resource_unavailable:
+    "Confirm repository access or availability, then retry this exact revision.",
+  pull_ref_mismatch: "Refresh the pull request to observe its current exact head.",
+  reference_not_available: "Open the local repository again to select committed references.",
+  revision_limit_exceeded: "Adjust the configured revision limits before retrying.",
+  source_containment_violation: "Correct the local-source safety condition before retrying.",
+  source_not_available: "Reattach the matching Local Repository Source before retrying.",
 };
 
 const proposalStateLabels: Record<ProviderChangeProposal["proposalState"], string> = {
@@ -181,7 +209,7 @@ function RevisionFacts({
           <dt>Failure</dt>
           <dd>
             <strong>{revisionFailureLabels[revision.failureReason]}</strong>
-            <span>Open the local repository again to retry this exact revision.</span>
+            <span>{revisionFailureActions[revision.failureReason]}</span>
           </dd>
         </div>
       )}
