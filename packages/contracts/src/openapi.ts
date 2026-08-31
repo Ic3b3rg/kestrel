@@ -3,10 +3,12 @@ import { z, type ZodType } from "zod";
 import {
   ApiErrorSchema,
   ChangeIntentVersionCreatedSchema,
+  ConfigureDirectApiProfileCommandSchema,
   CreateChangeIntentVersionCommandSchema,
   CredentialChangeCommandSchema,
   DiagnosticAcceptedSchema,
   DiagnosticCommandSchema,
+  DirectApiProfileResponseSchema,
   EventCursorSchema,
   HealthStatusSchema,
   HostGitHubProjectInboxSchema,
@@ -81,6 +83,10 @@ export const sessionJsonSchema = asJsonSchema(SessionSchema);
 export const stepUpCommandJsonSchema = asJsonSchema(StepUpCommandSchema);
 export const stepUpProofJsonSchema = asJsonSchema(StepUpProofSchema);
 export const credentialChangeCommandJsonSchema = asJsonSchema(CredentialChangeCommandSchema);
+export const configureDirectApiProfileCommandJsonSchema = asJsonSchema(
+  ConfigureDirectApiProfileCommandSchema,
+);
+export const directApiProfileResponseJsonSchema = asJsonSchema(DirectApiProfileResponseSchema);
 export const createChangeIntentVersionCommandJsonSchema = asJsonSchema(
   CreateChangeIntentVersionCommandSchema,
 );
@@ -112,6 +118,8 @@ export const contractBundle = sortJson({
     InstallationEvent: asComponentSchema(installationEventJsonSchema),
     InstallationSnapshot: asComponentSchema(installationSnapshotJsonSchema),
     CredentialChangeCommand: asComponentSchema(credentialChangeCommandJsonSchema),
+    ConfigureDirectApiProfileCommand: asComponentSchema(configureDirectApiProfileCommandJsonSchema),
+    DirectApiProfileResponse: asComponentSchema(directApiProfileResponseJsonSchema),
     CreateChangeIntentVersionCommand: asComponentSchema(createChangeIntentVersionCommandJsonSchema),
     ChangeIntentVersionCreated: asComponentSchema(changeIntentVersionCreatedJsonSchema),
     LoginCommand: asComponentSchema(loginCommandJsonSchema),
@@ -188,6 +196,10 @@ export const openApiDocument = sortJson({
       InstallationEvent: asComponentSchema(installationEventJsonSchema),
       InstallationSnapshot: asComponentSchema(installationSnapshotJsonSchema),
       CredentialChangeCommand: asComponentSchema(credentialChangeCommandJsonSchema),
+      ConfigureDirectApiProfileCommand: asComponentSchema(
+        configureDirectApiProfileCommandJsonSchema,
+      ),
+      DirectApiProfileResponse: asComponentSchema(directApiProfileResponseJsonSchema),
       CreateChangeIntentVersionCommand: asComponentSchema(
         createChangeIntentVersionCommandJsonSchema,
       ),
@@ -705,6 +717,173 @@ export const openApiDocument = sortJson({
           "503": {
             content: { "application/json": { schema: schemaReference("ApiError") } },
             description: "Public GitHub or Project storage is unavailable",
+          },
+        },
+      },
+    },
+    "/api/v1/projects/{projectId}/model-profiles/direct-api": {
+      get: {
+        operationId: "readDirectApiProfile",
+        parameters: [
+          {
+            in: "path",
+            name: "projectId",
+            required: true,
+            schema: { format: "uuid", type: "string" },
+          },
+        ],
+        responses: {
+          "200": {
+            content: {
+              "application/json": { schema: schemaReference("DirectApiProfileResponse") },
+            },
+            description: "Current safe Direct API profile view",
+          },
+          "400": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Invalid Project identity",
+          },
+          "401": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Operator authentication is required",
+          },
+          "404": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Project is unavailable",
+          },
+          "503": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Model Provider configuration storage is unavailable",
+          },
+        },
+      },
+      post: {
+        description:
+          "Stores a Project-exclusive credential only after a bounded synthetic OpenAI profile test succeeds. Replaces an existing profile atomically.",
+        operationId: "configureDirectApiProfile",
+        parameters: [
+          ...authenticatedMutationHeaders(true),
+          {
+            in: "path",
+            name: "projectId",
+            required: true,
+            schema: { format: "uuid", type: "string" },
+          },
+        ],
+        requestBody: {
+          content: {
+            "application/json": { schema: schemaReference("ConfigureDirectApiProfileCommand") },
+          },
+          required: true,
+        },
+        responses: {
+          "201": {
+            content: {
+              "application/json": { schema: schemaReference("DirectApiProfileResponse") },
+            },
+            description: "Direct API profile certified and configured",
+          },
+          "400": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Invalid closed profile command",
+          },
+          "401": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Operator authentication is required",
+          },
+          "403": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Step-up proof, Origin, or CSRF validation failed",
+          },
+          "404": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Project is unavailable",
+          },
+          "409": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Project or credential replacement conflict",
+          },
+          "413": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Profile command is too large",
+          },
+          "415": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Profile command media type is unsupported",
+          },
+          "422": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Synthetic test did not certify the exact profile",
+          },
+          "429": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Bounded synthetic-test rate limit was reached",
+          },
+          "503": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "OpenAI or Model Provider configuration storage is unavailable",
+          },
+        },
+      },
+    },
+    "/api/v1/projects/{projectId}/model-profiles/direct-api/test": {
+      post: {
+        description:
+          "Re-tests the stored closed profile using its existing Project-exclusive credential.",
+        operationId: "testDirectApiProfile",
+        parameters: [
+          ...authenticatedMutationHeaders(false),
+          {
+            in: "path",
+            name: "projectId",
+            required: true,
+            schema: { format: "uuid", type: "string" },
+          },
+        ],
+        requestBody: {
+          content: {
+            "application/json": { schema: { additionalProperties: false, type: "object" } },
+          },
+          required: true,
+        },
+        responses: {
+          "200": {
+            content: {
+              "application/json": { schema: schemaReference("DirectApiProfileResponse") },
+            },
+            description: "Stored Direct API profile re-tested",
+          },
+          "400": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Invalid Project identity or test command",
+          },
+          "401": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Operator authentication is required",
+          },
+          "403": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Origin or CSRF validation failed",
+          },
+          "404": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Project or Direct API profile is unavailable",
+          },
+          "409": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Profile is already being tested",
+          },
+          "422": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Synthetic test detected drift or failed",
+          },
+          "429": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Bounded synthetic-test rate limit was reached",
+          },
+          "503": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "OpenAI or Model Provider configuration storage is unavailable",
           },
         },
       },

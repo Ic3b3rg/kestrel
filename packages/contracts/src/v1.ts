@@ -877,6 +877,86 @@ export const ConfigureDirectApiProfileCommandSchema = z.strictObject({
   priceSnapshot: DirectApiPriceSnapshotSchema,
 });
 
+export const DirectApiProfileAvailabilityReasonSchema = z.enum([
+  "attestation_expired",
+  "credential_unavailable",
+  "identity_drift",
+  "provider_unavailable",
+  "synthetic_test_expired",
+  "synthetic_test_failed",
+]);
+
+export const DirectApiEffectiveIdentitySchema = z.strictObject({
+  apiSurface: z.literal("responses"),
+  apiVersion: z.literal("2020-10-01"),
+  endpointOrigin: z.literal("https://api.openai.com"),
+  endpointPath: z.literal("/v1/responses"),
+  model: DirectApiModelTargetSchema,
+  openAiProjectId: DirectApiIdentifierSchema,
+  organizationId: DirectApiIdentifierSchema,
+  provider: z.literal("openai"),
+});
+
+export const DirectApiExecutionPolicySchema = z.strictObject({
+  arbitraryOptions: z.literal("disabled"),
+  callbacks: z.literal("disabled"),
+  files: z.literal("disabled"),
+  inputModality: z.literal("text"),
+  privilegedInstructions: z.literal("developer"),
+  retrieval: z.literal("disabled"),
+  statefulness: z.literal("stateless"),
+  structuredOutput: z.literal("json_schema_strict"),
+  tools: z.literal("disabled"),
+  urls: z.literal("disabled"),
+});
+
+export const DirectApiSyntheticTestSchema = z.strictObject({
+  observedApiVersion: z.literal("2020-10-01"),
+  observedModel: DirectApiIdentifierSchema,
+  observedOrganizationId: DirectApiIdentifierSchema,
+  passedAt: UtcDateTimeSchema,
+  requestId: DirectApiIdentifierSchema,
+});
+
+export const DirectApiProfileSchema = z
+  .strictObject({
+    id: KestrelIdSchema,
+    projectId: KestrelIdSchema,
+    availability: z.enum(["available", "stale", "unavailable"]),
+    availabilityReasons: z.array(DirectApiProfileAvailabilityReasonSchema).max(6),
+    displayName: z.string().trim().min(1).max(256),
+    effectiveIdentity: DirectApiEffectiveIdentitySchema,
+    executionPolicy: DirectApiExecutionPolicySchema,
+    dataPolicy: DirectApiDataPolicySchema,
+    limits: DirectApiLimitsSchema,
+    priceSnapshot: DirectApiPriceSnapshotSchema,
+    profileDigest: RequestDigestSchema,
+    lastTest: DirectApiSyntheticTestSchema,
+    createdAt: UtcDateTimeSchema,
+    updatedAt: UtcDateTimeSchema,
+  })
+  .superRefine(({ availability, availabilityReasons, createdAt, lastTest, updatedAt }, context) => {
+    if ((availability === "available") !== (availabilityReasons.length === 0)) {
+      context.addIssue({
+        code: "custom",
+        message: "Only an available Direct API profile may omit availability reasons",
+        path: ["availabilityReasons"],
+      });
+    }
+    if (updatedAt < createdAt || updatedAt < lastTest.passedAt) {
+      context.addIssue({
+        code: "custom",
+        message: "Direct API profile timestamps are inconsistent",
+        path: ["updatedAt"],
+      });
+    }
+  });
+
+export const DirectApiProfileResponseSchema = z.strictObject({
+  schemaVersion: SchemaVersionSchema,
+  profile: DirectApiProfileSchema.nullable(),
+});
+
 export function serializeCredentialChangeCommand(command: CredentialChangeCommand): string {
   const validated = CredentialChangeCommandSchema.parse(command);
   return JSON.stringify({
@@ -1015,6 +1095,18 @@ export type ApiError = z.infer<typeof ApiErrorSchema>;
 export type ConfigureDirectApiProfileCommand = z.infer<
   typeof ConfigureDirectApiProfileCommandSchema
 >;
+export type DirectApiDataPolicy = z.infer<typeof DirectApiDataPolicySchema>;
+export type DirectApiEffectiveIdentity = z.infer<typeof DirectApiEffectiveIdentitySchema>;
+export type DirectApiExecutionPolicy = z.infer<typeof DirectApiExecutionPolicySchema>;
+export type DirectApiLimits = z.infer<typeof DirectApiLimitsSchema>;
+export type DirectApiModelTarget = z.infer<typeof DirectApiModelTargetSchema>;
+export type DirectApiPriceSnapshot = z.infer<typeof DirectApiPriceSnapshotSchema>;
+export type DirectApiProfile = z.infer<typeof DirectApiProfileSchema>;
+export type DirectApiProfileAvailabilityReason = z.infer<
+  typeof DirectApiProfileAvailabilityReasonSchema
+>;
+export type DirectApiProfileResponse = z.infer<typeof DirectApiProfileResponseSchema>;
+export type DirectApiSyntheticTest = z.infer<typeof DirectApiSyntheticTestSchema>;
 export type CredentialChangeCommand = z.infer<typeof CredentialChangeCommandSchema>;
 export type CredentialVersion = z.infer<typeof CredentialVersionSchema>;
 export type Diagnostic = z.infer<typeof DiagnosticSchema>;
