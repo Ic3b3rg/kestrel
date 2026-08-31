@@ -129,6 +129,27 @@ function localProjectRow(): ProjectDatabaseRow {
   } as unknown as ProjectDatabaseRow;
 }
 
+function providerProjectRowWithOverview(): ProjectDatabaseRow {
+  return {
+    ...localProjectRow(),
+    author_login_snapshot: "octocat",
+    author_provider_id: "U_kgDOA",
+    observed_at: new Date("2026-08-24T12:01:00.000Z"),
+    proposal_body: "Keep provider metadata optional.",
+    proposal_canonical_url: "https://github.com/openai/openai-node/pull/1234",
+    proposal_kind: "provider_observed",
+    proposal_number: "1234",
+    proposal_provider_id: "PR_kwDOGx",
+    proposal_state: "open",
+    provider: "github",
+    provider_observation_kind: "public_github",
+    provider_repository_id: "R_kgDOGx",
+    repository_canonical_url_snapshot: "https://github.com/openai/openai-node",
+    repository_name_snapshot: "openai-node",
+    repository_owner_snapshot: "openai",
+  };
+}
+
 describe("Project persistence mapping", () => {
   it("groups provider observations into a bounded Project inbox", () => {
     expect(
@@ -295,6 +316,33 @@ describe("Project persistence mapping", () => {
       exactHeadObjectId: "e".repeat(40),
     });
     expect(JSON.stringify(overview)).not.toContain("src/review.ts");
+  });
+
+  it("refreshes only current provider facts while retaining exact source facts", () => {
+    const before = mapProjectRows([providerProjectRowWithOverview()]).projects[0]
+      ?.changeProposals[0]?.changeOverview;
+    const refreshed = providerProjectRowWithOverview();
+    refreshed.proposal_title = "Current provider title";
+    refreshed.proposal_body = "Current provider description.";
+    refreshed.observed_at = new Date("2026-08-24T12:02:00.000Z");
+
+    const after = mapProjectRows([refreshed]).projects[0]?.changeProposals[0]?.changeOverview;
+
+    expect(before?.state).toBe("ready");
+    expect(after).toMatchObject({
+      state: "ready",
+      providerObservation: {
+        title: "Current provider title",
+        description: "Current provider description.",
+        observedAt: "2026-08-24T12:02:00.000Z",
+      },
+      sourceFacts: overviewFacts,
+    });
+    if (before?.state !== "ready" || after?.state !== "ready") {
+      throw new Error("Ready provider Change Overview fixture is unavailable");
+    }
+    expect(after.exactRevision).toEqual(before.exactRevision);
+    expect(after.sourceFacts).toEqual(before.sourceFacts);
   });
 
   it("fails closed when retained Review Revision identity columns are incomplete", () => {

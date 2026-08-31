@@ -463,7 +463,8 @@ describe("exact local Review Revision", () => {
             "has_table_privilege(current_user, 'public.' || table_name, 'UPDATE') AS can_update, " +
             "has_table_privilege(current_user, 'public.' || table_name, 'DELETE') AS can_delete " +
             "FROM unnest(ARRAY['projects','change_proposals','local_repository_sources'," +
-            "'change_intents','review_revisions','review_workflows']) AS table_name ORDER BY table_name"
+            "'change_intents','change_overview_fact_manifests','review_revisions'," +
+            "'review_workflows']) AS table_name ORDER BY table_name"
           );
           process.stdout.write(JSON.stringify(result.rows));
         } finally {
@@ -475,6 +476,13 @@ describe("exact local Review Revision", () => {
     expect(privileges).toEqual([
       {
         table_name: "change_intents",
+        can_select: true,
+        can_insert: true,
+        can_update: false,
+        can_delete: false,
+      },
+      {
+        table_name: "change_overview_fact_manifests",
         can_select: true,
         can_insert: true,
         can_update: false,
@@ -575,6 +583,22 @@ describe("exact local Review Revision", () => {
       kind: "provider_observed",
       providerId: "PR_issue90",
     });
+    expect(available.changeProposal.changeOverview).toMatchObject({
+      state: "ready",
+      exactRevision: {
+        base: { objectId: fixture.baseObjectId },
+        head: { objectId: fixture.headObjectId },
+      },
+      changeIntent: { text: command.changeIntent, version: 1 },
+      providerObservation: { title: "Retain a local Review Revision" },
+      sourceFacts: {
+        ruleVersion: 1,
+        fileStatistics: { added: 0, modified: 1, deleted: 0, total: 1 },
+        changedFiles: [{ path: "review.txt", status: "modified" }],
+        pathAreas: [{ pathPrefix: null, changedFileCount: 1, samplePaths: ["review.txt"] }],
+        warnings: [],
+      },
+    });
     expect(available.project.changeProposals).toHaveLength(1);
     expect(available.project.providerObservation).toMatchObject({ kind: "public_github" });
     expect(JSON.stringify(available)).not.toContain("artifactLocator");
@@ -610,6 +634,17 @@ describe("exact local Review Revision", () => {
       "A later intent must not retarget an available revision",
     );
     expect(aliasedAvailable.changeProposal.changeIntent?.version).toBe(2);
+    expect(aliasedAvailable.changeProposal.changeOverview).toMatchObject({
+      state: "ready",
+      changeIntent: {
+        text: "A later intent must not retarget an available revision",
+        version: 2,
+      },
+      sourceFacts: {
+        fileStatistics: { added: 0, modified: 1, deleted: 0, total: 1 },
+        changedFiles: [{ path: "review.txt", status: "modified" }],
+      },
+    });
     expect(aliasedAvailable.project.changeProposals).toHaveLength(1);
     await expect(
       stack.executeRuntimeSql(

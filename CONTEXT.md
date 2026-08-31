@@ -24,6 +24,14 @@ the old IDs as internal aliases. Source and Review Revision rows are not rewritt
 their immutable history into the canonical inbox, and restart reconciliation selects at most one
 attached source for the logical Project family.
 
+An Available Review Revision also stores one versioned deterministic Change Overview fact manifest
+derived from its verified retained base/head trees. Project reads combine those immutable source
+facts with the currently selected Change Intent and current Provider Observation, but immediately
+hide the prior overview whenever the proposal's exact source head changes. These preliminary facts
+cover exact commit identity, file counts and paths, path-derived areas, and explicit source
+limitations; they contain no Graph, Evidence, Coverage judgment, Finding, Risk Level, unsupported
+behavioral claim, or review verdict.
+
 ## Language
 
 ### Review First V1
