@@ -55,6 +55,40 @@ interface RevisionManifest {
   schemaVersion: 1;
 }
 
+export interface RetainedChangeOverviewFileEntry {
+  mode: Exclude<GitTreeEntry["mode"], "040000">;
+  objectId: string;
+  type: Exclude<GitTreeEntry["type"], "tree">;
+}
+
+export interface RetainedChangeOverviewFile {
+  base: RetainedChangeOverviewFileEntry | null;
+  head: RetainedChangeOverviewFileEntry | null;
+  path: string;
+  status: "added" | "modified" | "deleted";
+}
+
+export type RetainedChangeOverviewWarning =
+  | { code: "changed_files_truncated"; omittedCount: number }
+  | { code: "path_areas_truncated"; omittedCount: number }
+  | {
+      affectedFileCount: number;
+      code: "gitlink_not_expanded" | "git_lfs_pointer_not_hydrated";
+      samplePaths: string[];
+    };
+
+export interface RetainedChangeOverviewFacts {
+  ruleVersion: 1;
+  fileStatistics: { added: number; modified: number; deleted: number; total: number };
+  changedFiles: RetainedChangeOverviewFile[];
+  pathAreas: Array<{
+    pathPrefix: string | null;
+    changedFileCount: number;
+    samplePaths: string[];
+  }>;
+  warnings: RetainedChangeOverviewWarning[];
+}
+
 export interface RetainRevisionInput {
   fallbackSource?: RetainRevisionObjectSource;
   projectId: string;
@@ -72,11 +106,141 @@ export interface RetainedArtifact {
   artifactLocator: string;
   baseCommitAuthor: string | null;
   baseCommitSubject: string | null;
+  changeOverviewFacts: RetainedChangeOverviewFacts;
   headCommitAuthor: string | null;
   headCommitSubject: string | null;
   manifestDigest: string;
   objectCount: number;
   retainedBytes: number;
+}
+
+const MAX_OVERVIEW_CHANGED_FILES = 200;
+const MAX_OVERVIEW_PATH_AREAS = 20;
+const MAX_OVERVIEW_SAMPLE_PATHS = 5;
+const GIT_LFS_POINTER_PREFIX = Buffer.from("version https://git-lfs.github.com/spec/v1\n", "utf8");
+
+function overviewFileEntry(entry: ManifestEntry): RetainedChangeOverviewFileEntry {
+  if (entry.type === "tree" || entry.mode === "040000") {
+    throw new LocalSourceError("object_verification_failed");
+  }
+  return { mode: entry.mode, objectId: entry.objectId, type: entry.type };
+}
+
+function overviewPathPrefix(path: string): string | null {
+  const separator = path.indexOf("/");
+  return separator === -1 ? null : path.slice(0, separator);
+}
+
+function isGitLfsPointer(object: RawGitObject | undefined): boolean {
+  return (
+    object?.type === "blob" &&
+    object.content.subarray(0, GIT_LFS_POINTER_PREFIX.byteLength).equals(GIT_LFS_POINTER_PREFIX)
+  );
+}
+
+function buildChangeOverviewFacts(
+  baseEntries: readonly ManifestEntry[],
+  headEntries: readonly ManifestEntry[],
+  objects: ReadonlyMap<string, RawGitObject>,
+): RetainedChangeOverviewFacts {
+  const filesByPath = (entries: readonly ManifestEntry[]) =>
+    new Map(entries.filter(({ type }) => type !== "tree").map((entry) => [entry.path, entry]));
+  const baseByPath = filesByPath(baseEntries);
+  const headByPath = filesByPath(headEntries);
+  const paths = [...new Set([...baseByPath.keys(), ...headByPath.keys()])].sort((left, right) =>
+    left.localeCompare(right, "en"),
+  );
+  const changes: RetainedChangeOverviewFile[] = [];
+  const fileStatistics = { added: 0, modified: 0, deleted: 0, total: 0 };
+  for (const path of paths) {
+    const base = baseByPath.get(path);
+    const head = headByPath.get(path);
+    let status: RetainedChangeOverviewFile["status"];
+    if (base === undefined && head !== undefined) status = "added";
+    else if (base !== undefined && head === undefined) status = "deleted";
+    else if (
+      base !== undefined &&
+      head !== undefined &&
+      (base.mode !== head.mode || base.objectId !== head.objectId || base.type !== head.type)
+    ) {
+      status = "modified";
+    } else {
+      continue;
+    }
+    fileStatistics[status] += 1;
+    fileStatistics.total += 1;
+    changes.push({
+      base: base === undefined ? null : overviewFileEntry(base),
+      head: head === undefined ? null : overviewFileEntry(head),
+      path,
+      status,
+    });
+  }
+
+  const pathsByArea = new Map<string | null, string[]>();
+  for (const { path } of changes) {
+    const prefix = overviewPathPrefix(path);
+    const areaPaths = pathsByArea.get(prefix) ?? [];
+    areaPaths.push(path);
+    pathsByArea.set(prefix, areaPaths);
+  }
+  const allPathAreas = [...pathsByArea]
+    .sort(([left], [right]) => {
+      if (left === null) return right === null ? 0 : -1;
+      if (right === null) return 1;
+      return left.localeCompare(right, "en");
+    })
+    .map(([pathPrefix, areaPaths]) => ({
+      pathPrefix,
+      changedFileCount: areaPaths.length,
+      samplePaths: areaPaths.slice(0, MAX_OVERVIEW_SAMPLE_PATHS),
+    }));
+
+  const warnings: RetainedChangeOverviewWarning[] = [];
+  if (changes.length > MAX_OVERVIEW_CHANGED_FILES) {
+    warnings.push({
+      code: "changed_files_truncated",
+      omittedCount: changes.length - MAX_OVERVIEW_CHANGED_FILES,
+    });
+  }
+  if (allPathAreas.length > MAX_OVERVIEW_PATH_AREAS) {
+    warnings.push({
+      code: "path_areas_truncated",
+      omittedCount: allPathAreas.length - MAX_OVERVIEW_PATH_AREAS,
+    });
+  }
+  const gitlinkPaths = changes
+    .filter(({ base, head }) => base?.type === "commit" || head?.type === "commit")
+    .map(({ path }) => path);
+  if (gitlinkPaths.length > 0) {
+    warnings.push({
+      affectedFileCount: gitlinkPaths.length,
+      code: "gitlink_not_expanded",
+      samplePaths: gitlinkPaths.slice(0, MAX_OVERVIEW_SAMPLE_PATHS),
+    });
+  }
+  const lfsPointerPaths = changes
+    .filter(({ base, head }) =>
+      [base, head].some((entry) =>
+        entry?.type === "blob" ? isGitLfsPointer(objects.get(entry.objectId)) : false,
+      ),
+    )
+    .map(({ path }) => path);
+  if (lfsPointerPaths.length > 0) {
+    warnings.push({
+      affectedFileCount: lfsPointerPaths.length,
+      code: "git_lfs_pointer_not_hydrated",
+      samplePaths: lfsPointerPaths.slice(0, MAX_OVERVIEW_SAMPLE_PATHS),
+    });
+  }
+
+  return {
+    ruleVersion: 1,
+    fileStatistics,
+    changedFiles: changes.slice(0, MAX_OVERVIEW_CHANGED_FILES),
+    pathAreas: allPathAreas.slice(0, MAX_OVERVIEW_PATH_AREAS),
+    warnings,
+  };
 }
 
 export interface ReadRetainedFileInput {
@@ -439,6 +603,7 @@ async function retainRevisionExclusive(
   }
   const baseSuggestions = readCommitSuggestions(baseCommit);
   const headSuggestions = readCommitSuggestions(headCommit);
+  const changeOverviewFacts = buildChangeOverviewFacts(baseEntries, headEntries, objects);
 
   const manifest: RevisionManifest = {
     schemaVersion: 1,
@@ -544,6 +709,7 @@ async function retainRevisionExclusive(
     artifactLocator: `projects/${input.projectId}/revisions/${input.revisionId}`,
     baseCommitAuthor: baseSuggestions.author,
     baseCommitSubject: baseSuggestions.subject,
+    changeOverviewFacts,
     headCommitAuthor: headSuggestions.author,
     headCommitSubject: headSuggestions.subject,
     manifestDigest,
