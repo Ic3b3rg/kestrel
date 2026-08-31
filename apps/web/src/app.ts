@@ -32,6 +32,11 @@ import {
   registerReviewRevisionRoutes,
   type ReviewRevisionService,
 } from "./routes/review-revisions.js";
+import {
+  createDatabaseReviewWorkflowService,
+  registerReviewWorkflowRoutes,
+  type ReviewWorkflowService,
+} from "./routes/review-workflows.js";
 import { registerAuthentication } from "./authentication.js";
 
 export interface BuildAppOptions {
@@ -45,6 +50,7 @@ export interface BuildAppOptions {
   projectService?: ProjectService;
   hostGitHubProjectService?: HostGitHubProjectService;
   reviewRevisionService?: ReviewRevisionService;
+  reviewWorkflowService?: ReviewWorkflowService;
   pwaRoot?: string;
   sessionSigningKey: Buffer;
 }
@@ -129,6 +135,7 @@ export async function buildApp({
   reviewRevisionService = {
     retain: () => Promise.reject(new Error("Review Revision acquisition is not configured")),
   },
+  reviewWorkflowService = createDatabaseReviewWorkflowService(pool),
   sessionSigningKey,
 }: BuildAppOptions): Promise<FastifyInstance> {
   const app = Fastify({
@@ -188,6 +195,7 @@ export async function buildApp({
   registerChangeIntentRoutes(app, changeIntentService);
   registerLocalRepositoryRoutes(app, localRepositoryService);
   registerReviewRevisionRoutes(app, reviewRevisionService);
+  registerReviewWorkflowRoutes(app, reviewWorkflowService);
   if (pwaRoot !== undefined) {
     await registerPwaRoutes(app, pwaRoot);
   }

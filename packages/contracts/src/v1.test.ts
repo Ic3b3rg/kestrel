@@ -23,9 +23,12 @@ import {
   OpenPublicGitHubPullRequestCommandSchema,
   ProjectInboxSchema,
   RetainReviewRevisionCommandSchema,
+  ReviewPreparationSchema,
   ReviewRevisionAvailableSchema,
   ReviewRevisionSchema,
+  ReviewWorkflowAcceptedSchema,
   SessionSchema,
+  StartReviewWorkflowCommandSchema,
   StepUpCommandSchema,
   StepUpProofSchema,
   serializeCredentialChangeCommand,
@@ -578,6 +581,165 @@ describe("V1 public contracts", () => {
     expect(published.changeProposal.changeIntent?.version).toBe(2);
   });
 
+  it("binds only complete exact inputs into a ready Review preparation", () => {
+    const preparation = {
+      schemaVersion: 1,
+      projectId: "018f0f89-949a-75a8-8f61-6df78a843b1e",
+      changeProposalId: "018f0f89-9192-755f-aa96-f72094c734dd",
+      proposal: {
+        version: 4,
+        base: { objectId: "a".repeat(40), ref: "refs/heads/main" },
+        head: { objectId: "b".repeat(40), ref: "refs/heads/review-source" },
+      },
+      reviewRevision: {
+        id: "018f0f89-9a21-7271-b92d-f1cb0d48bb47",
+        state: "available",
+        objectFormat: "sha1",
+        base: { objectId: "a".repeat(40), ref: "refs/heads/main" },
+        head: { objectId: "b".repeat(40), ref: "refs/heads/review-source" },
+        objectCount: 7,
+        retainedBytes: 4096,
+        failureReason: null,
+        createdAt: "2026-08-24T12:00:30.000Z",
+        availableAt: "2026-08-24T12:01:00.000Z",
+      },
+      changeIntent: {
+        id: "018f0f89-9a20-79f9-9990-dda80c9b917e",
+        version: 2,
+        text: "Review the local authorization boundary.",
+        objective: "Review the local authorization boundary.",
+        scopeBoundaries: ["Do not add provider write authority."],
+        acceptanceOutcomes: ["Review uses only the retained exact revision."],
+        sources: [
+          {
+            id: "operator_input",
+            kind: "operator_input",
+            label: "Operator input",
+            text: "Review the local authorization boundary.",
+            version: "2",
+            provenance: { kind: "operator_input" },
+          },
+        ],
+        sourceDigest: "c".repeat(64),
+        resolution: { state: "resolved", issues: [] },
+        createdAt: "2026-08-24T12:02:00.000Z",
+      },
+      source: {
+        localRepositorySource: {
+          id: "018f0f89-9a1d-7484-b224-866ef9d69990",
+          repositoryId: "018f0f89-9a1e-7d64-a5dd-18cc3e317401",
+          displayName: "kestrel",
+          state: "detached",
+          objectFormat: "sha1",
+          createdAt: "2026-08-24T12:00:00.000Z",
+          updatedAt: "2026-08-24T12:03:00.000Z",
+        },
+        providerObservation: {
+          route: {
+            authentication: "none",
+            kind: "public_github",
+            refresh: "manual",
+          },
+          repository: {
+            canonicalUrl: "https://github.com/openai/openai-node",
+            name: "openai-node",
+            owner: "openai",
+            providerId: "R_kgDOGx",
+          },
+          proposal: {
+            canonicalUrl: "https://github.com/openai/openai-node/pull/1234",
+            number: 1234,
+            observedAt: "2026-08-24T12:01:00.000Z",
+            providerId: "PR_kwDOGx",
+          },
+        },
+      },
+      analysisConfiguration: {
+        id: "018f0f89-a21d-7e31-8d27-aa4383f22991",
+        version: 3,
+        displayName: "Direct API review profile",
+        modelRoute: "direct_api",
+        digest: "d".repeat(64),
+      },
+      authority: {
+        action: "start_review",
+        operatorId: "018f0f89-a3fb-75ee-bccc-08c031ce5f10",
+        state: "available",
+      },
+      resourceEnvelope: {
+        id: "review-first-v1-default",
+        version: 1,
+        displayName: "Review First V1 default envelope",
+        digest: "e".repeat(64),
+      },
+      readiness: "ready",
+      blockers: [],
+      preparationDigest: "f".repeat(64),
+    } as const;
+
+    expect(ReviewPreparationSchema.parse(preparation)).toEqual(preparation);
+    expect(() =>
+      ReviewPreparationSchema.parse({
+        ...preparation,
+        reviewRevision: null,
+      }),
+    ).toThrow("Ready Review preparation requires complete valid inputs");
+
+    const blocked = {
+      ...preparation,
+      analysisConfiguration: null,
+      readiness: "blocked",
+      blockers: ["model_route_not_available"],
+      preparationDigest: null,
+    } as const;
+    expect(ReviewPreparationSchema.parse(blocked)).toEqual(blocked);
+  });
+
+  it("starts a Review Workflow from only the server-issued preparation digest", () => {
+    const command = { preparationDigest: "f".repeat(64) } as const;
+    expect(StartReviewWorkflowCommandSchema.parse(command)).toEqual(command);
+    expect(() =>
+      StartReviewWorkflowCommandSchema.parse({
+        ...command,
+        reviewRevisionId: "018f0f89-9a21-7271-b92d-f1cb0d48bb47",
+      }),
+    ).toThrow();
+
+    const accepted = {
+      schemaVersion: 1,
+      workflow: {
+        id: "018f0f89-a45f-79af-8544-650e9f15c211",
+        projectId: "018f0f89-949a-75a8-8f61-6df78a843b1e",
+        changeProposalId: "018f0f89-9192-755f-aa96-f72094c734dd",
+        reviewRevisionId: "018f0f89-9a21-7271-b92d-f1cb0d48bb47",
+        changeIntentId: "018f0f89-9a20-79f9-9990-dda80c9b917e",
+        inputDigest: command.preparationDigest,
+        analysisConfiguration: {
+          id: "018f0f89-a21d-7e31-8d27-aa4383f22991",
+          version: 3,
+          displayName: "Direct API review profile",
+          modelRoute: "direct_api",
+          digest: "d".repeat(64),
+        },
+        authority: {
+          action: "start_review",
+          operatorId: "018f0f89-a3fb-75ee-bccc-08c031ce5f10",
+          state: "available",
+        },
+        resourceEnvelope: {
+          id: "review-first-v1-default",
+          version: 1,
+          displayName: "Review First V1 default envelope",
+          digest: "e".repeat(64),
+        },
+        state: "queued",
+        requestedAt: "2026-08-24T12:04:00.000Z",
+      },
+    } as const;
+
+    expect(ReviewWorkflowAcceptedSchema.parse(accepted)).toEqual(accepted);
+  });
+
   it("rejects partial lifecycle fields and publishes only an available Review Revision", () => {
     const revision = {
       id: "018f0f89-9a21-7271-b92d-f1cb0d48bb47",
@@ -654,6 +816,8 @@ describe("V1 public contracts", () => {
         "/api/v1/operator/credentials": {},
         "/api/v1/projects": {},
         "/api/v1/projects/{projectId}/change-proposals/{changeProposalId}/change-intents": {},
+        "/api/v1/projects/{projectId}/change-proposals/{changeProposalId}/review-preparation": {},
+        "/api/v1/projects/{projectId}/change-proposals/{changeProposalId}/review-workflows": {},
         "/api/v1/local-repository-sources": {},
         "/api/v1/local-repository-sources/{repositoryId}/references": {},
         "/api/v1/review-revisions": {},
@@ -710,6 +874,32 @@ describe("V1 public contracts", () => {
             ],
             responses: {
               "201": {},
+              "400": {},
+              "401": {},
+              "403": {},
+              "404": {},
+              "409": {},
+              "413": {},
+              "415": {},
+              "500": {},
+            },
+          },
+        },
+        "/api/v1/projects/{projectId}/change-proposals/{changeProposalId}/review-preparation": {
+          get: {
+            responses: { "200": {}, "400": {}, "401": {}, "404": {}, "503": {} },
+          },
+        },
+        "/api/v1/projects/{projectId}/change-proposals/{changeProposalId}/review-workflows": {
+          post: {
+            parameters: [
+              { in: "header", name: "Origin", required: true },
+              { in: "header", name: "X-Kestrel-CSRF", required: true },
+              { in: "path", name: "projectId", required: true },
+              { in: "path", name: "changeProposalId", required: true },
+            ],
+            responses: {
+              "202": {},
               "400": {},
               "401": {},
               "403": {},

@@ -10,6 +10,8 @@ import type {
   ProjectInbox,
   LocalRepositoryInventory,
   LocalRepositoryReferences,
+  ReviewPreparation,
+  ReviewWorkflowAccepted,
   Session,
 } from "@kestrel/contracts";
 
@@ -19,12 +21,14 @@ import {
   fetchProjectInbox,
   fetchLocalRepositories,
   fetchLocalRepositoryReferences,
+  fetchReviewPreparation,
   fetchSession,
   loginOperator,
   logoutOperator,
   openPublicGitHubPullRequest,
   runDiagnostic,
   retainReviewRevision,
+  startReviewWorkflow,
   streamInstallationEvents,
   updateOperatorCredentials,
 } from "./api.js";
@@ -174,6 +178,94 @@ afterEach(() => {
 });
 
 describe("PWA API client", () => {
+  it("reads Review preparation without mutation and starts from only its digest", async () => {
+    const projectId = "018f0f89-9a22-7864-aac2-8df71bf60420";
+    const proposalId = "018f0f89-9192-755f-aa96-f72094c734dd";
+    const preparation: ReviewPreparation = {
+      schemaVersion: 1,
+      projectId,
+      changeProposalId: proposalId,
+      proposal: {
+        version: 2,
+        base: { objectId: "a".repeat(40), ref: "refs/heads/main" },
+        head: { objectId: "b".repeat(40), ref: "refs/heads/topic" },
+      },
+      reviewRevision: null,
+      changeIntent: null,
+      source: { localRepositorySource: null, providerObservation: null },
+      analysisConfiguration: null,
+      authority: {
+        action: "start_review",
+        operatorId: "018f0f89-a3fb-75ee-bccc-08c031ce5f10",
+        state: "available",
+      },
+      resourceEnvelope: {
+        id: "review-first-v1-default",
+        version: 1,
+        displayName: "Review First V1 default envelope",
+        digest: "e".repeat(64),
+      },
+      readiness: "blocked",
+      blockers: [
+        "revision_not_available",
+        "change_intent_not_resolved",
+        "model_route_not_available",
+      ],
+      preparationDigest: null,
+    };
+    const command = { preparationDigest: "f".repeat(64) };
+    const resourceEnvelope = preparation.resourceEnvelope;
+    if (resourceEnvelope === null) throw new Error("Review preparation fixture is incomplete");
+    const accepted: ReviewWorkflowAccepted = {
+      schemaVersion: 1,
+      workflow: {
+        id: "018f0f89-a45f-79af-8544-650e9f15c212",
+        projectId,
+        changeProposalId: proposalId,
+        reviewRevisionId: "018f0f89-9a21-7271-b92d-f1cb0d48bb47",
+        changeIntentId: "018f0f89-9a20-79f9-9990-dda80c9b917e",
+        inputDigest: command.preparationDigest,
+        analysisConfiguration: {
+          id: "018f0f89-a45f-79af-8544-650e9f15c211",
+          version: 3,
+          displayName: "Direct API review profile",
+          modelRoute: "direct_api",
+          digest: "d".repeat(64),
+        },
+        authority: {
+          action: "start_review",
+          operatorId: "018f0f89-a3fb-75ee-bccc-08c031ce5f10",
+          state: "available",
+        },
+        resourceEnvelope,
+        state: "queued",
+        requestedAt: "2026-08-24T12:04:00.000Z",
+      },
+    };
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(preparation))
+      .mockResolvedValueOnce(jsonResponse(accepted, 202));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("document", {
+      cookie: `__Host-kestrel-csrf=${"A".repeat(43)}.${"B".repeat(43)}`,
+    });
+
+    await expect(fetchReviewPreparation(projectId, proposalId)).resolves.toEqual(preparation);
+    await expect(startReviewWorkflow(projectId, proposalId, command)).resolves.toEqual(accepted);
+    const path = `/api/v1/projects/${projectId}/change-proposals/${proposalId}`;
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      `${path}/review-preparation`,
+      expect.objectContaining({ method: "GET" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      `${path}/review-workflows`,
+      expect.objectContaining({ body: JSON.stringify(command), method: "POST" }),
+    );
+  });
+
   it("creates a Change Intent version with opaque source IDs", async () => {
     const projectId = "018f0f89-9a22-7864-aac2-8df71bf60420";
     const proposalId = "018f0f89-9192-755f-aa96-f72094c734dd";
