@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ProjectInbox } from "@kestrel/contracts";
+import type { ChangeOverview, ProjectInbox } from "@kestrel/contracts";
 
 import { ProjectInboxPanel } from "./ProjectInboxPanel.js";
 
@@ -211,6 +211,149 @@ describe("ProjectInboxPanel", () => {
     expect(html).toContain("Change Intent v1");
     expect(html).toContain("Model access");
     expect(html).not.toContain("/private/");
+  });
+
+  it("renders deterministic ready Change Overview facts without implying a review verdict", () => {
+    const project = populatedInbox.projects[0];
+    const proposal = project?.changeProposals[0];
+    const localProposal = localInbox.projects[0]?.changeProposals[0];
+    const revision = localProposal?.reviewRevisions[0];
+    if (
+      project === undefined ||
+      proposal === undefined ||
+      !("providerId" in proposal) ||
+      localProposal?.kind !== "local" ||
+      revision === undefined
+    ) {
+      throw new Error("Ready Change Overview fixture is unavailable");
+    }
+    const inbox: ProjectInbox = {
+      schemaVersion: 1,
+      projects: [
+        {
+          ...project,
+          changeProposals: [
+            {
+              ...proposal,
+              changeIntent: localProposal.changeIntent,
+              changeOverview: {
+                state: "ready",
+                createdAt: "2026-08-24T12:01:00.000Z",
+                exactRevision: {
+                  id: revision.id,
+                  objectFormat: "sha1",
+                  base: {
+                    ref: "refs/heads/main",
+                    objectId: "a".repeat(40),
+                    author: "Base Author",
+                    subject: "Establish the source boundary",
+                  },
+                  head: {
+                    ref: "refs/heads/review-source",
+                    objectId: "b".repeat(40),
+                    author: "Head Author",
+                    subject: "Keep repository access explicit",
+                  },
+                },
+                changeIntent: localProposal.changeIntent,
+                providerObservation: {
+                  canonicalUrl: proposal.canonicalUrl,
+                  observedAt: proposal.observedAt,
+                  title: "Current provider title",
+                  description: "Current provider description.",
+                },
+                sourceFacts: {
+                  ruleVersion: 1,
+                  fileStatistics: { added: 0, modified: 1, deleted: 0, total: 1 },
+                  changedFiles: [
+                    {
+                      path: "src/review.ts",
+                      status: "modified",
+                      base: { mode: "100644", objectId: "c".repeat(40), type: "blob" },
+                      head: { mode: "100644", objectId: "d".repeat(40), type: "blob" },
+                    },
+                  ],
+                  pathAreas: [
+                    {
+                      pathPrefix: "src",
+                      changedFileCount: 1,
+                      samplePaths: ["src/review.ts"],
+                    },
+                  ],
+                  warnings: [
+                    {
+                      code: "git_lfs_pointer_not_hydrated",
+                      affectedFileCount: 1,
+                      samplePaths: ["src/review.ts"],
+                    },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const html = render(inbox);
+
+    expect(html).toContain("Change Overview");
+    expect(html).toContain("Ready");
+    expect(html).toContain("Deterministic orientation facts only");
+    expect(html).toContain("Current provider title");
+    expect(html).toContain("Current provider description.");
+    expect(html).toContain("Change Intent v1");
+    expect(html).toContain("1 changed file · 0 added · 1 modified · 0 deleted");
+    expect(html).toContain("src/review.ts");
+    expect(html).toContain("Source area");
+    expect(html).toContain("Git LFS pointer content was not hydrated");
+    expect(html).toContain("b".repeat(40));
+    expect(html).not.toMatch(/Graph|Evidence|Coverage|Finding|Risk|Verdict/u);
+  });
+
+  it("shows the latest exact head while deterministic facts await retained source", () => {
+    const html = render(populatedInbox);
+
+    expect(html).toContain("Change Overview");
+    expect(html).toContain("Awaiting exact source");
+    expect(html).toContain("b".repeat(40));
+  });
+
+  it("announces generating and unavailable Change Overview states", () => {
+    const project = populatedInbox.projects[0];
+    const proposal = project?.changeProposals[0];
+    if (project === undefined || proposal === undefined || !("providerId" in proposal)) {
+      throw new Error("Provider Change Overview fixture is unavailable");
+    }
+    const renderState = (changeOverview: ChangeOverview) =>
+      render({
+        schemaVersion: 1,
+        projects: [
+          {
+            ...project,
+            changeProposals: [{ ...proposal, changeOverview }],
+          },
+        ],
+      });
+    const reviewRevisionId = "018f0f89-9a21-7271-b92d-f1cb0d48bb47";
+
+    const generating = renderState({
+      state: "generating",
+      exactHeadObjectId: proposal.head.objectId,
+      reviewRevisionId,
+    });
+    expect(generating).toContain('aria-busy="true"');
+    expect(generating).toContain("Kestrel is deriving facts");
+
+    const unavailable = renderState({
+      state: "unavailable",
+      exactHeadObjectId: proposal.head.objectId,
+      reviewRevisionId,
+      reason: "facts_not_available",
+    });
+    expect(unavailable).toContain("Unavailable");
+    expect(unavailable).toContain("predates deterministic Change Overview facts");
+    expect(unavailable).toContain("Retain the exact revision again");
   });
 
   it("labels an authenticated host observation without claiming public anonymous access", () => {

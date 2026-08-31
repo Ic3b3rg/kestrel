@@ -13,6 +13,7 @@ import { OpenLocalRepositoryForm } from "./OpenLocalRepositoryForm.js";
 import { HostGitHubProjectPanel } from "./HostGitHubProjectPanel.js";
 import { AcquireObservedReviewRevisionForm } from "./AcquireObservedReviewRevisionForm.js";
 import { ChangeIntentEditor } from "./ChangeIntentEditor.js";
+import { ChangeOverviewPanel } from "./ChangeOverviewPanel.js";
 import { ReviewPreparationPanel } from "./ReviewPreparationPanel.js";
 import { DirectApiProfilePanel } from "./DirectApiProfilePanel.js";
 
@@ -273,6 +274,11 @@ function ChangeProposalRecord({
   projectId: string;
 }) {
   const revision = changeProposal.reviewRevisions[0];
+  const changeOverview = changeProposal.changeOverview ?? {
+    exactHeadObjectId: changeProposal.head.objectId,
+    state: "awaiting_source" as const,
+  };
+  const changeOverviewHeadingId = `change-overview-${changeProposal.id}`;
   if (!isProviderChangeProposal(changeProposal)) {
     return (
       <section className="change-proposal" aria-labelledby={`proposal-${changeProposal.id}`}>
@@ -303,6 +309,7 @@ function ChangeProposalRecord({
           </div>
           <RevisionFacts revision={revision} />
         </dl>
+        <ChangeOverviewPanel headingId={changeOverviewHeadingId} overview={changeOverview} />
         <ChangeIntentEditor
           key={`${changeProposal.id}:${String(changeProposal.version)}`}
           disabled={disabled}
@@ -380,6 +387,7 @@ function ChangeProposalRecord({
         </div>
         <RevisionFacts revision={revision} />
       </dl>
+      <ChangeOverviewPanel headingId={changeOverviewHeadingId} overview={changeOverview} />
       <ChangeIntentEditor
         key={`${changeProposal.id}:${String(changeProposal.version)}`}
         disabled={disabled}
