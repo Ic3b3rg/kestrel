@@ -12,6 +12,7 @@ export const CredentialVersionSchema = z
 export const KestrelIdSchema = z.uuidv7();
 export const CorrelationIdSchema = z.uuid();
 export const UtcDateTimeSchema = z.iso.datetime({ offset: false });
+export const RequestDigestSchema = z.string().regex(/^[a-f0-9]{64}$/u);
 export const OperatorUsernameSchema = z
   .string()
   .min(1)
@@ -534,6 +535,166 @@ export const ProjectUpsertedSchema = z.strictObject({
   project: ProjectSchema,
 });
 
+export const ReviewPreparationBlockerSchema = z.enum([
+  "revision_not_available",
+  "change_intent_not_resolved",
+  "revision_identity_incoherent",
+  "model_route_not_available",
+  "operator_authority_not_available",
+  "resource_envelope_not_available",
+]);
+
+export const ReviewAnalysisConfigurationSchema = z.strictObject({
+  id: KestrelIdSchema,
+  version: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  displayName: z.string().min(1).max(256),
+  modelRoute: z.enum(["direct_api", "subscription_acp"]),
+  digest: RequestDigestSchema,
+});
+
+export const ReviewModelRouteAvailabilitySchema = z.enum(["available", "unavailable"]);
+
+export const ReviewAuthoritySchema = z
+  .strictObject({
+    action: z.literal("start_review"),
+    operatorId: KestrelIdSchema.nullable(),
+    state: z.enum(["available", "unavailable"]),
+  })
+  .refine(
+    ({ operatorId, state }) =>
+      (state === "available" && operatorId !== null) ||
+      (state === "unavailable" && operatorId === null),
+    { message: "Review authority identity and state are inconsistent" },
+  );
+
+const ReviewResourceEnvelopeIdSchema = z
+  .string()
+  .min(1)
+  .max(128)
+  .regex(/^[a-z0-9][a-z0-9._:-]*$/u);
+
+export const ReviewResourceEnvelopeSchema = z.strictObject({
+  id: ReviewResourceEnvelopeIdSchema,
+  version: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  displayName: z.string().min(1).max(256),
+  limits: z.strictObject({
+    maximumMemoryBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    maximumProcesses: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    maximumWritableDiskBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    maximumCpuMillicores: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    maximumConcurrentAttempts: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  }),
+  terminalBoundary: z.strictObject({
+    onExhaustion: z.literal("partial_or_failed"),
+    requiresUncoveredAreaDisclosure: z.literal(true),
+  }),
+  digest: RequestDigestSchema,
+});
+
+export const ReviewProviderObservationSchema = z.strictObject({
+  route: ProviderObservationSchema,
+  repository: RepositorySnapshotSchema,
+  proposal: z.strictObject({
+    canonicalUrl: PublicGitHubPullRequestUrlSchema,
+    number: z.number().int().positive().max(9_999_999_999),
+    observedAt: UtcDateTimeSchema,
+    providerId: GitHubOpaqueIdSchema,
+  }),
+});
+
+export const ReviewPreparationSchema = z
+  .strictObject({
+    schemaVersion: SchemaVersionSchema,
+    projectId: KestrelIdSchema,
+    changeProposalId: KestrelIdSchema,
+    proposal: z.strictObject({
+      version: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+      base: GitRevisionPointerSchema,
+      head: GitRevisionPointerSchema,
+    }),
+    reviewRevision: ReviewRevisionSchema.nullable(),
+    changeIntent: ChangeIntentSchema.nullable(),
+    source: z.strictObject({
+      localRepositorySource: LocalRepositorySourceSchema.nullable(),
+      providerObservation: ReviewProviderObservationSchema.nullable(),
+    }),
+    analysisConfiguration: ReviewAnalysisConfigurationSchema.nullable(),
+    modelRouteAvailability: ReviewModelRouteAvailabilitySchema,
+    authority: ReviewAuthoritySchema,
+    resourceEnvelope: ReviewResourceEnvelopeSchema.nullable(),
+    readiness: z.enum(["ready", "blocked"]),
+    blockers: z.array(ReviewPreparationBlockerSchema).max(6),
+    preparationDigest: RequestDigestSchema.nullable(),
+  })
+  .superRefine((value, context) => {
+    const blockers = new Set(value.blockers);
+    if (blockers.size !== value.blockers.length) {
+      context.addIssue({ code: "custom", message: "Review preparation blockers must be unique" });
+    }
+
+    const revision = value.reviewRevision;
+    const exactRevision =
+      revision !== null &&
+      revision.state === "available" &&
+      revision.base.objectId === value.proposal.base.objectId &&
+      revision.head.objectId === value.proposal.head.objectId &&
+      revision.objectFormat === value.source.localRepositorySource?.objectFormat;
+    const complete =
+      exactRevision &&
+      value.changeIntent?.resolution.state === "resolved" &&
+      value.analysisConfiguration !== null &&
+      value.modelRouteAvailability === "available" &&
+      value.authority.state === "available" &&
+      value.resourceEnvelope !== null &&
+      value.blockers.length === 0 &&
+      value.preparationDigest !== null;
+
+    if (value.readiness === "ready" && !complete) {
+      context.addIssue({
+        code: "custom",
+        message: "Ready Review preparation requires complete valid inputs",
+      });
+    }
+    if (value.modelRouteAvailability === "available" && value.analysisConfiguration === null) {
+      context.addIssue({
+        code: "custom",
+        message: "Available model route requires a selected Analysis Configuration",
+      });
+    }
+    if (
+      value.readiness === "blocked" &&
+      (value.blockers.length === 0 || value.preparationDigest !== null)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Blocked Review preparation requires blockers and no digest",
+      });
+    }
+  });
+
+export const StartReviewWorkflowCommandSchema = z.strictObject({
+  preparationDigest: RequestDigestSchema,
+});
+
+export const ReviewWorkflowSchema = z.strictObject({
+  id: KestrelIdSchema,
+  projectId: KestrelIdSchema,
+  changeProposalId: KestrelIdSchema,
+  reviewRevisionId: KestrelIdSchema,
+  changeIntentId: KestrelIdSchema,
+  inputDigest: RequestDigestSchema,
+  analysisConfiguration: ReviewAnalysisConfigurationSchema,
+  authority: ReviewAuthoritySchema,
+  resourceEnvelope: ReviewResourceEnvelopeSchema,
+  state: z.literal("queued"),
+  requestedAt: UtcDateTimeSchema,
+});
+
+export const ReviewWorkflowAcceptedSchema = z.strictObject({
+  schemaVersion: SchemaVersionSchema,
+  workflow: ReviewWorkflowSchema,
+});
+
 export const ReviewRevisionAvailableSchema = z
   .strictObject({
     schemaVersion: SchemaVersionSchema,
@@ -600,7 +761,6 @@ export const StepUpActionSchema = z.enum([
   "installation_update",
 ]);
 
-export const RequestDigestSchema = z.string().regex(/^[a-f0-9]{64}$/u);
 export const StepUpProofTokenSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/u);
 
 export const StepUpCommandSchema = z.strictObject({
@@ -727,6 +887,8 @@ const StandardApiErrorSchema = z.strictObject({
     "CHANGE_PROPOSAL_VERSION_CONFLICT",
     "CHANGE_INTENT_SOURCE_CONFLICT",
     "REVISION_ACQUIRING",
+    "REVIEW_NOT_READY",
+    "REVIEW_PREPARATION_CONFLICT",
   ]),
   message: z.string().min(1),
   correlationId: CorrelationIdSchema,
@@ -803,6 +965,16 @@ export type RepositorySnapshot = z.infer<typeof RepositorySnapshotSchema>;
 export type ReviewRevision = z.infer<typeof ReviewRevisionSchema>;
 export type ReviewRevisionAvailable = z.infer<typeof ReviewRevisionAvailableSchema>;
 export type ReviewRevisionFailureReason = z.infer<typeof ReviewRevisionFailureReasonSchema>;
+export type ReviewAnalysisConfiguration = z.infer<typeof ReviewAnalysisConfigurationSchema>;
+export type ReviewAuthority = z.infer<typeof ReviewAuthoritySchema>;
+export type ReviewModelRouteAvailability = z.infer<typeof ReviewModelRouteAvailabilitySchema>;
+export type ReviewPreparation = z.infer<typeof ReviewPreparationSchema>;
+export type ReviewPreparationBlocker = z.infer<typeof ReviewPreparationBlockerSchema>;
+export type ReviewProviderObservation = z.infer<typeof ReviewProviderObservationSchema>;
+export type ReviewResourceEnvelope = z.infer<typeof ReviewResourceEnvelopeSchema>;
+export type ReviewWorkflow = z.infer<typeof ReviewWorkflowSchema>;
+export type ReviewWorkflowAccepted = z.infer<typeof ReviewWorkflowAcceptedSchema>;
+export type StartReviewWorkflowCommand = z.infer<typeof StartReviewWorkflowCommandSchema>;
 export type PublicGitHubPullRequestUrl = z.infer<typeof PublicGitHubPullRequestUrlSchema>;
 export type Session = z.infer<typeof SessionSchema>;
 export type StepUpAction = z.infer<typeof StepUpActionSchema>;

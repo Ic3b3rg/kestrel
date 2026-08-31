@@ -34,7 +34,9 @@
                   "CHANGE_PROPOSAL_MISMATCH",
                   "CHANGE_PROPOSAL_VERSION_CONFLICT",
                   "CHANGE_INTENT_SOURCE_CONFLICT",
-                  "REVISION_ACQUIRING"
+                  "REVISION_ACQUIRING",
+                  "REVIEW_NOT_READY",
+                  "REVIEW_PREPARATION_CONFLICT"
                 ],
                 "type": "string"
               },
@@ -4909,6 +4911,1016 @@
           }
         ]
       },
+      "ReviewPreparation": {
+        "additionalProperties": false,
+        "properties": {
+          "analysisConfiguration": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "digest": {
+                    "pattern": "^[a-f0-9]{64}$",
+                    "type": "string"
+                  },
+                  "displayName": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "id": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                    "type": "string"
+                  },
+                  "modelRoute": {
+                    "enum": [
+                      "direct_api",
+                      "subscription_acp"
+                    ],
+                    "type": "string"
+                  },
+                  "version": {
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "id",
+                  "version",
+                  "displayName",
+                  "modelRoute",
+                  "digest"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "authority": {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "const": "start_review",
+                "type": "string"
+              },
+              "operatorId": {
+                "anyOf": [
+                  {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "state": {
+                "enum": [
+                  "available",
+                  "unavailable"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "action",
+              "operatorId",
+              "state"
+            ],
+            "type": "object"
+          },
+          "blockers": {
+            "items": {
+              "enum": [
+                "revision_not_available",
+                "change_intent_not_resolved",
+                "revision_identity_incoherent",
+                "model_route_not_available",
+                "operator_authority_not_available",
+                "resource_envelope_not_available"
+              ],
+              "type": "string"
+            },
+            "maxItems": 6,
+            "type": "array"
+          },
+          "changeIntent": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "acceptanceOutcomes": {
+                    "items": {
+                      "maxLength": 20000,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 50,
+                    "type": "array"
+                  },
+                  "createdAt": {
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                    "type": "string"
+                  },
+                  "id": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                    "type": "string"
+                  },
+                  "objective": {
+                    "anyOf": [
+                      {
+                        "maxLength": 20000,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "resolution": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "issues": {
+                        "items": {
+                          "oneOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "field": {
+                                  "enum": [
+                                    "objective",
+                                    "scope_boundaries",
+                                    "acceptance_outcomes",
+                                    "sources"
+                                  ],
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "const": "missing",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "field"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "description": {
+                                  "maxLength": 20000,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "const": "ambiguous",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "description"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "description": {
+                                  "maxLength": 20000,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "const": "contradictory",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "description"
+                              ],
+                              "type": "object"
+                            }
+                          ]
+                        },
+                        "maxItems": 24,
+                        "type": "array"
+                      },
+                      "state": {
+                        "enum": [
+                          "unresolved",
+                          "resolved"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "state",
+                      "issues"
+                    ],
+                    "type": "object"
+                  },
+                  "scopeBoundaries": {
+                    "items": {
+                      "maxLength": 20000,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 20,
+                    "type": "array"
+                  },
+                  "sourceDigest": {
+                    "pattern": "^[a-f0-9]{64}$",
+                    "type": "string"
+                  },
+                  "sources": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "pattern": "^[a-z][a-z0-9_:-]*$",
+                          "type": "string"
+                        },
+                        "kind": {
+                          "enum": [
+                            "provider_field",
+                            "commit_author",
+                            "commit_message",
+                            "operator_input"
+                          ],
+                          "type": "string"
+                        },
+                        "label": {
+                          "maxLength": 256,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "provenance": {
+                          "oneOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "canonicalUrl": {
+                                  "maxLength": 256,
+                                  "pattern": "^https:\\/\\/github\\.com\\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\\/[A-Za-z0-9._-]{1,100}\\/pull\\/[1-9][0-9]{0,9}$",
+                                  "type": "string"
+                                },
+                                "field": {
+                                  "enum": [
+                                    "title",
+                                    "description"
+                                  ],
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "const": "provider_field",
+                                  "type": "string"
+                                },
+                                "observedAt": {
+                                  "format": "date-time",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                  "type": "string"
+                                },
+                                "provider": {
+                                  "const": "github",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "provider",
+                                "field",
+                                "observedAt",
+                                "canonicalUrl"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "kind": {
+                                  "const": "commit_author",
+                                  "type": "string"
+                                },
+                                "objectId": {
+                                  "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                                  "type": "string"
+                                },
+                                "ref": {
+                                  "maxLength": 255,
+                                  "minLength": 1,
+                                  "pattern": "^[^\\p{Cc}]+$",
+                                  "type": "string"
+                                },
+                                "side": {
+                                  "enum": [
+                                    "base",
+                                    "head"
+                                  ],
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "side",
+                                "objectId",
+                                "ref"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "kind": {
+                                  "const": "commit_message",
+                                  "type": "string"
+                                },
+                                "objectId": {
+                                  "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                                  "type": "string"
+                                },
+                                "ref": {
+                                  "maxLength": 255,
+                                  "minLength": 1,
+                                  "pattern": "^[^\\p{Cc}]+$",
+                                  "type": "string"
+                                },
+                                "side": {
+                                  "enum": [
+                                    "base",
+                                    "head"
+                                  ],
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "side",
+                                "objectId",
+                                "ref"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "kind": {
+                                  "const": "operator_input",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind"
+                              ],
+                              "type": "object"
+                            }
+                          ]
+                        },
+                        "text": {
+                          "maxLength": 65536,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "version": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "kind",
+                        "label",
+                        "text",
+                        "version",
+                        "provenance"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 20,
+                    "type": "array"
+                  },
+                  "text": {
+                    "maxLength": 20000,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "version": {
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "id",
+                  "version",
+                  "text",
+                  "objective",
+                  "scopeBoundaries",
+                  "acceptanceOutcomes",
+                  "sources",
+                  "sourceDigest",
+                  "resolution",
+                  "createdAt"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "changeProposalId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "modelRouteAvailability": {
+            "enum": [
+              "available",
+              "unavailable"
+            ],
+            "type": "string"
+          },
+          "preparationDigest": {
+            "anyOf": [
+              {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "projectId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "proposal": {
+            "additionalProperties": false,
+            "properties": {
+              "base": {
+                "additionalProperties": false,
+                "properties": {
+                  "objectId": {
+                    "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                    "type": "string"
+                  },
+                  "ref": {
+                    "maxLength": 255,
+                    "minLength": 1,
+                    "pattern": "^[^\\p{Cc}]+$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "objectId",
+                  "ref"
+                ],
+                "type": "object"
+              },
+              "head": {
+                "additionalProperties": false,
+                "properties": {
+                  "objectId": {
+                    "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                    "type": "string"
+                  },
+                  "ref": {
+                    "maxLength": 255,
+                    "minLength": 1,
+                    "pattern": "^[^\\p{Cc}]+$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "objectId",
+                  "ref"
+                ],
+                "type": "object"
+              },
+              "version": {
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "version",
+              "base",
+              "head"
+            ],
+            "type": "object"
+          },
+          "readiness": {
+            "enum": [
+              "ready",
+              "blocked"
+            ],
+            "type": "string"
+          },
+          "resourceEnvelope": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "digest": {
+                    "pattern": "^[a-f0-9]{64}$",
+                    "type": "string"
+                  },
+                  "displayName": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "id": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+                    "type": "string"
+                  },
+                  "limits": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "maximumConcurrentAttempts": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "maximumCpuMillicores": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "maximumMemoryBytes": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "maximumProcesses": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "maximumWritableDiskBytes": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "maximumMemoryBytes",
+                      "maximumProcesses",
+                      "maximumWritableDiskBytes",
+                      "maximumCpuMillicores",
+                      "maximumConcurrentAttempts"
+                    ],
+                    "type": "object"
+                  },
+                  "terminalBoundary": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "onExhaustion": {
+                        "const": "partial_or_failed",
+                        "type": "string"
+                      },
+                      "requiresUncoveredAreaDisclosure": {
+                        "const": true,
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "onExhaustion",
+                      "requiresUncoveredAreaDisclosure"
+                    ],
+                    "type": "object"
+                  },
+                  "version": {
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "id",
+                  "version",
+                  "displayName",
+                  "limits",
+                  "terminalBoundary",
+                  "digest"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reviewRevision": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "availableAt": {
+                    "anyOf": [
+                      {
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "base": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "objectId": {
+                        "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                        "type": "string"
+                      },
+                      "ref": {
+                        "maxLength": 255,
+                        "minLength": 1,
+                        "pattern": "^[^\\p{Cc}]+$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "objectId",
+                      "ref"
+                    ],
+                    "type": "object"
+                  },
+                  "createdAt": {
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                    "type": "string"
+                  },
+                  "failureReason": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "source_not_available",
+                          "source_containment_violation",
+                          "reference_not_available",
+                          "base_revision_unresolvable",
+                          "head_revision_unresolvable",
+                          "pull_ref_mismatch",
+                          "provider_authentication_required",
+                          "provider_resource_unavailable",
+                          "revision_limit_exceeded",
+                          "object_missing",
+                          "object_verification_failed",
+                          "artifact_finalization_failed",
+                          "acquisition_interrupted"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "head": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "objectId": {
+                        "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                        "type": "string"
+                      },
+                      "ref": {
+                        "maxLength": 255,
+                        "minLength": 1,
+                        "pattern": "^[^\\p{Cc}]+$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "objectId",
+                      "ref"
+                    ],
+                    "type": "object"
+                  },
+                  "id": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                    "type": "string"
+                  },
+                  "objectCount": {
+                    "anyOf": [
+                      {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "objectFormat": {
+                    "enum": [
+                      "sha1",
+                      "sha256"
+                    ],
+                    "type": "string"
+                  },
+                  "retainedBytes": {
+                    "anyOf": [
+                      {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "state": {
+                    "enum": [
+                      "acquiring",
+                      "available",
+                      "unavailable"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "state",
+                  "objectFormat",
+                  "base",
+                  "head",
+                  "objectCount",
+                  "retainedBytes",
+                  "failureReason",
+                  "createdAt",
+                  "availableAt"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "schemaVersion": {
+            "const": 1,
+            "type": "number"
+          },
+          "source": {
+            "additionalProperties": false,
+            "properties": {
+              "localRepositorySource": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "createdAt": {
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                        "type": "string"
+                      },
+                      "displayName": {
+                        "maxLength": 256,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "id": {
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      "objectFormat": {
+                        "enum": [
+                          "sha1",
+                          "sha256"
+                        ],
+                        "type": "string"
+                      },
+                      "repositoryId": {
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      "state": {
+                        "enum": [
+                          "attached",
+                          "detached"
+                        ],
+                        "type": "string"
+                      },
+                      "updatedAt": {
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "repositoryId",
+                      "displayName",
+                      "state",
+                      "objectFormat",
+                      "createdAt",
+                      "updatedAt"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerObservation": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "proposal": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "canonicalUrl": {
+                            "maxLength": 256,
+                            "pattern": "^https:\\/\\/github\\.com\\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\\/[A-Za-z0-9._-]{1,100}\\/pull\\/[1-9][0-9]{0,9}$",
+                            "type": "string"
+                          },
+                          "number": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9999999999,
+                            "type": "integer"
+                          },
+                          "observedAt": {
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                            "type": "string"
+                          },
+                          "providerId": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "canonicalUrl",
+                          "number",
+                          "observedAt",
+                          "providerId"
+                        ],
+                        "type": "object"
+                      },
+                      "repository": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "canonicalUrl": {
+                            "maxLength": 240,
+                            "pattern": "^https:\\/\\/github\\.com\\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\\/[A-Za-z0-9._-]{1,100}$",
+                            "type": "string"
+                          },
+                          "name": {
+                            "maxLength": 100,
+                            "minLength": 1,
+                            "pattern": "^[A-Za-z0-9._-]+$",
+                            "type": "string"
+                          },
+                          "owner": {
+                            "maxLength": 39,
+                            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$",
+                            "type": "string"
+                          },
+                          "providerId": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "canonicalUrl",
+                          "name",
+                          "owner",
+                          "providerId"
+                        ],
+                        "type": "object"
+                      },
+                      "route": {
+                        "oneOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "authentication": {
+                                "const": "none",
+                                "type": "string"
+                              },
+                              "kind": {
+                                "const": "public_github",
+                                "type": "string"
+                              },
+                              "refresh": {
+                                "const": "manual",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "authentication",
+                              "kind",
+                              "refresh"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "account": {
+                                "maxLength": 100,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "authentication": {
+                                "const": "host_session",
+                                "type": "string"
+                              },
+                              "host": {
+                                "maxLength": 253,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "kind": {
+                                "const": "host_gh",
+                                "type": "string"
+                              },
+                              "refresh": {
+                                "const": "manual",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "authentication",
+                              "kind",
+                              "refresh",
+                              "host",
+                              "account"
+                            ],
+                            "type": "object"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "route",
+                      "repository",
+                      "proposal"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "localRepositorySource",
+              "providerObservation"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "projectId",
+          "changeProposalId",
+          "proposal",
+          "reviewRevision",
+          "changeIntent",
+          "source",
+          "analysisConfiguration",
+          "modelRouteAvailability",
+          "authority",
+          "resourceEnvelope",
+          "readiness",
+          "blockers",
+          "preparationDigest"
+        ],
+        "type": "object"
+      },
       "ReviewRevisionAvailable": {
         "additionalProperties": false,
         "properties": {
@@ -8730,6 +9742,240 @@
         ],
         "type": "object"
       },
+      "ReviewWorkflowAccepted": {
+        "additionalProperties": false,
+        "properties": {
+          "schemaVersion": {
+            "const": 1,
+            "type": "number"
+          },
+          "workflow": {
+            "additionalProperties": false,
+            "properties": {
+              "analysisConfiguration": {
+                "additionalProperties": false,
+                "properties": {
+                  "digest": {
+                    "pattern": "^[a-f0-9]{64}$",
+                    "type": "string"
+                  },
+                  "displayName": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "id": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                    "type": "string"
+                  },
+                  "modelRoute": {
+                    "enum": [
+                      "direct_api",
+                      "subscription_acp"
+                    ],
+                    "type": "string"
+                  },
+                  "version": {
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "id",
+                  "version",
+                  "displayName",
+                  "modelRoute",
+                  "digest"
+                ],
+                "type": "object"
+              },
+              "authority": {
+                "additionalProperties": false,
+                "properties": {
+                  "action": {
+                    "const": "start_review",
+                    "type": "string"
+                  },
+                  "operatorId": {
+                    "anyOf": [
+                      {
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "state": {
+                    "enum": [
+                      "available",
+                      "unavailable"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "action",
+                  "operatorId",
+                  "state"
+                ],
+                "type": "object"
+              },
+              "changeIntentId": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                "type": "string"
+              },
+              "changeProposalId": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                "type": "string"
+              },
+              "inputDigest": {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              "projectId": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                "type": "string"
+              },
+              "requestedAt": {
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                "type": "string"
+              },
+              "resourceEnvelope": {
+                "additionalProperties": false,
+                "properties": {
+                  "digest": {
+                    "pattern": "^[a-f0-9]{64}$",
+                    "type": "string"
+                  },
+                  "displayName": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "id": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+                    "type": "string"
+                  },
+                  "limits": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "maximumConcurrentAttempts": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "maximumCpuMillicores": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "maximumMemoryBytes": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "maximumProcesses": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "maximumWritableDiskBytes": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "maximumMemoryBytes",
+                      "maximumProcesses",
+                      "maximumWritableDiskBytes",
+                      "maximumCpuMillicores",
+                      "maximumConcurrentAttempts"
+                    ],
+                    "type": "object"
+                  },
+                  "terminalBoundary": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "onExhaustion": {
+                        "const": "partial_or_failed",
+                        "type": "string"
+                      },
+                      "requiresUncoveredAreaDisclosure": {
+                        "const": true,
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "onExhaustion",
+                      "requiresUncoveredAreaDisclosure"
+                    ],
+                    "type": "object"
+                  },
+                  "version": {
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "id",
+                  "version",
+                  "displayName",
+                  "limits",
+                  "terminalBoundary",
+                  "digest"
+                ],
+                "type": "object"
+              },
+              "reviewRevisionId": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                "type": "string"
+              },
+              "state": {
+                "const": "queued",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "projectId",
+              "changeProposalId",
+              "reviewRevisionId",
+              "changeIntentId",
+              "inputDigest",
+              "analysisConfiguration",
+              "authority",
+              "resourceEnvelope",
+              "state",
+              "requestedAt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "workflow"
+        ],
+        "type": "object"
+      },
       "Session": {
         "additionalProperties": false,
         "properties": {
@@ -8780,6 +10026,19 @@
           "credentialVersion",
           "issuedAt",
           "expiresAt"
+        ],
+        "type": "object"
+      },
+      "StartReviewWorkflowCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "preparationDigest": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "preparationDigest"
         ],
         "type": "object"
       },
@@ -9695,6 +10954,230 @@
               }
             },
             "description": "The Change Intent version could not be created atomically"
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/change-proposals/{changeProposalId}/review-preparation": {
+      "get": {
+        "description": "Reads the exact retained Review inputs and all blockers without starting work or refreshing any source.",
+        "operationId": "readReviewPreparation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "changeProposalId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewPreparation"
+                }
+              }
+            },
+            "description": "Current exact Review preparation and blockers"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Invalid Project or Change Proposal identity"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Operator authentication is required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Project or Change Proposal is unavailable"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Review preparation storage is unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/change-proposals/{changeProposalId}/review-workflows": {
+      "post": {
+        "description": "Transactionally rechecks and freezes the exact inputs identified by a server-issued preparation digest.",
+        "operationId": "startReviewWorkflow",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Origin",
+            "required": true,
+            "schema": {
+              "format": "uri",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Kestrel-CSRF",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "changeProposalId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartReviewWorkflowCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewWorkflowAccepted"
+                }
+              }
+            },
+            "description": "Review Workflow inputs frozen and queued"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Invalid Review command"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Operator authentication is required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Origin or CSRF validation failed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Project or Change Proposal is unavailable"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Review inputs are blocked or changed after preparation"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The command payload is too large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The command media type is unsupported"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Review Workflow could not be started atomically"
           }
         }
       }

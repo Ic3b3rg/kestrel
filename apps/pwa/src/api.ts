@@ -9,6 +9,7 @@ import {
   EventCursorSchema,
   InstallationEventSchema,
   InstallationSnapshotSchema,
+  KestrelIdSchema,
   HostGitHubProjectInboxSchema,
   ObserveHostGitHubPullRequestCommandSchema,
   LoginCommandSchema,
@@ -18,11 +19,14 @@ import {
   ProjectInboxSchema,
   ProjectUpsertedSchema,
   RetainReviewRevisionCommandSchema,
+  ReviewPreparationSchema,
   ReviewRevisionAvailableSchema,
+  ReviewWorkflowAcceptedSchema,
   serializeCredentialChangeCommand,
   SessionSchema,
   StepUpCommandSchema,
   StepUpProofSchema,
+  StartReviewWorkflowCommandSchema,
   type ApiError,
   type ChangeIntentVersionCreated,
   type CreateChangeIntentVersionCommand,
@@ -40,7 +44,10 @@ import {
   type ProjectUpserted,
   type RetainReviewRevisionCommand,
   type ReviewRevisionAvailable,
+  type ReviewPreparation,
+  type ReviewWorkflowAccepted,
   type Session,
+  type StartReviewWorkflowCommand,
 } from "@kestrel/contracts";
 
 const RECONNECT_DELAYS_MS = [250, 500, 1_000, 2_000, 5_000] as const;
@@ -166,6 +173,47 @@ export async function fetchProjectInbox(signal?: AbortSignal): Promise<ProjectIn
     signal: signal ?? null,
   });
   return requireJson(response, ProjectInboxSchema, "Project inbox");
+}
+
+export async function fetchReviewPreparation(
+  projectId: string,
+  changeProposalId: string,
+  signal?: AbortSignal,
+): Promise<ReviewPreparation> {
+  const validatedProjectId = KestrelIdSchema.parse(projectId);
+  const validatedProposalId = KestrelIdSchema.parse(changeProposalId);
+  const response = await fetch(
+    `/api/v1/projects/${encodeURIComponent(validatedProjectId)}/change-proposals/${encodeURIComponent(validatedProposalId)}/review-preparation`,
+    {
+      credentials: "same-origin",
+      headers: { Accept: "application/json" },
+      method: "GET",
+      signal: signal ?? null,
+    },
+  );
+  return requireJson(response, ReviewPreparationSchema, "Review preparation");
+}
+
+export async function startReviewWorkflow(
+  projectId: string,
+  changeProposalId: string,
+  command: StartReviewWorkflowCommand,
+  signal?: AbortSignal,
+): Promise<ReviewWorkflowAccepted> {
+  const validatedProjectId = KestrelIdSchema.parse(projectId);
+  const validatedProposalId = KestrelIdSchema.parse(changeProposalId);
+  const validatedCommand = StartReviewWorkflowCommandSchema.parse(command);
+  const response = await fetch(
+    `/api/v1/projects/${encodeURIComponent(validatedProjectId)}/change-proposals/${encodeURIComponent(validatedProposalId)}/review-workflows`,
+    {
+      body: JSON.stringify(validatedCommand),
+      credentials: "same-origin",
+      headers: authenticatedMutationHeaders(),
+      method: "POST",
+      signal: signal ?? null,
+    },
+  );
+  return requireJson(response, ReviewWorkflowAcceptedSchema, "Review Workflow response");
 }
 
 export async function createChangeIntentVersion(

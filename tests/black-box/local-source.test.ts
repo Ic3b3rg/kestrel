@@ -7,11 +7,14 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
   ApiErrorSchema,
+  ChangeIntentVersionCreatedSchema,
   LocalRepositoryInventorySchema,
   LocalRepositoryReferencesSchema,
   ProjectInboxSchema,
   ProjectUpsertedSchema,
   ReviewRevisionAvailableSchema,
+  ReviewPreparationSchema,
+  ReviewWorkflowAcceptedSchema,
   type ProjectUpserted,
   type ReviewRevisionAvailable,
 } from "@kestrel/contracts";
@@ -460,7 +463,7 @@ describe("exact local Review Revision", () => {
             "has_table_privilege(current_user, 'public.' || table_name, 'UPDATE') AS can_update, " +
             "has_table_privilege(current_user, 'public.' || table_name, 'DELETE') AS can_delete " +
             "FROM unnest(ARRAY['projects','change_proposals','local_repository_sources'," +
-            "'change_intents','review_revisions']) AS table_name ORDER BY table_name"
+            "'change_intents','review_revisions','review_workflows']) AS table_name ORDER BY table_name"
           );
           process.stdout.write(JSON.stringify(result.rows));
         } finally {
@@ -477,15 +480,20 @@ describe("exact local Review Revision", () => {
         can_update: false,
         can_delete: false,
       },
-      ...["change_proposals", "local_repository_sources", "projects", "review_revisions"].map(
-        (table_name) => ({
-          table_name,
-          can_select: true,
-          can_insert: true,
-          can_update: true,
-          can_delete: false,
-        }),
-      ),
+      ...["change_proposals", "local_repository_sources", "projects"].map((table_name) => ({
+        table_name,
+        can_select: true,
+        can_insert: true,
+        can_update: true,
+        can_delete: false,
+      })),
+      ...["review_revisions", "review_workflows"].map((table_name) => ({
+        table_name,
+        can_select: true,
+        can_insert: true,
+        can_update: table_name === "review_revisions",
+        can_delete: false,
+      })),
     ]);
   });
 
@@ -636,6 +644,393 @@ describe("exact local Review Revision", () => {
       expect(webLogs).not.toContain(secret);
     }
   });
+
+  it("rechecks and freezes a prepared Review digest in one database transaction", async () => {
+    if (stack === undefined || available === undefined) {
+      throw new Error("Prepared Review integration fixture is unavailable");
+    }
+    const retained = available;
+    const inbox = ProjectInboxSchema.parse(await (await stack.fetchApi("/api/v1/projects")).json());
+    const project = inbox.projects.find(({ id }) => id === retained.project.id);
+    const proposal = project?.changeProposals.find(({ id }) => id === retained.changeProposal.id);
+    if (project === undefined || proposal === undefined) {
+      throw new Error("Prepared Review Project is unavailable");
+    }
+    const intentResponse = await stack.fetchApi(
+      `/api/v1/projects/${project.id}/change-proposals/${proposal.id}/change-intents`,
+      {
+        body: JSON.stringify({
+          acceptanceOutcomes: ["Only the exact retained revision is reviewed."],
+          expectedProposalVersion: proposal.version,
+          objective: "Review the retained authorization boundary.",
+          operatorInput: "Review the retained authorization boundary.",
+          scopeBoundaries: ["Do not add provider write authority."],
+          selectedSourceIds: [],
+          unresolvedIssues: [],
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      },
+    );
+    expect(intentResponse.status).toBe(201);
+    const createdIntent = ChangeIntentVersionCreatedSchema.parse(await intentResponse.json());
+
+    const result = JSON.parse(
+      await stack.executeWebModule(`
+        import {
+          createPool,
+          readReviewPreparation,
+          startReviewWorkflow
+        } from '@kestrel/database';
+        const pool = createPool(process.env.DATABASE_URL, 'kestrel-review-workflow-test');
+        const profile = {
+          analysisConfiguration: {
+            id: '018f0f89-a45f-79af-8544-650e9f15c211',
+            version: 1,
+            displayName: 'Direct API review profile',
+            modelRoute: 'direct_api',
+            digest: '${"d".repeat(64)}'
+          },
+          modelRouteAvailability: 'available',
+          resourceEnvelope: {
+            id: 'review-first-v1-default',
+            version: 1,
+            displayName: 'Review First V1 default envelope',
+            limits: {
+              maximumMemoryBytes: 1073741824,
+              maximumProcesses: 64,
+              maximumWritableDiskBytes: 2147483648,
+              maximumCpuMillicores: 1000,
+              maximumConcurrentAttempts: 1
+            },
+            terminalBoundary: {
+              onExhaustion: 'partial_or_failed',
+              requiresUncoveredAreaDisclosure: true
+            },
+            digest: '${"e".repeat(64)}'
+          }
+        };
+        try {
+          const actor = await pool.query('SELECT id FROM operators ORDER BY created_at LIMIT 1');
+          const input = {
+            actorId: actor.rows[0].id,
+            changeProposalId: ${JSON.stringify(proposal.id)},
+            projectId: ${JSON.stringify(project.id)}
+          };
+          const preparation = await readReviewPreparation(pool, input, profile);
+          const accepted = await startReviewWorkflow(pool, {
+            ...input,
+            command: { preparationDigest: preparation.preparationDigest },
+            correlationId: '0c14b018-0260-4aa0-a5e9-61d212b948ce'
+          }, profile);
+          const repeated = await startReviewWorkflow(pool, {
+            ...input,
+            command: { preparationDigest: preparation.preparationDigest },
+            correlationId: '0c14b018-0260-4aa0-a5e9-61d212b948ce'
+          }, profile);
+          let conflictCode = null;
+          try {
+            await startReviewWorkflow(pool, {
+              ...input,
+              command: { preparationDigest: '${"f".repeat(64)}' },
+              correlationId: '0c14b018-0260-4aa0-a5e9-61d212b948ce'
+            }, profile);
+          } catch (error) {
+            conflictCode = error?.code ?? null;
+          }
+          const persisted = await pool.query(
+            'SELECT review_revision_id, change_intent_id, input_digest, analysis_configuration, authority, resource_envelope, workflow_state FROM review_workflows WHERE id = $1',
+            [accepted.workflow.id]
+          );
+          const count = await pool.query('SELECT count(*)::int AS count FROM review_workflows');
+          const auditCount = await pool.query(
+            "SELECT count(*)::int AS count FROM installation_audit_records WHERE event_type = 'review_workflow.started' AND target_id = $1",
+            [accepted.workflow.id]
+          );
+          process.stdout.write(JSON.stringify({
+            accepted,
+            auditCount: auditCount.rows[0].count,
+            conflictCode,
+            count: count.rows[0].count,
+            persisted: persisted.rows[0],
+            preparation,
+            repeated
+          }));
+        } finally {
+          await pool.end();
+        }
+      `),
+    ) as {
+      accepted: unknown;
+      auditCount: number;
+      conflictCode: string | null;
+      count: number;
+      persisted: Record<string, unknown>;
+      preparation: unknown;
+      repeated: unknown;
+    };
+    const preparation = ReviewPreparationSchema.parse(result.preparation);
+    const accepted = ReviewWorkflowAcceptedSchema.parse(result.accepted);
+    const repeated = ReviewWorkflowAcceptedSchema.parse(result.repeated);
+
+    expect(preparation).toMatchObject({
+      readiness: "ready",
+      blockers: [],
+      changeIntent: { id: createdIntent.changeIntent.id },
+      reviewRevision: { id: retained.reviewRevision.id },
+    });
+    expect(accepted.workflow).toMatchObject({
+      inputDigest: preparation.preparationDigest,
+      state: "queued",
+    });
+    expect(result.persisted).toMatchObject({
+      review_revision_id: retained.reviewRevision.id,
+      change_intent_id: createdIntent.changeIntent.id,
+      input_digest: preparation.preparationDigest,
+      analysis_configuration: accepted.workflow.analysisConfiguration,
+      authority: accepted.workflow.authority,
+      resource_envelope: accepted.workflow.resourceEnvelope,
+      workflow_state: "queued",
+    });
+    expect(result.conflictCode).toBe("preparation_conflict");
+    expect(repeated.workflow.id).toBe(accepted.workflow.id);
+    expect(result.auditCount).toBe(1);
+    expect(result.count).toBe(1);
+    await expect(
+      stack.executeSql(`
+        UPDATE review_workflows
+        SET input_digest = '${"0".repeat(64)}'
+        WHERE id = '${accepted.workflow.id}';
+      `),
+    ).rejects.toThrow();
+  });
+
+  async function exerciseAliasedReviewWorkflow(): Promise<void> {
+    if (stack === undefined || available === undefined) {
+      throw new Error("Aliased Review input fixture is unavailable");
+    }
+    const retained = available;
+    const localSourceId = retained.project.localRepositorySource?.id;
+    if (localSourceId === undefined) throw new Error("Local source fixture is unavailable");
+
+    const result = JSON.parse(
+      await stack.executeWebModule(`
+        import {
+          createPool,
+          readReviewPreparation,
+          startReviewWorkflow
+        } from '@kestrel/database';
+        const pool = createPool(process.env.DATABASE_URL, 'kestrel-aliased-review-workflow-test');
+        const profile = {
+          analysisConfiguration: {
+            id: '018f0f89-a45f-79af-8544-650e9f15c211',
+            version: 1,
+            displayName: 'Direct API review profile',
+            modelRoute: 'direct_api',
+            digest: '${"d".repeat(64)}'
+          },
+          modelRouteAvailability: 'available',
+          resourceEnvelope: {
+            id: 'review-first-v1-default',
+            version: 1,
+            displayName: 'Review First V1 default envelope',
+            limits: {
+              maximumMemoryBytes: 1073741824,
+              maximumProcesses: 64,
+              maximumWritableDiskBytes: 2147483648,
+              maximumCpuMillicores: 1000,
+              maximumConcurrentAttempts: 1
+            },
+            terminalBoundary: {
+              onExhaustion: 'partial_or_failed',
+              requiresUncoveredAreaDisclosure: true
+            },
+            digest: '${"e".repeat(64)}'
+          }
+        };
+        try {
+          const actor = await pool.query('SELECT id FROM operators ORDER BY created_at LIMIT 1');
+          const alias = await pool.query(
+            "INSERT INTO change_proposals (project_id, proposal_kind, " +
+            "canonical_change_proposal_id, title_snapshot, base_ref_snapshot, base_object_id, " +
+            "head_ref_snapshot, head_object_id, observed_at) " +
+            "VALUES ($1, 'alias', $2, 'Aliased retained Review inputs', $3, $4, $5, $6, NULL) " +
+            "RETURNING id",
+            [
+              ${JSON.stringify(retained.project.id)},
+              ${JSON.stringify(retained.changeProposal.id)},
+              ${JSON.stringify(retained.reviewRevision.base.ref)},
+              ${JSON.stringify(retained.reviewRevision.base.objectId)},
+              ${JSON.stringify(retained.reviewRevision.head.ref)},
+              ${JSON.stringify(retained.reviewRevision.head.objectId)}
+            ]
+          );
+          const intent = await pool.query(
+            "INSERT INTO change_intents (change_proposal_id, version, intent_text, " +
+            "submitted_by_operator_id, objective, scope_boundaries, acceptance_outcomes, " +
+            "selected_sources, source_digest, resolution_state, resolution_issues) " +
+            "VALUES ($1, 99, 'Review aliased retained inputs.', $2, " +
+            "'Review aliased retained inputs.', $3::jsonb, $4::jsonb, $5::jsonb, $6, " +
+            "'resolved', '[]'::jsonb) RETURNING id",
+            [
+              alias.rows[0].id,
+              actor.rows[0].id,
+              JSON.stringify(['Keep the alias inside its canonical proposal family.']),
+              JSON.stringify(['Freeze the exact aliased revision and intent.']),
+              JSON.stringify([{
+                id: 'operator_input',
+                kind: 'operator_input',
+                label: 'Operator input',
+                text: 'Review aliased retained inputs.',
+                version: '99',
+                provenance: { kind: 'operator_input' }
+              }]),
+              '${"c".repeat(64)}'
+            ]
+          );
+          const revisionIdentity = await pool.query('SELECT uuidv7() AS id');
+          const revisionId = revisionIdentity.rows[0].id;
+          await pool.query(
+            "INSERT INTO review_revisions (id, project_id, change_proposal_id, " +
+            "local_repository_source_id, acquisition_change_intent_id, revision_state, " +
+            "base_ref_snapshot, base_object_id, head_ref_snapshot, head_object_id, object_format, " +
+            "max_bytes, max_objects, object_count, retained_bytes, artifact_locator, " +
+            "manifest_digest, available_at) VALUES ($1, $2, $3, $4, $5, 'available', " +
+            "$6, $7, $8, $9, 'sha1', 1048576, 1000, 7, 4096, $10, $11, clock_timestamp())",
+            [
+              revisionId,
+              ${JSON.stringify(retained.project.id)},
+              alias.rows[0].id,
+              ${JSON.stringify(localSourceId)},
+              intent.rows[0].id,
+              ${JSON.stringify(retained.reviewRevision.base.ref)},
+              ${JSON.stringify(retained.reviewRevision.base.objectId)},
+              ${JSON.stringify(retained.reviewRevision.head.ref)},
+              ${JSON.stringify(retained.reviewRevision.head.objectId)},
+              'projects/${retained.project.id}/revisions/' + revisionId,
+              '${"a".repeat(64)}'
+            ]
+          );
+          const input = {
+            actorId: actor.rows[0].id,
+            changeProposalId: ${JSON.stringify(retained.changeProposal.id)},
+            projectId: ${JSON.stringify(retained.project.id)}
+          };
+          const preparation = await readReviewPreparation(pool, input, profile);
+          const accepted = await startReviewWorkflow(pool, {
+            ...input,
+            command: { preparationDigest: preparation.preparationDigest },
+            correlationId: '0c14b018-0260-4aa0-a5e9-61d212b948cf'
+          }, profile);
+          const unrelatedProposal = await pool.query(
+            "INSERT INTO change_proposals (project_id, proposal_kind, title_snapshot, " +
+            "base_ref_snapshot, base_object_id, head_ref_snapshot, head_object_id, observed_at) " +
+            "VALUES ($1, 'local', 'Unrelated Review input family', 'refs/heads/main', $2, " +
+            "'refs/heads/review', $3, NULL) RETURNING id",
+            [${JSON.stringify(retained.project.id)}, '7'.repeat(40), '8'.repeat(40)]
+          );
+          const unrelatedIntent = await pool.query(
+            "INSERT INTO change_intents (change_proposal_id, version, intent_text, " +
+            "submitted_by_operator_id, objective, scope_boundaries, acceptance_outcomes, " +
+            "selected_sources, source_digest, resolution_state, resolution_issues) " +
+            "VALUES ($1, 1, 'Unrelated Review intent.', $2, 'Unrelated Review intent.', " +
+            "$3::jsonb, $4::jsonb, $5::jsonb, $6, 'resolved', '[]'::jsonb) RETURNING id",
+            [
+              unrelatedProposal.rows[0].id,
+              actor.rows[0].id,
+              JSON.stringify(['Stay outside the prepared proposal family.']),
+              JSON.stringify(['Reject cross-family Review input binding.']),
+              JSON.stringify([{
+                id: 'operator_input',
+                kind: 'operator_input',
+                label: 'Operator input',
+                text: 'Unrelated Review intent.',
+                version: '1',
+                provenance: { kind: 'operator_input' }
+              }]),
+              '${"b".repeat(64)}'
+            ]
+          );
+          let crossFamilyError = { code: null, constraint: null };
+          try {
+            await pool.query(
+              "INSERT INTO review_workflows (project_id, change_proposal_id, " +
+              "review_revision_id, change_intent_id, requested_by_operator_id, input_digest, " +
+              "analysis_configuration, authority, resource_envelope, workflow_state) " +
+              "VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb, 'queued')",
+              [
+                ${JSON.stringify(retained.project.id)},
+                ${JSON.stringify(retained.changeProposal.id)},
+                revisionId,
+                unrelatedIntent.rows[0].id,
+                actor.rows[0].id,
+                '${"9".repeat(64)}',
+                JSON.stringify(profile.analysisConfiguration),
+                JSON.stringify({
+                  action: 'start_review',
+                  operatorId: actor.rows[0].id,
+                  state: 'available'
+                }),
+                JSON.stringify(profile.resourceEnvelope)
+              ]
+            );
+          } catch (error) {
+            crossFamilyError = {
+              code: error?.code ?? null,
+              constraint: error?.constraint ?? null
+            };
+          }
+          const persisted = await pool.query(
+            'SELECT change_proposal_id, review_revision_id, change_intent_id ' +
+            'FROM review_workflows WHERE id = $1',
+            [accepted.workflow.id]
+          );
+          process.stdout.write(JSON.stringify({
+            accepted,
+            aliasId: alias.rows[0].id,
+            crossFamilyError,
+            intentId: intent.rows[0].id,
+            persisted: persisted.rows[0],
+            preparation,
+            revisionId
+          }));
+        } finally {
+          await pool.end();
+        }
+      `),
+    ) as {
+      accepted: unknown;
+      aliasId: string;
+      crossFamilyError: { code: string | null; constraint: string | null };
+      intentId: string;
+      persisted: Record<string, unknown>;
+      preparation: unknown;
+      revisionId: string;
+    };
+    const preparation = ReviewPreparationSchema.parse(result.preparation);
+    const accepted = ReviewWorkflowAcceptedSchema.parse(result.accepted);
+
+    expect(preparation).toMatchObject({
+      changeProposalId: retained.changeProposal.id,
+      reviewRevision: { id: result.revisionId },
+      changeIntent: { id: result.intentId },
+      readiness: "ready",
+    });
+    expect(accepted.workflow).toMatchObject({
+      changeProposalId: retained.changeProposal.id,
+      reviewRevisionId: result.revisionId,
+      changeIntentId: result.intentId,
+    });
+    expect(result.persisted).toEqual({
+      change_proposal_id: retained.changeProposal.id,
+      review_revision_id: result.revisionId,
+      change_intent_id: result.intentId,
+    });
+    expect(result.crossFamilyError).toEqual({
+      code: "23514",
+      constraint: "review_workflows_input_proposal_family",
+    });
+  }
 
   it("uses only the recorded Git allowlist and never invokes repository commands", async () => {
     if (stack === undefined) throw new Error("Local-source stack is unavailable");
@@ -1960,6 +2355,11 @@ describe("exact local Review Revision", () => {
       },
     });
   });
+
+  it(
+    "freezes revision and intent rows retained through a canonical proposal alias",
+    exerciseAliasedReviewWorkflow,
+  );
 });
 
 describe("observed GitHub pull request acquisition", () => {

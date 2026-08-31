@@ -173,6 +173,25 @@ test.describe("local-first Project flow", () => {
     await expect(page.getByText("Not observed", { exact: true })).toBeVisible();
     await expect(page.getByText("Not configured", { exact: true })).toBeVisible();
 
+    const preparation = page.getByRole("region", { name: "Review preparation" });
+    await preparation.getByRole("button", { name: "Prepare Review" }).click();
+    await expect(preparation.getByText(fixture.baseObjectId, { exact: true })).toBeVisible();
+    await expect(preparation.getByText(fixture.headObjectId, { exact: true })).toBeVisible();
+    await expect(preparation.getByText("Change Intent v1", { exact: true })).toBeVisible();
+    await expect(preparation.getByText("Change Intent is not resolved.")).toBeVisible();
+    await expect(preparation.getByText("Model route is not available.")).toBeVisible();
+    await expect(preparation.getByText("Resource Envelope is not available.")).toBeVisible();
+    await expect(preparation.getByRole("button", { name: "Start Review" })).toBeDisabled();
+    await stack.executeSql(`
+      DO $$
+      BEGIN
+        IF (SELECT count(*) FROM review_workflows) <> 0 THEN
+          RAISE EXCEPTION 'Review preparation created a workflow';
+        END IF;
+      END;
+      $$;
+    `);
+
     const accessibility = await new AxeBuilder({ page }).analyze();
     expect(accessibility.violations).toEqual([]);
     for (const viewport of [

@@ -12,6 +12,7 @@ import { OpenLocalRepositoryForm } from "./OpenLocalRepositoryForm.js";
 import { HostGitHubProjectPanel } from "./HostGitHubProjectPanel.js";
 import { AcquireObservedReviewRevisionForm } from "./AcquireObservedReviewRevisionForm.js";
 import { ChangeIntentEditor } from "./ChangeIntentEditor.js";
+import { ReviewPreparationPanel } from "./ReviewPreparationPanel.js";
 
 interface ProjectInboxPanelProps {
   error: string | null;
@@ -296,6 +297,13 @@ function ChangeProposalRecord({
           {...(onAuthenticationError === undefined ? {} : { onAuthenticationError })}
           onCreated={onIntentCreated}
         />
+        <ReviewPreparationPanel
+          key={`${changeProposal.id}:${String(changeProposal.version)}:${String(changeProposal.changeIntent.version)}:${revision?.id ?? "none"}:${revision?.state ?? "none"}`}
+          disabled={disabled}
+          projectId={projectId}
+          proposalId={changeProposal.id}
+          {...(onAuthenticationError === undefined ? {} : { onAuthenticationError })}
+        />
       </section>
     );
   }
@@ -376,6 +384,13 @@ function ChangeProposalRecord({
           onAvailable={onAvailable}
         />
       ) : null}
+      <ReviewPreparationPanel
+        key={`${changeProposal.id}:${String(changeProposal.version)}:${String(changeProposal.changeIntent?.version ?? 0)}:${revision?.id ?? "none"}:${revision?.state ?? "none"}`}
+        disabled={disabled}
+        projectId={projectId}
+        proposalId={changeProposal.id}
+        {...(onAuthenticationError === undefined ? {} : { onAuthenticationError })}
+      />
     </section>
   );
 }

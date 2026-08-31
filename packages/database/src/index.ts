@@ -18,5 +18,6 @@ export * from "./rate-limits.js";
 export * from "./pg-boss.js";
 export * from "./projects.js";
 export * from "./review-revisions.js";
+export * from "./review-workflows.js";
 export { createPool, type CreatePoolOptions, type DatabasePool } from "./pool.js";
 export { verifyDatabaseReadiness } from "./readiness.js";

@@ -21,8 +21,11 @@ import {
   ProjectInboxSchema,
   ProjectUpsertedSchema,
   RetainReviewRevisionCommandSchema,
+  ReviewPreparationSchema,
   ReviewRevisionAvailableSchema,
+  ReviewWorkflowAcceptedSchema,
   SessionSchema,
+  StartReviewWorkflowCommandSchema,
   StepUpCommandSchema,
   StepUpProofSchema,
 } from "./v1.js";
@@ -97,6 +100,9 @@ export const retainReviewRevisionCommandJsonSchema = asJsonSchema(
   RetainReviewRevisionCommandSchema,
 );
 export const reviewRevisionAvailableJsonSchema = asJsonSchema(ReviewRevisionAvailableSchema);
+export const reviewPreparationJsonSchema = asJsonSchema(ReviewPreparationSchema);
+export const reviewWorkflowAcceptedJsonSchema = asJsonSchema(ReviewWorkflowAcceptedSchema);
+export const startReviewWorkflowCommandJsonSchema = asJsonSchema(StartReviewWorkflowCommandSchema);
 
 export const contractBundle = sortJson({
   $defs: {
@@ -123,6 +129,9 @@ export const contractBundle = sortJson({
     LocalRepositoryReferences: asComponentSchema(localRepositoryReferencesJsonSchema),
     RetainReviewRevisionCommand: asComponentSchema(retainReviewRevisionCommandJsonSchema),
     ReviewRevisionAvailable: asComponentSchema(reviewRevisionAvailableJsonSchema),
+    ReviewPreparation: asComponentSchema(reviewPreparationJsonSchema),
+    ReviewWorkflowAccepted: asComponentSchema(reviewWorkflowAcceptedJsonSchema),
+    StartReviewWorkflowCommand: asComponentSchema(startReviewWorkflowCommandJsonSchema),
     Session: asComponentSchema(sessionJsonSchema),
     StepUpCommand: asComponentSchema(stepUpCommandJsonSchema),
     StepUpProof: asComponentSchema(stepUpProofJsonSchema),
@@ -198,6 +207,9 @@ export const openApiDocument = sortJson({
       LocalRepositoryReferences: asComponentSchema(localRepositoryReferencesJsonSchema),
       RetainReviewRevisionCommand: asComponentSchema(retainReviewRevisionCommandJsonSchema),
       ReviewRevisionAvailable: asComponentSchema(reviewRevisionAvailableJsonSchema),
+      ReviewPreparation: asComponentSchema(reviewPreparationJsonSchema),
+      ReviewWorkflowAccepted: asComponentSchema(reviewWorkflowAcceptedJsonSchema),
+      StartReviewWorkflowCommand: asComponentSchema(startReviewWorkflowCommandJsonSchema),
       Session: asComponentSchema(sessionJsonSchema),
       StepUpCommand: asComponentSchema(stepUpCommandJsonSchema),
       StepUpProof: asComponentSchema(stepUpProofJsonSchema),
@@ -761,6 +773,117 @@ export const openApiDocument = sortJson({
           "500": {
             content: { "application/json": { schema: schemaReference("ApiError") } },
             description: "The Change Intent version could not be created atomically",
+          },
+        },
+      },
+    },
+    "/api/v1/projects/{projectId}/change-proposals/{changeProposalId}/review-preparation": {
+      get: {
+        description:
+          "Reads the exact retained Review inputs and all blockers without starting work or refreshing any source.",
+        operationId: "readReviewPreparation",
+        parameters: [
+          {
+            in: "path",
+            name: "projectId",
+            required: true,
+            schema: { format: "uuid", type: "string" },
+          },
+          {
+            in: "path",
+            name: "changeProposalId",
+            required: true,
+            schema: { format: "uuid", type: "string" },
+          },
+        ],
+        responses: {
+          "200": {
+            content: { "application/json": { schema: schemaReference("ReviewPreparation") } },
+            description: "Current exact Review preparation and blockers",
+          },
+          "400": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Invalid Project or Change Proposal identity",
+          },
+          "401": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Operator authentication is required",
+          },
+          "404": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Project or Change Proposal is unavailable",
+          },
+          "503": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Review preparation storage is unavailable",
+          },
+        },
+      },
+    },
+    "/api/v1/projects/{projectId}/change-proposals/{changeProposalId}/review-workflows": {
+      post: {
+        description:
+          "Transactionally rechecks and freezes the exact inputs identified by a server-issued preparation digest.",
+        operationId: "startReviewWorkflow",
+        parameters: [
+          ...authenticatedMutationHeaders(false),
+          {
+            in: "path",
+            name: "projectId",
+            required: true,
+            schema: { format: "uuid", type: "string" },
+          },
+          {
+            in: "path",
+            name: "changeProposalId",
+            required: true,
+            schema: { format: "uuid", type: "string" },
+          },
+        ],
+        requestBody: {
+          content: {
+            "application/json": { schema: schemaReference("StartReviewWorkflowCommand") },
+          },
+          required: true,
+        },
+        responses: {
+          "202": {
+            content: {
+              "application/json": { schema: schemaReference("ReviewWorkflowAccepted") },
+            },
+            description: "Review Workflow inputs frozen and queued",
+          },
+          "400": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Invalid Review command",
+          },
+          "401": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Operator authentication is required",
+          },
+          "403": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Origin or CSRF validation failed",
+          },
+          "404": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Project or Change Proposal is unavailable",
+          },
+          "409": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Review inputs are blocked or changed after preparation",
+          },
+          "413": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "The command payload is too large",
+          },
+          "415": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "The command media type is unsupported",
+          },
+          "500": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "The Review Workflow could not be started atomically",
           },
         },
       },
