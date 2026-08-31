@@ -79,6 +79,7 @@ export type RetainedChangeOverviewWarning =
 
 export interface RetainedChangeOverviewFacts {
   ruleVersion: 1;
+  commitStatistics: { baseTreeFileCount: number; headTreeFileCount: number };
   fileStatistics: { added: number; modified: number; deleted: number; total: number };
   changedFiles: RetainedChangeOverviewFile[];
   pathAreas: Array<{
@@ -138,11 +139,10 @@ function isGitLfsPointer(object: RawGitObject | undefined): boolean {
   );
 }
 
-function buildChangeOverviewFacts(
+function collectChangeOverviewChanges(
   baseEntries: readonly ManifestEntry[],
   headEntries: readonly ManifestEntry[],
-  objects: ReadonlyMap<string, RawGitObject>,
-): RetainedChangeOverviewFacts {
+) {
   const filesByPath = (entries: readonly ManifestEntry[]) =>
     new Map(entries.filter(({ type }) => type !== "tree").map((entry) => [entry.path, entry]));
   const baseByPath = filesByPath(baseEntries);
@@ -176,6 +176,18 @@ function buildChangeOverviewFacts(
       status,
     });
   }
+  return { baseByPath, changes, fileStatistics, headByPath };
+}
+
+function buildChangeOverviewFacts(
+  baseEntries: readonly ManifestEntry[],
+  headEntries: readonly ManifestEntry[],
+  objects: ReadonlyMap<string, RawGitObject>,
+): RetainedChangeOverviewFacts {
+  const { baseByPath, changes, fileStatistics, headByPath } = collectChangeOverviewChanges(
+    baseEntries,
+    headEntries,
+  );
 
   const pathsByArea = new Map<string | null, string[]>();
   for (const { path } of changes) {
@@ -236,6 +248,10 @@ function buildChangeOverviewFacts(
 
   return {
     ruleVersion: 1,
+    commitStatistics: {
+      baseTreeFileCount: baseByPath.size,
+      headTreeFileCount: headByPath.size,
+    },
     fileStatistics,
     changedFiles: changes.slice(0, MAX_OVERVIEW_CHANGED_FILES),
     pathAreas: allPathAreas.slice(0, MAX_OVERVIEW_PATH_AREAS),
@@ -248,6 +264,11 @@ export interface ReadRetainedFileInput {
   manifestDigest: string;
   path: string;
   side: "base" | "head";
+}
+
+export interface ReadRetainedChangeOverviewFactsInput {
+  artifactLocator: string;
+  manifestDigest: string;
 }
 
 function throwIfCancelled(signal?: AbortSignal): void {
@@ -822,23 +843,10 @@ function parseManifest(value: unknown): RevisionManifest {
   };
 }
 
-function validateRequestedPath(path: string): void {
-  const segments = path.split("/");
-  if (
-    path === "" ||
-    path.startsWith("/") ||
-    Buffer.byteLength(path, "utf8") > 4096 ||
-    segments.some((segment) => segment === "" || segment === "." || segment === "..")
-  ) {
-    throw new LocalSourceError("path_not_retained");
-  }
-}
-
-export async function readRetainedFile(
+async function readRetainedManifest(
   config: LocalSourceConfig,
-  input: ReadRetainedFileInput,
-): Promise<Buffer> {
-  validateRequestedPath(input.path);
+  input: ReadRetainedChangeOverviewFactsInput,
+): Promise<{ manifest: RevisionManifest; revisionRoot: string }> {
   if (!/^[a-f0-9]{64}$/u.test(input.manifestDigest)) {
     throw new LocalSourceError("object_verification_failed");
   }
@@ -880,16 +888,19 @@ export async function readRetainedFile(
   } catch {
     throw new LocalSourceError("object_verification_failed");
   }
-  const manifest = parseManifest(parsed);
-  const entry = manifest[input.side].entries.find(({ path }) => path === input.path);
-  if (entry === undefined || entry.type !== "blob") {
-    throw new LocalSourceError("path_not_retained");
-  }
-  const objectMetadata = manifest.objects.find(({ id }) => id === entry.objectId);
-  if (objectMetadata === undefined || objectMetadata.type !== "blob") {
+  return { manifest: parseManifest(parsed), revisionRoot };
+}
+
+async function readRetainedObject(
+  revisionRoot: string,
+  manifest: RevisionManifest,
+  objectId: string,
+): Promise<RawGitObject> {
+  const objectMetadata = manifest.objects.find(({ id }) => id === objectId);
+  if (objectMetadata === undefined) {
     throw new LocalSourceError("object_verification_failed");
   }
-  const retainedPath = objectPath(revisionRoot, entry.objectId);
+  const retainedPath = objectPath(revisionRoot, objectId);
   const retainedMetadata = await lstat(retainedPath).catch(() => {
     throw new LocalSourceError("object_verification_failed");
   });
@@ -900,14 +911,61 @@ export async function readRetainedFile(
   ) {
     throw new LocalSourceError("object_verification_failed");
   }
-  const content = await readFile(retainedPath);
-  verifyRawObject(manifest.objectFormat, {
-    content,
-    id: entry.objectId,
-    size: objectMetadata.size,
-    type: "blob",
-  });
-  return content;
+  const object = { ...objectMetadata, content: await readFile(retainedPath) };
+  verifyRawObject(manifest.objectFormat, object);
+  return object;
+}
+
+function validateRequestedPath(path: string): void {
+  const segments = path.split("/");
+  if (
+    path === "" ||
+    path.startsWith("/") ||
+    Buffer.byteLength(path, "utf8") > 4096 ||
+    segments.some((segment) => segment === "" || segment === "." || segment === "..")
+  ) {
+    throw new LocalSourceError("path_not_retained");
+  }
+}
+
+export async function readRetainedFile(
+  config: LocalSourceConfig,
+  input: ReadRetainedFileInput,
+): Promise<Buffer> {
+  validateRequestedPath(input.path);
+  const { manifest, revisionRoot } = await readRetainedManifest(config, input);
+  const entry = manifest[input.side].entries.find(({ path }) => path === input.path);
+  if (entry === undefined || entry.type !== "blob") {
+    throw new LocalSourceError("path_not_retained");
+  }
+  const object = await readRetainedObject(revisionRoot, manifest, entry.objectId);
+  if (object.type !== "blob") {
+    throw new LocalSourceError("object_verification_failed");
+  }
+  return object.content;
+}
+
+export async function readRetainedChangeOverviewFacts(
+  config: LocalSourceConfig,
+  input: ReadRetainedChangeOverviewFactsInput,
+): Promise<RetainedChangeOverviewFacts> {
+  const { manifest, revisionRoot } = await readRetainedManifest(config, input);
+  const { changes } = collectChangeOverviewChanges(manifest.base.entries, manifest.head.entries);
+  const blobObjectIds = new Set<string>();
+  for (const change of changes) {
+    for (const entry of [change.base, change.head]) {
+      if (entry?.type === "blob") blobObjectIds.add(entry.objectId);
+    }
+  }
+  const objects = new Map<string, RawGitObject>();
+  for (const objectId of blobObjectIds) {
+    const object = await readRetainedObject(revisionRoot, manifest, objectId);
+    if (object.type !== "blob") {
+      throw new LocalSourceError("object_verification_failed");
+    }
+    objects.set(objectId, object);
+  }
+  return buildChangeOverviewFacts(manifest.base.entries, manifest.head.entries, objects);
 }
 
 export async function quarantineUnattachedArtifact(

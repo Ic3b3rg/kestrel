@@ -593,6 +593,7 @@ describe("exact local Review Revision", () => {
       providerObservation: { title: "Retain a local Review Revision" },
       sourceFacts: {
         ruleVersion: 1,
+        commitStatistics: { baseTreeFileCount: 3, headTreeFileCount: 3 },
         fileStatistics: { added: 0, modified: 1, deleted: 0, total: 1 },
         changedFiles: [{ path: "review.txt", status: "modified" }],
         pathAreas: [{ pathPrefix: null, changedFileCount: 1, samplePaths: ["review.txt"] }],
@@ -604,6 +605,17 @@ describe("exact local Review Revision", () => {
     expect(JSON.stringify(available)).not.toContain("artifactLocator");
     expect(JSON.stringify(available)).not.toContain(fixture.repositoryPath);
 
+    await stack.executeSql(
+      `DELETE FROM change_overview_fact_manifests WHERE review_revision_id = '${available.reviewRevision.id}'`,
+    );
+    const preMigrationInbox = ProjectInboxSchema.parse(
+      await (await stack.fetchApi("/api/v1/projects")).json(),
+    );
+    expect(preMigrationInbox.projects[0]?.changeProposals[0]?.changeOverview).toMatchObject({
+      state: "unavailable",
+      reason: "facts_not_available",
+    });
+
     const repeated = await stack.fetchApi("/api/v1/review-revisions", {
       body: JSON.stringify(command),
       headers: { "Content-Type": "application/json" },
@@ -612,6 +624,13 @@ describe("exact local Review Revision", () => {
     expect(repeated.status).toBe(200);
     const repeatedAvailable = ReviewRevisionAvailableSchema.parse(await repeated.json());
     expect(repeatedAvailable.reviewRevision.id).toBe(available.reviewRevision.id);
+    expect(repeatedAvailable.changeProposal.changeOverview).toMatchObject({
+      state: "ready",
+      sourceFacts: {
+        commitStatistics: { baseTreeFileCount: 3, headTreeFileCount: 3 },
+        changedFiles: [{ path: "review.txt", status: "modified" }],
+      },
+    });
     const aliased = await stack.fetchApi("/api/v1/review-revisions", {
       body: JSON.stringify({
         ...command,

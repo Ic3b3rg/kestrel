@@ -17,8 +17,10 @@ import {
 } from "@kestrel/contracts";
 import {
   ReviewRevisionPersistenceError,
+  backfillChangeOverviewFacts,
   completeReviewRevision,
   failReviewRevision,
+  readChangeOverviewBackfillReference,
   readProject,
   withArtifactAcquisitionLock,
   withReviewRevisionAcquisitionLease,
@@ -322,15 +324,42 @@ export function createReviewRevisionService(
             }
             if (begun.outcome === "already_available") {
               try {
-                const project = await readProject(leasedPool, begun.projectId, begun.revision.id);
-                return {
-                  created: false,
-                  value: buildReviewRevisionResponse(
+                let project = await readProject(leasedPool, begun.projectId, begun.revision.id);
+                let value = buildReviewRevisionResponse(
+                  project,
+                  begun.changeProposalId,
+                  begun.changeIntent,
+                  begun.revision,
+                );
+                if (
+                  value.changeProposal.changeOverview?.state === "unavailable" &&
+                  value.changeProposal.changeOverview.reason === "facts_not_available"
+                ) {
+                  const reference = await readChangeOverviewBackfillReference(
+                    leasedPool,
+                    begun.revision.id,
+                  );
+                  if (reference !== null) {
+                    const changeOverviewFacts = await source.readChangeOverviewFacts(reference);
+                    await backfillChangeOverviewFacts(leasedPool, {
+                      actorId: context.actorId,
+                      ...reference,
+                      changeOverviewFacts,
+                      correlationId: context.correlationId,
+                      revisionId: begun.revision.id,
+                    });
+                  }
+                  project = await readProject(leasedPool, begun.projectId, begun.revision.id);
+                  value = buildReviewRevisionResponse(
                     project,
                     begun.changeProposalId,
                     begun.changeIntent,
                     begun.revision,
-                  ),
+                  );
+                }
+                return {
+                  created: false,
+                  value,
                 };
               } catch (error) {
                 throw new ObservedReviewRevisionError(

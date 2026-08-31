@@ -3257,6 +3257,26 @@
                                       "maxItems": 200,
                                       "type": "array"
                                     },
+                                    "commitStatistics": {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "baseTreeFileCount": {
+                                          "maximum": 9007199254740991,
+                                          "minimum": 0,
+                                          "type": "integer"
+                                        },
+                                        "headTreeFileCount": {
+                                          "maximum": 9007199254740991,
+                                          "minimum": 0,
+                                          "type": "integer"
+                                        }
+                                      },
+                                      "required": [
+                                        "baseTreeFileCount",
+                                        "headTreeFileCount"
+                                      ],
+                                      "type": "object"
+                                    },
                                     "fileStatistics": {
                                       "additionalProperties": false,
                                       "properties": {
@@ -3301,7 +3321,7 @@
                                           "pathPrefix": {
                                             "anyOf": [
                                               {
-                                                "maxLength": 255,
+                                                "maxLength": 4096,
                                                 "minLength": 1,
                                                 "type": "string"
                                               },
@@ -3417,6 +3437,7 @@
                                   },
                                   "required": [
                                     "ruleVersion",
+                                    "commitStatistics",
                                     "fileStatistics",
                                     "changedFiles",
                                     "pathAreas",
@@ -4890,6 +4911,26 @@
                                       "maxItems": 200,
                                       "type": "array"
                                     },
+                                    "commitStatistics": {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "baseTreeFileCount": {
+                                          "maximum": 9007199254740991,
+                                          "minimum": 0,
+                                          "type": "integer"
+                                        },
+                                        "headTreeFileCount": {
+                                          "maximum": 9007199254740991,
+                                          "minimum": 0,
+                                          "type": "integer"
+                                        }
+                                      },
+                                      "required": [
+                                        "baseTreeFileCount",
+                                        "headTreeFileCount"
+                                      ],
+                                      "type": "object"
+                                    },
                                     "fileStatistics": {
                                       "additionalProperties": false,
                                       "properties": {
@@ -4934,7 +4975,7 @@
                                           "pathPrefix": {
                                             "anyOf": [
                                               {
-                                                "maxLength": 255,
+                                                "maxLength": 4096,
                                                 "minLength": 1,
                                                 "type": "string"
                                               },
@@ -5050,6 +5091,7 @@
                                   },
                                   "required": [
                                     "ruleVersion",
+                                    "commitStatistics",
                                     "fileStatistics",
                                     "changedFiles",
                                     "pathAreas",
@@ -6792,6 +6834,26 @@
                                     "maxItems": 200,
                                     "type": "array"
                                   },
+                                  "commitStatistics": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "baseTreeFileCount": {
+                                        "maximum": 9007199254740991,
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "headTreeFileCount": {
+                                        "maximum": 9007199254740991,
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "baseTreeFileCount",
+                                      "headTreeFileCount"
+                                    ],
+                                    "type": "object"
+                                  },
                                   "fileStatistics": {
                                     "additionalProperties": false,
                                     "properties": {
@@ -6836,7 +6898,7 @@
                                         "pathPrefix": {
                                           "anyOf": [
                                             {
-                                              "maxLength": 255,
+                                              "maxLength": 4096,
                                               "minLength": 1,
                                               "type": "string"
                                             },
@@ -6952,6 +7014,7 @@
                                 },
                                 "required": [
                                   "ruleVersion",
+                                  "commitStatistics",
                                   "fileStatistics",
                                   "changedFiles",
                                   "pathAreas",
@@ -8425,6 +8488,26 @@
                                     "maxItems": 200,
                                     "type": "array"
                                   },
+                                  "commitStatistics": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "baseTreeFileCount": {
+                                        "maximum": 9007199254740991,
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "headTreeFileCount": {
+                                        "maximum": 9007199254740991,
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "baseTreeFileCount",
+                                      "headTreeFileCount"
+                                    ],
+                                    "type": "object"
+                                  },
                                   "fileStatistics": {
                                     "additionalProperties": false,
                                     "properties": {
@@ -8469,7 +8552,7 @@
                                         "pathPrefix": {
                                           "anyOf": [
                                             {
-                                              "maxLength": 255,
+                                              "maxLength": 4096,
                                               "minLength": 1,
                                               "type": "string"
                                             },
@@ -8585,6 +8668,7 @@
                                 },
                                 "required": [
                                   "ruleVersion",
+                                  "commitStatistics",
                                   "fileStatistics",
                                   "changedFiles",
                                   "pathAreas",
@@ -11726,6 +11810,26 @@
                               "maxItems": 200,
                               "type": "array"
                             },
+                            "commitStatistics": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "baseTreeFileCount": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "headTreeFileCount": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "baseTreeFileCount",
+                                "headTreeFileCount"
+                              ],
+                              "type": "object"
+                            },
                             "fileStatistics": {
                               "additionalProperties": false,
                               "properties": {
@@ -11770,7 +11874,7 @@
                                   "pathPrefix": {
                                     "anyOf": [
                                       {
-                                        "maxLength": 255,
+                                        "maxLength": 4096,
                                         "minLength": 1,
                                         "type": "string"
                                       },
@@ -11886,6 +11990,7 @@
                           },
                           "required": [
                             "ruleVersion",
+                            "commitStatistics",
                             "fileStatistics",
                             "changedFiles",
                             "pathAreas",
@@ -13359,6 +13464,26 @@
                               "maxItems": 200,
                               "type": "array"
                             },
+                            "commitStatistics": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "baseTreeFileCount": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "headTreeFileCount": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "baseTreeFileCount",
+                                "headTreeFileCount"
+                              ],
+                              "type": "object"
+                            },
                             "fileStatistics": {
                               "additionalProperties": false,
                               "properties": {
@@ -13403,7 +13528,7 @@
                                   "pathPrefix": {
                                     "anyOf": [
                                       {
-                                        "maxLength": 255,
+                                        "maxLength": 4096,
                                         "minLength": 1,
                                         "type": "string"
                                       },
@@ -13519,6 +13644,7 @@
                           },
                           "required": [
                             "ruleVersion",
+                            "commitStatistics",
                             "fileStatistics",
                             "changedFiles",
                             "pathAreas",
@@ -15079,6 +15205,26 @@
                                     "maxItems": 200,
                                     "type": "array"
                                   },
+                                  "commitStatistics": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "baseTreeFileCount": {
+                                        "maximum": 9007199254740991,
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "headTreeFileCount": {
+                                        "maximum": 9007199254740991,
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "baseTreeFileCount",
+                                      "headTreeFileCount"
+                                    ],
+                                    "type": "object"
+                                  },
                                   "fileStatistics": {
                                     "additionalProperties": false,
                                     "properties": {
@@ -15123,7 +15269,7 @@
                                         "pathPrefix": {
                                           "anyOf": [
                                             {
-                                              "maxLength": 255,
+                                              "maxLength": 4096,
                                               "minLength": 1,
                                               "type": "string"
                                             },
@@ -15239,6 +15385,7 @@
                                 },
                                 "required": [
                                   "ruleVersion",
+                                  "commitStatistics",
                                   "fileStatistics",
                                   "changedFiles",
                                   "pathAreas",
@@ -16712,6 +16859,26 @@
                                     "maxItems": 200,
                                     "type": "array"
                                   },
+                                  "commitStatistics": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "baseTreeFileCount": {
+                                        "maximum": 9007199254740991,
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "headTreeFileCount": {
+                                        "maximum": 9007199254740991,
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "baseTreeFileCount",
+                                      "headTreeFileCount"
+                                    ],
+                                    "type": "object"
+                                  },
                                   "fileStatistics": {
                                     "additionalProperties": false,
                                     "properties": {
@@ -16756,7 +16923,7 @@
                                         "pathPrefix": {
                                           "anyOf": [
                                             {
-                                              "maxLength": 255,
+                                              "maxLength": 4096,
                                               "minLength": 1,
                                               "type": "string"
                                             },
@@ -16872,6 +17039,7 @@
                                 },
                                 "required": [
                                   "ruleVersion",
+                                  "commitStatistics",
                                   "fileStatistics",
                                   "changedFiles",
                                   "pathAreas",

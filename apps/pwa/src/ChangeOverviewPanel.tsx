@@ -1,5 +1,7 @@
 import type { ChangeOverview, ChangeOverviewWarning } from "@kestrel/contracts";
 
+import { ShortObjectId } from "./ShortObjectId.js";
+
 interface ChangeOverviewPanelProps {
   headingId: string;
   overview: ChangeOverview;
@@ -20,14 +22,6 @@ const changedFileLabels = {
 
 function pluralize(value: number, singular: string, plural = `${singular}s`): string {
   return `${String(value)} ${value === 1 ? singular : plural}`;
-}
-
-function ObjectId({ label, value }: { label: string; value: string }) {
-  return (
-    <code title={value} aria-label={`${label} object ID ${value}`}>
-      {value.slice(0, 12)}
-    </code>
-  );
 }
 
 function warningText(warning: ChangeOverviewWarning): string {
@@ -59,7 +53,7 @@ function PendingOverview({ overview }: { overview: Exclude<ChangeOverview, { sta
         <div>
           <dt>Exact head</dt>
           <dd>
-            <ObjectId label="Change Overview exact head" value={overview.exactHeadObjectId} />
+            <ShortObjectId label="Change Overview exact head" value={overview.exactHeadObjectId} />
           </dd>
         </div>
         <div>
@@ -81,7 +75,7 @@ function ReadyOverview({ overview }: { overview: Extract<ChangeOverview, { state
           <dt>Exact base</dt>
           <dd>
             <span>{exactRevision.base.ref}</span>
-            <ObjectId label="Change Overview exact base" value={exactRevision.base.objectId} />
+            <ShortObjectId label="Change Overview exact base" value={exactRevision.base.objectId} />
             <small>
               {exactRevision.base.author ?? "Author unavailable"} ·{" "}
               {exactRevision.base.subject ?? "Subject unavailable"}
@@ -92,7 +86,7 @@ function ReadyOverview({ overview }: { overview: Extract<ChangeOverview, { state
           <dt>Exact head</dt>
           <dd>
             <span>{exactRevision.head.ref}</span>
-            <ObjectId label="Change Overview exact head" value={exactRevision.head.objectId} />
+            <ShortObjectId label="Change Overview exact head" value={exactRevision.head.objectId} />
             <small>
               {exactRevision.head.author ?? "Author unavailable"} ·{" "}
               {exactRevision.head.subject ?? "Subject unavailable"}
@@ -127,6 +121,15 @@ function ReadyOverview({ overview }: { overview: Extract<ChangeOverview, { state
 
       <section className="change-overview-group" aria-labelledby={`${exactRevision.id}-files`}>
         <h6 id={`${exactRevision.id}-files`}>Changed files</h6>
+        <p className="change-overview-summary">
+          <span>
+            Base snapshot · {pluralize(sourceFacts.commitStatistics.baseTreeFileCount, "file")}
+          </span>{" "}
+          ·{" "}
+          <span>
+            Head snapshot · {pluralize(sourceFacts.commitStatistics.headTreeFileCount, "file")}
+          </span>
+        </p>
         <p className="change-overview-summary">
           {pluralize(statistics.total, "changed file")} · {String(statistics.added)} added ·{" "}
           {String(statistics.modified)} modified · {String(statistics.deleted)} deleted

@@ -3,8 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import { ChangeOverviewSourceFactsSchema } from "@kestrel/contracts";
 
 import {
+  backfillChangeOverviewFacts,
   completeReviewRevision,
   failReviewRevision,
+  readChangeOverviewBackfillReference,
   reconcileAcquiringRevisions,
   reconcileLocalSourceAttachments,
   withArtifactAcquisitionLock,
@@ -30,6 +32,7 @@ const revisionId = "018f0f89-9a21-7271-b92d-f1cb0d48bb47";
 const timestamp = new Date("2026-08-24T12:00:30.000Z");
 const overviewFacts = ChangeOverviewSourceFactsSchema.parse({
   ruleVersion: 1,
+  commitStatistics: { baseTreeFileCount: 1, headTreeFileCount: 1 },
   fileStatistics: { added: 0, modified: 1, deleted: 0, total: 1 },
   changedFiles: [
     {
@@ -643,6 +646,74 @@ describe("Review Revision persistence", () => {
       "Head subject",
     ]);
     expect(parameters[2]?.slice(0, 2)).toEqual([revisionId, 1]);
+    expect(JSON.parse(String(parameters[2]?.[2]))).toEqual(overviewFacts);
+    expect(statements.at(-1)).toBe("COMMIT");
+  });
+
+  it("regenerates missing facts from the immutable available artifact atomically", async () => {
+    const artifactLocator = `projects/${projectId}/revisions/${revisionId}`;
+    const manifestDigest = "d".repeat(64);
+    const referencePool = {
+      query: vi.fn(() => ({
+        rowCount: 1,
+        rows: [{ artifact_locator: artifactLocator, manifest_digest: manifestDigest }],
+      })),
+    } as unknown as DatabasePool;
+    await expect(readChangeOverviewBackfillReference(referencePool, revisionId)).resolves.toEqual({
+      artifactLocator,
+      manifestDigest,
+    });
+
+    const statements: string[] = [];
+    const parameters: unknown[][] = [];
+    const query = vi.fn((statement: string, values: unknown[] = []) => {
+      const normalized = statement.replace(/\s+/gu, " ").trim();
+      statements.push(normalized);
+      parameters.push(values);
+      if (normalized === "BEGIN" || normalized === "COMMIT" || normalized === "ROLLBACK") {
+        return { rowCount: null, rows: [] };
+      }
+      if (normalized.startsWith("SELECT revision.change_proposal_id")) {
+        return { rowCount: 1, rows: [{ change_proposal_id: proposalId }] };
+      }
+      if (normalized.startsWith("INSERT INTO change_overview_fact_manifests")) {
+        return { rowCount: 1, rows: [{ created_at: timestamp }] };
+      }
+      if (normalized.startsWith("UPDATE change_proposals AS canonical")) {
+        return { rowCount: 1, rows: [] };
+      }
+      if (normalized.includes("pg_advisory_xact_lock")) {
+        return { rowCount: 1, rows: [{}] };
+      }
+      if (normalized.startsWith("SELECT record_hash")) {
+        return { rowCount: 0, rows: [] };
+      }
+      if (normalized.startsWith("SELECT nextval")) {
+        return { rowCount: 1, rows: [{ id: "1", occurred_at: timestamp }] };
+      }
+      if (normalized.startsWith("INSERT INTO installation_audit_records")) {
+        return { rowCount: 1, rows: [] };
+      }
+      throw new Error(`Unexpected SQL: ${normalized}`);
+    });
+    const pool = {
+      connect: vi.fn(() => ({ query, release: vi.fn() })),
+    } as unknown as DatabasePool;
+
+    await expect(
+      backfillChangeOverviewFacts(pool, {
+        actorId: operatorId,
+        artifactLocator,
+        changeOverviewFacts: overviewFacts,
+        correlationId: "0c14b018-0260-4aa0-a5e9-61d212b948ce",
+        manifestDigest,
+        revisionId,
+      }),
+    ).resolves.toBe(true);
+    expect(statements[0]).toBe("BEGIN");
+    expect(statements[1]).toContain("revision_state = 'available'");
+    expect(statements[1]).toContain("artifact_locator = $2");
+    expect(statements[2]).toContain("ON CONFLICT (review_revision_id) DO NOTHING");
     expect(JSON.parse(String(parameters[2]?.[2]))).toEqual(overviewFacts);
     expect(statements.at(-1)).toBe("COMMIT");
   });

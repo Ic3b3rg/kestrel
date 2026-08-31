@@ -179,11 +179,13 @@ but their submodule target repositories and objects are not fetched or retained.
 
 Once the exact Review Revision is Available, the Project panel exposes a deterministic Change
 Overview tied to that retained base/head pair. It shows the current selected Change Intent, current
-Provider Observation when present, exact commit identity, added/modified/deleted file counts,
-bounded changed paths, path-derived source areas, and explicit truncation, gitlink, or Git LFS
-warnings. A changed proposal head hides prior facts until that exact source is retained. This is
-orientation only: it contains no code-level analysis, Graph, Evidence, Coverage judgment, Finding,
-Risk Level, behavioral claim, or review verdict.
+Provider Observation when present, exact commit identity, base/head committed-tree file counts,
+added/modified/deleted file counts, bounded changed paths, path-derived source areas, and explicit
+truncation, gitlink, or Git LFS warnings. A changed proposal head hides prior facts until that exact
+source is retained. Repeating retention for an older Available revision whose fact manifest is
+missing regenerates facts from its verified immutable artifact; it neither reads nor retargets the
+original repository. This is orientation only: it contains no code-level analysis, Graph, Evidence,
+Coverage judgment, Finding, Risk Level, behavioral claim, or review verdict.
 
 A failed acquisition publishes no partial artifact and records a bounded unavailable reason. If
 filesystem publication succeeds but the database completion is uncertain, Kestrel locks and rereads

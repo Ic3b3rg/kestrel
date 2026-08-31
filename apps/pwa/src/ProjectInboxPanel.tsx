@@ -14,6 +14,7 @@ import { HostGitHubProjectPanel } from "./HostGitHubProjectPanel.js";
 import { AcquireObservedReviewRevisionForm } from "./AcquireObservedReviewRevisionForm.js";
 import { ChangeIntentEditor } from "./ChangeIntentEditor.js";
 import { ChangeOverviewPanel } from "./ChangeOverviewPanel.js";
+import { ShortObjectId } from "./ShortObjectId.js";
 import { ReviewPreparationPanel } from "./ReviewPreparationPanel.js";
 import { DirectApiProfilePanel } from "./DirectApiProfilePanel.js";
 
@@ -132,14 +133,6 @@ function formatObservedAt(value: string): string {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
-}
-
-function ShortObjectId({ label, value }: { label: string; value: string }) {
-  return (
-    <code title={value} aria-label={`${label} object ID ${value}`}>
-      {value.slice(0, 12)}
-    </code>
-  );
 }
 
 function ProjectFacts({ project }: { project: Project }) {

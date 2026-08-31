@@ -9,7 +9,9 @@ import {
   serializeJson,
 } from "./openapi.js";
 import {
+  ChangeOverviewPathAreaSchema,
   ChangeOverviewSchema,
+  ChangeOverviewSourceFactsSchema,
   ChangeIntentSchema,
   ChangeIntentVersionCreatedSchema,
   ConfigureDirectApiProfileCommandSchema,
@@ -562,6 +564,7 @@ describe("V1 public contracts", () => {
       },
       sourceFacts: {
         ruleVersion: 1,
+        commitStatistics: { baseTreeFileCount: 1, headTreeFileCount: 2 },
         fileStatistics: { added: 1, modified: 1, deleted: 0, total: 2 },
         changedFiles: [
           {
@@ -605,6 +608,31 @@ describe("V1 public contracts", () => {
         },
       }),
     ).toThrow();
+
+    expect(
+      ChangeOverviewPathAreaSchema.parse({
+        pathPrefix: "a".repeat(256),
+        changedFileCount: 1,
+        samplePaths: [`${"a".repeat(256)}/review.ts`],
+      }),
+    ).toEqual({
+      pathPrefix: "a".repeat(256),
+      changedFileCount: 1,
+      samplePaths: [`${"a".repeat(256)}/review.ts`],
+    });
+    expect(
+      ChangeOverviewSourceFactsSchema.parse({
+        ...overview.sourceFacts,
+        pathAreas: [
+          { pathPrefix: null, changedFileCount: 1, samplePaths: ["README.md"] },
+          {
+            pathPrefix: "repository_root",
+            changedFileCount: 1,
+            samplePaths: ["repository_root/review.ts"],
+          },
+        ],
+      }).pathAreas,
+    ).toHaveLength(2);
   });
 
   it("lists bounded local repositories and committed refs without filesystem paths", () => {

@@ -185,6 +185,8 @@ test.describe("local-first Project flow", () => {
     await expect(
       overview.getByText("1 changed file · 0 added · 1 modified · 0 deleted"),
     ).toBeVisible();
+    await expect(overview.getByText("Base snapshot · 3 files", { exact: true })).toBeVisible();
+    await expect(overview.getByText("Head snapshot · 3 files", { exact: true })).toBeVisible();
     await expect(overview.getByText("review.txt", { exact: true })).toBeVisible();
     await expect(overview.getByRole("heading", { name: "Source areas" })).toBeVisible();
     await expect(overview.getByText("Repository root", { exact: true })).toBeVisible();

@@ -6,6 +6,7 @@ const projectId = "018f0f89-949a-75a8-8f61-6df78a843b1e";
 const proposalId = "018f0f89-9192-755f-aa96-f72094c734dd";
 const overviewFacts = {
   ruleVersion: 1,
+  commitStatistics: { baseTreeFileCount: 1, headTreeFileCount: 1 },
   fileStatistics: { added: 0, modified: 1, deleted: 0, total: 1 },
   changedFiles: [
     {

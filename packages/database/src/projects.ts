@@ -114,6 +114,7 @@ export interface PublicGitHubProjectObservation {
     | "version"
     | "changeIntent"
     | "changeIntentCandidates"
+    | "changeOverview"
     | "reviewRevisions"
   >;
   repository: RepositorySnapshot;

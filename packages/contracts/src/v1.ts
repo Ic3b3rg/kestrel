@@ -524,11 +524,16 @@ export const ChangeOverviewFileStatisticsSchema = z
     message: "Change Overview file statistics are inconsistent",
   });
 
+export const ChangeOverviewCommitStatisticsSchema = z.strictObject({
+  baseTreeFileCount: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  headTreeFileCount: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+});
+
 export const ChangeOverviewPathAreaSchema = z.strictObject({
   pathPrefix: z
     .string()
     .min(1)
-    .max(255)
+    .max(4096)
     .refine((value) => !value.includes("/") && value !== "." && value !== "..")
     .nullable(),
   changedFileCount: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
@@ -554,6 +559,7 @@ export const ChangeOverviewWarningSchema = z.discriminatedUnion("code", [
 export const ChangeOverviewSourceFactsSchema = z
   .strictObject({
     ruleVersion: z.literal(1),
+    commitStatistics: ChangeOverviewCommitStatisticsSchema,
     fileStatistics: ChangeOverviewFileStatisticsSchema,
     changedFiles: z.array(ChangeOverviewChangedFileSchema).max(200),
     pathAreas: z.array(ChangeOverviewPathAreaSchema).max(20),
@@ -564,9 +570,7 @@ export const ChangeOverviewSourceFactsSchema = z
     if (changedPaths.size !== value.changedFiles.length) {
       context.addIssue({ code: "custom", message: "Changed file paths must be unique" });
     }
-    const areaPrefixes = new Set(
-      value.pathAreas.map(({ pathPrefix }) => pathPrefix ?? "repository_root"),
-    );
+    const areaPrefixes = new Set(value.pathAreas.map(({ pathPrefix }) => pathPrefix));
     if (areaPrefixes.size !== value.pathAreas.length) {
       context.addIssue({ code: "custom", message: "Path-derived areas must be unique" });
     }

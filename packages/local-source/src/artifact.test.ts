@@ -21,6 +21,7 @@ import {
   discoverRepositories,
   listRepositoryReferences,
   readLocalSourceConfig,
+  readRetainedChangeOverviewFacts,
   readRetainedFile,
   reconcileArtifactRoot,
   resolveRepository,
@@ -537,6 +538,7 @@ describe("exact Review Revision retention", () => {
     expect(retained.headCommitSubject).toBe("Head source");
     expect(retained.changeOverviewFacts).toEqual({
       ruleVersion: 1,
+      commitStatistics: { baseTreeFileCount: 9, headTreeFileCount: 10 },
       fileStatistics: { added: 1, modified: 1, deleted: 0, total: 2 },
       changedFiles: [
         {
@@ -577,6 +579,12 @@ describe("exact Review Revision retention", () => {
       removedStaging: 0,
     });
     await rename(repository, detachedRepository);
+    await expect(
+      readRetainedChangeOverviewFacts(config, {
+        artifactLocator: retained.artifactLocator,
+        manifestDigest: retained.manifestDigest,
+      }),
+    ).resolves.toEqual(retained.changeOverviewFacts);
     await expect(
       readRetainedFile(config, {
         artifactLocator: retained.artifactLocator,

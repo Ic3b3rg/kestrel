@@ -264,6 +264,7 @@ describe("ProjectInboxPanel", () => {
                 },
                 sourceFacts: {
                   ruleVersion: 1,
+                  commitStatistics: { baseTreeFileCount: 3, headTreeFileCount: 4 },
                   fileStatistics: { added: 0, modified: 1, deleted: 0, total: 1 },
                   changedFiles: [
                     {
@@ -303,6 +304,8 @@ describe("ProjectInboxPanel", () => {
     expect(html).toContain("Current provider title");
     expect(html).toContain("Current provider description.");
     expect(html).toContain("Change Intent v1");
+    expect(html).toContain("Base snapshot · 3 files");
+    expect(html).toContain("Head snapshot · 4 files");
     expect(html).toContain("1 changed file · 0 added · 1 modified · 0 deleted");
     expect(html).toContain("src/review.ts");
     expect(html).toContain("Source area");
