@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type {
   ChangeIntentVersionCreated,
+  DirectApiProfile,
   InstallationEvent,
   InstallationSnapshot,
   LoginCommand,
@@ -100,6 +101,26 @@ function withCreatedIntent(
                   },
             ),
           },
+    ),
+  };
+}
+
+function withDirectApiProfile(
+  current: ProjectInbox | null,
+  projectId: string,
+  profile: DirectApiProfile,
+): ProjectInbox | null {
+  if (current === null) return null;
+  const modelAccess =
+    profile.availability === "available"
+      ? "direct_api_available"
+      : profile.availability === "stale"
+        ? "direct_api_stale"
+        : "direct_api_unavailable";
+  return {
+    schemaVersion: 1,
+    projects: current.projects.map((project) =>
+      project.id === projectId ? { ...project, modelAccess } : project,
     ),
   };
 }
@@ -580,6 +601,11 @@ export function App() {
             );
           }}
           onLocalAvailable={handleLocalRevisionAvailable}
+          onModelProfileChanged={(projectId, profile) => {
+            setProjectInbox((current) => withDirectApiProfile(current, projectId, profile));
+            setProjectReloadGeneration((generation) => generation + 1);
+            setAnnouncement(`Direct API profile ${profile.availability}.`);
+          }}
           onRetry={() => setProjectReloadGeneration((generation) => generation + 1)}
         />
       }
