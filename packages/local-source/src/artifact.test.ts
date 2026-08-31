@@ -536,24 +536,11 @@ describe("exact Review Revision retention", () => {
     expect(retained.baseCommitSubject).toBe("Base source");
     expect(retained.headCommitAuthor).toBe("Kestrel Test");
     expect(retained.headCommitSubject).toBe("Head source");
-    expect(retained.changeOverviewFacts).toEqual({
+    const { changedFiles, ...overviewSummary } = retained.changeOverviewFacts;
+    expect(overviewSummary).toEqual({
       ruleVersion: 1,
       commitStatistics: { baseTreeFileCount: 9, headTreeFileCount: 10 },
       fileStatistics: { added: 1, modified: 1, deleted: 0, total: 2 },
-      changedFiles: [
-        {
-          path: "review.txt",
-          status: "modified",
-          base: expect.objectContaining({ mode: "100644", type: "blob" }),
-          head: expect.objectContaining({ mode: "100644", type: "blob" }),
-        },
-        {
-          path: "vendor/dependency",
-          status: "added",
-          base: null,
-          head: { mode: "160000", objectId: gitlinkTargetObjectId, type: "commit" },
-        },
-      ],
       pathAreas: [
         { pathPrefix: null, changedFileCount: 1, samplePaths: ["review.txt"] },
         {
@@ -569,6 +556,19 @@ describe("exact Review Revision retention", () => {
           samplePaths: ["vendor/dependency"],
         },
       ],
+    });
+    expect(changedFiles).toHaveLength(2);
+    expect(changedFiles[0]).toMatchObject({
+      path: "review.txt",
+      status: "modified",
+      base: { mode: "100644", type: "blob" },
+      head: { mode: "100644", type: "blob" },
+    });
+    expect(changedFiles[1]).toEqual({
+      path: "vendor/dependency",
+      status: "added",
+      base: null,
+      head: { mode: "160000", objectId: gitlinkTargetObjectId, type: "commit" },
     });
     await expect(reconcileArtifactRoot(config, [retained.artifactLocator])).resolves.toEqual({
       quarantined: 0,
