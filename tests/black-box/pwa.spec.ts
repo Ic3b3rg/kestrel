@@ -605,6 +605,12 @@ test.describe("observable Installation PWA", () => {
     });
     page.on("pageerror", (error) => browserErrors.push(error.message));
     let projectPostCount = 0;
+    await page.route(
+      `**/api/v1/projects/${openedProject.project.id}/model-profiles/direct-api`,
+      async (route) => {
+        await route.fulfill({ json: { profile: null, schemaVersion: 1 }, status: 200 });
+      },
+    );
     await page.route("**/api/v1/projects", async (route) => {
       const request = route.request();
       if (request.method() !== "POST") {
