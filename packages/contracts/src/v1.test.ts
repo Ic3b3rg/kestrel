@@ -11,6 +11,7 @@ import {
 import {
   ChangeIntentSchema,
   ChangeIntentVersionCreatedSchema,
+  ConfigureDirectApiProfileCommandSchema,
   CreateChangeIntentVersionCommandSchema,
   CredentialChangeCommandSchema,
   DiagnosticAcceptedSchema,
@@ -31,6 +32,7 @@ import {
   StartReviewWorkflowCommandSchema,
   StepUpCommandSchema,
   StepUpProofSchema,
+  serializeConfigureDirectApiProfileCommand,
   serializeCredentialChangeCommand,
 } from "./v1.js";
 
@@ -171,6 +173,66 @@ describe("V1 public contracts", () => {
       }),
     ).toBeDefined();
     expect(() => CredentialChangeCommandSchema.parse({ ...command, unexpected: true })).toThrow();
+  });
+
+  it("binds one step-up proof to a complete Project-exclusive Direct API profile", () => {
+    const command = ConfigureDirectApiProfileCommandSchema.parse({
+      apiKey: "sk-project-exclusive-test-key-1234567890",
+      dataPolicy: {
+        abuseMonitoring: "modified",
+        attestedAt: "2026-08-31T12:00:00.000Z",
+        evidenceUrl: "https://developers.openai.com/api/docs/guides/your-data",
+        expiresAt: "2026-09-30T12:00:00.000Z",
+        humanReview: "restricted",
+        processingRegions: ["US"],
+        storageRegions: ["US"],
+        trainingUse: "not_used_without_opt_in",
+      },
+      displayName: "OpenAI direct review",
+      limits: {
+        maximumAttempts: 1,
+        maximumConcurrentRequests: 1,
+        maximumCostUsd: "2.500000",
+        maximumInputTokens: 100_000,
+        maximumOutputTokens: 8_192,
+        maximumRequestBytes: 1_048_576,
+        requestTimeoutMilliseconds: 60_000,
+      },
+      model: {
+        expectedResolvedId: "gpt-test-2026-08-01",
+        requestedId: "gpt-test-2026-08-01",
+        versionPolicy: "pinned",
+      },
+      openAiProjectId: "proj_example",
+      organizationId: "org_example",
+      priceSnapshot: {
+        cachedInputPerMillionTokensUsd: "0.125000",
+        capturedAt: "2026-08-31T12:00:00.000Z",
+        currency: "USD",
+        effectiveAt: "2026-08-01T00:00:00.000Z",
+        inputPerMillionTokensUsd: "1.250000",
+        outputPerMillionTokensUsd: "10.000000",
+        sourceUrl: "https://developers.openai.com/api/docs/pricing",
+      },
+    });
+
+    expect(serializeConfigureDirectApiProfileCommand(command)).toBe(JSON.stringify(command));
+    expect(command).not.toHaveProperty("endpoint");
+    expect(command).not.toHaveProperty("tools");
+    expect(
+      StepUpCommandSchema.parse({
+        action: "model_credentials_change",
+        password: "current correct horse battery staple",
+        requestDigest: "5".repeat(64),
+        targetId: "018f0f89-949a-75a8-8f61-6df78a843b1e",
+      }),
+    ).not.toHaveProperty("apiKey");
+    expect(() =>
+      ConfigureDirectApiProfileCommandSchema.parse({
+        ...command,
+        endpoint: "https://attacker.example/v1/responses",
+      }),
+    ).toThrow();
   });
 
   it("accepts only canonical public GitHub pull-request URLs", () => {

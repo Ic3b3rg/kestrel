@@ -784,6 +784,99 @@ export const CredentialChangeCommandSchema = z.strictObject({
 
 export const LogoutCommandSchema = z.strictObject({});
 
+const DirectApiIdentifierSchema = z
+  .string()
+  .min(1)
+  .max(128)
+  .regex(/^[A-Za-z0-9._:-]+$/u);
+const DirectApiRegionSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._ -]*$/u);
+const DirectApiUsdAmountSchema = z.string().regex(/^(?:0|[1-9][0-9]{0,9})(?:\.[0-9]{1,6})?$/u);
+const HttpsUrlSchema = z.url().refine((value) => value.startsWith("https://"), {
+  message: "Only HTTPS evidence references are accepted",
+});
+const DirectApiRegionsSchema = z
+  .array(DirectApiRegionSchema)
+  .min(1)
+  .max(16)
+  .refine((regions) => new Set(regions).size === regions.length, {
+    message: "Regions must be unique",
+  });
+
+export const DirectApiDataPolicySchema = z
+  .strictObject({
+    abuseMonitoring: z.enum(["standard", "modified", "zero_data_retention"]),
+    attestedAt: UtcDateTimeSchema,
+    evidenceUrl: HttpsUrlSchema,
+    expiresAt: UtcDateTimeSchema,
+    humanReview: z.enum(["possible", "restricted", "none_attested"]),
+    processingRegions: DirectApiRegionsSchema,
+    storageRegions: DirectApiRegionsSchema,
+    trainingUse: z.enum(["not_used_without_opt_in", "provider_may_train"]),
+  })
+  .refine(({ attestedAt, expiresAt }) => expiresAt > attestedAt, {
+    message: "Data-policy attestation expiry must follow its observation",
+    path: ["expiresAt"],
+  });
+
+export const DirectApiLimitsSchema = z.strictObject({
+  maximumAttempts: z.literal(1),
+  maximumConcurrentRequests: z.number().int().min(1).max(16),
+  maximumCostUsd: DirectApiUsdAmountSchema,
+  maximumInputTokens: z.number().int().min(1).max(2_000_000),
+  maximumOutputTokens: z.number().int().min(16).max(100_000),
+  maximumRequestBytes: z
+    .number()
+    .int()
+    .min(1_024)
+    .max(64 * 1_024 * 1_024),
+  requestTimeoutMilliseconds: z.number().int().min(1_000).max(120_000),
+});
+
+export const DirectApiModelTargetSchema = z
+  .strictObject({
+    expectedResolvedId: DirectApiIdentifierSchema,
+    requestedId: DirectApiIdentifierSchema,
+    versionPolicy: z.literal("pinned"),
+  })
+  .refine(({ expectedResolvedId, requestedId }) => expectedResolvedId === requestedId, {
+    message: "A pinned Direct API target must resolve to the requested model",
+    path: ["expectedResolvedId"],
+  });
+
+export const DirectApiPriceSnapshotSchema = z
+  .strictObject({
+    cachedInputPerMillionTokensUsd: DirectApiUsdAmountSchema.nullable(),
+    capturedAt: UtcDateTimeSchema,
+    currency: z.literal("USD"),
+    effectiveAt: UtcDateTimeSchema,
+    inputPerMillionTokensUsd: DirectApiUsdAmountSchema,
+    outputPerMillionTokensUsd: DirectApiUsdAmountSchema,
+    sourceUrl: HttpsUrlSchema,
+  })
+  .refine(({ capturedAt, effectiveAt }) => capturedAt >= effectiveAt, {
+    message: "A price snapshot cannot be captured before it becomes effective",
+    path: ["capturedAt"],
+  });
+
+export const ConfigureDirectApiProfileCommandSchema = z.strictObject({
+  apiKey: z
+    .string()
+    .min(20)
+    .max(512)
+    .regex(/^[A-Za-z0-9._-]+$/u),
+  dataPolicy: DirectApiDataPolicySchema,
+  displayName: z.string().trim().min(1).max(256),
+  limits: DirectApiLimitsSchema,
+  model: DirectApiModelTargetSchema,
+  openAiProjectId: DirectApiIdentifierSchema,
+  organizationId: DirectApiIdentifierSchema,
+  priceSnapshot: DirectApiPriceSnapshotSchema,
+});
+
 export function serializeCredentialChangeCommand(command: CredentialChangeCommand): string {
   const validated = CredentialChangeCommandSchema.parse(command);
   return JSON.stringify({
@@ -791,6 +884,12 @@ export function serializeCredentialChangeCommand(command: CredentialChangeComman
     newPassword: validated.newPassword,
     username: validated.username,
   });
+}
+
+export function serializeConfigureDirectApiProfileCommand(
+  command: ConfigureDirectApiProfileCommand,
+): string {
+  return JSON.stringify(ConfigureDirectApiProfileCommandSchema.parse(command));
 }
 
 export const InstallationStateSchema = z.enum([
@@ -913,6 +1012,9 @@ export const HealthStatusSchema = z.strictObject({
 });
 
 export type ApiError = z.infer<typeof ApiErrorSchema>;
+export type ConfigureDirectApiProfileCommand = z.infer<
+  typeof ConfigureDirectApiProfileCommandSchema
+>;
 export type CredentialChangeCommand = z.infer<typeof CredentialChangeCommandSchema>;
 export type CredentialVersion = z.infer<typeof CredentialVersionSchema>;
 export type Diagnostic = z.infer<typeof DiagnosticSchema>;
