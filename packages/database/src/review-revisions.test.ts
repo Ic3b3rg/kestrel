@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { ChangeOverviewSourceFactsSchema } from "@kestrel/contracts";
+
 import {
   completeReviewRevision,
   failReviewRevision,
@@ -26,6 +28,20 @@ const proposalId = "018f0f89-9192-755f-aa96-f72094c734dd";
 const intentId = "018f0f89-9a20-79f9-9990-dda80c9b917d";
 const revisionId = "018f0f89-9a21-7271-b92d-f1cb0d48bb47";
 const timestamp = new Date("2026-08-24T12:00:30.000Z");
+const overviewFacts = ChangeOverviewSourceFactsSchema.parse({
+  ruleVersion: 1,
+  fileStatistics: { added: 0, modified: 1, deleted: 0, total: 1 },
+  changedFiles: [
+    {
+      path: "src/review.ts",
+      status: "modified",
+      base: { mode: "100644", objectId: "c".repeat(40), type: "blob" },
+      head: { mode: "100644", objectId: "d".repeat(40), type: "blob" },
+    },
+  ],
+  pathAreas: [{ pathPrefix: "src", changedFileCount: 1, samplePaths: ["src/review.ts"] }],
+  warnings: [],
+});
 
 function parseJsonParameter(value: unknown): unknown {
   if (typeof value !== "string") throw new Error("Expected a serialized JSON parameter");
@@ -260,6 +276,7 @@ describe("Review Revision persistence", () => {
             "projects/018f0f89-9a22-7864-aac2-8df71bf60420/revisions/018f0f89-9a21-7271-b92d-f1cb0d48bb48",
           baseCommitAuthor: "Base Author",
           baseCommitSubject: "Base subject",
+          changeOverviewFacts: overviewFacts,
           headCommitAuthor: "Head Author",
           headCommitSubject: "Head subject",
           manifestDigest: "d".repeat(64),
@@ -538,6 +555,9 @@ describe("Review Revision persistence", () => {
           ],
         };
       }
+      if (normalized.startsWith("INSERT INTO change_overview_fact_manifests")) {
+        return { rowCount: 1, rows: [{ created_at: timestamp }] };
+      }
       if (normalized.startsWith("UPDATE projects")) {
         return { rowCount: 1, rows: [] };
       }
@@ -573,6 +593,7 @@ describe("Review Revision persistence", () => {
           artifactLocator: `projects/${projectId}/revisions/${revisionId}`,
           baseCommitAuthor: "Base Author",
           baseCommitSubject: "Base subject",
+          changeOverviewFacts: overviewFacts,
           headCommitAuthor: "Head Author",
           headCommitSubject: "Head subject",
           manifestDigest: "d".repeat(64),
@@ -590,6 +611,15 @@ describe("Review Revision persistence", () => {
     expect(statements[0]).toBe("BEGIN");
     expect(
       statements.findIndex((value) => value.startsWith("UPDATE review_revisions")),
+    ).toBeLessThan(
+      statements.findIndex((value) =>
+        value.startsWith("INSERT INTO change_overview_fact_manifests"),
+      ),
+    );
+    expect(
+      statements.findIndex((value) =>
+        value.startsWith("INSERT INTO change_overview_fact_manifests"),
+      ),
     ).toBeLessThan(statements.findIndex((value) => value.startsWith("UPDATE projects")));
     expect(statements.findIndex((value) => value.startsWith("UPDATE projects"))).toBeLessThan(
       statements.findIndex((value) => value.startsWith("UPDATE change_proposals AS canonical")),
@@ -612,6 +642,8 @@ describe("Review Revision persistence", () => {
       "Head Author",
       "Head subject",
     ]);
+    expect(parameters[2]?.slice(0, 2)).toEqual([revisionId, 1]);
+    expect(JSON.parse(String(parameters[2]?.[2]))).toEqual(overviewFacts);
     expect(statements.at(-1)).toBe("COMMIT");
   });
 

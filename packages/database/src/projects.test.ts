@@ -4,6 +4,20 @@ import { mapProjectRows, readProject, type ProjectDatabaseRow } from "./projects
 
 const projectId = "018f0f89-949a-75a8-8f61-6df78a843b1e";
 const proposalId = "018f0f89-9192-755f-aa96-f72094c734dd";
+const overviewFacts = {
+  ruleVersion: 1,
+  fileStatistics: { added: 0, modified: 1, deleted: 0, total: 1 },
+  changedFiles: [
+    {
+      path: "src/review.ts",
+      status: "modified",
+      base: { mode: "100644", objectId: "c".repeat(40), type: "blob" },
+      head: { mode: "100644", objectId: "d".repeat(40), type: "blob" },
+    },
+  ],
+  pathAreas: [{ pathPrefix: "src", changedFileCount: 1, samplePaths: ["src/review.ts"] }],
+  warnings: [],
+} as const;
 
 function projectRow(overrides: Partial<ProjectDatabaseRow> = {}): ProjectDatabaseRow {
   return {
@@ -96,6 +110,13 @@ function localProjectRow(): ProjectDatabaseRow {
     revision_failure_reason: null,
     revision_created_at: new Date("2026-08-24T12:00:30.000Z"),
     revision_available_at: new Date("2026-08-24T12:01:00.000Z"),
+    revision_base_commit_author: "Base Author",
+    revision_base_commit_subject: "Establish the source boundary",
+    revision_head_commit_author: "Head Author",
+    revision_head_commit_subject: "Keep repository access explicit",
+    overview_rule_version: "1",
+    overview_source_facts: overviewFacts,
+    overview_created_at: new Date("2026-08-24T12:01:00.000Z"),
     candidate_revision_id: "018f0f89-9a21-7271-b92d-f1cb0d48bb47",
     candidate_base_commit_author: "Base Author",
     candidate_base_commit_subject: "Establish the source boundary",
@@ -127,8 +148,21 @@ describe("Project persistence mapping", () => {
       projects: [
         {
           changeProposals: [
-            expect.objectContaining({ id: proposalId, number: 1234 }),
-            expect.objectContaining({ number: 1235 }),
+            expect.objectContaining({
+              changeOverview: {
+                state: "awaiting_source",
+                exactHeadObjectId: "b".repeat(40),
+              },
+              id: proposalId,
+              number: 1234,
+            }),
+            expect.objectContaining({
+              changeOverview: {
+                state: "awaiting_source",
+                exactHeadObjectId: "b".repeat(40),
+              },
+              number: 1235,
+            }),
           ],
           createdAt: "2026-08-24T12:00:00.000Z",
           id: projectId,
@@ -224,6 +258,43 @@ describe("Project persistence mapping", () => {
     ]);
     expect(proposal?.reviewRevisions[0]?.state).toBe("available");
     expect(proposal?.reviewRevisions[0]?.objectCount).toBe(7);
+    expect(proposal?.changeOverview).toEqual({
+      state: "ready",
+      createdAt: "2026-08-24T12:01:00.000Z",
+      exactRevision: {
+        id: "018f0f89-9a21-7271-b92d-f1cb0d48bb47",
+        objectFormat: "sha1",
+        base: {
+          ref: "refs/heads/main",
+          objectId: "a".repeat(40),
+          author: "Base Author",
+          subject: "Establish the source boundary",
+        },
+        head: {
+          ref: "refs/heads/review-source",
+          objectId: "b".repeat(40),
+          author: "Head Author",
+          subject: "Keep repository access explicit",
+        },
+      },
+      changeIntent: proposal?.changeIntent,
+      providerObservation: null,
+      sourceFacts: overviewFacts,
+    });
+  });
+
+  it("hides prior overview facts as soon as the selected source changes", () => {
+    const row = localProjectRow();
+    row.head_object_id = "e".repeat(40);
+    row.head_ref_snapshot = "refs/heads/new-review-source";
+
+    const overview = mapProjectRows([row]).projects[0]?.changeProposals[0]?.changeOverview;
+
+    expect(overview).toEqual({
+      state: "awaiting_source",
+      exactHeadObjectId: "e".repeat(40),
+    });
+    expect(JSON.stringify(overview)).not.toContain("src/review.ts");
   });
 
   it("fails closed when retained Review Revision identity columns are incomplete", () => {
