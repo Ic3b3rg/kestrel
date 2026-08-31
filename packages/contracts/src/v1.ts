@@ -813,6 +813,29 @@ const DirectApiRegionsSchema = z
     message: "Regions must be unique",
   });
 
+export const DIRECT_API_FIXED_PROFILE = {
+  apiSurface: "responses",
+  apiVersion: "2020-10-01",
+  endpointOrigin: "https://api.openai.com",
+  endpointPath: "/v1/responses",
+  provider: "openai",
+} as const;
+
+export const DIRECT_API_EXECUTION_POLICY = {
+  arbitraryOptions: "disabled",
+  callbacks: "disabled",
+  files: "disabled",
+  inputModality: "text",
+  privilegedInstructions: "developer",
+  retrieval: "disabled",
+  statefulness: "stateless",
+  structuredOutput: "json_schema_strict",
+  tools: "disabled",
+  urls: "disabled",
+} as const;
+
+export const DIRECT_API_SYNTHETIC_TEST_VALIDITY_MILLISECONDS = 24 * 60 * 60 * 1_000;
+
 export const DirectApiDataPolicySchema = z
   .strictObject({
     abuseMonitoring: z.enum(["standard", "modified", "zero_data_retention"]),
@@ -894,31 +917,32 @@ export const DirectApiProfileAvailabilityReasonSchema = z.enum([
 ]);
 
 export const DirectApiEffectiveIdentitySchema = z.strictObject({
-  apiSurface: z.literal("responses"),
-  apiVersion: z.literal("2020-10-01"),
-  endpointOrigin: z.literal("https://api.openai.com"),
-  endpointPath: z.literal("/v1/responses"),
+  apiSurface: z.literal(DIRECT_API_FIXED_PROFILE.apiSurface),
+  apiVersion: z.literal(DIRECT_API_FIXED_PROFILE.apiVersion),
+  endpointOrigin: z.literal(DIRECT_API_FIXED_PROFILE.endpointOrigin),
+  endpointPath: z.literal(DIRECT_API_FIXED_PROFILE.endpointPath),
   model: DirectApiModelTargetSchema,
   openAiProjectId: DirectApiIdentifierSchema,
   organizationId: DirectApiIdentifierSchema,
-  provider: z.literal("openai"),
+  provider: z.literal(DIRECT_API_FIXED_PROFILE.provider),
 });
 
 export const DirectApiExecutionPolicySchema = z.strictObject({
-  arbitraryOptions: z.literal("disabled"),
-  callbacks: z.literal("disabled"),
-  files: z.literal("disabled"),
-  inputModality: z.literal("text"),
-  privilegedInstructions: z.literal("developer"),
-  retrieval: z.literal("disabled"),
-  statefulness: z.literal("stateless"),
-  structuredOutput: z.literal("json_schema_strict"),
-  tools: z.literal("disabled"),
-  urls: z.literal("disabled"),
+  arbitraryOptions: z.literal(DIRECT_API_EXECUTION_POLICY.arbitraryOptions),
+  callbacks: z.literal(DIRECT_API_EXECUTION_POLICY.callbacks),
+  files: z.literal(DIRECT_API_EXECUTION_POLICY.files),
+  inputModality: z.literal(DIRECT_API_EXECUTION_POLICY.inputModality),
+  privilegedInstructions: z.literal(DIRECT_API_EXECUTION_POLICY.privilegedInstructions),
+  retrieval: z.literal(DIRECT_API_EXECUTION_POLICY.retrieval),
+  statefulness: z.literal(DIRECT_API_EXECUTION_POLICY.statefulness),
+  structuredOutput: z.literal(DIRECT_API_EXECUTION_POLICY.structuredOutput),
+  tools: z.literal(DIRECT_API_EXECUTION_POLICY.tools),
+  urls: z.literal(DIRECT_API_EXECUTION_POLICY.urls),
 });
 
 export const DirectApiSyntheticTestSchema = z.strictObject({
-  observedApiVersion: z.literal("2020-10-01"),
+  attributedOpenAiProjectId: DirectApiIdentifierSchema,
+  observedApiVersion: z.literal(DIRECT_API_FIXED_PROFILE.apiVersion),
   observedModel: DirectApiIdentifierSchema,
   observedOrganizationId: DirectApiIdentifierSchema,
   passedAt: UtcDateTimeSchema,
@@ -942,22 +966,39 @@ export const DirectApiProfileSchema = z
     createdAt: UtcDateTimeSchema,
     updatedAt: UtcDateTimeSchema,
   })
-  .superRefine(({ availability, availabilityReasons, createdAt, lastTest, updatedAt }, context) => {
-    if ((availability === "available") !== (availabilityReasons.length === 0)) {
-      context.addIssue({
-        code: "custom",
-        message: "Only an available Direct API profile may omit availability reasons",
-        path: ["availabilityReasons"],
-      });
-    }
-    if (updatedAt < createdAt || updatedAt < lastTest.passedAt) {
-      context.addIssue({
-        code: "custom",
-        message: "Direct API profile timestamps are inconsistent",
-        path: ["updatedAt"],
-      });
-    }
-  });
+  .superRefine(
+    (
+      { availability, availabilityReasons, createdAt, effectiveIdentity, lastTest, updatedAt },
+      context,
+    ) => {
+      if ((availability === "available") !== (availabilityReasons.length === 0)) {
+        context.addIssue({
+          code: "custom",
+          message: "Only an available Direct API profile may omit availability reasons",
+          path: ["availabilityReasons"],
+        });
+      }
+      if (updatedAt < createdAt || updatedAt < lastTest.passedAt) {
+        context.addIssue({
+          code: "custom",
+          message: "Direct API profile timestamps are inconsistent",
+          path: ["updatedAt"],
+        });
+      }
+      if (
+        lastTest.attributedOpenAiProjectId !== effectiveIdentity.openAiProjectId ||
+        lastTest.observedApiVersion !== effectiveIdentity.apiVersion ||
+        lastTest.observedModel !== effectiveIdentity.model.expectedResolvedId ||
+        lastTest.observedOrganizationId !== effectiveIdentity.organizationId
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "Direct API profile identity does not match its synthetic test",
+          path: ["lastTest"],
+        });
+      }
+    },
+  );
 
 export const DirectApiProfileResponseSchema = z.strictObject({
   schemaVersion: SchemaVersionSchema,

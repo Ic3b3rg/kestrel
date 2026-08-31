@@ -1222,6 +1222,12 @@
                   "lastTest": {
                     "additionalProperties": false,
                     "properties": {
+                      "attributedOpenAiProjectId": {
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "pattern": "^[A-Za-z0-9._:-]+$",
+                        "type": "string"
+                      },
                       "observedApiVersion": {
                         "const": "2020-10-01",
                         "type": "string"
@@ -1251,6 +1257,7 @@
                       }
                     },
                     "required": [
+                      "attributedOpenAiProjectId",
                       "observedApiVersion",
                       "observedModel",
                       "observedOrganizationId",

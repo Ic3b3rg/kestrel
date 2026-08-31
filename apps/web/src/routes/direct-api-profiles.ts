@@ -98,28 +98,37 @@ async function enforceSyntheticTestRateLimit(
   }
 }
 
-function serviceErrorForBroker(error: DirectApiBrokerError): DirectApiProfileServiceError {
-  return new DirectApiProfileServiceError(
-    error.code === "provider_unavailable" || error.code === "destination_rejected"
-      ? "service_unavailable"
-      : "profile_test_failed",
-  );
-}
-
-function failureReasonForBroker(
-  error: DirectApiBrokerError,
-): "credential_unavailable" | "identity_drift" | "provider_unavailable" | "synthetic_test_failed" {
+function classifyBrokerFailure(error: DirectApiBrokerError): {
+  availabilityReason:
+    "credential_unavailable" | "identity_drift" | "provider_unavailable" | "synthetic_test_failed";
+  serviceCode: Extract<
+    DirectApiProfileServiceErrorCode,
+    "profile_test_failed" | "service_unavailable"
+  >;
+} {
   switch (error.code) {
     case "credential_unavailable":
-      return "credential_unavailable";
+      return {
+        availabilityReason: "credential_unavailable",
+        serviceCode: "profile_test_failed",
+      };
     case "identity_drift":
-      return "identity_drift";
+      return { availabilityReason: "identity_drift", serviceCode: "profile_test_failed" };
     case "provider_unavailable":
     case "destination_rejected":
-      return "provider_unavailable";
+      return { availabilityReason: "provider_unavailable", serviceCode: "service_unavailable" };
+    case "request_invalid":
+    case "response_invalid":
     case "synthetic_test_failed":
-      return "synthetic_test_failed";
+      return {
+        availabilityReason: "synthetic_test_failed",
+        serviceCode: "profile_test_failed",
+      };
   }
+}
+
+function serviceErrorForBroker(error: DirectApiBrokerError): DirectApiProfileServiceError {
+  return new DirectApiProfileServiceError(classifyBrokerFailure(error).serviceCode);
 }
 
 export function createDirectApiProfileService(
@@ -254,11 +263,12 @@ export function createDirectApiProfileService(
       } catch (error) {
         if (error instanceof DirectApiProfileServiceError) throw error;
         if (error instanceof DirectApiBrokerError) {
+          const failure = classifyBrokerFailure(error);
           await recordDirectApiProfileTest(pool, {
             projectId: profile.projectId,
-            reason: failureReasonForBroker(error),
+            reason: failure.availabilityReason,
           });
-          throw serviceErrorForBroker(error);
+          throw new DirectApiProfileServiceError(failure.serviceCode);
         }
         throw new DirectApiProfileServiceError("service_unavailable");
       }

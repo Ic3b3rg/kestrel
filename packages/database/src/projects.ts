@@ -2,6 +2,7 @@ import type { PoolClient } from "pg";
 
 import {
   ChangeIntentSchema,
+  DIRECT_API_SYNTHETIC_TEST_VALIDITY_MILLISECONDS,
   ProjectInboxSchema,
   ProjectUpsertedSchema,
   type ChangeIntent,
@@ -27,6 +28,7 @@ export interface ProjectDatabaseRow {
   created_at: Date;
   direct_profile_attestation_expires_at?: Date | null;
   direct_profile_availability?: "available" | "stale" | "unavailable" | null;
+  direct_profile_last_test_passed_at?: Date | null;
   head_object_id: string;
   head_ref_snapshot: string;
   id: string;
@@ -342,6 +344,7 @@ function appendRevision(
 
 export function mapProjectRows(rows: readonly ProjectDatabaseRow[]): ProjectInbox {
   const projects = new Map<string, Project>();
+  const now = new Date();
   for (const row of rows) {
     const repository = mapProviderRepository(row);
     const localSource = mapLocalSource(row);
@@ -356,12 +359,16 @@ export function mapProjectRows(rows: readonly ProjectDatabaseRow[]): ProjectInbo
             ? "not_configured"
             : row.direct_profile_availability === "unavailable"
               ? "direct_api_unavailable"
-              : row.direct_profile_attestation_expires_at == null
+              : row.direct_profile_attestation_expires_at == null ||
+                  row.direct_profile_last_test_passed_at == null
                 ? (() => {
                     throw new Error("Direct API profile availability is incomplete");
                   })()
                 : row.direct_profile_availability === "stale" ||
-                    row.direct_profile_attestation_expires_at <= new Date()
+                    row.direct_profile_attestation_expires_at <= now ||
+                    row.direct_profile_last_test_passed_at.getTime() +
+                      DIRECT_API_SYNTHETIC_TEST_VALIDITY_MILLISECONDS <=
+                      now.getTime()
                   ? "direct_api_stale"
                   : "direct_api_available",
         providerObservation:
@@ -461,6 +468,7 @@ function projectRowsSelect(requiredRevisionId: "NULL::uuid" | "$2::uuid"): strin
          p.updated_at,
          dap.availability AS direct_profile_availability,
          dap.attestation_expires_at AS direct_profile_attestation_expires_at,
+         dap.last_test_passed_at AS direct_profile_last_test_passed_at,
          lrs.id AS local_source_id,
          lrs.repository_id AS local_repository_id,
          lrs.display_name_snapshot AS local_display_name,

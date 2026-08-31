@@ -162,6 +162,7 @@ describe("Project persistence mapping", () => {
         projectRow({
           direct_profile_attestation_expires_at: new Date("2099-01-01T00:00:00.000Z"),
           direct_profile_availability: "available",
+          direct_profile_last_test_passed_at: new Date(Date.now()),
         }),
       ]).projects[0]?.modelAccess,
     ).toBe("direct_api_available");
@@ -170,6 +171,7 @@ describe("Project persistence mapping", () => {
         projectRow({
           direct_profile_attestation_expires_at: new Date("2020-01-01T00:00:00.000Z"),
           direct_profile_availability: "available",
+          direct_profile_last_test_passed_at: new Date(Date.now()),
         }),
       ]).projects[0]?.modelAccess,
     ).toBe("direct_api_stale");
@@ -178,9 +180,19 @@ describe("Project persistence mapping", () => {
         projectRow({
           direct_profile_attestation_expires_at: new Date("2099-01-01T00:00:00.000Z"),
           direct_profile_availability: "unavailable",
+          direct_profile_last_test_passed_at: new Date(Date.now()),
         }),
       ]).projects[0]?.modelAccess,
     ).toBe("direct_api_unavailable");
+    expect(
+      mapProjectRows([
+        projectRow({
+          direct_profile_attestation_expires_at: new Date("2099-01-01T00:00:00.000Z"),
+          direct_profile_availability: "available",
+          direct_profile_last_test_passed_at: new Date(0),
+        }),
+      ]).projects[0]?.modelAccess,
+    ).toBe("direct_api_stale");
   });
 
   it("fails closed for an unsupported Provider Observation kind", () => {

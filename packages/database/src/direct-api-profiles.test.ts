@@ -16,6 +16,7 @@ function profileRow(
   return {
     availability: "available",
     availability_reasons: [],
+    attributed_openai_project_id: "proj_example",
     created_at: new Date("2026-08-31T12:01:00.000Z"),
     credential_handle: "cred_abcdefghijklmnopqrstuvwxyzABCDEFGH123456789",
     data_policy: {
@@ -80,10 +81,17 @@ describe("Direct API profile persistence", () => {
     expect(available).not.toHaveProperty("credentialHandle");
 
     expect(
+      mapDirectApiProfileRow(profileRow(), new Date("2026-09-01T12:01:00.001Z")),
+    ).toMatchObject({
+      availability: "stale",
+      availabilityReasons: ["synthetic_test_expired"],
+    });
+
+    expect(
       mapDirectApiProfileRow(profileRow(), new Date("2026-10-01T00:00:00.000Z")),
     ).toMatchObject({
       availability: "stale",
-      availabilityReasons: ["attestation_expired"],
+      availabilityReasons: ["attestation_expired", "synthetic_test_expired"],
     });
   });
 
@@ -176,6 +184,7 @@ describe("Direct API profile persistence", () => {
       {
         actorId: operatorId,
         certification: {
+          attributedOpenAiProjectId: "proj_example",
           observedApiVersion: "2020-10-01",
           observedModel: "gpt-test-2026-08-01",
           observedOrganizationId: "org_example",

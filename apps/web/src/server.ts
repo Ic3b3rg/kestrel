@@ -42,6 +42,8 @@ const config = readDatabaseConfig();
 const localSourceConfig = await readLocalSourceConfig();
 const sessionSigningKey = readSessionSigningKey();
 const modelProviderSecretRoot = readModelProviderSecretRoot(process.env.MODEL_PROVIDER_SECRET_ROOT);
+const credentialStore = new FileCredentialStore(modelProviderSecretRoot);
+await credentialStore.reconcile();
 const pool = createPool(config.databaseUrl, "kestrel-web");
 const eventPool = createPool(config.databaseUrl, "kestrel-web-events", {
   connectionTimeoutMillis: 2_000,
@@ -67,7 +69,7 @@ const app = await buildApp({
   eventRetentionLimit: readEventRetentionLimit(),
   directApiProfileService: createDirectApiProfileService(
     pool,
-    new FileCredentialStore(modelProviderSecretRoot),
+    credentialStore,
     createOpenAiTransport(),
     sessionSigningKey,
   ),

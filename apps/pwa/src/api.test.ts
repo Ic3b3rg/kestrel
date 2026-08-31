@@ -115,6 +115,7 @@ const directApiResponse: DirectApiProfileResponse = {
     priceSnapshot: directApiCommand.priceSnapshot,
     profileDigest: "6".repeat(64),
     lastTest: {
+      attributedOpenAiProjectId: directApiCommand.openAiProjectId,
       observedApiVersion: "2020-10-01",
       observedModel: directApiCommand.model.expectedResolvedId,
       observedOrganizationId: directApiCommand.organizationId,

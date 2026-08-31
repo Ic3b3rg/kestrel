@@ -37,6 +37,10 @@ CREATE TABLE direct_api_profiles (
     AND jsonb_array_length(availability_reasons) <= 6
     AND ((availability = 'available') = (jsonb_array_length(availability_reasons) = 0))
   ),
+  attributed_openai_project_id text NOT NULL CHECK (
+    char_length(attributed_openai_project_id) BETWEEN 1 AND 128
+    AND attributed_openai_project_id ~ '^[A-Za-z0-9._:-]+$'
+  ),
   observed_api_version text NOT NULL CHECK (observed_api_version = '2020-10-01'),
   observed_model text NOT NULL CHECK (char_length(observed_model) BETWEEN 1 AND 128),
   observed_organization_id text NOT NULL CHECK (

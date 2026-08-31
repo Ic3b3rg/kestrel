@@ -142,6 +142,7 @@ test.describe("observable Installation PWA", () => {
         profile_digest,
         availability,
         availability_reasons,
+        attributed_openai_project_id,
         observed_api_version,
         observed_model,
         observed_organization_id,
@@ -164,13 +165,14 @@ test.describe("observable Installation PWA", () => {
              '${"6".repeat(64)}',
              'available',
              '[]'::jsonb,
+             'proj_example',
              '2020-10-01',
              'gpt-test-2026-08-01',
              'org_example',
              'req_synthetic_example',
-             '2026-08-31T12:01:00.000Z',
-             '2026-08-31T12:01:00.000Z',
-             '2026-08-31T12:01:00.000Z'
+             clock_timestamp(),
+             clock_timestamp(),
+             clock_timestamp()
       FROM projects
       WHERE provider_repository_id = 'R_kgDOGx';
     `);

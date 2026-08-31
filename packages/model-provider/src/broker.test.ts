@@ -4,6 +4,7 @@ import {
   DirectApiBrokerError,
   assertPublicProviderAddress,
   certifyDirectApiProfile,
+  runDirectApiStructuredTextInference,
   type OpenAiTransport,
 } from "./index.js";
 
@@ -64,6 +65,7 @@ describe("Direct API broker", () => {
     );
 
     expect(certification).toEqual({
+      attributedOpenAiProjectId: "proj_example",
       observedApiVersion: "2020-10-01",
       observedModel: "gpt-test-2026-08-01",
       observedOrganizationId: "org_example",
@@ -113,6 +115,134 @@ describe("Direct API broker", () => {
     expect(request?.body).not.toHaveProperty("urls");
     expect(request?.body).not.toHaveProperty("files");
     expect(JSON.stringify(request?.body)).not.toContain("repository");
+  });
+
+  it("permits only one stateless text request with privileged instructions and strict output", async () => {
+    const transport: OpenAiTransport = {
+      send: vi.fn(async () => ({
+        body: JSON.stringify({
+          model: "gpt-test-2026-08-01",
+          output: [
+            {
+              content: [
+                {
+                  text: JSON.stringify({ summary: "Bounded facts." }),
+                  type: "output_text",
+                },
+              ],
+              role: "assistant",
+              status: "completed",
+              type: "message",
+            },
+          ],
+          status: "completed",
+        }),
+        headers: {
+          "openai-organization": "org_example",
+          "openai-version": "2020-10-01",
+          "x-request-id": "req_inference_example",
+        },
+        statusCode: 200,
+      })),
+    };
+    const inference = {
+      apiKey,
+      input: "A bounded fact manifest.",
+      inputTokenCount: 12,
+      instructions: "Organize only the supplied facts.",
+      limits: {
+        maximumAttempts: 1 as const,
+        maximumConcurrentRequests: 1,
+        maximumCostUsd: "2.500000",
+        maximumInputTokens: 100_000,
+        maximumOutputTokens: 8_192,
+        maximumRequestBytes: 1_048_576,
+        requestTimeoutMilliseconds: 60_000,
+      },
+      model: {
+        expectedResolvedId: "gpt-test-2026-08-01",
+        requestedId: "gpt-test-2026-08-01",
+        versionPolicy: "pinned" as const,
+      },
+      openAiProjectId: "proj_example",
+      organizationId: "org_example",
+      output: {
+        name: "change_overview",
+        schema: {
+          additionalProperties: false,
+          properties: { summary: { type: "string" } },
+          required: ["summary"],
+          type: "object",
+        },
+      },
+    };
+
+    await expect(runDirectApiStructuredTextInference(inference, transport)).resolves.toEqual({
+      identity: {
+        attributedOpenAiProjectId: "proj_example",
+        observedApiVersion: "2020-10-01",
+        observedModel: "gpt-test-2026-08-01",
+        observedOrganizationId: "org_example",
+        requestId: "req_inference_example",
+      },
+      output: { summary: "Bounded facts." },
+    });
+
+    expect(transport.send).toHaveBeenCalledOnce();
+    const request = vi.mocked(transport.send).mock.calls[0]?.[0];
+    expect(request?.body).toEqual({
+      input: "A bounded fact manifest.",
+      instructions: "Organize only the supplied facts.",
+      max_output_tokens: 8_192,
+      model: "gpt-test-2026-08-01",
+      store: false,
+      text: {
+        format: {
+          name: "change_overview",
+          schema: {
+            additionalProperties: false,
+            properties: { summary: { type: "string" } },
+            required: ["summary"],
+            type: "object",
+          },
+          strict: true,
+          type: "json_schema",
+        },
+      },
+    });
+    for (const forbidden of [
+      "background",
+      "conversation",
+      "file",
+      "previous_response_id",
+      "prompt",
+      "service_tier",
+      "stream",
+      "tool",
+      "url",
+    ]) {
+      expect(JSON.stringify(request?.body)).not.toContain(forbidden);
+    }
+
+    await expect(
+      runDirectApiStructuredTextInference(
+        { ...inference, inputTokenCount: inference.limits.maximumInputTokens + 1 },
+        transport,
+      ),
+    ).rejects.toMatchObject({ code: "request_invalid" });
+    await expect(
+      runDirectApiStructuredTextInference(
+        {
+          ...inference,
+          output: {
+            ...inference.output,
+            schema: { ...inference.output.schema, additionalProperties: true },
+          },
+        },
+        transport,
+      ),
+    ).rejects.toMatchObject({ code: "request_invalid" });
+    expect(transport.send).toHaveBeenCalledOnce();
   });
 
   it("fails closed on observed profile drift without exposing the credential", async () => {

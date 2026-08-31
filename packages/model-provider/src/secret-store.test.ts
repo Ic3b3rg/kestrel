@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -62,5 +62,21 @@ describe("FileCredentialStore", () => {
 
     await store.delete(projectId, handle);
     await expect(store.read(projectId, handle)).rejects.toThrow("Credential is unavailable");
+  });
+
+  it("reconciles an encrypted deletion tombstone on the next store operation", async () => {
+    const directory = await makeTemporaryDirectory("kestrel-model-provider-");
+    directories.push(directory);
+    const store = new FileCredentialStore(directory);
+    await store.put(
+      "018f0f89-8f75-7cc4-9860-3fda5f75d697",
+      "sk-project-exclusive-test-key-1234567890",
+    );
+    const tombstone = ".deleted-credential-0123456789abcdef0123456789abcdef.tmp";
+    await writeFile(join(directory, "credentials", tombstone), "encrypted orphan", "utf8");
+
+    await store.reconcile();
+
+    expect(await readdir(join(directory, "credentials"))).not.toContain(tombstone);
   });
 });

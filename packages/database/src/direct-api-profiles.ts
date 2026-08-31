@@ -2,6 +2,9 @@ import { createHash } from "node:crypto";
 
 import {
   CorrelationIdSchema,
+  DIRECT_API_EXECUTION_POLICY,
+  DIRECT_API_FIXED_PROFILE,
+  DIRECT_API_SYNTHETIC_TEST_VALIDITY_MILLISECONDS,
   DirectApiDataPolicySchema,
   DirectApiLimitsSchema,
   DirectApiPriceSnapshotSchema,
@@ -27,6 +30,7 @@ export interface DirectApiProfileDatabaseRow {
   availability: "available" | "stale" | "unavailable";
   availability_reasons: unknown;
   attestation_expires_at?: Date;
+  attributed_openai_project_id: string;
   created_at: Date;
   credential_handle: string;
   data_policy: unknown;
@@ -47,19 +51,6 @@ export interface DirectApiProfileDatabaseRow {
   synthetic_request_id: string;
   updated_at: Date;
 }
-
-const executionPolicy = {
-  arbitraryOptions: "disabled",
-  callbacks: "disabled",
-  files: "disabled",
-  inputModality: "text",
-  privilegedInstructions: "developer",
-  retrieval: "disabled",
-  statefulness: "stateless",
-  structuredOutput: "json_schema_strict",
-  tools: "disabled",
-  urls: "disabled",
-} as const;
 
 function safeConfiguration(
   configuration: DirectApiProfileConfiguration,
@@ -84,16 +75,12 @@ function digestProfile(configuration: DirectApiProfileConfiguration): string {
     .update(
       JSON.stringify({
         effectiveIdentity: {
-          apiSurface: "responses",
-          apiVersion: "2020-10-01",
-          endpointOrigin: "https://api.openai.com",
-          endpointPath: "/v1/responses",
+          ...DIRECT_API_FIXED_PROFILE,
           model: configuration.model,
           openAiProjectId: configuration.openAiProjectId,
           organizationId: configuration.organizationId,
-          provider: "openai",
         },
-        executionPolicy,
+        executionPolicy: DIRECT_API_EXECUTION_POLICY,
         dataPolicy: configuration.dataPolicy,
         limits: configuration.limits,
         priceSnapshot: configuration.priceSnapshot,
@@ -114,9 +101,10 @@ function availabilityForRow(
   let availability = row.availability;
 
   if (
-    row.observed_api_version !== "2020-10-01" ||
+    row.observed_api_version !== DIRECT_API_FIXED_PROFILE.apiVersion ||
     row.observed_model !== row.expected_resolved_model_id ||
-    row.observed_organization_id !== row.organization_id
+    row.observed_organization_id !== row.organization_id ||
+    row.attributed_openai_project_id !== row.openai_project_id
   ) {
     availability = "unavailable";
     reasons.add("identity_drift");
@@ -124,6 +112,13 @@ function availabilityForRow(
   if (expiresAt <= now.toISOString()) {
     if (availability === "available") availability = "stale";
     reasons.add("attestation_expired");
+  }
+  if (
+    row.last_test_passed_at.getTime() + DIRECT_API_SYNTHETIC_TEST_VALIDITY_MILLISECONDS <=
+    now.getTime()
+  ) {
+    if (availability === "available") availability = "stale";
+    reasons.add("synthetic_test_expired");
   }
   if (availability === "available") reasons.clear();
 
@@ -145,10 +140,7 @@ export function mapDirectApiProfileRow(
     ...availability,
     displayName: row.display_name,
     effectiveIdentity: {
-      apiSurface: "responses",
-      apiVersion: "2020-10-01",
-      endpointOrigin: "https://api.openai.com",
-      endpointPath: "/v1/responses",
+      ...DIRECT_API_FIXED_PROFILE,
       model: {
         expectedResolvedId: row.expected_resolved_model_id,
         requestedId: row.requested_model_id,
@@ -156,14 +148,14 @@ export function mapDirectApiProfileRow(
       },
       openAiProjectId: row.openai_project_id,
       organizationId: row.organization_id,
-      provider: "openai",
     },
-    executionPolicy,
+    executionPolicy: DIRECT_API_EXECUTION_POLICY,
     dataPolicy,
     limits: DirectApiLimitsSchema.parse(row.limits),
     priceSnapshot: DirectApiPriceSnapshotSchema.parse(row.price_snapshot),
     profileDigest: row.profile_digest,
     lastTest: {
+      attributedOpenAiProjectId: row.attributed_openai_project_id,
       observedApiVersion: row.observed_api_version,
       observedModel: row.observed_model,
       observedOrganizationId: row.observed_organization_id,
@@ -293,6 +285,7 @@ export async function persistDirectApiProfile(
           profile_digest,
           availability,
           availability_reasons,
+          attributed_openai_project_id,
           observed_api_version,
           observed_model,
           observed_organization_id,
@@ -303,9 +296,9 @@ export async function persistDirectApiProfile(
         )
         VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::timestamptz, $10::jsonb, $11::jsonb, $12,
-          'available', '[]'::jsonb, $13, $14, $15, $16, $17::timestamptz,
-          GREATEST(statement_timestamp(), $17::timestamptz),
-          GREATEST(statement_timestamp(), $17::timestamptz)
+          'available', '[]'::jsonb, $13, $14, $15, $16, $17, $18::timestamptz,
+          GREATEST(statement_timestamp(), $18::timestamptz),
+          GREATEST(statement_timestamp(), $18::timestamptz)
         )
         ON CONFLICT (project_id) DO UPDATE
         SET credential_handle = EXCLUDED.credential_handle,
@@ -321,6 +314,7 @@ export async function persistDirectApiProfile(
             profile_digest = EXCLUDED.profile_digest,
             availability = 'available',
             availability_reasons = '[]'::jsonb,
+            attributed_openai_project_id = EXCLUDED.attributed_openai_project_id,
             observed_api_version = EXCLUDED.observed_api_version,
             observed_model = EXCLUDED.observed_model,
             observed_organization_id = EXCLUDED.observed_organization_id,
@@ -342,6 +336,7 @@ export async function persistDirectApiProfile(
         JSON.stringify(configuration.limits),
         JSON.stringify(configuration.priceSnapshot),
         digestProfile(configuration),
+        input.certification.attributedOpenAiProjectId,
         input.certification.observedApiVersion,
         input.certification.observedModel,
         input.certification.observedOrganizationId,
@@ -471,17 +466,19 @@ export async function recordDirectApiProfileTest(
             UPDATE direct_api_profiles
             SET availability = 'available',
                 availability_reasons = '[]'::jsonb,
-                observed_api_version = $2,
-                observed_model = $3,
-                observed_organization_id = $4,
-                synthetic_request_id = $5,
-                last_test_passed_at = $6::timestamptz,
-                updated_at = GREATEST(statement_timestamp(), $6::timestamptz)
+                attributed_openai_project_id = $2,
+                observed_api_version = $3,
+                observed_model = $4,
+                observed_organization_id = $5,
+                synthetic_request_id = $6,
+                last_test_passed_at = $7::timestamptz,
+                updated_at = GREATEST(statement_timestamp(), $7::timestamptz)
             WHERE project_id = $1
             RETURNING *
           `,
           [
             projectId,
+            input.certification.attributedOpenAiProjectId,
             input.certification.observedApiVersion,
             input.certification.observedModel,
             input.certification.observedOrganizationId,

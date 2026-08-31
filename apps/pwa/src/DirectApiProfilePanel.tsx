@@ -115,6 +115,10 @@ export function DirectApiProfileView({ profile }: { profile: DirectApiProfile })
             <span>
               Observed {profile.lastTest.observedModel} · {profile.lastTest.observedApiVersion}
             </span>
+            <span>
+              Attributed Project {profile.lastTest.attributedOpenAiProjectId} · Organization{" "}
+              {profile.lastTest.observedOrganizationId}
+            </span>
           </dd>
         </div>
       </dl>

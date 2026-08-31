@@ -301,6 +301,7 @@ describe("V1 public contracts", () => {
         },
         profileDigest: "6".repeat(64),
         lastTest: {
+          attributedOpenAiProjectId: "proj_example",
           observedApiVersion: "2020-10-01",
           observedModel: "gpt-test-2026-08-01",
           observedOrganizationId: "org_example",
@@ -315,6 +316,15 @@ describe("V1 public contracts", () => {
     expect(JSON.stringify(response)).not.toContain("sk-project-exclusive");
     expect(response.profile).not.toHaveProperty("credentialHandle");
     expect(response.profile).not.toHaveProperty("apiKey");
+    expect(() =>
+      DirectApiProfileResponseSchema.parse({
+        ...response,
+        profile: {
+          ...response.profile,
+          lastTest: { ...response.profile.lastTest, attributedOpenAiProjectId: "proj_other" },
+        },
+      }),
+    ).toThrow();
     expect(() =>
       DirectApiProfileResponseSchema.parse({
         ...response,

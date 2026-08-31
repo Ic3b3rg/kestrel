@@ -68,6 +68,7 @@ const profile: DirectApiProfile = {
   },
   profileDigest: "6".repeat(64),
   lastTest: {
+    attributedOpenAiProjectId: "proj_example",
     observedApiVersion: "2020-10-01",
     observedModel: "gpt-test-2026-08-01",
     observedOrganizationId: "org_example",
@@ -88,6 +89,7 @@ describe("DirectApiProfileView", () => {
     expect(html).toContain("gpt-test-2026-08-01");
     expect(html).toContain("org_example");
     expect(html).toContain("proj_example");
+    expect(html).toContain("Attributed Project");
     expect(html).toContain("Not used without opt-in");
     expect(html).toContain("US");
     expect(html).toContain(

@@ -116,15 +116,28 @@ async function sendOpenAiRequest(
       (incoming) => {
         const chunks: Buffer[] = [];
         let length = 0;
+        let responseRejected = false;
         incoming.on("data", (chunk: Buffer) => {
           length += chunk.length;
           if (length > 1_048_576) {
-            incoming.destroy(new Error("Provider response exceeded its bound"));
+            responseRejected = true;
+            reject(
+              new DirectApiBrokerError(
+                "provider_unavailable",
+                "Provider response exceeded its bound",
+              ),
+            );
+            incoming.destroy();
             return;
           }
           chunks.push(chunk);
         });
+        incoming.on("error", () => {
+          responseRejected = true;
+          reject(new DirectApiBrokerError("provider_unavailable", "Provider profile test failed"));
+        });
         incoming.on("end", () => {
+          if (responseRejected) return;
           const statusCode = incoming.statusCode ?? 0;
           if (statusCode >= 300 && statusCode < 400) {
             reject(
