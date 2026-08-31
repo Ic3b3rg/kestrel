@@ -156,6 +156,33 @@ describe("Project persistence mapping", () => {
     expect(() => mapProjectRows([projectRow({ author_provider_id: null })])).toThrow();
   });
 
+  it("maps the effective Direct API availability independently from source access", () => {
+    expect(
+      mapProjectRows([
+        projectRow({
+          direct_profile_attestation_expires_at: new Date("2099-01-01T00:00:00.000Z"),
+          direct_profile_availability: "available",
+        }),
+      ]).projects[0]?.modelAccess,
+    ).toBe("direct_api_available");
+    expect(
+      mapProjectRows([
+        projectRow({
+          direct_profile_attestation_expires_at: new Date("2020-01-01T00:00:00.000Z"),
+          direct_profile_availability: "available",
+        }),
+      ]).projects[0]?.modelAccess,
+    ).toBe("direct_api_stale");
+    expect(
+      mapProjectRows([
+        projectRow({
+          direct_profile_attestation_expires_at: new Date("2099-01-01T00:00:00.000Z"),
+          direct_profile_availability: "unavailable",
+        }),
+      ]).projects[0]?.modelAccess,
+    ).toBe("direct_api_unavailable");
+  });
+
   it("fails closed for an unsupported Provider Observation kind", () => {
     expect(() =>
       mapProjectRows([projectRow({ provider_observation_kind: "local_repository" })]),

@@ -3609,7 +3609,10 @@
                 },
                 "modelAccess": {
                   "enum": [
-                    "not_configured"
+                    "not_configured",
+                    "direct_api_available",
+                    "direct_api_stale",
+                    "direct_api_unavailable"
                   ],
                   "type": "string"
                 },
@@ -5375,7 +5378,10 @@
               },
               "modelAccess": {
                 "enum": [
-                  "not_configured"
+                  "not_configured",
+                  "direct_api_available",
+                  "direct_api_stale",
+                  "direct_api_unavailable"
                 ],
                 "type": "string"
               },
@@ -10127,7 +10133,10 @@
               },
               "modelAccess": {
                 "enum": [
-                  "not_configured"
+                  "not_configured",
+                  "direct_api_available",
+                  "direct_api_stale",
+                  "direct_api_unavailable"
                 ],
                 "type": "string"
               },

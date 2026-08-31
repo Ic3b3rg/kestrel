@@ -513,13 +513,20 @@ export const ChangeProposalSchema = z.discriminatedUnion("kind", [
   LocalChangeProposalSchema,
 ]);
 
+export const ModelAccessSchema = z.enum([
+  "not_configured",
+  "direct_api_available",
+  "direct_api_stale",
+  "direct_api_unavailable",
+]);
+
 export const ProjectSchema = z.strictObject({
   id: KestrelIdSchema,
   providerObservation: ProviderObservationSchema.nullable(),
   repository: RepositorySnapshotSchema.nullable(),
   localRepositorySource: LocalRepositorySourceSchema.nullable(),
   sourceAvailability: z.enum(["not_acquired", "available", "unavailable"]),
-  modelAccess: z.enum(["not_configured"]),
+  modelAccess: ModelAccessSchema,
   createdAt: UtcDateTimeSchema,
   updatedAt: UtcDateTimeSchema,
   changeProposals: z.array(ChangeProposalSchema).max(100),
@@ -1131,6 +1138,7 @@ export type LocalRepositoryInventoryItem = z.infer<typeof LocalRepositoryInvento
 export type LocalRepositoryReference = z.infer<typeof LocalRepositoryReferenceSchema>;
 export type LocalRepositoryReferences = z.infer<typeof LocalRepositoryReferencesSchema>;
 export type LocalRepositorySource = z.infer<typeof LocalRepositorySourceSchema>;
+export type ModelAccess = z.infer<typeof ModelAccessSchema>;
 export type HostGitHubProjectInbox = z.infer<typeof HostGitHubProjectInboxSchema>;
 export type HostGitHubPullRequestSummary = z.infer<typeof HostGitHubPullRequestSummarySchema>;
 export type HostGitHubStatus = z.infer<typeof HostGitHubStatusSchema>;
