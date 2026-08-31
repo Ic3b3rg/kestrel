@@ -179,6 +179,19 @@ describe("ProjectInboxPanel", () => {
     expect(html).toContain("Refresh PR #1234");
   });
 
+  it("shows the Project-level Direct API availability without implying source access", () => {
+    const project = populatedInbox.projects[0];
+    if (project === undefined) throw new Error("Project fixture is unavailable");
+    const html = render({
+      schemaVersion: 1,
+      projects: [{ ...project, modelAccess: "direct_api_available" }],
+    });
+
+    expect(html).toContain("Direct API available");
+    expect(html).toContain("independent of source acquisition");
+    expect(html).toContain("Reading the effective profile");
+  });
+
   it("renders local source, provider metadata, Revision State, and model access separately", () => {
     const html = render(localInbox);
 

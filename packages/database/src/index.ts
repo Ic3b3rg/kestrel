@@ -14,6 +14,7 @@ export * from "./operators.js";
 export * from "./operator-security.js";
 export * from "./audit.js";
 export * from "./change-intents.js";
+export * from "./direct-api-profiles.js";
 export * from "./rate-limits.js";
 export * from "./pg-boss.js";
 export * from "./projects.js";

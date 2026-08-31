@@ -658,6 +658,132 @@ h1 {
   line-height: 1.5;
 }
 
+.direct-api-profile {
+  display: grid;
+  gap: 1rem;
+  padding: 1.5rem;
+  border-bottom: 1px solid var(--line);
+  background: rgb(251 250 245 / 72%);
+}
+
+.direct-api-profile-heading,
+.direct-api-profile-actions,
+.direct-api-profile-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.direct-api-profile-heading h4,
+.direct-api-profile-heading p,
+.direct-api-profile-empty,
+.direct-api-profile-form > p {
+  margin: 0;
+}
+
+.direct-api-profile-actions {
+  justify-content: flex-end;
+}
+
+.direct-api-profile-status {
+  padding: 0.875rem 1rem;
+  border-left: 0.25rem solid var(--accent);
+  background: var(--surface);
+}
+
+.direct-api-profile-status span,
+.direct-api-profile-empty,
+.direct-api-profile-form > p {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.direct-api-profile-reasons {
+  margin: 0;
+  color: var(--danger);
+}
+
+.direct-api-profile-facts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  margin: 0;
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+}
+
+.direct-api-profile-facts > div {
+  min-width: 0;
+  padding: 1rem;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.direct-api-profile-facts dt {
+  margin-bottom: 0.375rem;
+  color: var(--muted);
+  font:
+    0.6875rem/1.2 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.direct-api-profile-facts dd {
+  display: grid;
+  gap: 0.375rem;
+  margin: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
+
+.direct-api-profile-facts dd > span,
+.direct-api-profile-facts dd > a {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.direct-api-profile-form {
+  display: grid;
+  gap: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.direct-api-profile-form fieldset {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+  margin: 0;
+  padding: 1rem;
+  border: 1px solid var(--line);
+}
+
+.direct-api-profile-form legend {
+  padding: 0 0.5rem;
+  font-weight: 700;
+}
+
+.direct-api-form-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+}
+
+.direct-api-profile-form .form-field > span {
+  color: var(--muted);
+  font:
+    700 0.6875rem/1.2 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .proposal-list {
   display: grid;
   gap: 1rem;
@@ -1449,6 +1575,11 @@ footer {
   .project-facts,
   .commit-pointer-list,
   .review-input-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .direct-api-profile-facts,
+  .direct-api-form-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 

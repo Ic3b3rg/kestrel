@@ -15,7 +15,7 @@
   "scripts": {
     "bootstrap": "node scripts/docker-compose.mjs exec web npm run bootstrap -w @kestrel/web",
     "reset-password": "node scripts/docker-compose.mjs exec web npm run reset-password -w @kestrel/web",
-    "build": "npm run build -w @kestrel/contracts && npm run build -w @kestrel/local-source && npm run build -w @kestrel/database && npm run build -w @kestrel/pwa && npm run build -w @kestrel/web && npm run build -w @kestrel/worker",
+    "build": "npm run build -w @kestrel/contracts && npm run build -w @kestrel/model-provider && npm run build -w @kestrel/local-source && npm run build -w @kestrel/database && npm run build -w @kestrel/pwa && npm run build -w @kestrel/web && npm run build -w @kestrel/worker",
     "contracts:check": "npm run check -w @kestrel/contracts",
     "contracts:generate": "npm run generate -w @kestrel/contracts",
     "dev": "node scripts/docker-compose.mjs up --build --detach --wait",

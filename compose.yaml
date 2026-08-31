@@ -63,6 +63,7 @@ services:
       <<: *runtime-database-environment
       HOST: 0.0.0.0
       PORT: 3000
+      MODEL_PROVIDER_SECRET_ROOT: /var/lib/kestrel/model-provider
       SESSION_SIGNING_KEY: ${SESSION_SIGNING_KEY:?SESSION_SIGNING_KEY must be set}
     healthcheck:
       test:
@@ -79,6 +80,7 @@ services:
       - "127.0.0.1:3000:3000"
     restart: unless-stopped
     volumes:
+      - model-provider-secrets:/var/lib/kestrel/model-provider
       - review-artifacts:/var/lib/kestrel/artifacts
 
   worker:
@@ -115,4 +117,5 @@ services:
 
 volumes:
   postgres-data:
+  model-provider-secrets:
   review-artifacts:

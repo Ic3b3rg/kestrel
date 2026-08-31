@@ -10,10 +10,11 @@ Kestrel-owned artifact root.
 Review First V1 is [local-first](./docs/adr/0002-make-review-first-v1-local-first.md): every review
 must be materialized from exact commits available through an authorized local Git repository. Public
 GitHub and the Operator's existing host `gh` session may provide optional pull-request discovery,
-but Kestrel stores no provider credential. Supported VPS/cloud operation, GitHub App, webhooks,
-GitLab, and remote availability are deferred. The development Compose configuration disables host
-repository discovery by default. Enabling it requires one explicit read-only bind mount as
-documented below; Kestrel never scans arbitrary host paths.
+but Kestrel stores no Repository Provider credential. A separately configured Direct API profile may
+store one encrypted Model Provider key as described below. Supported VPS/cloud operation, GitHub
+App, webhooks, GitLab, and remote availability are deferred. The development Compose configuration
+disables host repository discovery by default. Enabling it requires one explicit read-only bind
+mount as documented below; Kestrel never scans arbitrary host paths.
 
 ## Start the development Installation
 
@@ -76,10 +77,31 @@ Stop and remove the development containers with:
 npm run dev:down
 ```
 
-This preserves the named `kestrel_postgres-data` and `kestrel_review-artifacts` volumes. A later
-`npm run dev` presents the same Installation, confirmed diagnostic operations, and retained Review
-Revisions. Use `docker compose down --volumes` only when deliberately resetting all local Kestrel
-data and retained source.
+This preserves the named `kestrel_postgres-data`, `kestrel_model-provider-secrets`, and
+`kestrel_review-artifacts` volumes. A later `npm run dev` presents the same Installation, confirmed
+diagnostic operations, Direct API credential handles, and retained Review Revisions. Use
+`docker compose down --volumes` only when deliberately resetting all local Kestrel data, secrets,
+and retained source.
+
+## Configure direct OpenAI API access
+
+The Project panel can configure one exact OpenAI Responses API profile. Adding or replacing the API
+key requires the current Operator password and runs one bounded synthetic structured-output test
+before activation. Kestrel fixes the HTTPS origin, API surface and version, pinned model identity,
+disabled tool/file/URL/retrieval/callback policy, data-policy attestation, limits, and price
+snapshot. A failed identity check has no fallback route.
+
+The test sends the configured `OpenAI-Project` routing header and records that Project as
+attributed, while independently checking the response organization, API version, pinned model, and
+request ID. OpenAI's documented response metadata does not include a Project identity header. A
+successful synthetic test is valid for 24 hours; after that the profile is stale until an explicit
+re-test succeeds.
+
+The database and PWA contain only safe profile metadata. The API key is encrypted behind a random,
+Project-exclusive handle under `MODEL_PROVIDER_SECRET_ROOT`; Compose mounts the separate
+`model-provider-secrets` volume into `web` only, never `worker` or `pwa`. For a native web process,
+set this variable to an absolute, mode-0700 directory owned by the web user. Removing that directory
+or its wrapping key makes the profile unavailable; it does not expose or silently replace the key.
 
 ## Authorize local repositories
 
@@ -195,8 +217,10 @@ sanitized local GitHub remote and exact commits match an observed proposal, loca
 that same logical Project and Change Proposal. If independent local and provider-first records
 already exist, Kestrel keeps their immutable source/revision history, creates durable internal
 aliases, and returns only the canonical Project in the inbox. An explicit proposal selection
-disambiguates multiple provider proposals for the same exact commit pair. Private provider metadata,
-model access, GitHub Enterprise, GitLab, and Provider Synchronization remain out of scope.
+disambiguates multiple provider proposals for the same exact commit pair. Private Repository
+Provider metadata, GitHub Enterprise, GitLab, and Provider Synchronization remain out of scope.
+Direct OpenAI model access is configured independently and never supplies repository source or
+Provider Observation.
 
 Useful endpoints on port 3000:
 
@@ -209,6 +233,9 @@ Useful endpoints on port 3000:
 - `/api/v1/operator/credentials` — step-up-protected username/password change;
 - `/api/v1/installation` — authoritative snapshot;
 - `/api/v1/projects` — Project inbox read and public GitHub pull request open/refresh;
+- `/api/v1/projects/:projectId/model-profiles/direct-api` — read or step-up configure the exact
+  Direct API profile;
+- `/api/v1/projects/:projectId/model-profiles/direct-api/test` — re-test the stored profile;
 - `/api/v1/local-repository-sources` — bounded opaque authorized repository inventory;
 - `/api/v1/local-repository-sources/:repositoryId/references` — bounded committed ref inventory;
 - `/api/v1/review-revisions` — retain an exact, Operator-intended Review Revision;
@@ -267,15 +294,18 @@ npm run contracts:check
 - `packages/database` owns SQL migrations and node-postgres queries; there is no ORM.
 - `packages/local-source` owns bounded discovery, fixed Git inspection, verified artifact retention,
   reconciliation, and detached artifact reads.
+- `packages/model-provider` owns encrypted model credentials, the fixed OpenAI transport, synthetic
+  certification, and the stateless structured-text inference boundary.
 
 Review preparation now exposes the exact retained revision, resolved intent, source provenance,
 analysis profile and route availability, authority, Resource Envelope, and blockers before
 confirmation. A configured Resource Envelope includes explicit memory, process, writable-disk, CPU,
 and concurrency limits plus its terminal exhaustion boundary; the built-in profile remains blocked
 until benchmark-derived limits are supplied rather than inventing a default. Starting a ready Review
-Workflow freezes those bindings transactionally; model access, resource admission, and workflow
-execution are delivered by later issues. TLS/Caddy and Repository Provider Connections are outside
-the local-first V1 contract.
+Workflow freezes those bindings transactionally. Direct API profile configuration is available;
+binding it into overview/review execution, resource admission, and workflow execution is delivered
+by later issues. TLS/Caddy and Repository Provider Connections are outside the local-first V1
+contract.
 
 The development Compose file keeps database ownership out of the long-running services. The one-shot
 migration and role-preparation containers use the database owner; web and worker connect as

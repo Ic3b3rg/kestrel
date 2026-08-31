@@ -1,4 +1,4 @@
-import { resolve } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 
 import { buildApp } from "./app.js";
 import {
@@ -6,6 +6,7 @@ import {
   inspectLocalSourceAttachments,
 } from "./routes/local-repository-sources.js";
 import { createReviewRevisionService } from "./routes/review-revisions.js";
+import { createDirectApiProfileService } from "./routes/direct-api-profiles.js";
 import { createHostGitHubProjectService } from "./routes/projects.js";
 import { readSessionSigningKey } from "./session.js";
 
@@ -20,6 +21,7 @@ import {
   withArtifactLifecycleLock,
 } from "@kestrel/database";
 import { readLocalSourceConfig, reconcileArtifactRoot } from "@kestrel/local-source";
+import { createOpenAiTransport, FileCredentialStore } from "@kestrel/model-provider";
 
 function readPort(value: string | undefined): number {
   const port = Number(value ?? "3000");
@@ -29,8 +31,19 @@ function readPort(value: string | undefined): number {
   return port;
 }
 
+function readModelProviderSecretRoot(value: string | undefined): string {
+  if (value === undefined || !isAbsolute(value)) {
+    throw new Error("MODEL_PROVIDER_SECRET_ROOT must be an absolute path");
+  }
+  return value;
+}
+
 const config = readDatabaseConfig();
 const localSourceConfig = await readLocalSourceConfig();
+const sessionSigningKey = readSessionSigningKey();
+const modelProviderSecretRoot = readModelProviderSecretRoot(process.env.MODEL_PROVIDER_SECRET_ROOT);
+const credentialStore = new FileCredentialStore(modelProviderSecretRoot);
+await credentialStore.reconcile();
 const pool = createPool(config.databaseUrl, "kestrel-web");
 const eventPool = createPool(config.databaseUrl, "kestrel-web-events", {
   connectionTimeoutMillis: 2_000,
@@ -54,11 +67,17 @@ const app = await buildApp({
   boss,
   eventPool,
   eventRetentionLimit: readEventRetentionLimit(),
+  directApiProfileService: createDirectApiProfileService(
+    pool,
+    credentialStore,
+    createOpenAiTransport(),
+    sessionSigningKey,
+  ),
   localRepositoryService,
   hostGitHubProjectService: createHostGitHubProjectService(pool),
   pool,
   pwaRoot: process.env.PWA_ROOT ?? resolve(import.meta.dirname, "../../pwa/dist"),
-  sessionSigningKey: readSessionSigningKey(),
+  sessionSigningKey,
   reviewRevisionService: createReviewRevisionService(pool, localRepositoryService),
 });
 boss.on("error", (error) => {

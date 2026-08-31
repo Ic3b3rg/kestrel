@@ -513,13 +513,20 @@ export const ChangeProposalSchema = z.discriminatedUnion("kind", [
   LocalChangeProposalSchema,
 ]);
 
+export const ModelAccessSchema = z.enum([
+  "not_configured",
+  "direct_api_available",
+  "direct_api_stale",
+  "direct_api_unavailable",
+]);
+
 export const ProjectSchema = z.strictObject({
   id: KestrelIdSchema,
   providerObservation: ProviderObservationSchema.nullable(),
   repository: RepositorySnapshotSchema.nullable(),
   localRepositorySource: LocalRepositorySourceSchema.nullable(),
   sourceAvailability: z.enum(["not_acquired", "available", "unavailable"]),
-  modelAccess: z.enum(["not_configured"]),
+  modelAccess: ModelAccessSchema,
   createdAt: UtcDateTimeSchema,
   updatedAt: UtcDateTimeSchema,
   changeProposals: z.array(ChangeProposalSchema).max(100),
@@ -784,6 +791,219 @@ export const CredentialChangeCommandSchema = z.strictObject({
 
 export const LogoutCommandSchema = z.strictObject({});
 
+const DirectApiIdentifierSchema = z
+  .string()
+  .min(1)
+  .max(128)
+  .regex(/^[A-Za-z0-9._:-]+$/u);
+const DirectApiRegionSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._ -]*$/u);
+const DirectApiUsdAmountSchema = z.string().regex(/^(?:0|[1-9][0-9]{0,9})(?:\.[0-9]{1,6})?$/u);
+const HttpsUrlSchema = z.url().refine((value) => value.startsWith("https://"), {
+  message: "Only HTTPS evidence references are accepted",
+});
+const DirectApiRegionsSchema = z
+  .array(DirectApiRegionSchema)
+  .min(1)
+  .max(16)
+  .refine((regions) => new Set(regions).size === regions.length, {
+    message: "Regions must be unique",
+  });
+
+export const DIRECT_API_FIXED_PROFILE = {
+  apiSurface: "responses",
+  apiVersion: "2020-10-01",
+  endpointOrigin: "https://api.openai.com",
+  endpointPath: "/v1/responses",
+  provider: "openai",
+} as const;
+
+export const DIRECT_API_EXECUTION_POLICY = {
+  arbitraryOptions: "disabled",
+  callbacks: "disabled",
+  files: "disabled",
+  inputModality: "text",
+  privilegedInstructions: "developer",
+  retrieval: "disabled",
+  statefulness: "stateless",
+  structuredOutput: "json_schema_strict",
+  tools: "disabled",
+  urls: "disabled",
+} as const;
+
+export const DIRECT_API_SYNTHETIC_TEST_VALIDITY_MILLISECONDS = 24 * 60 * 60 * 1_000;
+
+export const DirectApiDataPolicySchema = z
+  .strictObject({
+    abuseMonitoring: z.enum(["standard", "modified", "zero_data_retention"]),
+    attestedAt: UtcDateTimeSchema,
+    evidenceUrl: HttpsUrlSchema,
+    expiresAt: UtcDateTimeSchema,
+    humanReview: z.enum(["possible", "restricted", "none_attested"]),
+    processingRegions: DirectApiRegionsSchema,
+    storageRegions: DirectApiRegionsSchema,
+    trainingUse: z.enum(["not_used_without_opt_in", "provider_may_train"]),
+  })
+  .refine(({ attestedAt, expiresAt }) => expiresAt > attestedAt, {
+    message: "Data-policy attestation expiry must follow its observation",
+    path: ["expiresAt"],
+  });
+
+export const DirectApiLimitsSchema = z.strictObject({
+  maximumAttempts: z.literal(1),
+  maximumConcurrentRequests: z.number().int().min(1).max(16),
+  maximumCostUsd: DirectApiUsdAmountSchema,
+  maximumInputTokens: z.number().int().min(1).max(2_000_000),
+  maximumOutputTokens: z.number().int().min(16).max(100_000),
+  maximumRequestBytes: z
+    .number()
+    .int()
+    .min(1_024)
+    .max(64 * 1_024 * 1_024),
+  requestTimeoutMilliseconds: z.number().int().min(1_000).max(120_000),
+});
+
+export const DirectApiModelTargetSchema = z
+  .strictObject({
+    expectedResolvedId: DirectApiIdentifierSchema,
+    requestedId: DirectApiIdentifierSchema,
+    versionPolicy: z.literal("pinned"),
+  })
+  .refine(({ expectedResolvedId, requestedId }) => expectedResolvedId === requestedId, {
+    message: "A pinned Direct API target must resolve to the requested model",
+    path: ["expectedResolvedId"],
+  });
+
+export const DirectApiPriceSnapshotSchema = z
+  .strictObject({
+    cachedInputPerMillionTokensUsd: DirectApiUsdAmountSchema.nullable(),
+    capturedAt: UtcDateTimeSchema,
+    currency: z.literal("USD"),
+    effectiveAt: UtcDateTimeSchema,
+    inputPerMillionTokensUsd: DirectApiUsdAmountSchema,
+    outputPerMillionTokensUsd: DirectApiUsdAmountSchema,
+    sourceUrl: HttpsUrlSchema,
+  })
+  .refine(({ capturedAt, effectiveAt }) => capturedAt >= effectiveAt, {
+    message: "A price snapshot cannot be captured before it becomes effective",
+    path: ["capturedAt"],
+  });
+
+export const ConfigureDirectApiProfileCommandSchema = z.strictObject({
+  apiKey: z
+    .string()
+    .min(20)
+    .max(512)
+    .regex(/^[A-Za-z0-9._-]+$/u),
+  dataPolicy: DirectApiDataPolicySchema,
+  displayName: z.string().trim().min(1).max(256),
+  limits: DirectApiLimitsSchema,
+  model: DirectApiModelTargetSchema,
+  openAiProjectId: DirectApiIdentifierSchema,
+  organizationId: DirectApiIdentifierSchema,
+  priceSnapshot: DirectApiPriceSnapshotSchema,
+});
+
+export const DirectApiProfileAvailabilityReasonSchema = z.enum([
+  "attestation_expired",
+  "credential_unavailable",
+  "identity_drift",
+  "provider_unavailable",
+  "synthetic_test_expired",
+  "synthetic_test_failed",
+]);
+
+export const DirectApiEffectiveIdentitySchema = z.strictObject({
+  apiSurface: z.literal(DIRECT_API_FIXED_PROFILE.apiSurface),
+  apiVersion: z.literal(DIRECT_API_FIXED_PROFILE.apiVersion),
+  endpointOrigin: z.literal(DIRECT_API_FIXED_PROFILE.endpointOrigin),
+  endpointPath: z.literal(DIRECT_API_FIXED_PROFILE.endpointPath),
+  model: DirectApiModelTargetSchema,
+  openAiProjectId: DirectApiIdentifierSchema,
+  organizationId: DirectApiIdentifierSchema,
+  provider: z.literal(DIRECT_API_FIXED_PROFILE.provider),
+});
+
+export const DirectApiExecutionPolicySchema = z.strictObject({
+  arbitraryOptions: z.literal(DIRECT_API_EXECUTION_POLICY.arbitraryOptions),
+  callbacks: z.literal(DIRECT_API_EXECUTION_POLICY.callbacks),
+  files: z.literal(DIRECT_API_EXECUTION_POLICY.files),
+  inputModality: z.literal(DIRECT_API_EXECUTION_POLICY.inputModality),
+  privilegedInstructions: z.literal(DIRECT_API_EXECUTION_POLICY.privilegedInstructions),
+  retrieval: z.literal(DIRECT_API_EXECUTION_POLICY.retrieval),
+  statefulness: z.literal(DIRECT_API_EXECUTION_POLICY.statefulness),
+  structuredOutput: z.literal(DIRECT_API_EXECUTION_POLICY.structuredOutput),
+  tools: z.literal(DIRECT_API_EXECUTION_POLICY.tools),
+  urls: z.literal(DIRECT_API_EXECUTION_POLICY.urls),
+});
+
+export const DirectApiSyntheticTestSchema = z.strictObject({
+  attributedOpenAiProjectId: DirectApiIdentifierSchema,
+  observedApiVersion: z.literal(DIRECT_API_FIXED_PROFILE.apiVersion),
+  observedModel: DirectApiIdentifierSchema,
+  observedOrganizationId: DirectApiIdentifierSchema,
+  passedAt: UtcDateTimeSchema,
+  requestId: DirectApiIdentifierSchema,
+});
+
+export const DirectApiProfileSchema = z
+  .strictObject({
+    id: KestrelIdSchema,
+    projectId: KestrelIdSchema,
+    availability: z.enum(["available", "stale", "unavailable"]),
+    availabilityReasons: z.array(DirectApiProfileAvailabilityReasonSchema).max(6),
+    displayName: z.string().trim().min(1).max(256),
+    effectiveIdentity: DirectApiEffectiveIdentitySchema,
+    executionPolicy: DirectApiExecutionPolicySchema,
+    dataPolicy: DirectApiDataPolicySchema,
+    limits: DirectApiLimitsSchema,
+    priceSnapshot: DirectApiPriceSnapshotSchema,
+    profileDigest: RequestDigestSchema,
+    lastTest: DirectApiSyntheticTestSchema,
+    createdAt: UtcDateTimeSchema,
+    updatedAt: UtcDateTimeSchema,
+  })
+  .superRefine(
+    (
+      { availability, availabilityReasons, createdAt, effectiveIdentity, lastTest, updatedAt },
+      context,
+    ) => {
+      if ((availability === "available") !== (availabilityReasons.length === 0)) {
+        context.addIssue({
+          code: "custom",
+          message: "Only an available Direct API profile may omit availability reasons",
+          path: ["availabilityReasons"],
+        });
+      }
+      if (updatedAt < createdAt || updatedAt < lastTest.passedAt) {
+        context.addIssue({
+          code: "custom",
+          message: "Direct API profile timestamps are inconsistent",
+          path: ["updatedAt"],
+        });
+      }
+      if (
+        lastTest.attributedOpenAiProjectId !== effectiveIdentity.openAiProjectId ||
+        lastTest.observedModel !== effectiveIdentity.model.expectedResolvedId ||
+        lastTest.observedOrganizationId !== effectiveIdentity.organizationId
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "Direct API profile identity does not match its synthetic test",
+          path: ["lastTest"],
+        });
+      }
+    },
+  );
+
+export const DirectApiProfileResponseSchema = z.strictObject({
+  schemaVersion: SchemaVersionSchema,
+  profile: DirectApiProfileSchema.nullable(),
+});
+
 export function serializeCredentialChangeCommand(command: CredentialChangeCommand): string {
   const validated = CredentialChangeCommandSchema.parse(command);
   return JSON.stringify({
@@ -791,6 +1011,12 @@ export function serializeCredentialChangeCommand(command: CredentialChangeComman
     newPassword: validated.newPassword,
     username: validated.username,
   });
+}
+
+export function serializeConfigureDirectApiProfileCommand(
+  command: ConfigureDirectApiProfileCommand,
+): string {
+  return JSON.stringify(ConfigureDirectApiProfileCommandSchema.parse(command));
 }
 
 export const InstallationStateSchema = z.enum([
@@ -913,6 +1139,21 @@ export const HealthStatusSchema = z.strictObject({
 });
 
 export type ApiError = z.infer<typeof ApiErrorSchema>;
+export type ConfigureDirectApiProfileCommand = z.infer<
+  typeof ConfigureDirectApiProfileCommandSchema
+>;
+export type DirectApiDataPolicy = z.infer<typeof DirectApiDataPolicySchema>;
+export type DirectApiEffectiveIdentity = z.infer<typeof DirectApiEffectiveIdentitySchema>;
+export type DirectApiExecutionPolicy = z.infer<typeof DirectApiExecutionPolicySchema>;
+export type DirectApiLimits = z.infer<typeof DirectApiLimitsSchema>;
+export type DirectApiModelTarget = z.infer<typeof DirectApiModelTargetSchema>;
+export type DirectApiPriceSnapshot = z.infer<typeof DirectApiPriceSnapshotSchema>;
+export type DirectApiProfile = z.infer<typeof DirectApiProfileSchema>;
+export type DirectApiProfileAvailabilityReason = z.infer<
+  typeof DirectApiProfileAvailabilityReasonSchema
+>;
+export type DirectApiProfileResponse = z.infer<typeof DirectApiProfileResponseSchema>;
+export type DirectApiSyntheticTest = z.infer<typeof DirectApiSyntheticTestSchema>;
 export type CredentialChangeCommand = z.infer<typeof CredentialChangeCommandSchema>;
 export type CredentialVersion = z.infer<typeof CredentialVersionSchema>;
 export type Diagnostic = z.infer<typeof DiagnosticSchema>;
@@ -937,6 +1178,7 @@ export type LocalRepositoryInventoryItem = z.infer<typeof LocalRepositoryInvento
 export type LocalRepositoryReference = z.infer<typeof LocalRepositoryReferenceSchema>;
 export type LocalRepositoryReferences = z.infer<typeof LocalRepositoryReferencesSchema>;
 export type LocalRepositorySource = z.infer<typeof LocalRepositorySourceSchema>;
+export type ModelAccess = z.infer<typeof ModelAccessSchema>;
 export type HostGitHubProjectInbox = z.infer<typeof HostGitHubProjectInboxSchema>;
 export type HostGitHubPullRequestSummary = z.infer<typeof HostGitHubPullRequestSummarySchema>;
 export type HostGitHubStatus = z.infer<typeof HostGitHubStatusSchema>;

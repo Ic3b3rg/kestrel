@@ -15,6 +15,7 @@
     "@kestrel/contracts": "0.0.0",
     "@kestrel/database": "0.0.0",
     "@kestrel/local-source": "0.0.0",
+    "@kestrel/model-provider": "0.0.0",
     "fastify": "5.12.1",
     "zod": "4.4.3"
   }

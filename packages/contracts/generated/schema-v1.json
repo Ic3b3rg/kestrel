@@ -462,6 +462,247 @@
       ],
       "type": "object"
     },
+    "ConfigureDirectApiProfileCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "apiKey": {
+          "maxLength": 512,
+          "minLength": 20,
+          "pattern": "^[A-Za-z0-9._-]+$",
+          "type": "string"
+        },
+        "dataPolicy": {
+          "additionalProperties": false,
+          "properties": {
+            "abuseMonitoring": {
+              "enum": [
+                "standard",
+                "modified",
+                "zero_data_retention"
+              ],
+              "type": "string"
+            },
+            "attestedAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "type": "string"
+            },
+            "evidenceUrl": {
+              "format": "uri",
+              "type": "string"
+            },
+            "expiresAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "type": "string"
+            },
+            "humanReview": {
+              "enum": [
+                "possible",
+                "restricted",
+                "none_attested"
+              ],
+              "type": "string"
+            },
+            "processingRegions": {
+              "items": {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._ -]*$",
+                "type": "string"
+              },
+              "maxItems": 16,
+              "minItems": 1,
+              "type": "array"
+            },
+            "storageRegions": {
+              "items": {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._ -]*$",
+                "type": "string"
+              },
+              "maxItems": 16,
+              "minItems": 1,
+              "type": "array"
+            },
+            "trainingUse": {
+              "enum": [
+                "not_used_without_opt_in",
+                "provider_may_train"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "abuseMonitoring",
+            "attestedAt",
+            "evidenceUrl",
+            "expiresAt",
+            "humanReview",
+            "processingRegions",
+            "storageRegions",
+            "trainingUse"
+          ],
+          "type": "object"
+        },
+        "displayName": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "limits": {
+          "additionalProperties": false,
+          "properties": {
+            "maximumAttempts": {
+              "const": 1,
+              "type": "number"
+            },
+            "maximumConcurrentRequests": {
+              "maximum": 16,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "maximumCostUsd": {
+              "pattern": "^(?:0|[1-9][0-9]{0,9})(?:\\.[0-9]{1,6})?$",
+              "type": "string"
+            },
+            "maximumInputTokens": {
+              "maximum": 2000000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "maximumOutputTokens": {
+              "maximum": 100000,
+              "minimum": 16,
+              "type": "integer"
+            },
+            "maximumRequestBytes": {
+              "maximum": 67108864,
+              "minimum": 1024,
+              "type": "integer"
+            },
+            "requestTimeoutMilliseconds": {
+              "maximum": 120000,
+              "minimum": 1000,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "maximumAttempts",
+            "maximumConcurrentRequests",
+            "maximumCostUsd",
+            "maximumInputTokens",
+            "maximumOutputTokens",
+            "maximumRequestBytes",
+            "requestTimeoutMilliseconds"
+          ],
+          "type": "object"
+        },
+        "model": {
+          "additionalProperties": false,
+          "properties": {
+            "expectedResolvedId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            },
+            "requestedId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            },
+            "versionPolicy": {
+              "const": "pinned",
+              "type": "string"
+            }
+          },
+          "required": [
+            "expectedResolvedId",
+            "requestedId",
+            "versionPolicy"
+          ],
+          "type": "object"
+        },
+        "openAiProjectId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9._:-]+$",
+          "type": "string"
+        },
+        "organizationId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9._:-]+$",
+          "type": "string"
+        },
+        "priceSnapshot": {
+          "additionalProperties": false,
+          "properties": {
+            "cachedInputPerMillionTokensUsd": {
+              "anyOf": [
+                {
+                  "pattern": "^(?:0|[1-9][0-9]{0,9})(?:\\.[0-9]{1,6})?$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "capturedAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "type": "string"
+            },
+            "currency": {
+              "const": "USD",
+              "type": "string"
+            },
+            "effectiveAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "type": "string"
+            },
+            "inputPerMillionTokensUsd": {
+              "pattern": "^(?:0|[1-9][0-9]{0,9})(?:\\.[0-9]{1,6})?$",
+              "type": "string"
+            },
+            "outputPerMillionTokensUsd": {
+              "pattern": "^(?:0|[1-9][0-9]{0,9})(?:\\.[0-9]{1,6})?$",
+              "type": "string"
+            },
+            "sourceUrl": {
+              "format": "uri",
+              "type": "string"
+            }
+          },
+          "required": [
+            "cachedInputPerMillionTokensUsd",
+            "capturedAt",
+            "currency",
+            "effectiveAt",
+            "inputPerMillionTokensUsd",
+            "outputPerMillionTokensUsd",
+            "sourceUrl"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "apiKey",
+        "dataPolicy",
+        "displayName",
+        "limits",
+        "model",
+        "openAiProjectId",
+        "organizationId",
+        "priceSnapshot"
+      ],
+      "type": "object"
+    },
     "CreateChangeIntentVersionCommand": {
       "additionalProperties": false,
       "properties": {
@@ -721,6 +962,456 @@
     "DiagnosticCommand": {
       "additionalProperties": false,
       "properties": {},
+      "type": "object"
+    },
+    "DirectApiProfileResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "availability": {
+                  "enum": [
+                    "available",
+                    "stale",
+                    "unavailable"
+                  ],
+                  "type": "string"
+                },
+                "availabilityReasons": {
+                  "items": {
+                    "enum": [
+                      "attestation_expired",
+                      "credential_unavailable",
+                      "identity_drift",
+                      "provider_unavailable",
+                      "synthetic_test_expired",
+                      "synthetic_test_failed"
+                    ],
+                    "type": "string"
+                  },
+                  "maxItems": 6,
+                  "type": "array"
+                },
+                "createdAt": {
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                  "type": "string"
+                },
+                "dataPolicy": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "abuseMonitoring": {
+                      "enum": [
+                        "standard",
+                        "modified",
+                        "zero_data_retention"
+                      ],
+                      "type": "string"
+                    },
+                    "attestedAt": {
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                      "type": "string"
+                    },
+                    "evidenceUrl": {
+                      "format": "uri",
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                      "type": "string"
+                    },
+                    "humanReview": {
+                      "enum": [
+                        "possible",
+                        "restricted",
+                        "none_attested"
+                      ],
+                      "type": "string"
+                    },
+                    "processingRegions": {
+                      "items": {
+                        "maxLength": 64,
+                        "minLength": 1,
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._ -]*$",
+                        "type": "string"
+                      },
+                      "maxItems": 16,
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "storageRegions": {
+                      "items": {
+                        "maxLength": 64,
+                        "minLength": 1,
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._ -]*$",
+                        "type": "string"
+                      },
+                      "maxItems": 16,
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "trainingUse": {
+                      "enum": [
+                        "not_used_without_opt_in",
+                        "provider_may_train"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "abuseMonitoring",
+                    "attestedAt",
+                    "evidenceUrl",
+                    "expiresAt",
+                    "humanReview",
+                    "processingRegions",
+                    "storageRegions",
+                    "trainingUse"
+                  ],
+                  "type": "object"
+                },
+                "displayName": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "effectiveIdentity": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "apiSurface": {
+                      "const": "responses",
+                      "type": "string"
+                    },
+                    "apiVersion": {
+                      "const": "2020-10-01",
+                      "type": "string"
+                    },
+                    "endpointOrigin": {
+                      "const": "https://api.openai.com",
+                      "type": "string"
+                    },
+                    "endpointPath": {
+                      "const": "/v1/responses",
+                      "type": "string"
+                    },
+                    "model": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "expectedResolvedId": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "pattern": "^[A-Za-z0-9._:-]+$",
+                          "type": "string"
+                        },
+                        "requestedId": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "pattern": "^[A-Za-z0-9._:-]+$",
+                          "type": "string"
+                        },
+                        "versionPolicy": {
+                          "const": "pinned",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "expectedResolvedId",
+                        "requestedId",
+                        "versionPolicy"
+                      ],
+                      "type": "object"
+                    },
+                    "openAiProjectId": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "pattern": "^[A-Za-z0-9._:-]+$",
+                      "type": "string"
+                    },
+                    "organizationId": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "pattern": "^[A-Za-z0-9._:-]+$",
+                      "type": "string"
+                    },
+                    "provider": {
+                      "const": "openai",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "apiSurface",
+                    "apiVersion",
+                    "endpointOrigin",
+                    "endpointPath",
+                    "model",
+                    "openAiProjectId",
+                    "organizationId",
+                    "provider"
+                  ],
+                  "type": "object"
+                },
+                "executionPolicy": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "arbitraryOptions": {
+                      "const": "disabled",
+                      "type": "string"
+                    },
+                    "callbacks": {
+                      "const": "disabled",
+                      "type": "string"
+                    },
+                    "files": {
+                      "const": "disabled",
+                      "type": "string"
+                    },
+                    "inputModality": {
+                      "const": "text",
+                      "type": "string"
+                    },
+                    "privilegedInstructions": {
+                      "const": "developer",
+                      "type": "string"
+                    },
+                    "retrieval": {
+                      "const": "disabled",
+                      "type": "string"
+                    },
+                    "statefulness": {
+                      "const": "stateless",
+                      "type": "string"
+                    },
+                    "structuredOutput": {
+                      "const": "json_schema_strict",
+                      "type": "string"
+                    },
+                    "tools": {
+                      "const": "disabled",
+                      "type": "string"
+                    },
+                    "urls": {
+                      "const": "disabled",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "arbitraryOptions",
+                    "callbacks",
+                    "files",
+                    "inputModality",
+                    "privilegedInstructions",
+                    "retrieval",
+                    "statefulness",
+                    "structuredOutput",
+                    "tools",
+                    "urls"
+                  ],
+                  "type": "object"
+                },
+                "id": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                },
+                "lastTest": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "attributedOpenAiProjectId": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "pattern": "^[A-Za-z0-9._:-]+$",
+                      "type": "string"
+                    },
+                    "observedApiVersion": {
+                      "const": "2020-10-01",
+                      "type": "string"
+                    },
+                    "observedModel": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "pattern": "^[A-Za-z0-9._:-]+$",
+                      "type": "string"
+                    },
+                    "observedOrganizationId": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "pattern": "^[A-Za-z0-9._:-]+$",
+                      "type": "string"
+                    },
+                    "passedAt": {
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "pattern": "^[A-Za-z0-9._:-]+$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "attributedOpenAiProjectId",
+                    "observedApiVersion",
+                    "observedModel",
+                    "observedOrganizationId",
+                    "passedAt",
+                    "requestId"
+                  ],
+                  "type": "object"
+                },
+                "limits": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "maximumAttempts": {
+                      "const": 1,
+                      "type": "number"
+                    },
+                    "maximumConcurrentRequests": {
+                      "maximum": 16,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "maximumCostUsd": {
+                      "pattern": "^(?:0|[1-9][0-9]{0,9})(?:\\.[0-9]{1,6})?$",
+                      "type": "string"
+                    },
+                    "maximumInputTokens": {
+                      "maximum": 2000000,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "maximumOutputTokens": {
+                      "maximum": 100000,
+                      "minimum": 16,
+                      "type": "integer"
+                    },
+                    "maximumRequestBytes": {
+                      "maximum": 67108864,
+                      "minimum": 1024,
+                      "type": "integer"
+                    },
+                    "requestTimeoutMilliseconds": {
+                      "maximum": 120000,
+                      "minimum": 1000,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "maximumAttempts",
+                    "maximumConcurrentRequests",
+                    "maximumCostUsd",
+                    "maximumInputTokens",
+                    "maximumOutputTokens",
+                    "maximumRequestBytes",
+                    "requestTimeoutMilliseconds"
+                  ],
+                  "type": "object"
+                },
+                "priceSnapshot": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "cachedInputPerMillionTokensUsd": {
+                      "anyOf": [
+                        {
+                          "pattern": "^(?:0|[1-9][0-9]{0,9})(?:\\.[0-9]{1,6})?$",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "capturedAt": {
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                      "type": "string"
+                    },
+                    "currency": {
+                      "const": "USD",
+                      "type": "string"
+                    },
+                    "effectiveAt": {
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                      "type": "string"
+                    },
+                    "inputPerMillionTokensUsd": {
+                      "pattern": "^(?:0|[1-9][0-9]{0,9})(?:\\.[0-9]{1,6})?$",
+                      "type": "string"
+                    },
+                    "outputPerMillionTokensUsd": {
+                      "pattern": "^(?:0|[1-9][0-9]{0,9})(?:\\.[0-9]{1,6})?$",
+                      "type": "string"
+                    },
+                    "sourceUrl": {
+                      "format": "uri",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "cachedInputPerMillionTokensUsd",
+                    "capturedAt",
+                    "currency",
+                    "effectiveAt",
+                    "inputPerMillionTokensUsd",
+                    "outputPerMillionTokensUsd",
+                    "sourceUrl"
+                  ],
+                  "type": "object"
+                },
+                "profileDigest": {
+                  "pattern": "^[a-f0-9]{64}$",
+                  "type": "string"
+                },
+                "projectId": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "projectId",
+                "availability",
+                "availabilityReasons",
+                "displayName",
+                "effectiveIdentity",
+                "executionPolicy",
+                "dataPolicy",
+                "limits",
+                "priceSnapshot",
+                "profileDigest",
+                "lastTest",
+                "createdAt",
+                "updatedAt"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "schemaVersion": {
+          "const": 1,
+          "type": "number"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "profile"
+      ],
       "type": "object"
     },
     "HostGitHubProjectInbox": {
@@ -2908,7 +3599,10 @@
               },
               "modelAccess": {
                 "enum": [
-                  "not_configured"
+                  "not_configured",
+                  "direct_api_available",
+                  "direct_api_stale",
+                  "direct_api_unavailable"
                 ],
                 "type": "string"
               },
@@ -4674,7 +5368,10 @@
             },
             "modelAccess": {
               "enum": [
-                "not_configured"
+                "not_configured",
+                "direct_api_available",
+                "direct_api_stale",
+                "direct_api_unavailable"
               ],
               "type": "string"
             },
@@ -9426,7 +10123,10 @@
             },
             "modelAccess": {
               "enum": [
-                "not_configured"
+                "not_configured",
+                "direct_api_available",
+                "direct_api_stale",
+                "direct_api_unavailable"
               ],
               "type": "string"
             },

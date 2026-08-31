@@ -121,6 +121,118 @@ test.describe("observable Installation PWA", () => {
     `);
   });
 
+  test("the Project shows an attributable Direct API profile without credential details", async ({
+    page,
+  }) => {
+    if (stack === undefined) throw new Error("Direct API profile browser stack is unavailable");
+    const runningStack = stack;
+    await runningStack.executeRuntimeSql(`
+      INSERT INTO direct_api_profiles (
+        project_id,
+        credential_handle,
+        display_name,
+        organization_id,
+        openai_project_id,
+        requested_model_id,
+        expected_resolved_model_id,
+        data_policy,
+        attestation_expires_at,
+        limits,
+        price_snapshot,
+        profile_digest,
+        availability,
+        availability_reasons,
+        attributed_openai_project_id,
+        observed_api_version,
+        observed_model,
+        observed_organization_id,
+        synthetic_request_id,
+        last_test_passed_at,
+        created_at,
+        updated_at
+      )
+      SELECT id,
+             'cred_abcdefghijklmnopqrstuvwxyzABCDEFGH123456789',
+             'OpenAI direct review',
+             'org_example',
+             'proj_example',
+             'gpt-test-2026-08-01',
+             'gpt-test-2026-08-01',
+             '{"abuseMonitoring":"modified","attestedAt":"2026-08-31T12:00:00.000Z","evidenceUrl":"https://developers.openai.com/api/docs/guides/your-data","expiresAt":"2099-09-30T12:00:00.000Z","humanReview":"restricted","processingRegions":["US"],"storageRegions":["US"],"trainingUse":"not_used_without_opt_in"}'::jsonb,
+             '2099-09-30T12:00:00.000Z',
+             '{"maximumAttempts":1,"maximumConcurrentRequests":1,"maximumCostUsd":"2.500000","maximumInputTokens":100000,"maximumOutputTokens":8192,"maximumRequestBytes":1048576,"requestTimeoutMilliseconds":60000}'::jsonb,
+             '{"cachedInputPerMillionTokensUsd":"0.125000","capturedAt":"2026-08-31T12:00:00.000Z","currency":"USD","effectiveAt":"2026-08-01T00:00:00.000Z","inputPerMillionTokensUsd":"1.250000","outputPerMillionTokensUsd":"10.000000","sourceUrl":"https://developers.openai.com/api/docs/pricing"}'::jsonb,
+             '${"6".repeat(64)}',
+             'available',
+             '[]'::jsonb,
+             'proj_example',
+             '2020-10-01',
+             'gpt-test-2026-08-01',
+             'org_example',
+             'req_synthetic_example',
+             clock_timestamp(),
+             clock_timestamp(),
+             clock_timestamp()
+      FROM projects
+      WHERE provider_repository_id = 'R_kgDOGx';
+    `);
+
+    try {
+      const browserErrors: string[] = [];
+      page.on("console", (message) => {
+        if (message.type() === "error" || message.type() === "warning") {
+          const text = message.text();
+          if (
+            text !==
+            "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+          ) {
+            browserErrors.push(text);
+          }
+        }
+      });
+      page.on("pageerror", (error) => browserErrors.push(error.message));
+      await page.goto(runningStack.pwaUrl);
+      await page.getByLabel("Username").fill(TEST_OPERATOR_CREDENTIALS.username);
+      await page.getByLabel("Password").fill(TEST_OPERATOR_CREDENTIALS.password);
+      await page.getByRole("button", { name: "Sign in" }).click();
+
+      const panel = page.locator(".direct-api-profile");
+      await expect(panel.getByRole("heading", { name: "Direct API profile" })).toBeVisible();
+      await expect(panel.getByRole("status")).toContainText("Available");
+      await expect(panel).toContainText("https://api.openai.com/v1/responses");
+      await expect(panel).toContainText("gpt-test-2026-08-01");
+      await expect(panel).toContainText("org_example");
+      await expect(panel).toContainText("proj_example");
+      await expect(panel).toContainText("Not used without opt-in");
+      await expect(panel).not.toContainText("credential_handle");
+      await expect(panel).not.toContainText("cred_abcdefghijklmnopqrstuvwxyz");
+      await expect(panel).not.toContainText("sk-");
+
+      await panel.getByRole("button", { name: "Replace profile" }).click();
+      await expect(panel.getByLabel("Current Operator password")).toHaveAttribute(
+        "type",
+        "password",
+      );
+      await expect(panel.getByLabel("Project-exclusive OpenAI key")).toHaveAttribute(
+        "type",
+        "password",
+      );
+      const accessibility = await new AxeBuilder({ page }).include(".direct-api-profile").analyze();
+      expect(accessibility.violations).toEqual([]);
+
+      await page.setViewportSize({ height: 900, width: 320 });
+      await expect(panel).toBeVisible();
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+        ),
+      ).toBe(true);
+      expect(browserErrors).toEqual([]);
+    } finally {
+      await runningStack.executeSql("DELETE FROM direct_api_profiles;");
+    }
+  });
+
   test("the Operator acquires an observed pull request from its Project", async ({ page }) => {
     if (stack === undefined) throw new Error("Observed pull-request browser stack is unavailable");
     const runningStack = stack;
@@ -493,6 +605,12 @@ test.describe("observable Installation PWA", () => {
     });
     page.on("pageerror", (error) => browserErrors.push(error.message));
     let projectPostCount = 0;
+    await page.route(
+      `**/api/v1/projects/${openedProject.project.id}/model-profiles/direct-api`,
+      async (route) => {
+        await route.fulfill({ json: { profile: null, schemaVersion: 1 }, status: 200 });
+      },
+    );
     await page.route("**/api/v1/projects", async (route) => {
       const request = route.request();
       if (request.method() !== "POST") {

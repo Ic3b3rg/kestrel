@@ -2,6 +2,7 @@ import type { PoolClient } from "pg";
 
 import {
   ChangeIntentSchema,
+  DIRECT_API_SYNTHETIC_TEST_VALIDITY_MILLISECONDS,
   ProjectInboxSchema,
   ProjectUpsertedSchema,
   type ChangeIntent,
@@ -25,6 +26,9 @@ export interface ProjectDatabaseRow {
   base_object_id: string;
   base_ref_snapshot: string;
   created_at: Date;
+  direct_profile_attestation_expires_at?: Date | null;
+  direct_profile_availability?: "available" | "stale" | "unavailable" | null;
+  direct_profile_last_test_passed_at?: Date | null;
   head_object_id: string;
   head_ref_snapshot: string;
   id: string;
@@ -340,6 +344,7 @@ function appendRevision(
 
 export function mapProjectRows(rows: readonly ProjectDatabaseRow[]): ProjectInbox {
   const projects = new Map<string, Project>();
+  const now = new Date();
   for (const row of rows) {
     const repository = mapProviderRepository(row);
     const localSource = mapLocalSource(row);
@@ -349,7 +354,23 @@ export function mapProjectRows(rows: readonly ProjectDatabaseRow[]): ProjectInbo
         changeProposals: [],
         createdAt: row.created_at.toISOString(),
         id: row.id,
-        modelAccess: "not_configured",
+        modelAccess:
+          row.direct_profile_availability == null
+            ? "not_configured"
+            : row.direct_profile_availability === "unavailable"
+              ? "direct_api_unavailable"
+              : row.direct_profile_attestation_expires_at == null ||
+                  row.direct_profile_last_test_passed_at == null
+                ? (() => {
+                    throw new Error("Direct API profile availability is incomplete");
+                  })()
+                : row.direct_profile_availability === "stale" ||
+                    row.direct_profile_attestation_expires_at <= now ||
+                    row.direct_profile_last_test_passed_at.getTime() +
+                      DIRECT_API_SYNTHETIC_TEST_VALIDITY_MILLISECONDS <=
+                      now.getTime()
+                  ? "direct_api_stale"
+                  : "direct_api_available",
         providerObservation:
           repository === null
             ? null
@@ -445,6 +466,9 @@ function projectRowsSelect(requiredRevisionId: "NULL::uuid" | "$2::uuid"): strin
          p.source_availability,
          p.created_at,
          p.updated_at,
+         dap.availability AS direct_profile_availability,
+         dap.attestation_expires_at AS direct_profile_attestation_expires_at,
+         dap.last_test_passed_at AS direct_profile_last_test_passed_at,
          lrs.id AS local_source_id,
          lrs.repository_id AS local_repository_id,
          lrs.display_name_snapshot AS local_display_name,
@@ -507,6 +531,7 @@ function projectRowsSelect(requiredRevisionId: "NULL::uuid" | "$2::uuid"): strin
     ON cp.project_id = p.id
    AND p.canonical_project_id IS NULL
    AND cp.canonical_change_proposal_id IS NULL
+  LEFT JOIN direct_api_profiles AS dap ON dap.project_id = p.id
   LEFT JOIN LATERAL (
     SELECT source.id,
            source.repository_id,

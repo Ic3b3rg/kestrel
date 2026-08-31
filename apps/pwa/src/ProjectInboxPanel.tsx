@@ -3,6 +3,7 @@ import { useId, useState, type SyntheticEvent } from "react";
 import {
   OpenPublicGitHubPullRequestCommandSchema,
   type ChangeIntentVersionCreated,
+  type DirectApiProfile,
   type ProjectInbox,
   type PublicGitHubPullRequestUrl,
   type ReviewRevisionAvailable,
@@ -13,6 +14,7 @@ import { HostGitHubProjectPanel } from "./HostGitHubProjectPanel.js";
 import { AcquireObservedReviewRevisionForm } from "./AcquireObservedReviewRevisionForm.js";
 import { ChangeIntentEditor } from "./ChangeIntentEditor.js";
 import { ReviewPreparationPanel } from "./ReviewPreparationPanel.js";
+import { DirectApiProfilePanel } from "./DirectApiProfilePanel.js";
 
 interface ProjectInboxPanelProps {
   error: string | null;
@@ -22,6 +24,7 @@ interface ProjectInboxPanelProps {
   pending: boolean;
   onAuthenticationError?: (error: unknown) => boolean;
   onLocalAvailable?: (result: ReviewRevisionAvailable) => void;
+  onModelProfileChanged?: (projectId: string, profile: DirectApiProfile) => void;
   onIntentCreated?: (result: ChangeIntentVersionCreated) => void;
   onOpen: (url: PublicGitHubPullRequestUrl) => void;
   onHostObserved?: (project: Project) => void;
@@ -37,6 +40,13 @@ const sourceAvailabilityLabels: Record<Project["sourceAvailability"], string> = 
   available: "Available",
   not_acquired: "Not acquired",
   unavailable: "Unavailable",
+};
+
+const modelAccessLabels: Record<Project["modelAccess"], string> = {
+  direct_api_available: "Direct API available",
+  direct_api_stale: "Direct API stale",
+  direct_api_unavailable: "Direct API unavailable",
+  not_configured: "Not configured",
 };
 
 const reviewRevisionStateLabels = {
@@ -182,8 +192,12 @@ function ProjectFacts({ project }: { project: Project }) {
       <div>
         <dt>Model access</dt>
         <dd>
-          <strong>Not configured</strong>
-          <span>No model receives repository or pull request data in this slice.</span>
+          <strong>{modelAccessLabels[project.modelAccess]}</strong>
+          <span>
+            {project.modelAccess === "not_configured"
+              ? "No model route is available."
+              : "The Project profile remains independent of source acquisition and Review readiness."}
+          </span>
         </dd>
       </div>
     </dl>
@@ -534,6 +548,14 @@ export function ProjectInboxPanel(props: ProjectInboxPanelProps) {
                 <code>{project.id}</code>
               </div>
               <ProjectFacts project={project} />
+              <DirectApiProfilePanel
+                disabled={unavailable}
+                projectId={project.id}
+                {...(props.onAuthenticationError === undefined
+                  ? {}
+                  : { onAuthenticationError: props.onAuthenticationError })}
+                onChanged={(profile) => props.onModelProfileChanged?.(project.id, profile)}
+              />
               {project.localRepositorySource?.state === "attached" ? (
                 <HostGitHubProjectPanel
                   projectId={project.id}

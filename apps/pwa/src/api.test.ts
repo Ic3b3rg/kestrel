@@ -5,6 +5,8 @@ import type {
   ApiError,
   ChangeIntentVersionCreated,
   DiagnosticAccepted,
+  DirectApiProfileResponse,
+  ConfigureDirectApiProfileCommand,
   InstallationEvent,
   InstallationSnapshot,
   ProjectInbox,
@@ -17,6 +19,8 @@ import type {
 
 import {
   createChangeIntentVersion,
+  configureDirectApiProfile,
+  fetchDirectApiProfile,
   fetchInstallation,
   fetchProjectInbox,
   fetchLocalRepositories,
@@ -30,11 +34,98 @@ import {
   retainReviewRevision,
   startReviewWorkflow,
   streamInstallationEvents,
+  testDirectApiProfile,
   updateOperatorCredentials,
 } from "./api.js";
 
 const installationId = "018f0f89-8f75-7cc4-9860-3fda5f75d697";
 const diagnosticId = "018f0f89-9192-755f-aa96-f72094c734dd";
+const directApiProjectId = "018f0f89-949a-75a8-8f61-6df78a843b1e";
+const directApiCommand: ConfigureDirectApiProfileCommand = {
+  apiKey: "sk-project-exclusive-test-key-1234567890",
+  dataPolicy: {
+    abuseMonitoring: "modified",
+    attestedAt: "2026-08-31T12:00:00.000Z",
+    evidenceUrl: "https://developers.openai.com/api/docs/guides/your-data",
+    expiresAt: "2026-09-30T12:00:00.000Z",
+    humanReview: "restricted",
+    processingRegions: ["US"],
+    storageRegions: ["US"],
+    trainingUse: "not_used_without_opt_in",
+  },
+  displayName: "OpenAI direct review",
+  limits: {
+    maximumAttempts: 1,
+    maximumConcurrentRequests: 1,
+    maximumCostUsd: "2.500000",
+    maximumInputTokens: 100_000,
+    maximumOutputTokens: 8_192,
+    maximumRequestBytes: 1_048_576,
+    requestTimeoutMilliseconds: 60_000,
+  },
+  model: {
+    expectedResolvedId: "gpt-test-2026-08-01",
+    requestedId: "gpt-test-2026-08-01",
+    versionPolicy: "pinned",
+  },
+  openAiProjectId: "proj_example",
+  organizationId: "org_example",
+  priceSnapshot: {
+    cachedInputPerMillionTokensUsd: "0.125000",
+    capturedAt: "2026-08-31T12:00:00.000Z",
+    currency: "USD",
+    effectiveAt: "2026-08-01T00:00:00.000Z",
+    inputPerMillionTokensUsd: "1.250000",
+    outputPerMillionTokensUsd: "10.000000",
+    sourceUrl: "https://developers.openai.com/api/docs/pricing",
+  },
+};
+const directApiResponse: DirectApiProfileResponse = {
+  schemaVersion: 1,
+  profile: {
+    id: "018f0f89-a3fb-75ee-bccc-08c031ce5f10",
+    projectId: directApiProjectId,
+    availability: "available",
+    availabilityReasons: [],
+    displayName: directApiCommand.displayName,
+    effectiveIdentity: {
+      apiSurface: "responses",
+      apiVersion: "2020-10-01",
+      endpointOrigin: "https://api.openai.com",
+      endpointPath: "/v1/responses",
+      model: directApiCommand.model,
+      openAiProjectId: directApiCommand.openAiProjectId,
+      organizationId: directApiCommand.organizationId,
+      provider: "openai",
+    },
+    executionPolicy: {
+      arbitraryOptions: "disabled",
+      callbacks: "disabled",
+      files: "disabled",
+      inputModality: "text",
+      privilegedInstructions: "developer",
+      retrieval: "disabled",
+      statefulness: "stateless",
+      structuredOutput: "json_schema_strict",
+      tools: "disabled",
+      urls: "disabled",
+    },
+    dataPolicy: directApiCommand.dataPolicy,
+    limits: directApiCommand.limits,
+    priceSnapshot: directApiCommand.priceSnapshot,
+    profileDigest: "6".repeat(64),
+    lastTest: {
+      attributedOpenAiProjectId: directApiCommand.openAiProjectId,
+      observedApiVersion: "2020-10-01",
+      observedModel: directApiCommand.model.expectedResolvedId,
+      observedOrganizationId: directApiCommand.organizationId,
+      passedAt: "2026-08-31T12:01:00.000Z",
+      requestId: "req_synthetic_example",
+    },
+    createdAt: "2026-08-31T12:01:00.000Z",
+    updatedAt: "2026-08-31T12:01:00.000Z",
+  },
+};
 
 const snapshot: InstallationSnapshot = {
   schemaVersion: 1,
@@ -178,6 +269,67 @@ afterEach(() => {
 });
 
 describe("PWA API client", () => {
+  it("configures a Project profile through one bound password step-up and can re-test it", async () => {
+    const proof = {
+      schemaVersion: 1 as const,
+      expiresAt: "2026-08-31T12:05:00.000Z",
+      proof: "C".repeat(43),
+    };
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ schemaVersion: 1, profile: null }))
+      .mockResolvedValueOnce(jsonResponse(proof))
+      .mockResolvedValueOnce(jsonResponse(directApiResponse, 201))
+      .mockResolvedValueOnce(jsonResponse(directApiResponse));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("document", {
+      cookie: `__Host-kestrel-csrf=${"A".repeat(43)}.${"B".repeat(43)}`,
+    });
+
+    await expect(fetchDirectApiProfile(directApiProjectId)).resolves.toEqual({
+      schemaVersion: 1,
+      profile: null,
+    });
+    await expect(
+      configureDirectApiProfile(
+        directApiProjectId,
+        directApiCommand,
+        "current correct horse battery staple",
+      ),
+    ).resolves.toEqual(directApiResponse);
+    await expect(testDirectApiProfile(directApiProjectId)).resolves.toEqual(directApiResponse);
+
+    const requestDigest = createHash("sha256")
+      .update(JSON.stringify(directApiCommand), "utf8")
+      .digest("hex");
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/auth/step-up",
+      expect.objectContaining({
+        body: JSON.stringify({
+          action: "model_credentials_change",
+          password: "current correct horse battery staple",
+          requestDigest,
+          targetId: directApiProjectId,
+        }),
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      `/api/v1/projects/${directApiProjectId}/model-profiles/direct-api`,
+      expect.objectContaining({ body: JSON.stringify(directApiCommand), method: "POST" }),
+    );
+    expect(new Headers(fetchMock.mock.calls[2]?.[1]?.headers).get("X-Kestrel-Step-Up")).toBe(
+      proof.proof,
+    );
+    expect(fetchMock.mock.calls[2]?.[1]?.body).not.toContain("current correct horse");
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      `/api/v1/projects/${directApiProjectId}/model-profiles/direct-api/test`,
+      expect.objectContaining({ body: "{}", method: "POST" }),
+    );
+  });
   it("reads Review preparation without mutation and starts from only its digest", async () => {
     const projectId = "018f0f89-9a22-7864-aac2-8df71bf60420";
     const proposalId = "018f0f89-9192-755f-aa96-f72094c734dd";

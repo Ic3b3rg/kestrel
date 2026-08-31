@@ -11,9 +11,11 @@ import {
 import {
   ChangeIntentSchema,
   ChangeIntentVersionCreatedSchema,
+  ConfigureDirectApiProfileCommandSchema,
   CreateChangeIntentVersionCommandSchema,
   CredentialChangeCommandSchema,
   DiagnosticAcceptedSchema,
+  DirectApiProfileResponseSchema,
   EventCursorSchema,
   InstallationEventSchema,
   InstallationSnapshotSchema,
@@ -31,6 +33,7 @@ import {
   StartReviewWorkflowCommandSchema,
   StepUpCommandSchema,
   StepUpProofSchema,
+  serializeConfigureDirectApiProfileCommand,
   serializeCredentialChangeCommand,
 } from "./v1.js";
 
@@ -171,6 +174,165 @@ describe("V1 public contracts", () => {
       }),
     ).toBeDefined();
     expect(() => CredentialChangeCommandSchema.parse({ ...command, unexpected: true })).toThrow();
+  });
+
+  it("binds one step-up proof to a complete Project-exclusive Direct API profile", () => {
+    const command = ConfigureDirectApiProfileCommandSchema.parse({
+      apiKey: "sk-project-exclusive-test-key-1234567890",
+      dataPolicy: {
+        abuseMonitoring: "modified",
+        attestedAt: "2026-08-31T12:00:00.000Z",
+        evidenceUrl: "https://developers.openai.com/api/docs/guides/your-data",
+        expiresAt: "2026-09-30T12:00:00.000Z",
+        humanReview: "restricted",
+        processingRegions: ["US"],
+        storageRegions: ["US"],
+        trainingUse: "not_used_without_opt_in",
+      },
+      displayName: "OpenAI direct review",
+      limits: {
+        maximumAttempts: 1,
+        maximumConcurrentRequests: 1,
+        maximumCostUsd: "2.500000",
+        maximumInputTokens: 100_000,
+        maximumOutputTokens: 8_192,
+        maximumRequestBytes: 1_048_576,
+        requestTimeoutMilliseconds: 60_000,
+      },
+      model: {
+        expectedResolvedId: "gpt-test-2026-08-01",
+        requestedId: "gpt-test-2026-08-01",
+        versionPolicy: "pinned",
+      },
+      openAiProjectId: "proj_example",
+      organizationId: "org_example",
+      priceSnapshot: {
+        cachedInputPerMillionTokensUsd: "0.125000",
+        capturedAt: "2026-08-31T12:00:00.000Z",
+        currency: "USD",
+        effectiveAt: "2026-08-01T00:00:00.000Z",
+        inputPerMillionTokensUsd: "1.250000",
+        outputPerMillionTokensUsd: "10.000000",
+        sourceUrl: "https://developers.openai.com/api/docs/pricing",
+      },
+    });
+
+    expect(serializeConfigureDirectApiProfileCommand(command)).toBe(JSON.stringify(command));
+    expect(command).not.toHaveProperty("endpoint");
+    expect(command).not.toHaveProperty("tools");
+    expect(
+      StepUpCommandSchema.parse({
+        action: "model_credentials_change",
+        password: "current correct horse battery staple",
+        requestDigest: "5".repeat(64),
+        targetId: "018f0f89-949a-75a8-8f61-6df78a843b1e",
+      }),
+    ).not.toHaveProperty("apiKey");
+    expect(() =>
+      ConfigureDirectApiProfileCommandSchema.parse({
+        ...command,
+        endpoint: "https://attacker.example/v1/responses",
+      }),
+    ).toThrow();
+  });
+
+  it("exposes the effective Direct API identity without credential material", () => {
+    const response = DirectApiProfileResponseSchema.parse({
+      schemaVersion: 1,
+      profile: {
+        id: "018f0f89-949a-75a8-8f61-6df78a843b1e",
+        projectId: "018f0f89-8f75-7cc4-9860-3fda5f75d697",
+        availability: "available",
+        availabilityReasons: [],
+        displayName: "OpenAI direct review",
+        effectiveIdentity: {
+          apiSurface: "responses",
+          apiVersion: "2020-10-01",
+          endpointOrigin: "https://api.openai.com",
+          endpointPath: "/v1/responses",
+          model: {
+            expectedResolvedId: "gpt-test-2026-08-01",
+            requestedId: "gpt-test-2026-08-01",
+            versionPolicy: "pinned",
+          },
+          openAiProjectId: "proj_example",
+          organizationId: "org_example",
+          provider: "openai",
+        },
+        executionPolicy: {
+          arbitraryOptions: "disabled",
+          callbacks: "disabled",
+          files: "disabled",
+          inputModality: "text",
+          privilegedInstructions: "developer",
+          retrieval: "disabled",
+          statefulness: "stateless",
+          structuredOutput: "json_schema_strict",
+          tools: "disabled",
+          urls: "disabled",
+        },
+        dataPolicy: {
+          abuseMonitoring: "modified",
+          attestedAt: "2026-08-31T12:00:00.000Z",
+          evidenceUrl: "https://developers.openai.com/api/docs/guides/your-data",
+          expiresAt: "2026-09-30T12:00:00.000Z",
+          humanReview: "restricted",
+          processingRegions: ["US"],
+          storageRegions: ["US"],
+          trainingUse: "not_used_without_opt_in",
+        },
+        limits: {
+          maximumAttempts: 1,
+          maximumConcurrentRequests: 1,
+          maximumCostUsd: "2.500000",
+          maximumInputTokens: 100_000,
+          maximumOutputTokens: 8_192,
+          maximumRequestBytes: 1_048_576,
+          requestTimeoutMilliseconds: 60_000,
+        },
+        priceSnapshot: {
+          cachedInputPerMillionTokensUsd: "0.125000",
+          capturedAt: "2026-08-31T12:00:00.000Z",
+          currency: "USD",
+          effectiveAt: "2026-08-01T00:00:00.000Z",
+          inputPerMillionTokensUsd: "1.250000",
+          outputPerMillionTokensUsd: "10.000000",
+          sourceUrl: "https://developers.openai.com/api/docs/pricing",
+        },
+        profileDigest: "6".repeat(64),
+        lastTest: {
+          attributedOpenAiProjectId: "proj_example",
+          observedApiVersion: "2020-10-01",
+          observedModel: "gpt-test-2026-08-01",
+          observedOrganizationId: "org_example",
+          passedAt: "2026-08-31T12:01:00.000Z",
+          requestId: "req_synthetic_example",
+        },
+        createdAt: "2026-08-31T12:01:00.000Z",
+        updatedAt: "2026-08-31T12:01:00.000Z",
+      },
+    });
+
+    expect(JSON.stringify(response)).not.toContain("sk-project-exclusive");
+    expect(response.profile).not.toHaveProperty("credentialHandle");
+    expect(response.profile).not.toHaveProperty("apiKey");
+    if (response.profile === null) throw new Error("Expected a configured Direct API profile");
+    const configuredProfile = response.profile;
+    expect(() =>
+      DirectApiProfileResponseSchema.parse({
+        ...response,
+        profile: {
+          ...configuredProfile,
+          lastTest: { ...configuredProfile.lastTest, attributedOpenAiProjectId: "proj_other" },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      DirectApiProfileResponseSchema.parse({
+        ...response,
+        profile: { ...configuredProfile, credentialHandle: "secret_handle" },
+      }),
+    ).toThrow();
   });
 
   it("accepts only canonical public GitHub pull-request URLs", () => {
@@ -845,6 +1007,8 @@ describe("V1 public contracts", () => {
         "/api/v1/session": {},
         "/api/v1/operator/credentials": {},
         "/api/v1/projects": {},
+        "/api/v1/projects/{projectId}/model-profiles/direct-api": {},
+        "/api/v1/projects/{projectId}/model-profiles/direct-api/test": {},
         "/api/v1/projects/{projectId}/change-proposals/{changeProposalId}/change-intents": {},
         "/api/v1/projects/{projectId}/change-proposals/{changeProposalId}/review-preparation": {},
         "/api/v1/projects/{projectId}/change-proposals/{changeProposalId}/review-workflows": {},
@@ -889,6 +1053,49 @@ describe("V1 public contracts", () => {
               "404": {},
               "413": {},
               "415": {},
+              "429": {},
+              "503": {},
+            },
+          },
+        },
+        "/api/v1/projects/{projectId}/model-profiles/direct-api": {
+          get: { responses: { "200": {}, "400": {}, "401": {}, "404": {}, "503": {} } },
+          post: {
+            parameters: [
+              { in: "header", name: "Origin", required: true },
+              { in: "header", name: "X-Kestrel-CSRF", required: true },
+              { in: "header", name: "X-Kestrel-Step-Up", required: true },
+              { in: "path", name: "projectId", required: true },
+            ],
+            responses: {
+              "201": {},
+              "400": {},
+              "401": {},
+              "403": {},
+              "404": {},
+              "409": {},
+              "413": {},
+              "415": {},
+              "422": {},
+              "429": {},
+              "503": {},
+            },
+          },
+        },
+        "/api/v1/projects/{projectId}/model-profiles/direct-api/test": {
+          post: {
+            parameters: [
+              { in: "header", name: "Origin", required: true },
+              { in: "header", name: "X-Kestrel-CSRF", required: true },
+              { in: "path", name: "projectId", required: true },
+            ],
+            responses: {
+              "200": {},
+              "400": {},
+              "401": {},
+              "403": {},
+              "404": {},
+              "409": {},
               "429": {},
               "503": {},
             },

@@ -3,9 +3,11 @@ import { createParser } from "eventsource-parser";
 import {
   ApiErrorSchema,
   ChangeIntentVersionCreatedSchema,
+  ConfigureDirectApiProfileCommandSchema,
   CreateChangeIntentVersionCommandSchema,
   CredentialChangeCommandSchema,
   DiagnosticAcceptedSchema,
+  DirectApiProfileResponseSchema,
   EventCursorSchema,
   InstallationEventSchema,
   InstallationSnapshotSchema,
@@ -23,14 +25,17 @@ import {
   ReviewRevisionAvailableSchema,
   ReviewWorkflowAcceptedSchema,
   serializeCredentialChangeCommand,
+  serializeConfigureDirectApiProfileCommand,
   SessionSchema,
   StepUpCommandSchema,
   StepUpProofSchema,
   StartReviewWorkflowCommandSchema,
   type ApiError,
   type ChangeIntentVersionCreated,
+  type ConfigureDirectApiProfileCommand,
   type CreateChangeIntentVersionCommand,
   type DiagnosticAccepted,
+  type DirectApiProfileResponse,
   type EventCursor,
   type InstallationEvent,
   type InstallationSnapshot,
@@ -337,6 +342,70 @@ export async function openPublicGitHubPullRequest(
     signal: signal ?? null,
   });
   return requireJson(response, ProjectUpsertedSchema, "Project response");
+}
+
+function directApiProfileUrl(projectId: string): string {
+  return `/api/v1/projects/${encodeURIComponent(KestrelIdSchema.parse(projectId))}/model-profiles/direct-api`;
+}
+
+export async function fetchDirectApiProfile(
+  projectId: string,
+  signal?: AbortSignal,
+): Promise<DirectApiProfileResponse> {
+  const response = await fetch(directApiProfileUrl(projectId), {
+    credentials: "same-origin",
+    headers: { Accept: "application/json" },
+    method: "GET",
+    signal: signal ?? null,
+  });
+  return requireJson(response, DirectApiProfileResponseSchema, "Direct API profile");
+}
+
+export async function configureDirectApiProfile(
+  projectId: string,
+  command: ConfigureDirectApiProfileCommand,
+  currentPassword: string,
+  signal?: AbortSignal,
+): Promise<DirectApiProfileResponse> {
+  const validatedProjectId = KestrelIdSchema.parse(projectId);
+  const validatedCommand = ConfigureDirectApiProfileCommandSchema.parse(command);
+  const serializedCommand = serializeConfigureDirectApiProfileCommand(validatedCommand);
+  const stepUp = StepUpCommandSchema.parse({
+    action: "model_credentials_change",
+    password: currentPassword,
+    requestDigest: await sha256(serializedCommand),
+    targetId: validatedProjectId,
+  });
+  const stepUpResponse = await fetch("/auth/step-up", {
+    body: JSON.stringify(stepUp),
+    credentials: "same-origin",
+    headers: authenticatedMutationHeaders(),
+    method: "POST",
+    signal: signal ?? null,
+  });
+  const proof = await requireJson(stepUpResponse, StepUpProofSchema, "step-up proof");
+  const response = await fetch(directApiProfileUrl(validatedProjectId), {
+    body: serializedCommand,
+    credentials: "same-origin",
+    headers: authenticatedMutationHeaders({ "X-Kestrel-Step-Up": proof.proof }),
+    method: "POST",
+    signal: signal ?? null,
+  });
+  return requireJson(response, DirectApiProfileResponseSchema, "Direct API profile");
+}
+
+export async function testDirectApiProfile(
+  projectId: string,
+  signal?: AbortSignal,
+): Promise<DirectApiProfileResponse> {
+  const response = await fetch(`${directApiProfileUrl(projectId)}/test`, {
+    body: "{}",
+    credentials: "same-origin",
+    headers: authenticatedMutationHeaders(),
+    method: "POST",
+    signal: signal ?? null,
+  });
+  return requireJson(response, DirectApiProfileResponseSchema, "Direct API profile");
 }
 
 export async function fetchSession(signal?: AbortSignal): Promise<Session> {
