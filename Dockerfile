@@ -6,7 +6,8 @@ WORKDIR /workspace
 RUN apt-get update \
   && apt-get install -y --no-install-recommends git \
   && rm -rf /var/lib/apt/lists/* \
-  && install -d -m 0700 -o node -g node /var/lib/kestrel/artifacts
+  && install -d -m 0700 -o node -g node /var/lib/kestrel/artifacts \
+  && install -d -m 0700 -o node -g node /var/lib/kestrel/model-provider
 
 COPY package.json package-lock.json ./
 COPY apps ./apps

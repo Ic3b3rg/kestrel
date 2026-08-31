@@ -7,6 +7,11 @@ import type { DatabasePool, DiagnosticJobSender } from "@kestrel/database";
 
 import { registerDiagnosticRoutes } from "./routes/diagnostics.js";
 import {
+  createUnavailableDirectApiProfileService,
+  registerDirectApiProfileRoutes,
+  type DirectApiProfileService,
+} from "./routes/direct-api-profiles.js";
+import {
   createDatabaseChangeIntentService,
   registerChangeIntentRoutes,
   type ChangeIntentService,
@@ -42,6 +47,7 @@ import { registerAuthentication } from "./authentication.js";
 export interface BuildAppOptions {
   boss: DiagnosticJobSender;
   changeIntentService?: ChangeIntentService;
+  directApiProfileService?: DirectApiProfileService;
   eventPool?: DatabasePool;
   eventRetentionLimit: number;
   logger?: boolean;
@@ -124,6 +130,7 @@ export async function buildApp({
   logger = true,
   pool,
   changeIntentService = createDatabaseChangeIntentService(pool),
+  directApiProfileService = createUnavailableDirectApiProfileService(pool),
   eventPool = pool,
   pwaRoot,
   localRepositoryService = {
@@ -192,6 +199,7 @@ export async function buildApp({
   registerInstallationRoutes(app, pool);
   registerOpenApiRoute(app);
   registerProjectRoutes(app, projectService, hostGitHubProjectService);
+  registerDirectApiProfileRoutes(app, directApiProfileService);
   registerChangeIntentRoutes(app, changeIntentService);
   registerLocalRepositoryRoutes(app, localRepositoryService);
   registerReviewRevisionRoutes(app, reviewRevisionService);

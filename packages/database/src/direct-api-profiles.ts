@@ -411,6 +411,36 @@ export async function readDirectApiProfile(
   };
 }
 
+export interface DirectApiProfileBrokerReference {
+  credentialHandle: string;
+  profile: DirectApiProfile;
+}
+
+export async function readDirectApiProfileBrokerReference(
+  pool: DatabasePool,
+  projectId: string,
+  now: Date = new Date(),
+): Promise<{ projectFound: boolean; reference: DirectApiProfileBrokerReference | null }> {
+  const canonicalProjectId = await resolveCanonicalProjectId(pool, projectId);
+  if (canonicalProjectId === null) return { projectFound: false, reference: null };
+  const result = await pool.query<DirectApiProfileDatabaseRow>(
+    "SELECT * FROM direct_api_profiles WHERE project_id = $1",
+    [canonicalProjectId],
+  );
+  const row = result.rows[0];
+  if (row === undefined) return { projectFound: true, reference: null };
+  if (!credentialHandlePattern.test(row.credential_handle)) {
+    throw new Error("Direct API credential handle is invalid");
+  }
+  return {
+    projectFound: true,
+    reference: {
+      credentialHandle: row.credential_handle,
+      profile: mapDirectApiProfileRow(row, now),
+    },
+  };
+}
+
 export async function recordDirectApiProfileTest(
   pool: DatabasePool,
   input: {

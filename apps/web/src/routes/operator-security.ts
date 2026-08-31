@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
@@ -30,26 +30,13 @@ import {
 import { AUTHENTICATED_MUTATION_ROUTE_CONFIG } from "../authentication.js";
 import { ARGON2ID_DUMMY_HASH, hashPassword, verifyPassword } from "../password.js";
 import { serializeClearedAuthenticationCookies } from "../session.js";
+import { sha256, stepUpRequestBinding } from "../step-up-binding.js";
 
 const STEP_UP_RATE_LIMIT = 5;
 const STEP_UP_RATE_LIMIT_WINDOW_SECONDS = 15 * 60;
 const CREDENTIAL_CHANGE_RATE_LIMIT = 5;
 const CREDENTIAL_CHANGE_RATE_LIMIT_WINDOW_SECONDS = 15 * 60;
 const STEP_UP_HEADER_NAME = "x-kestrel-step-up";
-
-function sha256(value: string): string {
-  return createHash("sha256").update(value, "utf8").digest("hex");
-}
-
-function stepUpRequestBinding(requestDigest: string, signingKey: Buffer): string {
-  const bindingKey = createHmac("sha256", signingKey)
-    .update("kestrel-step-up-request-binding-key-v1", "ascii")
-    .digest();
-  return createHmac("sha256", bindingKey)
-    .update("kestrel-step-up-request-binding-v1\0", "ascii")
-    .update(requestDigest, "ascii")
-    .digest("hex");
-}
 
 function stepUpTargetType(action: StepUpAction): string {
   switch (action) {

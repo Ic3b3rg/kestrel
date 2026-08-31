@@ -76,10 +76,25 @@ Stop and remove the development containers with:
 npm run dev:down
 ```
 
-This preserves the named `kestrel_postgres-data` and `kestrel_review-artifacts` volumes. A later
-`npm run dev` presents the same Installation, confirmed diagnostic operations, and retained Review
-Revisions. Use `docker compose down --volumes` only when deliberately resetting all local Kestrel
-data and retained source.
+This preserves the named `kestrel_postgres-data`, `kestrel_model-provider-secrets`, and
+`kestrel_review-artifacts` volumes. A later `npm run dev` presents the same Installation, confirmed
+diagnostic operations, Direct API credential handles, and retained Review Revisions. Use
+`docker compose down --volumes` only when deliberately resetting all local Kestrel data, secrets,
+and retained source.
+
+## Configure direct OpenAI API access
+
+The Project panel can configure one exact OpenAI Responses API profile. Adding or replacing the API
+key requires the current Operator password and runs one bounded synthetic structured-output test
+before activation. Kestrel fixes the HTTPS origin, API surface and version, pinned model identity,
+disabled tool/file/URL/retrieval/callback policy, data-policy attestation, limits, and price
+snapshot. A failed identity check has no fallback route.
+
+The database and PWA contain only safe profile metadata. The API key is encrypted behind a random,
+Project-exclusive handle under `MODEL_PROVIDER_SECRET_ROOT`; Compose mounts the separate
+`model-provider-secrets` volume into `web` only, never `worker` or `pwa`. For a native web process,
+set this variable to an absolute, mode-0700 directory owned by the web user. Removing that directory
+or its wrapping key makes the profile unavailable; it does not expose or silently replace the key.
 
 ## Authorize local repositories
 
