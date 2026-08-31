@@ -187,6 +187,24 @@ missing regenerates facts from its verified immutable artifact; it neither reads
 original repository. This is orientation only: it contains no code-level analysis, Graph, Evidence,
 Coverage judgment, Finding, Risk Level, behavioral claim, or review verdict.
 
+When an exact Direct API profile is available, Kestrel may add one optional model-rendered
+orientation above those facts. The request contains only a 48 KiB bounded fact manifest, a strict
+fact-ID citation schema, and no repository content, tools, URLs, retrieval, Graph, claims, risk,
+Evidence or Coverage judgments, Findings, or verdict fields. Output is all-or-nothing: every
+sentence must cite one inspectable fact and match a deterministic fact-specific sentence form.
+Unsupported output, a timeout, an unavailable profile or credential, and provider failure leave the
+deterministic facts usable with an inline status; none creates Operator Attention or blocks explicit
+Conceptual Review work.
+
+Only a newly opened logical Proposal or a new exact source head can automatically enqueue or replace
+this rendering. Profile edits, provider refreshes that retain the same head, and other metadata
+changes do not regenerate it. The transactionally enqueued pg-boss job is coalesced and fenced by
+Proposal, Review Revision, exact head, and generation token. It runs in the web process that alone
+holds model credentials, at negative queue priority with one local slot and a 256-token output cap.
+Late output for a superseded head is discarded. The API reports queue, model, and Kestrel processing
+latency separately; the black-box performance target is Kestrel processing overhead p95 at or below
+250 ms, excluding both queue and model time.
+
 A failed acquisition publishes no partial artifact and records a bounded unavailable reason. If
 filesystem publication succeeds but the database completion is uncertain, Kestrel locks and rereads
 the revision: an already-available artifact is preserved; an acquiring artifact is quarantined
@@ -215,7 +233,9 @@ The authenticated PWA reads the opaque local inventory and committed refs throug
 `GET /api/v1/local-repository-sources/:repositoryId/references`. It submits the confirmed selection
 to `POST /api/v1/review-revisions`; success exposes the exact identity and Revision State but never
 an artifact locator or local path. The same response and subsequent Project reads expose the Change
-Overview generation state and, when ready, its bounded deterministic fact manifest.
+Overview generation state and, when ready, its bounded deterministic fact manifest. The PWA polls
+only while that overview's optional rendering is queued or running, so the latest fenced result or
+inline failure becomes visible without delaying review controls.
 
 The same PWA reads `GET /api/v1/projects` and may submit a canonical public GitHub pull request URL
 to `POST /api/v1/projects`. Kestrel reads public pull request metadata from GitHub without an
@@ -298,8 +318,9 @@ npm run contracts:check
 
 ## Architecture boundaries
 
-- `apps/web` owns the Fastify HTTP/SSE boundary and serves the compiled PWA.
-- `apps/worker` consumes durable pg-boss jobs.
+- `apps/web` owns the Fastify HTTP/SSE boundary, serves the compiled PWA, and consumes the
+  low-priority Change Overview rendering queue because only that process holds model credentials.
+- `apps/worker` consumes durable acquisition and diagnostic pg-boss jobs.
 - `apps/pwa` owns the browser experience and retains no product data in browser storage.
 - `packages/contracts` owns versioned Zod, JSON Schema, and OpenAPI contracts.
 - `packages/database` owns SQL migrations and node-postgres queries; there is no ORM.
@@ -313,10 +334,10 @@ analysis profile and route availability, authority, Resource Envelope, and block
 confirmation. A configured Resource Envelope includes explicit memory, process, writable-disk, CPU,
 and concurrency limits plus its terminal exhaustion boundary; the built-in profile remains blocked
 until benchmark-derived limits are supplied rather than inventing a default. Starting a ready Review
-Workflow freezes those bindings transactionally. Direct API profile configuration is available;
-binding it into overview/review execution, resource admission, and workflow execution is delivered
-by later issues. TLS/Caddy and Repository Provider Connections are outside the local-first V1
-contract.
+Workflow freezes those bindings transactionally. Direct API profile configuration supplies optional
+Change Overview wording; binding it into Conceptual Review execution, resource admission, and
+workflow execution is delivered by later issues. TLS/Caddy and Repository Provider Connections are
+outside the local-first V1 contract.
 
 The development Compose file keeps database ownership out of the long-running services. The one-shot
 migration and role-preparation containers use the database owner; web and worker connect as

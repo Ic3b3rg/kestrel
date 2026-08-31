@@ -300,8 +300,84 @@ describe("Project persistence mapping", () => {
         },
       },
       changeIntent: proposal?.changeIntent,
+      modelRendering: { state: "not_generated" },
       providerObservation: null,
       sourceFacts: overviewFacts,
+    });
+  });
+
+  it("maps only the rendering fenced to the selected Proposal head", () => {
+    const row = localProjectRow();
+    Object.assign(row, {
+      rendering_state: "ready",
+      rendering_review_revision_id: row.revision_id,
+      rendering_head_object_id: row.revision_head_object_id,
+      rendering_requested_at: new Date("2026-08-24T12:01:01.000Z"),
+      rendering_started_at: new Date("2026-08-24T12:01:01.025Z"),
+      rendering_completed_at: new Date("2026-08-24T12:01:02.150Z"),
+      rendering_provider_request_id: "req_overview_1",
+      rendering_sentences: [
+        {
+          text: "The retained change modifies 1 file under `src`.",
+          sourceFactIds: ["file_statistics", "path_area_001"],
+        },
+      ],
+      rendering_queue_milliseconds: "25",
+      rendering_model_milliseconds: "1000",
+      rendering_kestrel_milliseconds: "125",
+      rendering_total_milliseconds: "1150",
+    });
+
+    const overview = mapProjectRows([row]).projects[0]?.changeProposals[0]?.changeOverview;
+
+    expect(overview).toMatchObject({
+      state: "ready",
+      modelRendering: {
+        state: "ready",
+        providerRequestId: "req_overview_1",
+        sentences: [
+          {
+            text: "The retained change modifies 1 file under `src`.",
+            sourceFactIds: ["file_statistics", "path_area_001"],
+          },
+        ],
+        performance: {
+          queueMilliseconds: 25,
+          modelMilliseconds: 1000,
+          kestrelMilliseconds: 125,
+          totalMilliseconds: 1150,
+        },
+      },
+    });
+
+    row.rendering_head_object_id = "e".repeat(40);
+    const stale = mapProjectRows([row]).projects[0]?.changeProposals[0]?.changeOverview;
+    expect(stale).toMatchObject({ state: "ready", modelRendering: { state: "not_generated" } });
+    expect(JSON.stringify(stale)).not.toContain("req_overview_1");
+  });
+
+  it("keeps facts ready while exposing a bounded inline rendering failure", () => {
+    const row = localProjectRow();
+    Object.assign(row, {
+      rendering_state: "unavailable",
+      rendering_review_revision_id: row.revision_id,
+      rendering_head_object_id: row.revision_head_object_id,
+      rendering_requested_at: new Date("2026-08-24T12:01:01.000Z"),
+      rendering_completed_at: new Date("2026-08-24T12:01:01.125Z"),
+      rendering_failure_reason: "profile_not_configured",
+      rendering_queue_milliseconds: "25",
+      rendering_model_milliseconds: "0",
+      rendering_kestrel_milliseconds: "100",
+      rendering_total_milliseconds: "125",
+    });
+
+    expect(mapProjectRows([row]).projects[0]?.changeProposals[0]?.changeOverview).toMatchObject({
+      state: "ready",
+      sourceFacts: overviewFacts,
+      modelRendering: {
+        state: "unavailable",
+        reason: "profile_not_configured",
+      },
     });
   });
 

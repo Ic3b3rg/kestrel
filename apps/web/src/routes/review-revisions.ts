@@ -24,6 +24,7 @@ import {
   readProject,
   withArtifactAcquisitionLock,
   withReviewRevisionAcquisitionLease,
+  type ChangeOverviewRenderingJobCoordinator,
   type DatabasePool,
 } from "@kestrel/database";
 import { LocalSourceError, type LocalSourceErrorCode } from "@kestrel/local-source";
@@ -275,6 +276,7 @@ async function recordReviewRevisionFailure(
 export function createReviewRevisionService(
   pool: DatabasePool,
   source: LocalReviewRevisionSourceService,
+  renderingJobCoordinator: ChangeOverviewRenderingJobCoordinator,
 ): ReviewRevisionService {
   return {
     async retain(command, context) {
@@ -420,16 +422,20 @@ export function createReviewRevisionService(
               }
               let revision;
               try {
-                revision = await completeReviewRevision(lockedPool, {
-                  actorId: context.actorId,
-                  artifact,
-                  base: begun.revision.base,
-                  correlationId: context.correlationId,
-                  head: begun.revision.head,
-                  objectFormat: begun.revision.objectFormat,
-                  projectId: begun.artifactProjectId,
-                  revisionId: begun.revision.id,
-                });
+                revision = await completeReviewRevision(
+                  lockedPool,
+                  {
+                    actorId: context.actorId,
+                    artifact,
+                    base: begun.revision.base,
+                    correlationId: context.correlationId,
+                    head: begun.revision.head,
+                    objectFormat: begun.revision.objectFormat,
+                    projectId: begun.artifactProjectId,
+                    revisionId: begun.revision.id,
+                  },
+                  renderingJobCoordinator,
+                );
               } catch (error) {
                 await recoverCompletionFailure(
                   async (beforeUnavailable) => {

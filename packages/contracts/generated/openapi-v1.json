@@ -3121,6 +3121,240 @@
                                     ],
                                     "type": "object"
                                   },
+                                  "modelRendering": {
+                                    "oneOf": [
+                                      {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "state": {
+                                            "const": "not_generated",
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "state"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "requestedAt": {
+                                            "format": "date-time",
+                                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                            "type": "string"
+                                          },
+                                          "state": {
+                                            "const": "queued",
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "state",
+                                          "requestedAt"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "requestedAt": {
+                                            "format": "date-time",
+                                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                            "type": "string"
+                                          },
+                                          "startedAt": {
+                                            "format": "date-time",
+                                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                            "type": "string"
+                                          },
+                                          "state": {
+                                            "const": "rendering",
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "state",
+                                          "requestedAt",
+                                          "startedAt"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "completedAt": {
+                                            "format": "date-time",
+                                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                            "type": "string"
+                                          },
+                                          "performance": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "kestrelMilliseconds": {
+                                                "maximum": 120000,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "modelMilliseconds": {
+                                                "maximum": 120000,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "queueMilliseconds": {
+                                                "maximum": 86400000,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "totalMilliseconds": {
+                                                "maximum": 86640000,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "required": [
+                                              "queueMilliseconds",
+                                              "modelMilliseconds",
+                                              "kestrelMilliseconds",
+                                              "totalMilliseconds"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "reason": {
+                                            "enum": [
+                                              "credential_unavailable",
+                                              "invalid_rendering",
+                                              "model_unavailable",
+                                              "profile_not_configured",
+                                              "profile_unavailable",
+                                              "timed_out"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "requestedAt": {
+                                            "format": "date-time",
+                                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                            "type": "string"
+                                          },
+                                          "state": {
+                                            "const": "unavailable",
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "requestedAt",
+                                          "completedAt",
+                                          "performance",
+                                          "state",
+                                          "reason"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "completedAt": {
+                                            "format": "date-time",
+                                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                            "type": "string"
+                                          },
+                                          "performance": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "kestrelMilliseconds": {
+                                                "maximum": 120000,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "modelMilliseconds": {
+                                                "maximum": 120000,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "queueMilliseconds": {
+                                                "maximum": 86400000,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "totalMilliseconds": {
+                                                "maximum": 86640000,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "required": [
+                                              "queueMilliseconds",
+                                              "modelMilliseconds",
+                                              "kestrelMilliseconds",
+                                              "totalMilliseconds"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "providerRequestId": {
+                                            "maxLength": 128,
+                                            "minLength": 1,
+                                            "pattern": "^[A-Za-z0-9._:-]+$",
+                                            "type": "string"
+                                          },
+                                          "requestedAt": {
+                                            "format": "date-time",
+                                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                            "type": "string"
+                                          },
+                                          "sentences": {
+                                            "items": {
+                                              "additionalProperties": false,
+                                              "properties": {
+                                                "sourceFactIds": {
+                                                  "items": {
+                                                    "maxLength": 64,
+                                                    "minLength": 1,
+                                                    "pattern": "^[a-z][a-z0-9_]*$",
+                                                    "type": "string"
+                                                  },
+                                                  "maxItems": 4,
+                                                  "minItems": 1,
+                                                  "type": "array"
+                                                },
+                                                "text": {
+                                                  "maxLength": 320,
+                                                  "minLength": 1,
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "text",
+                                                "sourceFactIds"
+                                              ],
+                                              "type": "object"
+                                            },
+                                            "maxItems": 4,
+                                            "minItems": 1,
+                                            "type": "array"
+                                          },
+                                          "startedAt": {
+                                            "format": "date-time",
+                                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                            "type": "string"
+                                          },
+                                          "state": {
+                                            "const": "ready",
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "requestedAt",
+                                          "completedAt",
+                                          "performance",
+                                          "state",
+                                          "startedAt",
+                                          "providerRequestId",
+                                          "sentences"
+                                        ],
+                                        "type": "object"
+                                      }
+                                    ]
+                                  },
                                   "providerObservation": {
                                     "anyOf": [
                                       {
@@ -3472,6 +3706,7 @@
                                   "createdAt",
                                   "exactRevision",
                                   "changeIntent",
+                                  "modelRendering",
                                   "providerObservation",
                                   "sourceFacts"
                                 ],
@@ -4775,6 +5010,240 @@
                                     ],
                                     "type": "object"
                                   },
+                                  "modelRendering": {
+                                    "oneOf": [
+                                      {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "state": {
+                                            "const": "not_generated",
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "state"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "requestedAt": {
+                                            "format": "date-time",
+                                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                            "type": "string"
+                                          },
+                                          "state": {
+                                            "const": "queued",
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "state",
+                                          "requestedAt"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "requestedAt": {
+                                            "format": "date-time",
+                                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                            "type": "string"
+                                          },
+                                          "startedAt": {
+                                            "format": "date-time",
+                                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                            "type": "string"
+                                          },
+                                          "state": {
+                                            "const": "rendering",
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "state",
+                                          "requestedAt",
+                                          "startedAt"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "completedAt": {
+                                            "format": "date-time",
+                                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                            "type": "string"
+                                          },
+                                          "performance": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "kestrelMilliseconds": {
+                                                "maximum": 120000,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "modelMilliseconds": {
+                                                "maximum": 120000,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "queueMilliseconds": {
+                                                "maximum": 86400000,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "totalMilliseconds": {
+                                                "maximum": 86640000,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "required": [
+                                              "queueMilliseconds",
+                                              "modelMilliseconds",
+                                              "kestrelMilliseconds",
+                                              "totalMilliseconds"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "reason": {
+                                            "enum": [
+                                              "credential_unavailable",
+                                              "invalid_rendering",
+                                              "model_unavailable",
+                                              "profile_not_configured",
+                                              "profile_unavailable",
+                                              "timed_out"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "requestedAt": {
+                                            "format": "date-time",
+                                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                            "type": "string"
+                                          },
+                                          "state": {
+                                            "const": "unavailable",
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "requestedAt",
+                                          "completedAt",
+                                          "performance",
+                                          "state",
+                                          "reason"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "completedAt": {
+                                            "format": "date-time",
+                                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                            "type": "string"
+                                          },
+                                          "performance": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "kestrelMilliseconds": {
+                                                "maximum": 120000,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "modelMilliseconds": {
+                                                "maximum": 120000,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "queueMilliseconds": {
+                                                "maximum": 86400000,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "totalMilliseconds": {
+                                                "maximum": 86640000,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "required": [
+                                              "queueMilliseconds",
+                                              "modelMilliseconds",
+                                              "kestrelMilliseconds",
+                                              "totalMilliseconds"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "providerRequestId": {
+                                            "maxLength": 128,
+                                            "minLength": 1,
+                                            "pattern": "^[A-Za-z0-9._:-]+$",
+                                            "type": "string"
+                                          },
+                                          "requestedAt": {
+                                            "format": "date-time",
+                                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                            "type": "string"
+                                          },
+                                          "sentences": {
+                                            "items": {
+                                              "additionalProperties": false,
+                                              "properties": {
+                                                "sourceFactIds": {
+                                                  "items": {
+                                                    "maxLength": 64,
+                                                    "minLength": 1,
+                                                    "pattern": "^[a-z][a-z0-9_]*$",
+                                                    "type": "string"
+                                                  },
+                                                  "maxItems": 4,
+                                                  "minItems": 1,
+                                                  "type": "array"
+                                                },
+                                                "text": {
+                                                  "maxLength": 320,
+                                                  "minLength": 1,
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "text",
+                                                "sourceFactIds"
+                                              ],
+                                              "type": "object"
+                                            },
+                                            "maxItems": 4,
+                                            "minItems": 1,
+                                            "type": "array"
+                                          },
+                                          "startedAt": {
+                                            "format": "date-time",
+                                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                            "type": "string"
+                                          },
+                                          "state": {
+                                            "const": "ready",
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "requestedAt",
+                                          "completedAt",
+                                          "performance",
+                                          "state",
+                                          "startedAt",
+                                          "providerRequestId",
+                                          "sentences"
+                                        ],
+                                        "type": "object"
+                                      }
+                                    ]
+                                  },
                                   "providerObservation": {
                                     "anyOf": [
                                       {
@@ -5126,6 +5595,7 @@
                                   "createdAt",
                                   "exactRevision",
                                   "changeIntent",
+                                  "modelRendering",
                                   "providerObservation",
                                   "sourceFacts"
                                 ],
@@ -6698,6 +7168,240 @@
                                   ],
                                   "type": "object"
                                 },
+                                "modelRendering": {
+                                  "oneOf": [
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "state": {
+                                          "const": "not_generated",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "state"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "requestedAt": {
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                          "type": "string"
+                                        },
+                                        "state": {
+                                          "const": "queued",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "state",
+                                        "requestedAt"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "requestedAt": {
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                          "type": "string"
+                                        },
+                                        "startedAt": {
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                          "type": "string"
+                                        },
+                                        "state": {
+                                          "const": "rendering",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "state",
+                                        "requestedAt",
+                                        "startedAt"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "completedAt": {
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                          "type": "string"
+                                        },
+                                        "performance": {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "kestrelMilliseconds": {
+                                              "maximum": 120000,
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            },
+                                            "modelMilliseconds": {
+                                              "maximum": 120000,
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            },
+                                            "queueMilliseconds": {
+                                              "maximum": 86400000,
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            },
+                                            "totalMilliseconds": {
+                                              "maximum": 86640000,
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            }
+                                          },
+                                          "required": [
+                                            "queueMilliseconds",
+                                            "modelMilliseconds",
+                                            "kestrelMilliseconds",
+                                            "totalMilliseconds"
+                                          ],
+                                          "type": "object"
+                                        },
+                                        "reason": {
+                                          "enum": [
+                                            "credential_unavailable",
+                                            "invalid_rendering",
+                                            "model_unavailable",
+                                            "profile_not_configured",
+                                            "profile_unavailable",
+                                            "timed_out"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "requestedAt": {
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                          "type": "string"
+                                        },
+                                        "state": {
+                                          "const": "unavailable",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "requestedAt",
+                                        "completedAt",
+                                        "performance",
+                                        "state",
+                                        "reason"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "completedAt": {
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                          "type": "string"
+                                        },
+                                        "performance": {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "kestrelMilliseconds": {
+                                              "maximum": 120000,
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            },
+                                            "modelMilliseconds": {
+                                              "maximum": 120000,
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            },
+                                            "queueMilliseconds": {
+                                              "maximum": 86400000,
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            },
+                                            "totalMilliseconds": {
+                                              "maximum": 86640000,
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            }
+                                          },
+                                          "required": [
+                                            "queueMilliseconds",
+                                            "modelMilliseconds",
+                                            "kestrelMilliseconds",
+                                            "totalMilliseconds"
+                                          ],
+                                          "type": "object"
+                                        },
+                                        "providerRequestId": {
+                                          "maxLength": 128,
+                                          "minLength": 1,
+                                          "pattern": "^[A-Za-z0-9._:-]+$",
+                                          "type": "string"
+                                        },
+                                        "requestedAt": {
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                          "type": "string"
+                                        },
+                                        "sentences": {
+                                          "items": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "sourceFactIds": {
+                                                "items": {
+                                                  "maxLength": 64,
+                                                  "minLength": 1,
+                                                  "pattern": "^[a-z][a-z0-9_]*$",
+                                                  "type": "string"
+                                                },
+                                                "maxItems": 4,
+                                                "minItems": 1,
+                                                "type": "array"
+                                              },
+                                              "text": {
+                                                "maxLength": 320,
+                                                "minLength": 1,
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "text",
+                                              "sourceFactIds"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "maxItems": 4,
+                                          "minItems": 1,
+                                          "type": "array"
+                                        },
+                                        "startedAt": {
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                          "type": "string"
+                                        },
+                                        "state": {
+                                          "const": "ready",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "requestedAt",
+                                        "completedAt",
+                                        "performance",
+                                        "state",
+                                        "startedAt",
+                                        "providerRequestId",
+                                        "sentences"
+                                      ],
+                                      "type": "object"
+                                    }
+                                  ]
+                                },
                                 "providerObservation": {
                                   "anyOf": [
                                     {
@@ -7049,6 +7753,7 @@
                                 "createdAt",
                                 "exactRevision",
                                 "changeIntent",
+                                "modelRendering",
                                 "providerObservation",
                                 "sourceFacts"
                               ],
@@ -8352,6 +9057,240 @@
                                   ],
                                   "type": "object"
                                 },
+                                "modelRendering": {
+                                  "oneOf": [
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "state": {
+                                          "const": "not_generated",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "state"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "requestedAt": {
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                          "type": "string"
+                                        },
+                                        "state": {
+                                          "const": "queued",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "state",
+                                        "requestedAt"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "requestedAt": {
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                          "type": "string"
+                                        },
+                                        "startedAt": {
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                          "type": "string"
+                                        },
+                                        "state": {
+                                          "const": "rendering",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "state",
+                                        "requestedAt",
+                                        "startedAt"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "completedAt": {
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                          "type": "string"
+                                        },
+                                        "performance": {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "kestrelMilliseconds": {
+                                              "maximum": 120000,
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            },
+                                            "modelMilliseconds": {
+                                              "maximum": 120000,
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            },
+                                            "queueMilliseconds": {
+                                              "maximum": 86400000,
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            },
+                                            "totalMilliseconds": {
+                                              "maximum": 86640000,
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            }
+                                          },
+                                          "required": [
+                                            "queueMilliseconds",
+                                            "modelMilliseconds",
+                                            "kestrelMilliseconds",
+                                            "totalMilliseconds"
+                                          ],
+                                          "type": "object"
+                                        },
+                                        "reason": {
+                                          "enum": [
+                                            "credential_unavailable",
+                                            "invalid_rendering",
+                                            "model_unavailable",
+                                            "profile_not_configured",
+                                            "profile_unavailable",
+                                            "timed_out"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "requestedAt": {
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                          "type": "string"
+                                        },
+                                        "state": {
+                                          "const": "unavailable",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "requestedAt",
+                                        "completedAt",
+                                        "performance",
+                                        "state",
+                                        "reason"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "completedAt": {
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                          "type": "string"
+                                        },
+                                        "performance": {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "kestrelMilliseconds": {
+                                              "maximum": 120000,
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            },
+                                            "modelMilliseconds": {
+                                              "maximum": 120000,
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            },
+                                            "queueMilliseconds": {
+                                              "maximum": 86400000,
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            },
+                                            "totalMilliseconds": {
+                                              "maximum": 86640000,
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            }
+                                          },
+                                          "required": [
+                                            "queueMilliseconds",
+                                            "modelMilliseconds",
+                                            "kestrelMilliseconds",
+                                            "totalMilliseconds"
+                                          ],
+                                          "type": "object"
+                                        },
+                                        "providerRequestId": {
+                                          "maxLength": 128,
+                                          "minLength": 1,
+                                          "pattern": "^[A-Za-z0-9._:-]+$",
+                                          "type": "string"
+                                        },
+                                        "requestedAt": {
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                          "type": "string"
+                                        },
+                                        "sentences": {
+                                          "items": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "sourceFactIds": {
+                                                "items": {
+                                                  "maxLength": 64,
+                                                  "minLength": 1,
+                                                  "pattern": "^[a-z][a-z0-9_]*$",
+                                                  "type": "string"
+                                                },
+                                                "maxItems": 4,
+                                                "minItems": 1,
+                                                "type": "array"
+                                              },
+                                              "text": {
+                                                "maxLength": 320,
+                                                "minLength": 1,
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "text",
+                                              "sourceFactIds"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "maxItems": 4,
+                                          "minItems": 1,
+                                          "type": "array"
+                                        },
+                                        "startedAt": {
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                          "type": "string"
+                                        },
+                                        "state": {
+                                          "const": "ready",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "requestedAt",
+                                        "completedAt",
+                                        "performance",
+                                        "state",
+                                        "startedAt",
+                                        "providerRequestId",
+                                        "sentences"
+                                      ],
+                                      "type": "object"
+                                    }
+                                  ]
+                                },
                                 "providerObservation": {
                                   "anyOf": [
                                     {
@@ -8703,6 +9642,7 @@
                                 "createdAt",
                                 "exactRevision",
                                 "changeIntent",
+                                "modelRendering",
                                 "providerObservation",
                                 "sourceFacts"
                               ],
@@ -11674,6 +12614,240 @@
                             ],
                             "type": "object"
                           },
+                          "modelRendering": {
+                            "oneOf": [
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "state": {
+                                    "const": "not_generated",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "state"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "requestedAt": {
+                                    "format": "date-time",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                    "type": "string"
+                                  },
+                                  "state": {
+                                    "const": "queued",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "state",
+                                  "requestedAt"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "requestedAt": {
+                                    "format": "date-time",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                    "type": "string"
+                                  },
+                                  "startedAt": {
+                                    "format": "date-time",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                    "type": "string"
+                                  },
+                                  "state": {
+                                    "const": "rendering",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "state",
+                                  "requestedAt",
+                                  "startedAt"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "completedAt": {
+                                    "format": "date-time",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                    "type": "string"
+                                  },
+                                  "performance": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "kestrelMilliseconds": {
+                                        "maximum": 120000,
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "modelMilliseconds": {
+                                        "maximum": 120000,
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "queueMilliseconds": {
+                                        "maximum": 86400000,
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "totalMilliseconds": {
+                                        "maximum": 86640000,
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "queueMilliseconds",
+                                      "modelMilliseconds",
+                                      "kestrelMilliseconds",
+                                      "totalMilliseconds"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "reason": {
+                                    "enum": [
+                                      "credential_unavailable",
+                                      "invalid_rendering",
+                                      "model_unavailable",
+                                      "profile_not_configured",
+                                      "profile_unavailable",
+                                      "timed_out"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "requestedAt": {
+                                    "format": "date-time",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                    "type": "string"
+                                  },
+                                  "state": {
+                                    "const": "unavailable",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "requestedAt",
+                                  "completedAt",
+                                  "performance",
+                                  "state",
+                                  "reason"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "completedAt": {
+                                    "format": "date-time",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                    "type": "string"
+                                  },
+                                  "performance": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "kestrelMilliseconds": {
+                                        "maximum": 120000,
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "modelMilliseconds": {
+                                        "maximum": 120000,
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "queueMilliseconds": {
+                                        "maximum": 86400000,
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "totalMilliseconds": {
+                                        "maximum": 86640000,
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "queueMilliseconds",
+                                      "modelMilliseconds",
+                                      "kestrelMilliseconds",
+                                      "totalMilliseconds"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "providerRequestId": {
+                                    "maxLength": 128,
+                                    "minLength": 1,
+                                    "pattern": "^[A-Za-z0-9._:-]+$",
+                                    "type": "string"
+                                  },
+                                  "requestedAt": {
+                                    "format": "date-time",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                    "type": "string"
+                                  },
+                                  "sentences": {
+                                    "items": {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "sourceFactIds": {
+                                          "items": {
+                                            "maxLength": 64,
+                                            "minLength": 1,
+                                            "pattern": "^[a-z][a-z0-9_]*$",
+                                            "type": "string"
+                                          },
+                                          "maxItems": 4,
+                                          "minItems": 1,
+                                          "type": "array"
+                                        },
+                                        "text": {
+                                          "maxLength": 320,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "text",
+                                        "sourceFactIds"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    "maxItems": 4,
+                                    "minItems": 1,
+                                    "type": "array"
+                                  },
+                                  "startedAt": {
+                                    "format": "date-time",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                    "type": "string"
+                                  },
+                                  "state": {
+                                    "const": "ready",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "requestedAt",
+                                  "completedAt",
+                                  "performance",
+                                  "state",
+                                  "startedAt",
+                                  "providerRequestId",
+                                  "sentences"
+                                ],
+                                "type": "object"
+                              }
+                            ]
+                          },
                           "providerObservation": {
                             "anyOf": [
                               {
@@ -12025,6 +13199,7 @@
                           "createdAt",
                           "exactRevision",
                           "changeIntent",
+                          "modelRendering",
                           "providerObservation",
                           "sourceFacts"
                         ],
@@ -13328,6 +14503,240 @@
                             ],
                             "type": "object"
                           },
+                          "modelRendering": {
+                            "oneOf": [
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "state": {
+                                    "const": "not_generated",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "state"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "requestedAt": {
+                                    "format": "date-time",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                    "type": "string"
+                                  },
+                                  "state": {
+                                    "const": "queued",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "state",
+                                  "requestedAt"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "requestedAt": {
+                                    "format": "date-time",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                    "type": "string"
+                                  },
+                                  "startedAt": {
+                                    "format": "date-time",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                    "type": "string"
+                                  },
+                                  "state": {
+                                    "const": "rendering",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "state",
+                                  "requestedAt",
+                                  "startedAt"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "completedAt": {
+                                    "format": "date-time",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                    "type": "string"
+                                  },
+                                  "performance": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "kestrelMilliseconds": {
+                                        "maximum": 120000,
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "modelMilliseconds": {
+                                        "maximum": 120000,
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "queueMilliseconds": {
+                                        "maximum": 86400000,
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "totalMilliseconds": {
+                                        "maximum": 86640000,
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "queueMilliseconds",
+                                      "modelMilliseconds",
+                                      "kestrelMilliseconds",
+                                      "totalMilliseconds"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "reason": {
+                                    "enum": [
+                                      "credential_unavailable",
+                                      "invalid_rendering",
+                                      "model_unavailable",
+                                      "profile_not_configured",
+                                      "profile_unavailable",
+                                      "timed_out"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "requestedAt": {
+                                    "format": "date-time",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                    "type": "string"
+                                  },
+                                  "state": {
+                                    "const": "unavailable",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "requestedAt",
+                                  "completedAt",
+                                  "performance",
+                                  "state",
+                                  "reason"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "completedAt": {
+                                    "format": "date-time",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                    "type": "string"
+                                  },
+                                  "performance": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "kestrelMilliseconds": {
+                                        "maximum": 120000,
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "modelMilliseconds": {
+                                        "maximum": 120000,
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "queueMilliseconds": {
+                                        "maximum": 86400000,
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "totalMilliseconds": {
+                                        "maximum": 86640000,
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "queueMilliseconds",
+                                      "modelMilliseconds",
+                                      "kestrelMilliseconds",
+                                      "totalMilliseconds"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "providerRequestId": {
+                                    "maxLength": 128,
+                                    "minLength": 1,
+                                    "pattern": "^[A-Za-z0-9._:-]+$",
+                                    "type": "string"
+                                  },
+                                  "requestedAt": {
+                                    "format": "date-time",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                    "type": "string"
+                                  },
+                                  "sentences": {
+                                    "items": {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "sourceFactIds": {
+                                          "items": {
+                                            "maxLength": 64,
+                                            "minLength": 1,
+                                            "pattern": "^[a-z][a-z0-9_]*$",
+                                            "type": "string"
+                                          },
+                                          "maxItems": 4,
+                                          "minItems": 1,
+                                          "type": "array"
+                                        },
+                                        "text": {
+                                          "maxLength": 320,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "text",
+                                        "sourceFactIds"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    "maxItems": 4,
+                                    "minItems": 1,
+                                    "type": "array"
+                                  },
+                                  "startedAt": {
+                                    "format": "date-time",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                    "type": "string"
+                                  },
+                                  "state": {
+                                    "const": "ready",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "requestedAt",
+                                  "completedAt",
+                                  "performance",
+                                  "state",
+                                  "startedAt",
+                                  "providerRequestId",
+                                  "sentences"
+                                ],
+                                "type": "object"
+                              }
+                            ]
+                          },
                           "providerObservation": {
                             "anyOf": [
                               {
@@ -13679,6 +15088,7 @@
                           "createdAt",
                           "exactRevision",
                           "changeIntent",
+                          "modelRendering",
                           "providerObservation",
                           "sourceFacts"
                         ],
@@ -15069,6 +16479,240 @@
                                   ],
                                   "type": "object"
                                 },
+                                "modelRendering": {
+                                  "oneOf": [
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "state": {
+                                          "const": "not_generated",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "state"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "requestedAt": {
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                          "type": "string"
+                                        },
+                                        "state": {
+                                          "const": "queued",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "state",
+                                        "requestedAt"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "requestedAt": {
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                          "type": "string"
+                                        },
+                                        "startedAt": {
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                          "type": "string"
+                                        },
+                                        "state": {
+                                          "const": "rendering",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "state",
+                                        "requestedAt",
+                                        "startedAt"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "completedAt": {
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                          "type": "string"
+                                        },
+                                        "performance": {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "kestrelMilliseconds": {
+                                              "maximum": 120000,
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            },
+                                            "modelMilliseconds": {
+                                              "maximum": 120000,
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            },
+                                            "queueMilliseconds": {
+                                              "maximum": 86400000,
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            },
+                                            "totalMilliseconds": {
+                                              "maximum": 86640000,
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            }
+                                          },
+                                          "required": [
+                                            "queueMilliseconds",
+                                            "modelMilliseconds",
+                                            "kestrelMilliseconds",
+                                            "totalMilliseconds"
+                                          ],
+                                          "type": "object"
+                                        },
+                                        "reason": {
+                                          "enum": [
+                                            "credential_unavailable",
+                                            "invalid_rendering",
+                                            "model_unavailable",
+                                            "profile_not_configured",
+                                            "profile_unavailable",
+                                            "timed_out"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "requestedAt": {
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                          "type": "string"
+                                        },
+                                        "state": {
+                                          "const": "unavailable",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "requestedAt",
+                                        "completedAt",
+                                        "performance",
+                                        "state",
+                                        "reason"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "completedAt": {
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                          "type": "string"
+                                        },
+                                        "performance": {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "kestrelMilliseconds": {
+                                              "maximum": 120000,
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            },
+                                            "modelMilliseconds": {
+                                              "maximum": 120000,
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            },
+                                            "queueMilliseconds": {
+                                              "maximum": 86400000,
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            },
+                                            "totalMilliseconds": {
+                                              "maximum": 86640000,
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            }
+                                          },
+                                          "required": [
+                                            "queueMilliseconds",
+                                            "modelMilliseconds",
+                                            "kestrelMilliseconds",
+                                            "totalMilliseconds"
+                                          ],
+                                          "type": "object"
+                                        },
+                                        "providerRequestId": {
+                                          "maxLength": 128,
+                                          "minLength": 1,
+                                          "pattern": "^[A-Za-z0-9._:-]+$",
+                                          "type": "string"
+                                        },
+                                        "requestedAt": {
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                          "type": "string"
+                                        },
+                                        "sentences": {
+                                          "items": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "sourceFactIds": {
+                                                "items": {
+                                                  "maxLength": 64,
+                                                  "minLength": 1,
+                                                  "pattern": "^[a-z][a-z0-9_]*$",
+                                                  "type": "string"
+                                                },
+                                                "maxItems": 4,
+                                                "minItems": 1,
+                                                "type": "array"
+                                              },
+                                              "text": {
+                                                "maxLength": 320,
+                                                "minLength": 1,
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "text",
+                                              "sourceFactIds"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "maxItems": 4,
+                                          "minItems": 1,
+                                          "type": "array"
+                                        },
+                                        "startedAt": {
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                          "type": "string"
+                                        },
+                                        "state": {
+                                          "const": "ready",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "requestedAt",
+                                        "completedAt",
+                                        "performance",
+                                        "state",
+                                        "startedAt",
+                                        "providerRequestId",
+                                        "sentences"
+                                      ],
+                                      "type": "object"
+                                    }
+                                  ]
+                                },
                                 "providerObservation": {
                                   "anyOf": [
                                     {
@@ -15420,6 +17064,7 @@
                                 "createdAt",
                                 "exactRevision",
                                 "changeIntent",
+                                "modelRendering",
                                 "providerObservation",
                                 "sourceFacts"
                               ],
@@ -16723,6 +18368,240 @@
                                   ],
                                   "type": "object"
                                 },
+                                "modelRendering": {
+                                  "oneOf": [
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "state": {
+                                          "const": "not_generated",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "state"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "requestedAt": {
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                          "type": "string"
+                                        },
+                                        "state": {
+                                          "const": "queued",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "state",
+                                        "requestedAt"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "requestedAt": {
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                          "type": "string"
+                                        },
+                                        "startedAt": {
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                          "type": "string"
+                                        },
+                                        "state": {
+                                          "const": "rendering",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "state",
+                                        "requestedAt",
+                                        "startedAt"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "completedAt": {
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                          "type": "string"
+                                        },
+                                        "performance": {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "kestrelMilliseconds": {
+                                              "maximum": 120000,
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            },
+                                            "modelMilliseconds": {
+                                              "maximum": 120000,
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            },
+                                            "queueMilliseconds": {
+                                              "maximum": 86400000,
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            },
+                                            "totalMilliseconds": {
+                                              "maximum": 86640000,
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            }
+                                          },
+                                          "required": [
+                                            "queueMilliseconds",
+                                            "modelMilliseconds",
+                                            "kestrelMilliseconds",
+                                            "totalMilliseconds"
+                                          ],
+                                          "type": "object"
+                                        },
+                                        "reason": {
+                                          "enum": [
+                                            "credential_unavailable",
+                                            "invalid_rendering",
+                                            "model_unavailable",
+                                            "profile_not_configured",
+                                            "profile_unavailable",
+                                            "timed_out"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "requestedAt": {
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                          "type": "string"
+                                        },
+                                        "state": {
+                                          "const": "unavailable",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "requestedAt",
+                                        "completedAt",
+                                        "performance",
+                                        "state",
+                                        "reason"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "completedAt": {
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                          "type": "string"
+                                        },
+                                        "performance": {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "kestrelMilliseconds": {
+                                              "maximum": 120000,
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            },
+                                            "modelMilliseconds": {
+                                              "maximum": 120000,
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            },
+                                            "queueMilliseconds": {
+                                              "maximum": 86400000,
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            },
+                                            "totalMilliseconds": {
+                                              "maximum": 86640000,
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            }
+                                          },
+                                          "required": [
+                                            "queueMilliseconds",
+                                            "modelMilliseconds",
+                                            "kestrelMilliseconds",
+                                            "totalMilliseconds"
+                                          ],
+                                          "type": "object"
+                                        },
+                                        "providerRequestId": {
+                                          "maxLength": 128,
+                                          "minLength": 1,
+                                          "pattern": "^[A-Za-z0-9._:-]+$",
+                                          "type": "string"
+                                        },
+                                        "requestedAt": {
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                          "type": "string"
+                                        },
+                                        "sentences": {
+                                          "items": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "sourceFactIds": {
+                                                "items": {
+                                                  "maxLength": 64,
+                                                  "minLength": 1,
+                                                  "pattern": "^[a-z][a-z0-9_]*$",
+                                                  "type": "string"
+                                                },
+                                                "maxItems": 4,
+                                                "minItems": 1,
+                                                "type": "array"
+                                              },
+                                              "text": {
+                                                "maxLength": 320,
+                                                "minLength": 1,
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "text",
+                                              "sourceFactIds"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "maxItems": 4,
+                                          "minItems": 1,
+                                          "type": "array"
+                                        },
+                                        "startedAt": {
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                          "type": "string"
+                                        },
+                                        "state": {
+                                          "const": "ready",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "requestedAt",
+                                        "completedAt",
+                                        "performance",
+                                        "state",
+                                        "startedAt",
+                                        "providerRequestId",
+                                        "sentences"
+                                      ],
+                                      "type": "object"
+                                    }
+                                  ]
+                                },
                                 "providerObservation": {
                                   "anyOf": [
                                     {
@@ -17074,6 +18953,7 @@
                                 "createdAt",
                                 "exactRevision",
                                 "changeIntent",
+                                "modelRendering",
                                 "providerObservation",
                                 "sourceFacts"
                               ],

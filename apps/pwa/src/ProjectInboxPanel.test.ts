@@ -256,6 +256,25 @@ describe("ProjectInboxPanel", () => {
                   },
                 },
                 changeIntent: localProposal.changeIntent,
+                modelRendering: {
+                  state: "ready",
+                  requestedAt: "2026-08-24T12:01:00.000Z",
+                  startedAt: "2026-08-24T12:01:00.025Z",
+                  completedAt: "2026-08-24T12:01:01.150Z",
+                  providerRequestId: "req_overview_1",
+                  sentences: [
+                    {
+                      text: "The retained change modifies 1 file.",
+                      sourceFactIds: ["file_statistics"],
+                    },
+                  ],
+                  performance: {
+                    queueMilliseconds: 25,
+                    modelMilliseconds: 1_000,
+                    kestrelMilliseconds: 125,
+                    totalMilliseconds: 1_150,
+                  },
+                },
                 providerObservation: {
                   canonicalUrl: proposal.canonicalUrl,
                   observedAt: proposal.observedAt,
@@ -300,7 +319,7 @@ describe("ProjectInboxPanel", () => {
 
     expect(html).toContain("Change Overview");
     expect(html).toContain("Ready");
-    expect(html).toContain("Deterministic orientation facts only");
+    expect(html).toContain("Deterministic facts with optional source-linked model wording");
     expect(html).toContain("Current provider title");
     expect(html).toContain("Current provider description.");
     expect(html).toContain("Change Intent v1");
@@ -310,8 +329,59 @@ describe("ProjectInboxPanel", () => {
     expect(html).toContain("src/review.ts");
     expect(html).toContain("Source area");
     expect(html).toContain("Git LFS pointer content was not hydrated");
+    expect(html).toContain("Natural-language orientation");
+    expect(html).toContain("The retained change modifies 1 file.");
+    expect(html).toContain("Source fact:");
+    expect(html).toContain(`href="#${revision.id}-source-fact-file_statistics"`);
+    expect(html).toContain(`id="${revision.id}-source-fact-file_statistics"`);
+    expect(html).toContain("Kestrel 125 ms");
+    expect(html).toContain("Model 1000 ms");
+    expect(html).toContain("Queue 25 ms");
     expect(html).toContain("b".repeat(40));
     expect(html).not.toMatch(/Graph|Evidence|Coverage|Finding|Risk|Verdict/u);
+
+    const renderedProject = inbox.projects[0];
+    const renderedProposal = renderedProject?.changeProposals[0];
+    const renderedOverview = renderedProposal?.changeOverview;
+    if (
+      renderedProject === undefined ||
+      renderedProposal === undefined ||
+      renderedOverview?.state !== "ready"
+    ) {
+      throw new Error("Rendered Change Overview fixture is unavailable");
+    }
+    const unavailableHtml = render({
+      schemaVersion: 1,
+      projects: [
+        {
+          ...renderedProject,
+          changeProposals: [
+            {
+              ...renderedProposal,
+              changeOverview: {
+                ...renderedOverview,
+                modelRendering: {
+                  state: "unavailable",
+                  requestedAt: "2026-08-24T12:01:00.000Z",
+                  completedAt: "2026-08-24T12:01:01.150Z",
+                  reason: "timed_out",
+                  performance: {
+                    queueMilliseconds: 25,
+                    modelMilliseconds: 1_000,
+                    kestrelMilliseconds: 125,
+                    totalMilliseconds: 1_150,
+                  },
+                },
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(unavailableHtml).toContain("The model request timed out");
+    expect(unavailableHtml).toContain("src/review.ts");
+    expect(unavailableHtml).not.toContain("Operator Attention");
   });
 
   it("shows the latest exact head while deterministic facts await retained source", () => {

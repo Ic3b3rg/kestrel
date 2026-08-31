@@ -626,6 +626,85 @@ const ChangeOverviewProviderObservationSchema = z.strictObject({
   description: z.string().max(65_536).nullable(),
 });
 
+const ChangeOverviewModelSourceFactIdSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[a-z][a-z0-9_]*$/u);
+
+export const ChangeOverviewModelRenderingPerformanceSchema = z
+  .strictObject({
+    queueMilliseconds: z.number().int().nonnegative().max(86_400_000),
+    modelMilliseconds: z.number().int().nonnegative().max(120_000),
+    kestrelMilliseconds: z.number().int().nonnegative().max(120_000),
+    totalMilliseconds: z.number().int().nonnegative().max(86_640_000),
+  })
+  .refine(
+    ({ kestrelMilliseconds, modelMilliseconds, queueMilliseconds, totalMilliseconds }) =>
+      kestrelMilliseconds + modelMilliseconds + queueMilliseconds === totalMilliseconds,
+    { message: "Change Overview rendering latencies are inconsistent" },
+  );
+
+export const ChangeOverviewModelRenderingSentenceSchema = z
+  .strictObject({
+    text: z.string().trim().min(1).max(320),
+    sourceFactIds: z.array(ChangeOverviewModelSourceFactIdSchema).min(1).max(4),
+  })
+  .refine(({ sourceFactIds }) => new Set(sourceFactIds).size === sourceFactIds.length, {
+    message: "Change Overview sentence source fact identities must be unique",
+    path: ["sourceFactIds"],
+  });
+
+const ChangeOverviewModelRenderingTimedSchema = z.strictObject({
+  requestedAt: UtcDateTimeSchema,
+  completedAt: UtcDateTimeSchema,
+  performance: ChangeOverviewModelRenderingPerformanceSchema,
+});
+
+export const ChangeOverviewModelRenderingSchema = z.discriminatedUnion("state", [
+  z.strictObject({ state: z.literal("not_generated") }),
+  z.strictObject({
+    state: z.literal("queued"),
+    requestedAt: UtcDateTimeSchema,
+  }),
+  z
+    .strictObject({
+      state: z.literal("rendering"),
+      requestedAt: UtcDateTimeSchema,
+      startedAt: UtcDateTimeSchema,
+    })
+    .refine(({ requestedAt, startedAt }) => startedAt >= requestedAt, {
+      message: "Change Overview rendering timestamps are inconsistent",
+    }),
+  ChangeOverviewModelRenderingTimedSchema.extend({
+    state: z.literal("unavailable"),
+    reason: z.enum([
+      "credential_unavailable",
+      "invalid_rendering",
+      "model_unavailable",
+      "profile_not_configured",
+      "profile_unavailable",
+      "timed_out",
+    ]),
+  }).refine(({ completedAt, requestedAt }) => completedAt >= requestedAt, {
+    message: "Change Overview rendering timestamps are inconsistent",
+  }),
+  ChangeOverviewModelRenderingTimedSchema.extend({
+    state: z.literal("ready"),
+    startedAt: UtcDateTimeSchema,
+    providerRequestId: z
+      .string()
+      .min(1)
+      .max(128)
+      .regex(/^[A-Za-z0-9._:-]+$/u),
+    sentences: z.array(ChangeOverviewModelRenderingSentenceSchema).min(1).max(4),
+  }).refine(
+    ({ completedAt, requestedAt, startedAt }) =>
+      startedAt >= requestedAt && completedAt >= startedAt,
+    { message: "Change Overview rendering timestamps are inconsistent" },
+  ),
+]);
+
 export const ChangeOverviewSchema = z.discriminatedUnion("state", [
   z.strictObject({
     state: z.literal("awaiting_source"),
@@ -647,6 +726,7 @@ export const ChangeOverviewSchema = z.discriminatedUnion("state", [
     createdAt: UtcDateTimeSchema,
     exactRevision: ChangeOverviewExactRevisionSchema,
     changeIntent: ChangeIntentSchema,
+    modelRendering: ChangeOverviewModelRenderingSchema,
     providerObservation: ChangeOverviewProviderObservationSchema.nullable(),
     sourceFacts: ChangeOverviewSourceFactsSchema,
   }),
@@ -1351,6 +1431,10 @@ export type InstallationSnapshot = z.infer<typeof InstallationSnapshotSchema>;
 export type InstallationState = z.infer<typeof InstallationStateSchema>;
 export type ChangeOverview = z.infer<typeof ChangeOverviewSchema>;
 export type ChangeOverviewChangedFile = z.infer<typeof ChangeOverviewChangedFileSchema>;
+export type ChangeOverviewModelRendering = z.infer<typeof ChangeOverviewModelRenderingSchema>;
+export type ChangeOverviewModelRenderingSentence = z.infer<
+  typeof ChangeOverviewModelRenderingSentenceSchema
+>;
 export type ChangeOverviewSourceFacts = z.infer<typeof ChangeOverviewSourceFactsSchema>;
 export type ChangeOverviewWarning = z.infer<typeof ChangeOverviewWarningSchema>;
 export type ChangeIntent = z.infer<typeof ChangeIntentSchema>;

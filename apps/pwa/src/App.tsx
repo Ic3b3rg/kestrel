@@ -140,6 +140,21 @@ function requiresAuthentication(error: unknown): boolean {
   );
 }
 
+function hasPendingChangeOverviewRendering(inbox: ProjectInbox | null): boolean {
+  return (
+    inbox?.projects.some((project) =>
+      project.changeProposals.some((proposal) => {
+        const overview = proposal.changeOverview;
+        return (
+          overview?.state === "ready" &&
+          (overview.modelRendering.state === "queued" ||
+            overview.modelRendering.state === "rendering")
+        );
+      }),
+    ) ?? false
+  );
+}
+
 export function App() {
   const [online, setOnline] = useState(() => navigator.onLine);
   const [session, setSession] = useState<Session | null | undefined>(undefined);
@@ -390,6 +405,25 @@ export function App() {
       controller.abort();
     };
   }, [handleAuthenticationBoundaryError, online, projectReloadGeneration, session]);
+
+  useEffect(() => {
+    if (
+      !online ||
+      session === null ||
+      session === undefined ||
+      projectLoading ||
+      !hasPendingChangeOverviewRendering(projectInbox)
+    ) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setProjectReloadGeneration((generation) => generation + 1);
+    }, 1_000);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [online, projectInbox, projectLoading, session]);
 
   const handleLogin = async (command: LoginCommand): Promise<void> => {
     const controller = new AbortController();

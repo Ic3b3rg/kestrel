@@ -107,6 +107,7 @@ async function sendOpenAiRequest(
   const body = JSON.stringify(request.body);
 
   return new Promise((resolve, reject) => {
+    let timedOut = false;
     const outgoing = requestHttps(
       {
         agent: false,
@@ -168,9 +169,12 @@ async function sendOpenAiRequest(
       },
     );
     outgoing.setTimeout(request.timeoutMilliseconds, () => {
+      timedOut = true;
+      reject(new DirectApiBrokerError("request_timeout", "Provider request timed out"));
       outgoing.destroy(new Error("Provider profile test timed out"));
     });
     outgoing.on("error", () => {
+      if (timedOut) return;
       reject(new DirectApiBrokerError("provider_unavailable", "Provider profile test failed"));
     });
     outgoing.end(body);

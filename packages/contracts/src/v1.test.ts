@@ -10,6 +10,7 @@ import {
 } from "./openapi.js";
 import {
   ChangeOverviewPathAreaSchema,
+  ChangeOverviewModelRenderingSchema,
   ChangeOverviewSchema,
   ChangeOverviewSourceFactsSchema,
   ChangeIntentSchema,
@@ -562,6 +563,25 @@ describe("V1 public contracts", () => {
         title: "Keep repository access explicit",
         description: "Retain only the exact committed source.",
       },
+      modelRendering: {
+        state: "ready",
+        requestedAt: "2026-08-24T12:03:00.000Z",
+        startedAt: "2026-08-24T12:03:00.050Z",
+        completedAt: "2026-08-24T12:03:01.175Z",
+        providerRequestId: "req_overview_1",
+        sentences: [
+          {
+            text: "The retained change modifies 2 files under `src`.",
+            sourceFactIds: ["file_statistics", "path_area_001"],
+          },
+        ],
+        performance: {
+          queueMilliseconds: 50,
+          modelMilliseconds: 1_000,
+          kestrelMilliseconds: 125,
+          totalMilliseconds: 1_175,
+        },
+      },
       sourceFacts: {
         ruleVersion: 1,
         commitStatistics: { baseTreeFileCount: 1, headTreeFileCount: 2 },
@@ -608,6 +628,44 @@ describe("V1 public contracts", () => {
         },
       }),
     ).toThrow();
+
+    expect(
+      ChangeOverviewModelRenderingSchema.parse({
+        state: "unavailable",
+        requestedAt: "2026-08-24T12:03:00.000Z",
+        completedAt: "2026-08-24T12:03:00.125Z",
+        reason: "profile_not_configured",
+        performance: {
+          queueMilliseconds: 25,
+          modelMilliseconds: 0,
+          kestrelMilliseconds: 100,
+          totalMilliseconds: 125,
+        },
+      }),
+    ).toMatchObject({ state: "unavailable", reason: "profile_not_configured" });
+    expect(
+      ChangeOverviewModelRenderingSchema.parse({
+        state: "queued",
+        requestedAt: "2026-08-24T12:03:00.000Z",
+      }),
+    ).toMatchObject({ state: "queued" });
+    expect(() =>
+      ChangeOverviewModelRenderingSchema.parse({
+        ...overview.modelRendering,
+        performance: { ...overview.modelRendering.performance, totalMilliseconds: 1_176 },
+      }),
+    ).toThrow("latencies");
+    expect(() =>
+      ChangeOverviewModelRenderingSchema.parse({
+        ...overview.modelRendering,
+        sentences: [
+          {
+            text: "Duplicate citations are ambiguous.",
+            sourceFactIds: ["file_statistics", "file_statistics"],
+          },
+        ],
+      }),
+    ).toThrow("source fact identities");
 
     expect(
       ChangeOverviewPathAreaSchema.parse({
