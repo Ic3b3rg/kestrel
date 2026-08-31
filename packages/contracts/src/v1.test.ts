@@ -9,6 +9,9 @@ import {
   serializeJson,
 } from "./openapi.js";
 import {
+  ChangeIntentSchema,
+  ChangeIntentVersionCreatedSchema,
+  CreateChangeIntentVersionCommandSchema,
   CredentialChangeCommandSchema,
   DiagnosticAcceptedSchema,
   EventCursorSchema,
@@ -238,6 +241,105 @@ describe("V1 public contracts", () => {
     }
   });
 
+  it("accepts structured Change Intent input without trusting source snapshots from the client", () => {
+    const command = {
+      expectedProposalVersion: 3,
+      objective: "Keep repository access explicit and read-only.",
+      scopeBoundaries: ["Do not add provider write authority."],
+      acceptanceOutcomes: [
+        "The Operator can inspect the selected repository without exposing its path.",
+        "Provider metadata remains optional context.",
+      ],
+      selectedSourceIds: ["provider_title", "head_commit_message"],
+      operatorInput: "Focus the review on the local authorization boundary.",
+      unresolvedIssues: [],
+    } as const;
+
+    expect(CreateChangeIntentVersionCommandSchema.parse(command)).toEqual(command);
+    expect(() =>
+      CreateChangeIntentVersionCommandSchema.parse({
+        ...command,
+        selectedSources: [
+          {
+            id: "provider_title",
+            text: "Client-forged provider title",
+            provenance: { kind: "provider_field", field: "title" },
+          },
+        ],
+      }),
+    ).toThrow();
+    expect(() =>
+      CreateChangeIntentVersionCommandSchema.parse({
+        ...command,
+        selectedSourceIds: ["provider_title", "provider_title"],
+      }),
+    ).toThrow();
+    expect(() =>
+      CreateChangeIntentVersionCommandSchema.parse({
+        ...command,
+        selectedSourceIds: Array.from({ length: 20 }, (_, index) => `source_${String(index)}`),
+      }),
+    ).toThrow("20 selected sources");
+    expect(() =>
+      CreateChangeIntentVersionCommandSchema.parse({
+        expectedProposalVersion: 3,
+        objective: null,
+        scopeBoundaries: [],
+        acceptanceOutcomes: [],
+        selectedSourceIds: [],
+        operatorInput: null,
+        unresolvedIssues: [],
+      }),
+    ).toThrow("intent material");
+  });
+
+  it("represents a resolved Change Intent with immutable source provenance", () => {
+    const source = {
+      id: "provider_title",
+      kind: "provider_field",
+      label: "GitHub title",
+      text: "Keep repository access explicit",
+      version: "2026-08-24T12:01:00.000Z",
+      provenance: {
+        kind: "provider_field",
+        provider: "github",
+        field: "title",
+        observedAt: "2026-08-24T12:01:00.000Z",
+        canonicalUrl: "https://github.com/openai/openai-node/pull/1234",
+      },
+    } as const;
+    const intent = {
+      id: "018f0f89-9a20-79f9-9990-dda80c9b917e",
+      version: 2,
+      text: "Keep repository access explicit and read-only.",
+      objective: "Keep repository access explicit and read-only.",
+      scopeBoundaries: ["Do not add provider write authority."],
+      acceptanceOutcomes: ["Provider metadata remains optional context."],
+      sources: [source],
+      sourceDigest: "a".repeat(64),
+      resolution: { state: "resolved", issues: [] },
+      createdAt: "2026-08-24T12:02:00.000Z",
+    } as const;
+
+    expect(ChangeIntentSchema.parse(intent)).toEqual(intent);
+    expect(
+      ChangeIntentVersionCreatedSchema.parse({
+        schemaVersion: 1,
+        projectId: "018f0f89-949a-75a8-8f61-6df78a843b1e",
+        changeProposalId: "018f0f89-9192-755f-aa96-f72094c734dd",
+        proposalVersion: 4,
+        changeIntent: intent,
+      }),
+    ).toMatchObject({ proposalVersion: 4, changeIntent: { resolution: { state: "resolved" } } });
+    expect(() => ChangeIntentSchema.parse({ ...intent, sourceDigest: "not-a-digest" })).toThrow();
+    expect(() => ChangeIntentSchema.parse({ ...intent, objective: null })).toThrow(
+      "Resolved Change Intent",
+    );
+    expect(() => ChangeIntentSchema.parse({ ...intent, sources: [source, source] })).toThrow(
+      "source identity",
+    );
+  });
+
   it("lists bounded local repositories and committed refs without filesystem paths", () => {
     const repositoryId = "018f0f89-9a1d-7484-b224-866ef9d69990";
     const inventory = {
@@ -305,8 +407,25 @@ describe("V1 public contracts", () => {
           changeProposals: [
             {
               changeIntent: null,
+              changeIntentCandidates: [
+                {
+                  id: "provider_title",
+                  kind: "provider_field",
+                  label: "GitHub title",
+                  text: "Keep repository access explicit",
+                  version: "2026-08-24T12:01:00.000Z",
+                  provenance: {
+                    kind: "provider_field",
+                    provider: "github",
+                    field: "title",
+                    observedAt: "2026-08-24T12:01:00.000Z",
+                    canonicalUrl: "https://github.com/openai/openai-node/pull/1234",
+                  },
+                },
+              ],
               kind: "provider_observed",
               id: "018f0f89-9192-755f-aa96-f72094c734dd",
+              version: 1,
               providerId: "PR_kwDOGx",
               number: 1234,
               title: "Keep repository access explicit",
@@ -360,6 +479,7 @@ describe("V1 public contracts", () => {
             {
               kind: "local",
               id: "018f0f89-9192-755f-aa96-f72094c734dd",
+              version: 1,
               title: "Review local authorization changes",
               base: { objectId: "a".repeat(40), ref: "refs/heads/main" },
               head: { objectId: "b".repeat(40), ref: "refs/heads/review-source" },
@@ -367,8 +487,30 @@ describe("V1 public contracts", () => {
                 id: "018f0f89-9a20-79f9-9990-dda80c9b917d",
                 version: 1,
                 text: "Review the authorization boundary.",
+                objective: "Review the authorization boundary.",
+                scopeBoundaries: [],
+                acceptanceOutcomes: [],
+                sources: [
+                  {
+                    id: "operator_input",
+                    kind: "operator_input",
+                    label: "Operator input",
+                    text: "Review the authorization boundary.",
+                    version: "1",
+                    provenance: { kind: "operator_input" },
+                  },
+                ],
+                sourceDigest: "b".repeat(64),
+                resolution: {
+                  state: "unresolved",
+                  issues: [
+                    { kind: "missing", field: "scope_boundaries" },
+                    { kind: "missing", field: "acceptance_outcomes" },
+                  ],
+                },
                 createdAt: "2026-08-24T12:00:30.000Z",
               },
+              changeIntentCandidates: [],
               reviewRevisions: [
                 {
                   id: "018f0f89-9a21-7271-b92d-f1cb0d48bb47",
@@ -419,6 +561,7 @@ describe("V1 public contracts", () => {
       ...acquisitionChangeIntent,
       id: "018f0f89-9a20-79f9-9990-dda80c9b917e",
       text: "Review the next exact revision.",
+      objective: "Review the next exact revision.",
       version: 2,
     };
     const currentProposal = { ...originalProposal, changeIntent: currentChangeIntent };
@@ -510,6 +653,7 @@ describe("V1 public contracts", () => {
         "/api/v1/session": {},
         "/api/v1/operator/credentials": {},
         "/api/v1/projects": {},
+        "/api/v1/projects/{projectId}/change-proposals/{changeProposalId}/change-intents": {},
         "/api/v1/local-repository-sources": {},
         "/api/v1/local-repository-sources/{repositoryId}/references": {},
         "/api/v1/review-revisions": {},
@@ -553,6 +697,27 @@ describe("V1 public contracts", () => {
               "415": {},
               "429": {},
               "503": {},
+            },
+          },
+        },
+        "/api/v1/projects/{projectId}/change-proposals/{changeProposalId}/change-intents": {
+          post: {
+            parameters: [
+              { in: "header", name: "Origin", required: true },
+              { in: "header", name: "X-Kestrel-CSRF", required: true },
+              { in: "path", name: "projectId", required: true },
+              { in: "path", name: "changeProposalId", required: true },
+            ],
+            responses: {
+              "201": {},
+              "400": {},
+              "401": {},
+              "403": {},
+              "404": {},
+              "409": {},
+              "413": {},
+              "415": {},
+              "500": {},
             },
           },
         },

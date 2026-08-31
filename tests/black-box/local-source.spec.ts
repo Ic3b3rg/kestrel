@@ -165,7 +165,11 @@ test.describe("local-first Project flow", () => {
     await expect(page.getByRole("status")).toContainText("The exact Review Revision is available.");
     await expect(page.getByText("Available", { exact: true })).toHaveCount(2);
     await expect(page.getByText("Change Intent v1", { exact: true })).toBeVisible();
-    await expect(page.getByText("Review the exact committed authorization boundary")).toBeVisible();
+    await expect(
+      page
+        .getByRole("definition")
+        .filter({ hasText: "Review the exact committed authorization boundary" }),
+    ).toBeVisible();
     await expect(page.getByText("Not observed", { exact: true })).toBeVisible();
     await expect(page.getByText("Not configured", { exact: true })).toBeVisible();
 

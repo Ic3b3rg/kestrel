@@ -26,6 +26,49 @@ import {
 
 const execFileAsync = promisify(execFile);
 
+const INSERT_UNRESOLVED_CHANGE_INTENT_SQL = `
+  WITH source AS (
+    SELECT jsonb_build_array(
+      jsonb_build_object(
+        'id', 'operator_input',
+        'kind', 'operator_input',
+        'label', 'Operator input',
+        'text', $3::text,
+        'version', ($2::bigint)::text,
+        'provenance', jsonb_build_object('kind', 'operator_input')
+      )
+    ) AS selected_sources
+  )
+  INSERT INTO change_intents (
+    change_proposal_id,
+    version,
+    intent_text,
+    submitted_by_operator_id,
+    objective,
+    scope_boundaries,
+    acceptance_outcomes,
+    selected_sources,
+    source_digest,
+    resolution_state,
+    resolution_issues,
+    created_at
+  )
+  SELECT $1::uuid,
+         $2::bigint,
+         $3::text,
+         $4::uuid,
+         $3::text,
+         '[]'::jsonb,
+         '[]'::jsonb,
+         source.selected_sources,
+         encode(sha256(convert_to(source.selected_sources::text, 'UTF8')), 'hex'),
+         'unresolved',
+         '[{"kind":"missing","field":"scope_boundaries"},{"kind":"missing","field":"acceptance_outcomes"}]'::jsonb,
+         COALESCE($5::timestamptz, clock_timestamp())
+  FROM source
+  RETURNING id
+`;
+
 async function runFixtureGit(repository: string, args: readonly string[]): Promise<string> {
   const { stdout } = await execFileAsync("/usr/bin/git", ["-C", repository, ...args], {
     encoding: "utf8",
@@ -230,10 +273,13 @@ async function exerciseConcurrentRevisionFamilyMove(
           "VALUES ($1, 'local', $2, 'refs/heads/main', $3, 'refs/heads/review', $4, NULL) RETURNING id",
           [firstProject.rows[0].id, 'Concurrent revision family test', 'b'.repeat(40), 'c'.repeat(40)]
         );
-        const intent = await pool.query(
-          'INSERT INTO change_intents (change_proposal_id, version, intent_text, submitted_by_operator_id) VALUES ($1, 1, $2, $3) RETURNING id',
-          [proposal.rows[0].id, 'Verify the locked revision family', operator.rows[0].id]
-        );
+        const intent = await pool.query(${JSON.stringify(INSERT_UNRESOLVED_CHANGE_INTENT_SQL)}, [
+          proposal.rows[0].id,
+          1,
+          'Verify the locked revision family',
+          operator.rows[0].id,
+          null
+        ]);
         const source = await pool.query(
           "INSERT INTO local_repository_sources (installation_id, project_id, source_identity, " +
           "repository_id, root_id, repository_relative_locator, display_name_snapshot, " +
@@ -939,10 +985,13 @@ describe("exact local Review Revision", () => {
             "'refs/heads/other-head', $3, NULL) RETURNING id",
             [${JSON.stringify(provider.project.id)}, ${JSON.stringify("c".repeat(40))}, ${JSON.stringify("d".repeat(40))}]
           );
-          await client.query(
-            'INSERT INTO change_intents (change_proposal_id, version, intent_text, submitted_by_operator_id) VALUES ($1, 1, $2, $3)',
-            [result.rows[0].id, 'Review the provider-side local proposal', actor.rows[0].id]
-          );
+          await client.query(${JSON.stringify(INSERT_UNRESOLVED_CHANGE_INTENT_SQL)}, [
+            result.rows[0].id,
+            1,
+            'Review the provider-side local proposal',
+            actor.rows[0].id,
+            null
+          ]);
           await client.query('COMMIT');
           process.stdout.write(JSON.stringify(result.rows[0].id));
         } catch (error) {
@@ -1449,13 +1498,20 @@ describe("exact local Review Revision", () => {
             "'refs/heads/review', $3, NULL) RETURNING id",
             [project.rows[0].id, '1'.repeat(40), '2'.repeat(40)]
           );
-          await pool.query(
-            "INSERT INTO change_intents " +
-            "(change_proposal_id, version, intent_text, submitted_by_operator_id, created_at) " +
-            "VALUES ($1, 1, 'Version one', $2, '2026-08-26T12:00:02Z'), " +
-            "($1, 2, 'Version two', $2, '2026-08-26T12:00:01Z')",
-            [proposal.rows[0].id, operator.rows[0].id]
-          );
+          await pool.query(${JSON.stringify(INSERT_UNRESOLVED_CHANGE_INTENT_SQL)}, [
+            proposal.rows[0].id,
+            1,
+            'Version one',
+            operator.rows[0].id,
+            '2026-08-26T12:00:02Z'
+          ]);
+          await pool.query(${JSON.stringify(INSERT_UNRESOLVED_CHANGE_INTENT_SQL)}, [
+            proposal.rows[0].id,
+            2,
+            'Version two',
+            operator.rows[0].id,
+            '2026-08-26T12:00:01Z'
+          ]);
           const result = await readProject(pool, project.rows[0].id);
           process.stdout.write(JSON.stringify(result.changeProposals[0].changeIntent));
         } finally {
@@ -1842,12 +1898,13 @@ describe("exact local Review Revision", () => {
               "VALUES ($1, 'local', $2, 'refs/heads/main', $3, 'refs/heads/review', $4, NULL) RETURNING id",
               [project.rows[0].id, label, base, head]
             );
-            const intent = await pool.query(
-              "INSERT INTO change_intents " +
-              "(change_proposal_id, version, intent_text, submitted_by_operator_id) " +
-              "VALUES ($1, 1, $2, $3) RETURNING id",
-              [proposal.rows[0].id, label + ' intent', operator.rows[0].id]
-            );
+            const intent = await pool.query(${JSON.stringify(INSERT_UNRESOLVED_CHANGE_INTENT_SQL)}, [
+              proposal.rows[0].id,
+              1,
+              label + ' intent',
+              operator.rows[0].id,
+              null
+            ]);
             const revision = await pool.query(
               "INSERT INTO review_revisions (project_id, change_proposal_id, " +
               "local_repository_source_id, acquisition_change_intent_id, revision_state, " +
@@ -2340,22 +2397,57 @@ describe("bounded local Review Revision failure", () => {
     ]);
 
     await stack.executeRuntimeSql(`
+      WITH material AS (
+        SELECT rr.change_proposal_id,
+               (SELECT max(version) + 1
+                FROM change_intents
+                WHERE change_proposal_id = rr.change_proposal_id) AS version,
+               'Retry the bounded acquisition'::text AS intent_text,
+               operator.id AS operator_id
+        FROM review_revisions AS rr
+        CROSS JOIN LATERAL (
+          SELECT id FROM operators ORDER BY created_at, id LIMIT 1
+        ) AS operator
+      ),
+      source AS (
+        SELECT material.*,
+               jsonb_build_array(
+                 jsonb_build_object(
+                   'id', 'operator_input',
+                   'kind', 'operator_input',
+                   'label', 'Operator input',
+                   'text', material.intent_text,
+                   'version', material.version::text,
+                   'provenance', jsonb_build_object('kind', 'operator_input')
+                 )
+               ) AS selected_sources
+        FROM material
+      )
       INSERT INTO change_intents (
         change_proposal_id,
         version,
         intent_text,
-        submitted_by_operator_id
+        submitted_by_operator_id,
+        objective,
+        scope_boundaries,
+        acceptance_outcomes,
+        selected_sources,
+        source_digest,
+        resolution_state,
+        resolution_issues
       )
-      SELECT rr.change_proposal_id,
-             (SELECT max(version) + 1
-              FROM change_intents
-              WHERE change_proposal_id = rr.change_proposal_id),
-             'Retry the bounded acquisition',
-             operator.id
-      FROM review_revisions AS rr
-      CROSS JOIN LATERAL (
-        SELECT id FROM operators ORDER BY created_at, id LIMIT 1
-      ) AS operator;
+      SELECT source.change_proposal_id,
+             source.version,
+             source.intent_text,
+             source.operator_id,
+             source.intent_text,
+             '[]'::jsonb,
+             '[]'::jsonb,
+             source.selected_sources,
+             encode(sha256(convert_to(source.selected_sources::text, 'UTF8')), 'hex'),
+             'unresolved',
+             '[{"kind":"missing","field":"scope_boundaries"},{"kind":"missing","field":"acceptance_outcomes"}]'::jsonb
+      FROM source;
 
       UPDATE review_revisions
       SET revision_state = 'acquiring',
@@ -2366,22 +2458,57 @@ describe("bounded local Review Revision failure", () => {
           failure_reason = NULL,
           updated_at = clock_timestamp();
 
+      WITH material AS (
+        SELECT rr.change_proposal_id,
+               (SELECT max(version) + 1
+                FROM change_intents
+                WHERE change_proposal_id = rr.change_proposal_id) AS version,
+               'Must not replace the in-flight acquisition intent'::text AS intent_text,
+               operator.id AS operator_id
+        FROM review_revisions AS rr
+        CROSS JOIN LATERAL (
+          SELECT id FROM operators ORDER BY created_at, id LIMIT 1
+        ) AS operator
+      ),
+      source AS (
+        SELECT material.*,
+               jsonb_build_array(
+                 jsonb_build_object(
+                   'id', 'operator_input',
+                   'kind', 'operator_input',
+                   'label', 'Operator input',
+                   'text', material.intent_text,
+                   'version', material.version::text,
+                   'provenance', jsonb_build_object('kind', 'operator_input')
+                 )
+               ) AS selected_sources
+        FROM material
+      )
       INSERT INTO change_intents (
         change_proposal_id,
         version,
         intent_text,
-        submitted_by_operator_id
+        submitted_by_operator_id,
+        objective,
+        scope_boundaries,
+        acceptance_outcomes,
+        selected_sources,
+        source_digest,
+        resolution_state,
+        resolution_issues
       )
-      SELECT rr.change_proposal_id,
-             (SELECT max(version) + 1
-              FROM change_intents
-              WHERE change_proposal_id = rr.change_proposal_id),
-             'Must not replace the in-flight acquisition intent',
-             operator.id
-      FROM review_revisions AS rr
-      CROSS JOIN LATERAL (
-        SELECT id FROM operators ORDER BY created_at, id LIMIT 1
-      ) AS operator;
+      SELECT source.change_proposal_id,
+             source.version,
+             source.intent_text,
+             source.operator_id,
+             source.intent_text,
+             '[]'::jsonb,
+             '[]'::jsonb,
+             source.selected_sources,
+             encode(sha256(convert_to(source.selected_sources::text, 'UTF8')), 'hex'),
+             'unresolved',
+             '[{"kind":"missing","field":"scope_boundaries"},{"kind":"missing","field":"acceptance_outcomes"}]'::jsonb
+      FROM source;
     `);
     await expect(
       stack.executeRuntimeSql(`

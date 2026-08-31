@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 
 import type {
   ApiError,
+  ChangeIntentVersionCreated,
   DiagnosticAccepted,
   InstallationEvent,
   InstallationSnapshot,
@@ -13,6 +14,7 @@ import type {
 } from "@kestrel/contracts";
 
 import {
+  createChangeIntentVersion,
   fetchInstallation,
   fetchProjectInbox,
   fetchLocalRepositories,
@@ -97,6 +99,7 @@ const projectInbox: ProjectInbox = {
           base: { objectId: "a".repeat(40), ref: "main" },
           canonicalUrl: "https://github.com/openai/openai-node/pull/1234",
           changeIntent: null,
+          changeIntentCandidates: [],
           head: { objectId: "b".repeat(40), ref: "provider-observation" },
           id: "018f0f89-9192-755f-aa96-f72094c734dd",
           kind: "provider_observed",
@@ -106,6 +109,7 @@ const projectInbox: ProjectInbox = {
           providerId: "PR_kwDOGx",
           reviewRevisions: [],
           title: "Keep repository access explicit",
+          version: 1,
         },
       ],
       createdAt: "2026-08-24T12:00:00.000Z",
@@ -170,6 +174,70 @@ afterEach(() => {
 });
 
 describe("PWA API client", () => {
+  it("creates a Change Intent version with opaque source IDs", async () => {
+    const projectId = "018f0f89-9a22-7864-aac2-8df71bf60420";
+    const proposalId = "018f0f89-9192-755f-aa96-f72094c734dd";
+    const command = {
+      acceptanceOutcomes: ["The Proposal version advances."],
+      expectedProposalVersion: 3,
+      objective: "Keep repository access explicit.",
+      operatorInput: null,
+      scopeBoundaries: ["No provider writes."],
+      selectedSourceIds: ["provider_title"],
+      unresolvedIssues: [],
+    };
+    const response: ChangeIntentVersionCreated = {
+      schemaVersion: 1,
+      projectId,
+      changeProposalId: proposalId,
+      proposalVersion: 4,
+      changeIntent: {
+        acceptanceOutcomes: [...command.acceptanceOutcomes],
+        createdAt: "2026-08-24T12:02:00.000Z",
+        id: "018f0f89-9a20-79f9-9990-dda80c9b917e",
+        objective: command.objective,
+        resolution: { state: "resolved", issues: [] },
+        scopeBoundaries: [...command.scopeBoundaries],
+        sourceDigest: "a".repeat(64),
+        sources: [
+          {
+            id: "provider_title",
+            kind: "provider_field",
+            label: "GitHub title",
+            text: "Keep repository access explicit",
+            version: "2026-08-24T12:01:00.000Z",
+            provenance: {
+              canonicalUrl: "https://github.com/openai/openai-node/pull/1234",
+              field: "title",
+              kind: "provider_field",
+              observedAt: "2026-08-24T12:01:00.000Z",
+              provider: "github",
+            },
+          },
+        ],
+        text: command.objective,
+        version: 2,
+      },
+    };
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse(response, 201));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("document", {
+      cookie: `__Host-kestrel-csrf=${"A".repeat(43)}.${"B".repeat(43)}`,
+    });
+
+    await expect(createChangeIntentVersion(projectId, proposalId, command)).resolves.toEqual(
+      response,
+    );
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      `/api/v1/projects/${projectId}/change-proposals/${proposalId}/change-intents`,
+    );
+    expect(fetchMock.mock.calls[0]?.[1]).toEqual(expect.objectContaining({ method: "POST" }));
+    const body = fetchMock.mock.calls[0]?.[1]?.body;
+    if (typeof body !== "string") throw new Error("Change Intent request body is unavailable");
+    expect(JSON.parse(body)).toEqual(command);
+    expect(body).not.toContain("provenance");
+  });
+
   it("uses only opaque local repository identities and enumerated refs", async () => {
     const inventory: LocalRepositoryInventory = {
       schemaVersion: 1,

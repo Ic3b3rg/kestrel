@@ -237,6 +237,7 @@ describe("observed Review Revision selection", () => {
       {
         kind: "provider_observed",
         id: proposalId,
+        version: 1,
         providerId: "PR_123",
         number: 42,
         title: "Review exact source",
@@ -247,6 +248,7 @@ describe("observed Review Revision selection", () => {
         author: null,
         observedAt: "2026-08-24T12:00:00.000Z",
         changeIntent: null,
+        changeIntentCandidates: [],
         reviewRevisions: [],
       },
     ],
@@ -303,7 +305,28 @@ describe("Review Revision completion recovery", () => {
       availableAt: "2026-08-24T12:01:00.000Z",
     } as const;
     const intent = {
+      acceptanceOutcomes: [],
       id: "018f0f89-9a20-79f9-9990-dda80c9b917d",
+      objective: "Review the authorization boundary.",
+      resolution: {
+        state: "unresolved" as const,
+        issues: [
+          { kind: "missing" as const, field: "scope_boundaries" as const },
+          { kind: "missing" as const, field: "acceptance_outcomes" as const },
+        ],
+      },
+      scopeBoundaries: [],
+      sourceDigest: "a".repeat(64),
+      sources: [
+        {
+          id: "operator_input",
+          kind: "operator_input" as const,
+          label: "Operator input",
+          provenance: { kind: "operator_input" as const },
+          text: "Review the authorization boundary.",
+          version: "1",
+        },
+      ],
       version: 1,
       text: "Review the authorization boundary.",
       createdAt: "2026-08-24T12:00:30.000Z",
@@ -320,10 +343,12 @@ describe("Review Revision completion recovery", () => {
     const canonicalProposal = {
       kind: "local" as const,
       id: "018f0f89-9192-755f-aa96-f72094c734dd",
+      version: 1,
       title: "Review local authorization changes",
       base: revision.base,
       head: revision.head,
       changeIntent: intent,
+      changeIntentCandidates: [],
       reviewRevisions: [revision],
       createdAt: "2026-08-24T12:00:30.000Z",
       updatedAt: "2026-08-24T12:01:00.000Z",

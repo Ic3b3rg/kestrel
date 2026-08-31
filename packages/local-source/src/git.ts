@@ -1314,6 +1314,34 @@ function commitSubject(commit: RawGitObject): string | null {
   return sanitized === "" ? null : truncateUtf8(sanitized, 512);
 }
 
+export interface CommitSuggestions {
+  author: string | null;
+  subject: string | null;
+}
+
+export function readCommitSuggestions(commit: RawGitObject): CommitSuggestions {
+  if (commit.type !== "commit") return { author: null, subject: null };
+  const separator = commit.content.indexOf(Buffer.from("\n\n"));
+  if (separator === -1) return { author: null, subject: null };
+  let author: string | null = null;
+  try {
+    const header = decodeUtf8(commit.content.subarray(0, separator));
+    const authorLine = header.split("\n").find((line) => line.startsWith("author "));
+    const match =
+      authorLine === undefined
+        ? null
+        : /^author (.+) <[^<>]*> [0-9]+ [+-][0-9]{4}$/u.exec(authorLine);
+    const sanitized = match?.[1]?.replace(/\p{Cc}+/gu, " ").trim() ?? "";
+    author = sanitized === "" ? null : truncateUtf8(sanitized, 256);
+  } catch {
+    // Attribution is optional context; malformed text must not block exact source retention.
+  }
+  return {
+    author,
+    subject: commitSubject(commit),
+  };
+}
+
 async function peelCommit(
   readObject: GitObjectReader,
   objectFormat: GitObjectFormat,

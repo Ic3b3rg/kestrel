@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type {
+  ChangeIntentVersionCreated,
   InstallationEvent,
   InstallationSnapshot,
   LoginCommand,
@@ -74,6 +75,32 @@ function withUpsertedProject(
   return {
     schemaVersion: 1,
     projects: projects.map((candidate, index) => (index === existingIndex ? project : candidate)),
+  };
+}
+
+function withCreatedIntent(
+  current: ProjectInbox | null,
+  result: ChangeIntentVersionCreated,
+): ProjectInbox | null {
+  if (current === null) return null;
+  return {
+    schemaVersion: 1,
+    projects: current.projects.map((project) =>
+      project.id !== result.projectId
+        ? project
+        : {
+            ...project,
+            changeProposals: project.changeProposals.map((proposal) =>
+              proposal.id !== result.changeProposalId
+                ? proposal
+                : {
+                    ...proposal,
+                    changeIntent: result.changeIntent,
+                    version: result.proposalVersion,
+                  },
+            ),
+          },
+    ),
   };
 }
 
@@ -544,6 +571,14 @@ export function App() {
           onHostRefresh={(projectId, number) =>
             void handleHostPullRequestRefresh(projectId, number)
           }
+          onIntentCreated={(result) => {
+            setProjectInbox((current) => withCreatedIntent(current, result));
+            setProjectReloadGeneration((generation) => generation + 1);
+            setProjectError(null);
+            setAnnouncement(
+              `Change Intent version ${String(result.changeIntent.version)} created as ${result.changeIntent.resolution.state}.`,
+            );
+          }}
           onLocalAvailable={handleLocalRevisionAvailable}
           onRetry={() => setProjectReloadGeneration((generation) => generation + 1)}
         />

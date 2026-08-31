@@ -43,6 +43,7 @@ const GitHubPullRequestSchema = z.object({
   }),
   merged: z.boolean(),
   merged_at: z.iso.datetime({ offset: true }).nullable(),
+  body: z.string().max(65_536).nullable(),
   node_id: z.string().min(1).max(256),
   number: z.number().int().positive().max(9_999_999_999),
   state: z.enum(["open", "closed"]),
@@ -59,7 +60,13 @@ export interface PublicGitHubPullRequestCoordinates {
 export interface PublicGitHubObservation {
   proposal: Omit<
     ProviderObservedChangeProposal,
-    "id" | "observedAt" | "kind" | "changeIntent" | "reviewRevisions"
+    | "id"
+    | "observedAt"
+    | "kind"
+    | "version"
+    | "changeIntent"
+    | "changeIntentCandidates"
+    | "reviewRevisions"
   >;
   repository: RepositorySnapshot;
 }
@@ -187,6 +194,7 @@ function normalizeObservation(
           ? null
           : { login: pullRequest.user.login, providerId: pullRequest.user.node_id },
       base: { objectId: pullRequest.base.sha, ref: pullRequest.base.ref },
+      ...(pullRequest.body === null ? {} : { body: pullRequest.body }),
       canonicalUrl,
       head: { objectId: pullRequest.head.sha, ref: pullRequest.head.ref },
       number: pullRequest.number,

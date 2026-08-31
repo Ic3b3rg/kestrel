@@ -45,6 +45,58 @@ export const ChangeIntentTextSchema = z
     message: "Change Intent must be at most 20000 UTF-8 bytes",
   });
 
+export const ChangeIntentSourceIdSchema = z
+  .string()
+  .min(1)
+  .max(128)
+  .regex(/^[a-z][a-z0-9_:-]*$/u);
+
+export const ChangeIntentUnresolvedIssueInputSchema = z.strictObject({
+  kind: z.enum(["ambiguous", "contradictory"]),
+  description: ChangeIntentTextSchema,
+});
+
+export const CreateChangeIntentVersionCommandSchema = z
+  .strictObject({
+    expectedProposalVersion: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    objective: ChangeIntentTextSchema.nullable(),
+    scopeBoundaries: z.array(ChangeIntentTextSchema).max(20),
+    acceptanceOutcomes: z.array(ChangeIntentTextSchema).max(50),
+    selectedSourceIds: z.array(ChangeIntentSourceIdSchema).max(20),
+    operatorInput: ChangeIntentTextSchema.nullable(),
+    unresolvedIssues: z.array(ChangeIntentUnresolvedIssueInputSchema).max(20),
+  })
+  .superRefine((value, context) => {
+    const seen = new Set<string>();
+    for (const [index, sourceId] of value.selectedSourceIds.entries()) {
+      if (seen.has(sourceId)) {
+        context.addIssue({
+          code: "custom",
+          message: "A Change Intent source may be selected only once",
+          path: ["selectedSourceIds", index],
+        });
+      }
+      seen.add(sourceId);
+    }
+    if (
+      value.objective === null &&
+      value.operatorInput === null &&
+      value.selectedSourceIds.length === 0
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "A Change Intent version requires intent material",
+      });
+    }
+    if (value.operatorInput !== null && value.selectedSourceIds.length === 20) {
+      context.addIssue({
+        code: "custom",
+        message: "Operator input cannot be combined with 20 selected sources",
+        path: ["selectedSourceIds"],
+      });
+    }
+  });
+
 export const RetainLocalReviewRevisionCommandSchema = z
   .strictObject({
     repositoryId: KestrelIdSchema,
@@ -185,11 +237,161 @@ export const GitRevisionPointerSchema = z.strictObject({
   ref: GitReferenceSchema,
 });
 
-export const ChangeIntentSchema = z.strictObject({
-  id: KestrelIdSchema,
-  version: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
-  text: ChangeIntentTextSchema,
-  createdAt: UtcDateTimeSchema,
+const ChangeIntentSourceTextSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(65_536)
+  .refine((value) => new TextEncoder().encode(value).byteLength <= 65_536, {
+    message: "Change Intent source text must be at most 65536 UTF-8 bytes",
+  });
+
+export const ChangeIntentSourceProvenanceSchema = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("provider_field"),
+    provider: z.literal("github"),
+    field: z.enum(["title", "description"]),
+    observedAt: UtcDateTimeSchema,
+    canonicalUrl: PublicGitHubPullRequestUrlSchema,
+  }),
+  z.strictObject({
+    kind: z.literal("commit_author"),
+    side: z.enum(["base", "head"]),
+    objectId: GitObjectIdSchema,
+    ref: GitReferenceSchema,
+  }),
+  z.strictObject({
+    kind: z.literal("commit_message"),
+    side: z.enum(["base", "head"]),
+    objectId: GitObjectIdSchema,
+    ref: GitReferenceSchema,
+  }),
+  z.strictObject({
+    kind: z.literal("operator_input"),
+  }),
+]);
+
+export const ChangeIntentSourceSchema = z
+  .strictObject({
+    id: ChangeIntentSourceIdSchema,
+    kind: z.enum(["provider_field", "commit_author", "commit_message", "operator_input"]),
+    label: z.string().trim().min(1).max(256),
+    text: ChangeIntentSourceTextSchema,
+    version: z.string().min(1).max(128),
+    provenance: ChangeIntentSourceProvenanceSchema,
+  })
+  .superRefine((value, context) => {
+    if (value.kind !== value.provenance.kind) {
+      context.addIssue({
+        code: "custom",
+        message: "Change Intent source kind and provenance must match",
+        path: ["provenance", "kind"],
+      });
+    }
+  });
+
+export const ChangeIntentResolutionIssueSchema = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("missing"),
+    field: z.enum(["objective", "scope_boundaries", "acceptance_outcomes", "sources"]),
+  }),
+  z.strictObject({
+    kind: z.literal("ambiguous"),
+    description: ChangeIntentTextSchema,
+  }),
+  z.strictObject({
+    kind: z.literal("contradictory"),
+    description: ChangeIntentTextSchema,
+  }),
+]);
+
+export interface ChangeIntentResolutionMaterial {
+  acceptanceOutcomes: readonly string[];
+  objective: string | null;
+  scopeBoundaries: readonly string[];
+  sourceCount: number;
+  unresolvedIssues: readonly z.infer<typeof ChangeIntentUnresolvedIssueInputSchema>[];
+}
+
+export function evaluateChangeIntentResolution(
+  material: ChangeIntentResolutionMaterial,
+): z.infer<typeof ChangeIntentResolutionSchema> {
+  const issues: z.infer<typeof ChangeIntentResolutionIssueSchema>[] = [];
+  if (material.objective === null) issues.push({ kind: "missing", field: "objective" });
+  if (material.scopeBoundaries.length === 0) {
+    issues.push({ kind: "missing", field: "scope_boundaries" });
+  }
+  if (material.acceptanceOutcomes.length === 0) {
+    issues.push({ kind: "missing", field: "acceptance_outcomes" });
+  }
+  if (material.sourceCount === 0) issues.push({ kind: "missing", field: "sources" });
+  issues.push(...material.unresolvedIssues);
+  return { state: issues.length === 0 ? "resolved" : "unresolved", issues };
+}
+
+export const ChangeIntentResolutionSchema = z
+  .strictObject({
+    state: z.enum(["unresolved", "resolved"]),
+    issues: z.array(ChangeIntentResolutionIssueSchema).max(24),
+  })
+  .superRefine((value, context) => {
+    if (
+      (value.state === "resolved" && value.issues.length !== 0) ||
+      (value.state === "unresolved" && value.issues.length === 0)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Change Intent resolution state and issues are inconsistent",
+      });
+    }
+  });
+
+export const ChangeIntentSchema = z
+  .strictObject({
+    id: KestrelIdSchema,
+    version: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    text: ChangeIntentTextSchema,
+    objective: ChangeIntentTextSchema.nullable(),
+    scopeBoundaries: z.array(ChangeIntentTextSchema).max(20),
+    acceptanceOutcomes: z.array(ChangeIntentTextSchema).max(50),
+    sources: z.array(ChangeIntentSourceSchema).max(20),
+    sourceDigest: z.string().regex(/^[a-f0-9]{64}$/u),
+    resolution: ChangeIntentResolutionSchema,
+    createdAt: UtcDateTimeSchema,
+  })
+  .superRefine((value, context) => {
+    const seen = new Set<string>();
+    for (const [index, source] of value.sources.entries()) {
+      if (seen.has(source.id)) {
+        context.addIssue({
+          code: "custom",
+          message: "A Change Intent source identity may appear only once",
+          path: ["sources", index, "id"],
+        });
+      }
+      seen.add(source.id);
+    }
+    const materialResolution = evaluateChangeIntentResolution({
+      acceptanceOutcomes: value.acceptanceOutcomes,
+      objective: value.objective,
+      scopeBoundaries: value.scopeBoundaries,
+      sourceCount: value.sources.length,
+      unresolvedIssues: [],
+    });
+    if (value.resolution.state === "resolved" && materialResolution.state !== "resolved") {
+      context.addIssue({
+        code: "custom",
+        message: "Resolved Change Intent fields are incomplete",
+      });
+    }
+  });
+
+export const ChangeIntentVersionCreatedSchema = z.strictObject({
+  schemaVersion: SchemaVersionSchema,
+  projectId: KestrelIdSchema,
+  changeProposalId: KestrelIdSchema,
+  proposalVersion: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  changeIntent: ChangeIntentSchema,
 });
 
 export const ReviewRevisionFailureReasonSchema = z.enum([
@@ -270,6 +472,7 @@ export const LocalRepositorySourceSchema = z.strictObject({
 export const ProviderObservedChangeProposalSchema = z.strictObject({
   kind: z.literal("provider_observed"),
   id: KestrelIdSchema,
+  version: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
   providerId: GitHubOpaqueIdSchema,
   number: z.number().int().positive().max(9_999_999_999),
   title: z.string().min(1).max(512),
@@ -286,16 +489,19 @@ export const ProviderObservedChangeProposalSchema = z.strictObject({
     .nullable(),
   observedAt: UtcDateTimeSchema,
   changeIntent: ChangeIntentSchema.nullable(),
+  changeIntentCandidates: z.array(ChangeIntentSourceSchema).max(20),
   reviewRevisions: z.array(ReviewRevisionSchema).max(20),
 });
 
 export const LocalChangeProposalSchema = z.strictObject({
   kind: z.literal("local"),
   id: KestrelIdSchema,
+  version: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
   title: z.string().min(1).max(512),
   base: GitRevisionPointerSchema,
   head: GitRevisionPointerSchema,
   changeIntent: ChangeIntentSchema,
+  changeIntentCandidates: z.array(ChangeIntentSourceSchema).max(20),
   reviewRevisions: z.array(ReviewRevisionSchema).max(20),
   createdAt: UtcDateTimeSchema,
   updatedAt: UtcDateTimeSchema,
@@ -518,6 +724,8 @@ const StandardApiErrorSchema = z.strictObject({
     "OBJECT_MISSING",
     "OBJECT_VERIFICATION_FAILED",
     "CHANGE_PROPOSAL_MISMATCH",
+    "CHANGE_PROPOSAL_VERSION_CONFLICT",
+    "CHANGE_INTENT_SOURCE_CONFLICT",
     "REVISION_ACQUIRING",
   ]),
   message: z.string().min(1),
@@ -555,6 +763,11 @@ export type InstallationEventType = z.infer<typeof InstallationEventTypeSchema>;
 export type InstallationSnapshot = z.infer<typeof InstallationSnapshotSchema>;
 export type InstallationState = z.infer<typeof InstallationStateSchema>;
 export type ChangeIntent = z.infer<typeof ChangeIntentSchema>;
+export type ChangeIntentSource = z.infer<typeof ChangeIntentSourceSchema>;
+export type ChangeIntentVersionCreated = z.infer<typeof ChangeIntentVersionCreatedSchema>;
+export type CreateChangeIntentVersionCommand = z.infer<
+  typeof CreateChangeIntentVersionCommandSchema
+>;
 export type ChangeProposal = z.infer<typeof ChangeProposalSchema>;
 export type LoginCommand = z.infer<typeof LoginCommandSchema>;
 export type LocalRepositoryInventory = z.infer<typeof LocalRepositoryInventorySchema>;

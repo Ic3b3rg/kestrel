@@ -25,6 +25,7 @@ const proposal: ProviderProposal = {
   base: { objectId: "a".repeat(40), ref: "main" },
   canonicalUrl: "https://github.com/kestrel/review-source/pull/42",
   changeIntent: null,
+  changeIntentCandidates: [],
   head: { objectId: "b".repeat(40), ref: "review-source" },
   id: "018f0f89-9192-755f-aa96-f72094c734dd",
   kind: "provider_observed",
@@ -34,6 +35,7 @@ const proposal: ProviderProposal = {
   providerId: "PR_123",
   reviewRevisions: [],
   title: "Acquire exact source",
+  version: 1,
 };
 const projectId = "018f0f89-9a22-7864-aac2-8df71bf60420";
 
@@ -148,8 +150,29 @@ describe("AcquireObservedReviewRevisionForm", () => {
       proposal: {
         ...proposal,
         changeIntent: {
+          acceptanceOutcomes: [],
           createdAt: "2026-08-24T12:02:00.000Z",
           id: "018f0f89-9a20-79f9-9990-dda80c9b917d",
+          objective: "Review the retained boundary",
+          resolution: {
+            state: "unresolved",
+            issues: [
+              { kind: "missing", field: "scope_boundaries" },
+              { kind: "missing", field: "acceptance_outcomes" },
+            ],
+          },
+          scopeBoundaries: [],
+          sourceDigest: "a".repeat(64),
+          sources: [
+            {
+              id: "operator_input",
+              kind: "operator_input",
+              label: "Operator input",
+              provenance: { kind: "operator_input" },
+              text: "Review the retained boundary",
+              version: "1",
+            },
+          ],
           text: "Review the retained boundary",
           version: 1,
         },

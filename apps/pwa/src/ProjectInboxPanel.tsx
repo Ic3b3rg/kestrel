@@ -2,6 +2,7 @@ import { useId, useState, type SyntheticEvent } from "react";
 
 import {
   OpenPublicGitHubPullRequestCommandSchema,
+  type ChangeIntentVersionCreated,
   type ProjectInbox,
   type PublicGitHubPullRequestUrl,
   type ReviewRevisionAvailable,
@@ -10,6 +11,7 @@ import {
 import { OpenLocalRepositoryForm } from "./OpenLocalRepositoryForm.js";
 import { HostGitHubProjectPanel } from "./HostGitHubProjectPanel.js";
 import { AcquireObservedReviewRevisionForm } from "./AcquireObservedReviewRevisionForm.js";
+import { ChangeIntentEditor } from "./ChangeIntentEditor.js";
 
 interface ProjectInboxPanelProps {
   error: string | null;
@@ -19,6 +21,7 @@ interface ProjectInboxPanelProps {
   pending: boolean;
   onAuthenticationError?: (error: unknown) => boolean;
   onLocalAvailable?: (result: ReviewRevisionAvailable) => void;
+  onIntentCreated?: (result: ChangeIntentVersionCreated) => void;
   onOpen: (url: PublicGitHubPullRequestUrl) => void;
   onHostObserved?: (project: Project) => void;
   onHostRefresh?: (projectId: string, number: number) => void;
@@ -241,6 +244,7 @@ function ChangeProposalRecord({
   disabled,
   onAuthenticationError,
   onAvailable,
+  onIntentCreated,
   onRefresh,
   projectId,
 }: {
@@ -249,6 +253,7 @@ function ChangeProposalRecord({
   disabled: boolean;
   onAuthenticationError?: (error: unknown) => boolean;
   onAvailable: (result: ReviewRevisionAvailable) => void;
+  onIntentCreated: (result: ChangeIntentVersionCreated) => void;
   onRefresh: () => void;
   projectId: string;
 }) {
@@ -283,6 +288,14 @@ function ChangeProposalRecord({
           </div>
           <RevisionFacts revision={revision} />
         </dl>
+        <ChangeIntentEditor
+          key={`${changeProposal.id}:${String(changeProposal.version)}`}
+          disabled={disabled}
+          projectId={projectId}
+          proposal={changeProposal}
+          {...(onAuthenticationError === undefined ? {} : { onAuthenticationError })}
+          onCreated={onIntentCreated}
+        />
       </section>
     );
   }
@@ -345,6 +358,14 @@ function ChangeProposalRecord({
         </div>
         <RevisionFacts revision={revision} />
       </dl>
+      <ChangeIntentEditor
+        key={`${changeProposal.id}:${String(changeProposal.version)}`}
+        disabled={disabled}
+        projectId={projectId}
+        proposal={changeProposal}
+        {...(onAuthenticationError === undefined ? {} : { onAuthenticationError })}
+        onCreated={onIntentCreated}
+      />
       {canAcquire ? (
         <AcquireObservedReviewRevisionForm
           key={`${changeProposal.id}:${String(changeProposal.changeIntent?.version ?? 0)}:${revision?.id ?? "none"}:${revision?.state ?? "none"}`}
@@ -517,6 +538,7 @@ export function ProjectInboxPanel(props: ProjectInboxPanelProps) {
                       ? {}
                       : { onAuthenticationError: props.onAuthenticationError })}
                     onAvailable={(result) => props.onLocalAvailable?.(result)}
+                    onIntentCreated={(result) => props.onIntentCreated?.(result)}
                     onRefresh={() => {
                       if (
                         project.providerObservation?.kind === "host_gh" &&

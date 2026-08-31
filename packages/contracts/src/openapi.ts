@@ -2,6 +2,8 @@ import { z, type ZodType } from "zod";
 
 import {
   ApiErrorSchema,
+  ChangeIntentVersionCreatedSchema,
+  CreateChangeIntentVersionCommandSchema,
   CredentialChangeCommandSchema,
   DiagnosticAcceptedSchema,
   DiagnosticCommandSchema,
@@ -76,6 +78,10 @@ export const sessionJsonSchema = asJsonSchema(SessionSchema);
 export const stepUpCommandJsonSchema = asJsonSchema(StepUpCommandSchema);
 export const stepUpProofJsonSchema = asJsonSchema(StepUpProofSchema);
 export const credentialChangeCommandJsonSchema = asJsonSchema(CredentialChangeCommandSchema);
+export const createChangeIntentVersionCommandJsonSchema = asJsonSchema(
+  CreateChangeIntentVersionCommandSchema,
+);
+export const changeIntentVersionCreatedJsonSchema = asJsonSchema(ChangeIntentVersionCreatedSchema);
 export const openPublicGitHubPullRequestCommandJsonSchema = asJsonSchema(
   OpenPublicGitHubPullRequestCommandSchema,
 );
@@ -100,6 +106,8 @@ export const contractBundle = sortJson({
     InstallationEvent: asComponentSchema(installationEventJsonSchema),
     InstallationSnapshot: asComponentSchema(installationSnapshotJsonSchema),
     CredentialChangeCommand: asComponentSchema(credentialChangeCommandJsonSchema),
+    CreateChangeIntentVersionCommand: asComponentSchema(createChangeIntentVersionCommandJsonSchema),
+    ChangeIntentVersionCreated: asComponentSchema(changeIntentVersionCreatedJsonSchema),
     LoginCommand: asComponentSchema(loginCommandJsonSchema),
     LogoutCommand: asComponentSchema(logoutCommandJsonSchema),
     OpenPublicGitHubPullRequestCommand: asComponentSchema(
@@ -171,6 +179,10 @@ export const openApiDocument = sortJson({
       InstallationEvent: asComponentSchema(installationEventJsonSchema),
       InstallationSnapshot: asComponentSchema(installationSnapshotJsonSchema),
       CredentialChangeCommand: asComponentSchema(credentialChangeCommandJsonSchema),
+      CreateChangeIntentVersionCommand: asComponentSchema(
+        createChangeIntentVersionCommandJsonSchema,
+      ),
+      ChangeIntentVersionCreated: asComponentSchema(changeIntentVersionCreatedJsonSchema),
       LoginCommand: asComponentSchema(loginCommandJsonSchema),
       LogoutCommand: asComponentSchema(logoutCommandJsonSchema),
       OpenPublicGitHubPullRequestCommand: asComponentSchema(
@@ -681,6 +693,74 @@ export const openApiDocument = sortJson({
           "503": {
             content: { "application/json": { schema: schemaReference("ApiError") } },
             description: "Public GitHub or Project storage is unavailable",
+          },
+        },
+      },
+    },
+    "/api/v1/projects/{projectId}/change-proposals/{changeProposalId}/change-intents": {
+      post: {
+        description:
+          "Creates one immutable Change Intent version. The expected Proposal version makes duplicate or stale submissions fail closed.",
+        operationId: "createChangeIntentVersion",
+        parameters: [
+          ...authenticatedMutationHeaders(false),
+          {
+            in: "path",
+            name: "projectId",
+            required: true,
+            schema: { format: "uuid", type: "string" },
+          },
+          {
+            in: "path",
+            name: "changeProposalId",
+            required: true,
+            schema: { format: "uuid", type: "string" },
+          },
+        ],
+        requestBody: {
+          content: {
+            "application/json": { schema: schemaReference("CreateChangeIntentVersionCommand") },
+          },
+          required: true,
+        },
+        responses: {
+          "201": {
+            content: {
+              "application/json": { schema: schemaReference("ChangeIntentVersionCreated") },
+            },
+            description: "Immutable Change Intent version created",
+          },
+          "400": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Invalid structured Change Intent command",
+          },
+          "401": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Operator authentication is required",
+          },
+          "403": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Origin or CSRF validation failed",
+          },
+          "404": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Project or Change Proposal is unavailable",
+          },
+          "409": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Proposal version or selected-source conflict",
+          },
+          "413": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "The command payload is too large",
+          },
+          "415": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "The command media type is unsupported",
+          },
+          "500": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "The Change Intent version could not be created atomically",
           },
         },
       },

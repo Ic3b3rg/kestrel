@@ -24,6 +24,7 @@ function pullRequestResponse(overrides: Record<string, unknown> = {}) {
     head: { ref: "provider-observation", sha: "b".repeat(40) },
     merged: false,
     merged_at: null,
+    body: "Retain the provider description as a Change Intent suggestion.",
     node_id: "PR_kwDOGx",
     number: 1234,
     state: "open",
@@ -82,6 +83,7 @@ describe("public GitHub reader", () => {
       proposal: {
         author: { login: "octocat", providerId: "U_kgDOA" },
         base: { objectId: "a".repeat(40), ref: "main" },
+        body: "Retain the provider description as a Change Intent suggestion.",
         canonicalUrl: pullRequestUrl,
         head: { objectId: "b".repeat(40), ref: "provider-observation" },
         number: 1234,
@@ -191,6 +193,7 @@ describe("public GitHub reader", () => {
     pullRequestResponse({ number: 999 }),
     privatePullRequestResponse(),
     inconsistentRepositoryResponse(),
+    pullRequestResponse({ body: "x".repeat(65_537) }),
     pullRequestResponse({ title: "x".repeat(513) }),
   ])("rejects mismatched, private, or over-bound provider data", async (providerBody) => {
     const reader = createPublicGitHubReader(

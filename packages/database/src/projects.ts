@@ -1,6 +1,7 @@
 import type { PoolClient } from "pg";
 
 import {
+  ChangeIntentSchema,
   ProjectInboxSchema,
   ProjectUpsertedSchema,
   type ChangeIntent,
@@ -14,6 +15,7 @@ import {
 } from "@kestrel/contracts";
 
 import { appendAuditRecordInTransaction } from "./audit.js";
+import { buildChangeIntentCandidates } from "./change-intents.js";
 import type { DatabasePool } from "./pool.js";
 import { lockGitHubRepositoryIdentity } from "./provider-identity.js";
 
@@ -34,6 +36,7 @@ export interface ProjectDatabaseRow {
   proposal_state: "closed" | "merged" | "open" | "unknown" | null;
   proposal_title: string;
   proposal_body?: string | null;
+  proposal_optimistic_version: string;
   provider: string | null;
   provider_repository_id: string | null;
   provider_observation_kind: string | null;
@@ -51,12 +54,19 @@ export interface ProjectDatabaseRow {
   local_object_format?: "sha1" | "sha256" | null;
   local_source_created_at?: Date | null;
   local_source_updated_at?: Date | null;
-  proposal_kind?: "local" | "provider_observed";
+  proposal_kind?: string | null;
   proposal_created_at?: Date;
   proposal_updated_at?: Date;
   intent_id?: string | null;
   intent_version?: string | null;
   intent_text?: string | null;
+  intent_objective?: string | null;
+  intent_scope_boundaries?: unknown;
+  intent_acceptance_outcomes?: unknown;
+  intent_selected_sources?: unknown;
+  intent_source_digest?: string | null;
+  intent_resolution_state?: "resolved" | "unresolved" | null;
+  intent_resolution_issues?: unknown;
   intent_created_at?: Date | null;
   revision_id?: string | null;
   revision_state?: "acquiring" | "available" | "unavailable" | null;
@@ -70,12 +80,27 @@ export interface ProjectDatabaseRow {
   revision_failure_reason?: ReviewRevision["failureReason"];
   revision_created_at?: Date | null;
   revision_available_at?: Date | null;
+  candidate_revision_id?: string | null;
+  candidate_base_commit_author?: string | null;
+  candidate_base_commit_subject?: string | null;
+  candidate_base_object_id?: string | null;
+  candidate_base_ref?: string | null;
+  candidate_head_commit_author?: string | null;
+  candidate_head_commit_subject?: string | null;
+  candidate_head_object_id?: string | null;
+  candidate_head_ref?: string | null;
 }
 
 export interface PublicGitHubProjectObservation {
   proposal: Omit<
     ProviderObservedChangeProposal,
-    "id" | "observedAt" | "kind" | "changeIntent" | "reviewRevisions"
+    | "id"
+    | "observedAt"
+    | "kind"
+    | "version"
+    | "changeIntent"
+    | "changeIntentCandidates"
+    | "reviewRevisions"
   >;
   repository: RepositorySnapshot;
 }
@@ -193,16 +218,75 @@ function mapChangeIntent(row: ProjectDatabaseRow): ChangeIntent | null {
     row.intent_id == null ||
     row.intent_version == null ||
     row.intent_text == null ||
-    row.intent_created_at == null
+    row.intent_created_at == null ||
+    row.intent_objective === undefined ||
+    row.intent_scope_boundaries === undefined ||
+    row.intent_acceptance_outcomes === undefined ||
+    row.intent_selected_sources === undefined ||
+    row.intent_source_digest == null ||
+    row.intent_resolution_state == null ||
+    row.intent_resolution_issues === undefined
   ) {
     throw new Error("Change Intent is incomplete");
   }
-  return {
+  return ChangeIntentSchema.parse({
+    acceptanceOutcomes: row.intent_acceptance_outcomes,
     createdAt: row.intent_created_at.toISOString(),
     id: row.intent_id,
+    objective: row.intent_objective,
+    resolution: {
+      state: row.intent_resolution_state,
+      issues: row.intent_resolution_issues,
+    },
+    scopeBoundaries: row.intent_scope_boundaries,
+    sourceDigest: row.intent_source_digest,
+    sources: row.intent_selected_sources,
     text: row.intent_text,
     version: Number(row.intent_version),
-  };
+  });
+}
+
+function mapIntentCandidates(row: ProjectDatabaseRow) {
+  const proposalKind = row.proposal_kind ?? "provider_observed";
+  if (proposalKind !== "local" && proposalKind !== "provider_observed") {
+    throw new Error(`Unsupported Change Proposal kind: ${proposalKind}`);
+  }
+  const revision =
+    row.candidate_revision_id == null
+      ? undefined
+      : {
+          base_commit_author_snapshot: row.candidate_base_commit_author ?? null,
+          base_commit_subject_snapshot: row.candidate_base_commit_subject ?? null,
+          base_object_id: row.candidate_base_object_id ?? "",
+          base_ref_snapshot: row.candidate_base_ref ?? "",
+          head_commit_author_snapshot: row.candidate_head_commit_author ?? null,
+          head_commit_subject_snapshot: row.candidate_head_commit_subject ?? null,
+          head_object_id: row.candidate_head_object_id ?? "",
+          head_ref_snapshot: row.candidate_head_ref ?? "",
+        };
+  if (
+    revision !== undefined &&
+    [
+      revision.base_object_id,
+      revision.base_ref_snapshot,
+      revision.head_object_id,
+      revision.head_ref_snapshot,
+    ].some((value) => value === "")
+  ) {
+    throw new Error("Change Intent commit provenance is incomplete");
+  }
+  return buildChangeIntentCandidates(
+    {
+      canonical_proposal_id: row.proposal_id,
+      canonical_url_snapshot: row.proposal_canonical_url,
+      observed_at: row.observed_at,
+      optimistic_version: row.proposal_optimistic_version,
+      proposal_body: row.proposal_body ?? null,
+      proposal_kind: proposalKind,
+      proposal_title: row.proposal_title,
+    },
+    revision,
+  );
 }
 
 function mapReviewRevision(row: ProjectDatabaseRow): ReviewRevision | null {
@@ -288,6 +372,11 @@ export function mapProjectRows(rows: readonly ProjectDatabaseRow[]): ProjectInbo
     let proposal = project.changeProposals.find(({ id }) => id === row.proposal_id);
     const changeIntent = mapChangeIntent(row);
     if (proposal === undefined) {
+      const proposalVersion = Number(row.proposal_optimistic_version);
+      if (!Number.isSafeInteger(proposalVersion) || proposalVersion < 1) {
+        throw new Error("Change Proposal version is invalid");
+      }
+      const changeIntentCandidates = mapIntentCandidates(row);
       if ((row.proposal_kind ?? "provider_observed") === "local") {
         if (changeIntent === null) {
           throw new Error("Local Change Proposal requires Change Intent");
@@ -295,12 +384,14 @@ export function mapProjectRows(rows: readonly ProjectDatabaseRow[]): ProjectInbo
         proposal = {
           base: { objectId: row.base_object_id, ref: row.base_ref_snapshot },
           changeIntent,
+          changeIntentCandidates,
           createdAt: (row.proposal_created_at ?? row.created_at).toISOString(),
           head: { objectId: row.head_object_id, ref: row.head_ref_snapshot },
           id: row.proposal_id,
           kind: "local",
           reviewRevisions: [],
           title: row.proposal_title,
+          version: proposalVersion,
           ...(row.proposal_body == null ? {} : { body: row.proposal_body }),
           updatedAt: (row.proposal_updated_at ?? row.updated_at).toISOString(),
         };
@@ -319,6 +410,7 @@ export function mapProjectRows(rows: readonly ProjectDatabaseRow[]): ProjectInbo
           base: { objectId: row.base_object_id, ref: row.base_ref_snapshot },
           canonicalUrl: row.proposal_canonical_url,
           changeIntent,
+          changeIntentCandidates,
           head: { objectId: row.head_object_id, ref: row.head_ref_snapshot },
           id: row.proposal_id,
           kind: "provider_observed",
@@ -328,6 +420,8 @@ export function mapProjectRows(rows: readonly ProjectDatabaseRow[]): ProjectInbo
           providerId: row.proposal_provider_id,
           reviewRevisions: [],
           title: row.proposal_title,
+          version: proposalVersion,
+          ...(row.proposal_body == null ? {} : { body: row.proposal_body }),
         };
       }
       project.changeProposals.push(proposal);
@@ -364,6 +458,7 @@ function projectRowsSelect(requiredRevisionId: "NULL::uuid" | "$2::uuid"): strin
          cp.provider_number AS proposal_number,
          cp.title_snapshot AS proposal_title,
          cp.body_snapshot AS proposal_body,
+         cp.optimistic_version AS proposal_optimistic_version,
          cp.canonical_url_snapshot AS proposal_canonical_url,
          cp.proposal_state,
          cp.base_ref_snapshot,
@@ -378,6 +473,13 @@ function projectRowsSelect(requiredRevisionId: "NULL::uuid" | "$2::uuid"): strin
          ci.id AS intent_id,
          ci.version AS intent_version,
          ci.intent_text,
+         ci.objective AS intent_objective,
+         ci.scope_boundaries AS intent_scope_boundaries,
+         ci.acceptance_outcomes AS intent_acceptance_outcomes,
+         ci.selected_sources AS intent_selected_sources,
+         ci.source_digest AS intent_source_digest,
+         ci.resolution_state AS intent_resolution_state,
+         ci.resolution_issues AS intent_resolution_issues,
          ci.created_at AS intent_created_at,
          rr.id AS revision_id,
          rr.revision_state,
@@ -391,6 +493,15 @@ function projectRowsSelect(requiredRevisionId: "NULL::uuid" | "$2::uuid"): strin
          rr.failure_reason AS revision_failure_reason,
          rr.created_at AS revision_created_at,
          rr.available_at AS revision_available_at
+         , candidate_revision.id AS candidate_revision_id,
+         candidate_revision.base_ref_snapshot AS candidate_base_ref,
+         candidate_revision.base_object_id AS candidate_base_object_id,
+         candidate_revision.base_commit_author_snapshot AS candidate_base_commit_author,
+         candidate_revision.base_commit_subject_snapshot AS candidate_base_commit_subject,
+         candidate_revision.head_ref_snapshot AS candidate_head_ref,
+         candidate_revision.head_object_id AS candidate_head_object_id,
+         candidate_revision.head_commit_author_snapshot AS candidate_head_commit_author,
+         candidate_revision.head_commit_subject_snapshot AS candidate_head_commit_subject
   FROM projects AS p
   INNER JOIN change_proposals AS cp
     ON cp.project_id = p.id
@@ -417,7 +528,17 @@ function projectRowsSelect(requiredRevisionId: "NULL::uuid" | "$2::uuid"): strin
     LIMIT 1
   ) AS lrs ON true
   LEFT JOIN LATERAL (
-    SELECT intent.id, intent.version, intent.intent_text, intent.created_at
+    SELECT intent.id,
+           intent.version,
+           intent.intent_text,
+           intent.objective,
+           intent.scope_boundaries,
+           intent.acceptance_outcomes,
+           intent.selected_sources,
+           intent.source_digest,
+           intent.resolution_state,
+           intent.resolution_issues,
+           intent.created_at
     FROM change_intents AS intent
     INNER JOIN change_proposals AS intent_proposal
       ON intent_proposal.id = intent.change_proposal_id
@@ -449,6 +570,27 @@ function projectRowsSelect(requiredRevisionId: "NULL::uuid" | "$2::uuid"): strin
              revision.id
     LIMIT 20
   ) AS rr ON true
+  LEFT JOIN LATERAL (
+    SELECT revision.id,
+           revision.base_ref_snapshot,
+           revision.base_object_id,
+           revision.base_commit_author_snapshot,
+           revision.base_commit_subject_snapshot,
+           revision.head_ref_snapshot,
+           revision.head_object_id,
+           revision.head_commit_author_snapshot,
+           revision.head_commit_subject_snapshot
+    FROM review_revisions AS revision
+    INNER JOIN change_proposals AS revision_proposal
+      ON revision_proposal.id = revision.change_proposal_id
+    WHERE revision.revision_state = 'available'
+      AND (
+        revision_proposal.id = cp.id
+        OR revision_proposal.canonical_change_proposal_id = cp.id
+      )
+    ORDER BY revision.available_at DESC, revision.id DESC
+    LIMIT 1
+  ) AS candidate_revision ON true
 `;
 }
 
@@ -738,6 +880,7 @@ async function upsertProviderProposal(
             head_object_id = $11,
             author_provider_id = $12,
             author_login_snapshot = $13,
+            optimistic_version = optimistic_version + 1,
             observed_at = clock_timestamp(),
             updated_at = clock_timestamp()
         WHERE id = $14 AND project_id = $1

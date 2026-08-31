@@ -27,6 +27,11 @@ const intentId = "018f0f89-9a20-79f9-9990-dda80c9b917d";
 const revisionId = "018f0f89-9a21-7271-b92d-f1cb0d48bb47";
 const timestamp = new Date("2026-08-24T12:00:30.000Z");
 
+function parseJsonParameter(value: unknown): unknown {
+  if (typeof value !== "string") throw new Error("Expected a serialized JSON parameter");
+  return JSON.parse(value) as unknown;
+}
+
 function acquisitionPool(
   options: {
     existingSource?: boolean;
@@ -178,6 +183,9 @@ function acquisitionPool(
     if (normalized.startsWith("INSERT INTO change_proposals")) {
       return { rowCount: 1, rows: [{ id: proposalId }] };
     }
+    if (normalized.includes("SELECT canonical.id AS canonical_proposal_id")) {
+      return { rowCount: 1, rows: [{ canonical_proposal_id: proposalId }] };
+    }
     if (
       normalized.includes("FROM change_intents") &&
       normalized.includes("max(intent.version) OVER ()")
@@ -192,10 +200,23 @@ function acquisitionPool(
             id: intentId,
             version: "1",
             intent_text: "Review authorization boundaries",
+            objective: values?.[4],
+            scope_boundaries: parseJsonParameter(values?.[5]),
+            acceptance_outcomes: parseJsonParameter(values?.[6]),
+            selected_sources: parseJsonParameter(values?.[7]),
+            source_digest: values?.[8],
+            resolution_state: values?.[9],
+            resolution_issues: parseJsonParameter(values?.[10]),
             created_at: timestamp,
           },
         ],
       };
+    }
+    if (
+      normalized.startsWith("UPDATE change_proposals") &&
+      normalized.includes("optimistic_version")
+    ) {
+      return { rowCount: 1, rows: [] };
     }
     if (normalized.startsWith("INSERT INTO review_revisions")) {
       return {
@@ -237,6 +258,10 @@ describe("Review Revision persistence", () => {
         artifact: {
           artifactLocator:
             "projects/018f0f89-9a22-7864-aac2-8df71bf60420/revisions/018f0f89-9a21-7271-b92d-f1cb0d48bb48",
+          baseCommitAuthor: "Base Author",
+          baseCommitSubject: "Base subject",
+          headCommitAuthor: "Head Author",
+          headCommitSubject: "Head subject",
           manifestDigest: "d".repeat(64),
           objectCount: 8,
           retainedBytes: 4096,
@@ -485,11 +510,13 @@ describe("Review Revision persistence", () => {
     ]);
   });
 
-  it("publishes a verified artifact and Project availability in one transaction", async () => {
+  it("publishes a verified artifact, Project availability, and Proposal version in one transaction", async () => {
     const statements: string[] = [];
-    const query = vi.fn((statement: string) => {
+    const parameters: unknown[][] = [];
+    const query = vi.fn((statement: string, values: unknown[] = []) => {
       const normalized = statement.replace(/\s+/gu, " ").trim();
       statements.push(normalized);
+      parameters.push(values);
       if (normalized === "BEGIN" || normalized === "COMMIT" || normalized === "ROLLBACK") {
         return { rowCount: null, rows: [] };
       }
@@ -512,6 +539,12 @@ describe("Review Revision persistence", () => {
         };
       }
       if (normalized.startsWith("UPDATE projects")) {
+        return { rowCount: 1, rows: [] };
+      }
+      if (
+        normalized.startsWith("UPDATE change_proposals AS canonical") &&
+        normalized.includes("optimistic_version")
+      ) {
         return { rowCount: 1, rows: [] };
       }
       if (normalized.includes("pg_advisory_xact_lock")) {
@@ -538,6 +571,10 @@ describe("Review Revision persistence", () => {
         actorId: operatorId,
         artifact: {
           artifactLocator: `projects/${projectId}/revisions/${revisionId}`,
+          baseCommitAuthor: "Base Author",
+          baseCommitSubject: "Base subject",
+          headCommitAuthor: "Head Author",
+          headCommitSubject: "Head subject",
           manifestDigest: "d".repeat(64),
           objectCount: 8,
           retainedBytes: 4096,
@@ -554,6 +591,27 @@ describe("Review Revision persistence", () => {
     expect(
       statements.findIndex((value) => value.startsWith("UPDATE review_revisions")),
     ).toBeLessThan(statements.findIndex((value) => value.startsWith("UPDATE projects")));
+    expect(statements.findIndex((value) => value.startsWith("UPDATE projects"))).toBeLessThan(
+      statements.findIndex((value) => value.startsWith("UPDATE change_proposals AS canonical")),
+    );
+    expect(
+      statements.find((value) => value.startsWith("UPDATE change_proposals AS canonical")),
+    ).toContain("COALESCE(storage.canonical_change_proposal_id, storage.id)");
+    expect(statements.find((value) => value.startsWith("UPDATE review_revisions"))).toContain(
+      "base_commit_author_snapshot",
+    );
+    expect(parameters[1]).toEqual([
+      revisionId,
+      projectId,
+      8,
+      4096,
+      `projects/${projectId}/revisions/${revisionId}`,
+      "d".repeat(64),
+      "Base Author",
+      "Base subject",
+      "Head Author",
+      "Head subject",
+    ]);
     expect(statements.at(-1)).toBe("COMMIT");
   });
 

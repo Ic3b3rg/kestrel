@@ -4,6 +4,7 @@ import { expect, test, type Route } from "@playwright/test";
 import {
   ProjectInboxSchema,
   ReviewRevisionAvailableSchema,
+  type ChangeIntentVersionCreated,
   type ProjectUpserted,
 } from "@kestrel/contracts";
 
@@ -19,6 +20,7 @@ const openedProject: ProjectUpserted = {
         base: { objectId: "c".repeat(40), ref: "master" },
         canonicalUrl: publicPullRequestUrl,
         changeIntent: null,
+        changeIntentCandidates: [],
         head: { objectId: "d".repeat(40), ref: "operator-security" },
         id: "018f0f89-9192-755f-aa96-f72094c734df",
         kind: "provider_observed",
@@ -28,6 +30,7 @@ const openedProject: ProjectUpserted = {
         providerId: "PR_kestrel",
         reviewRevisions: [],
         title: "Secure and recover the Operator",
+        version: 1,
       },
     ],
     createdAt: "2026-08-25T12:00:00.000Z",
@@ -166,8 +169,29 @@ test.describe("observable Installation PWA", () => {
     }
     const changeIntentText = "Review the exact provider-observed pull request revision";
     const acquisitionChangeIntent = {
+      acceptanceOutcomes: [],
       createdAt: "2026-08-28T12:05:00.000Z",
       id: "018f0f89-9a25-7d63-b6f7-108b7b4bf52f",
+      objective: changeIntentText,
+      resolution: {
+        state: "unresolved" as const,
+        issues: [
+          { kind: "missing" as const, field: "scope_boundaries" as const },
+          { kind: "missing" as const, field: "acceptance_outcomes" as const },
+        ],
+      },
+      scopeBoundaries: [],
+      sourceDigest: "a".repeat(64),
+      sources: [
+        {
+          id: "operator_input",
+          kind: "operator_input" as const,
+          label: "Operator input",
+          provenance: { kind: "operator_input" as const },
+          text: changeIntentText,
+          version: "1",
+        },
+      ],
       text: changeIntentText,
       version: 1,
     };
@@ -299,9 +323,144 @@ test.describe("observable Installation PWA", () => {
     releaseResponse();
     await expect(page.getByRole("status")).toContainText("The exact Review Revision is available.");
     await expect(page.getByRole("button", { name: "Acquire exact PR #1234" })).toHaveCount(0);
-    await expect(page.getByText(changeIntentText, { exact: true })).toBeVisible();
+    await expect(page.getByRole("definition").filter({ hasText: changeIntentText })).toBeVisible();
     await expect(page.getByText("Available", { exact: true })).toHaveCount(2);
     const accessibility = await new AxeBuilder({ page }).include(".projects-section").analyze();
+    expect(accessibility.violations).toEqual([]);
+    expect(browserErrors).toEqual([]);
+  });
+
+  test("the Operator curates a source-backed Change Intent version", async ({ page }) => {
+    if (stack === undefined) throw new Error("Change Intent browser stack is unavailable");
+    const runningStack = stack;
+    const inbox = ProjectInboxSchema.parse(
+      await (await runningStack.fetchApi("/api/v1/projects")).json(),
+    );
+    const project = inbox.projects.find(
+      (candidate) => candidate.repository?.name === "openai-node",
+    );
+    const proposal = project?.changeProposals.find(
+      (candidate) => candidate.kind === "provider_observed" && candidate.number === 1234,
+    );
+    const source = proposal?.changeIntentCandidates.find(({ id }) => id === "provider_title");
+    if (project === undefined || proposal === undefined || source === undefined) {
+      throw new Error("Change Intent browser fixture is unavailable");
+    }
+    const objective = "Keep repository access explicit and read-only";
+    const command = {
+      acceptanceOutcomes: ["The selected source remains attributable"],
+      expectedProposalVersion: proposal.version,
+      objective,
+      operatorInput: "Prioritize the local authorization boundary",
+      scopeBoundaries: ["Do not add provider write authority"],
+      selectedSourceIds: [source.id],
+      unresolvedIssues: [],
+    };
+    const created: ChangeIntentVersionCreated = {
+      schemaVersion: 1,
+      projectId: project.id,
+      changeProposalId: proposal.id,
+      proposalVersion: proposal.version + 1,
+      changeIntent: {
+        acceptanceOutcomes: command.acceptanceOutcomes,
+        createdAt: "2026-08-28T12:04:00.000Z",
+        id: "018f0f89-9a24-7d63-b6f7-108b7b4bf52f",
+        objective,
+        resolution: { state: "resolved", issues: [] },
+        scopeBoundaries: command.scopeBoundaries,
+        sourceDigest: "f".repeat(64),
+        sources: [
+          source,
+          {
+            id: "operator_input",
+            kind: "operator_input",
+            label: "Operator input",
+            provenance: { kind: "operator_input" },
+            text: command.operatorInput,
+            version: "1",
+          },
+        ],
+        text: objective,
+        version: 1,
+      },
+    };
+    const updatedProject = {
+      ...project,
+      changeProposals: project.changeProposals.map((candidate) =>
+        candidate.id === proposal.id
+          ? {
+              ...candidate,
+              changeIntent: created.changeIntent,
+              version: created.proposalVersion,
+            }
+          : candidate,
+      ),
+    };
+    let saved = false;
+    await page.route("**/api/v1/projects", async (route) => {
+      if (route.request().method() === "GET" && saved) {
+        await route.fulfill({ json: { schemaVersion: 1, projects: [updatedProject] } });
+        return;
+      }
+      await route.continue();
+    });
+    await page.route("**/api/v1/projects/*/change-proposals/*/change-intents", async (route) => {
+      const request = route.request();
+      expect(request.method()).toBe("POST");
+      expect(request.postDataJSON()).toEqual(command);
+      expect(Object.keys(request.postDataJSON() as Record<string, unknown>).sort()).toEqual([
+        "acceptanceOutcomes",
+        "expectedProposalVersion",
+        "objective",
+        "operatorInput",
+        "scopeBoundaries",
+        "selectedSourceIds",
+        "unresolvedIssues",
+      ]);
+      expect(request.headers()["x-kestrel-csrf"]).toBeTruthy();
+      saved = true;
+      await route.fulfill({ json: created, status: 201 });
+    });
+
+    const browserErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error" || message.type() === "warning") {
+        const text = message.text();
+        if (
+          text !==
+          "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+        ) {
+          browserErrors.push(text);
+        }
+      }
+    });
+    page.on("pageerror", (error) => browserErrors.push(error.message));
+    await page.goto(runningStack.pwaUrl);
+    await page.getByLabel("Username").fill(TEST_OPERATOR_CREDENTIALS.username);
+    await page.getByLabel("Password").fill(TEST_OPERATOR_CREDENTIALS.password);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page.getByText("Unresolved draft", { exact: true })).toBeVisible();
+    await page.getByRole("checkbox", { name: /GitHub title/u }).check();
+    await page.getByLabel("Objective", { exact: true }).fill(objective);
+    await page.getByLabel(/Scope boundaries/u).fill("Do not add provider write authority");
+    await page
+      .getByLabel(/Ordered acceptance outcomes/u)
+      .fill("The selected source remains attributable");
+    await page
+      .getByLabel("Operator input", { exact: true })
+      .fill("Prioritize the local authorization boundary");
+    await expect(page.getByText("Ready to resolve", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Create Change Intent version" }).click();
+
+    await expect(page.getByRole("status")).toContainText(
+      "Change Intent version 1 created as resolved.",
+    );
+    await expect(page.getByText("Current v1", { exact: true })).toBeVisible();
+    await expect(page.getByText(`Source digest ${"f".repeat(64)}`, { exact: true })).toBeVisible();
+    await expect(page.getByText("Resolved", { exact: true })).toBeVisible();
+    await expect(page.getByText("Work Item", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("Planning Session", { exact: true })).toHaveCount(0);
+    const accessibility = await new AxeBuilder({ page }).include(".change-intent-editor").analyze();
     expect(accessibility.violations).toEqual([]);
     expect(browserErrors).toEqual([]);
   });

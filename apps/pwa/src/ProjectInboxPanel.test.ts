@@ -16,6 +16,7 @@ const populatedInbox: ProjectInbox = {
           base: { objectId: "a".repeat(40), ref: "main" },
           canonicalUrl: "https://github.com/openai/openai-node/pull/1234",
           changeIntent: null,
+          changeIntentCandidates: [],
           head: { objectId: "b".repeat(40), ref: "provider-observation" },
           id: "018f0f89-9192-755f-aa96-f72094c734dd",
           kind: "provider_observed",
@@ -25,6 +26,7 @@ const populatedInbox: ProjectInbox = {
           providerId: "PR_kwDOGx",
           reviewRevisions: [],
           title: "Keep repository access explicit",
+          version: 1,
         },
       ],
       createdAt: "2026-08-24T12:00:00.000Z",
@@ -56,15 +58,38 @@ const localInbox: ProjectInbox = {
         {
           kind: "local",
           id: "018f0f89-9192-755f-aa96-f72094c734dd",
+          version: 1,
           title: "Review local authorization changes",
           base: { objectId: "a".repeat(40), ref: "refs/heads/main" },
           head: { objectId: "b".repeat(40), ref: "refs/heads/review-source" },
           changeIntent: {
+            acceptanceOutcomes: [],
             id: "018f0f89-9a20-79f9-9990-dda80c9b917d",
+            objective: "Review the authorization boundary.",
+            resolution: {
+              state: "unresolved",
+              issues: [
+                { kind: "missing", field: "scope_boundaries" },
+                { kind: "missing", field: "acceptance_outcomes" },
+              ],
+            },
+            scopeBoundaries: [],
+            sourceDigest: "a".repeat(64),
+            sources: [
+              {
+                id: "operator_input",
+                kind: "operator_input",
+                label: "Operator input",
+                provenance: { kind: "operator_input" },
+                text: "Review the authorization boundary.",
+                version: "1",
+              },
+            ],
             version: 1,
             text: "Review the authorization boundary.",
             createdAt: "2026-08-24T12:00:30.000Z",
           },
+          changeIntentCandidates: [],
           reviewRevisions: [
             {
               id: "018f0f89-9a21-7271-b92d-f1cb0d48bb47",
