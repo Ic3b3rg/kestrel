@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode, type SyntheticEvent } from "react";
 
 import { ConfigureDirectApiProfileCommandSchema, type DirectApiProfile } from "@kestrel/contracts";
 
@@ -210,7 +210,7 @@ export function DirectApiProfilePanel({
     };
   }, [onAuthenticationError, projectId]);
 
-  const handleConfigure = async (event: FormEvent<HTMLFormElement>) => {
+  const handleConfigure = async (event: SyntheticEvent<HTMLFormElement, SubmitEvent>) => {
     event.preventDefault();
     const form = event.currentTarget;
     const data = new FormData(form);

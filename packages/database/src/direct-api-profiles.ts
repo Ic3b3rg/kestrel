@@ -124,7 +124,7 @@ function availabilityForRow(
 
   return {
     availability,
-    availabilityReasons: [...reasons].sort() as DirectApiProfileAvailabilityReason[],
+    availabilityReasons: [...reasons].sort(),
   };
 }
 

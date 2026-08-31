@@ -316,19 +316,21 @@ describe("V1 public contracts", () => {
     expect(JSON.stringify(response)).not.toContain("sk-project-exclusive");
     expect(response.profile).not.toHaveProperty("credentialHandle");
     expect(response.profile).not.toHaveProperty("apiKey");
+    if (response.profile === null) throw new Error("Expected a configured Direct API profile");
+    const configuredProfile = response.profile;
     expect(() =>
       DirectApiProfileResponseSchema.parse({
         ...response,
         profile: {
-          ...response.profile,
-          lastTest: { ...response.profile.lastTest, attributedOpenAiProjectId: "proj_other" },
+          ...configuredProfile,
+          lastTest: { ...configuredProfile.lastTest, attributedOpenAiProjectId: "proj_other" },
         },
       }),
     ).toThrow();
     expect(() =>
       DirectApiProfileResponseSchema.parse({
         ...response,
-        profile: { ...response.profile, credentialHandle: "secret_handle" },
+        profile: { ...configuredProfile, credentialHandle: "secret_handle" },
       }),
     ).toThrow();
   });

@@ -169,25 +169,24 @@ function requireHeader(
   return value;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function readOutputText(value: unknown): string | undefined {
-  if (typeof value !== "object" || value === null || !("output" in value)) return undefined;
-  const output = value.output;
+  if (!isRecord(value)) return undefined;
+  const output = value["output"];
   if (!Array.isArray(output)) return undefined;
 
   const outputTexts: string[] = [];
   for (const item of output) {
-    if (typeof item !== "object" || item === null || !("content" in item)) continue;
-    if (!Array.isArray(item.content)) continue;
-    for (const content of item.content) {
-      if (
-        typeof content === "object" &&
-        content !== null &&
-        "type" in content &&
-        content.type === "output_text" &&
-        "text" in content &&
-        typeof content.text === "string"
-      ) {
-        outputTexts.push(content.text);
+    if (!isRecord(item)) continue;
+    const contentItems = item["content"];
+    if (!Array.isArray(contentItems)) continue;
+    for (const content of contentItems) {
+      if (isRecord(content) && content["type"] === "output_text") {
+        const text = content["text"];
+        if (typeof text === "string") outputTexts.push(text);
       }
     }
   }
@@ -215,7 +214,7 @@ function validateResponseIdentity(
   } catch {
     throw new DirectApiBrokerError(invalidCode, "Direct API response was not JSON");
   }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+  if (!isRecord(parsed)) {
     throw new DirectApiBrokerError(invalidCode, "Direct API response was invalid");
   }
   const observedOrganizationId = requireHeader(
@@ -225,13 +224,7 @@ function validateResponseIdentity(
   );
   const observedApiVersion = requireHeader(response.headers, "openai-version", invalidCode);
   const requestId = requireHeader(response.headers, "x-request-id", invalidCode);
-  const observedModel =
-    typeof parsed === "object" &&
-    parsed !== null &&
-    "model" in parsed &&
-    typeof parsed.model === "string"
-      ? parsed.model
-      : "";
+  const observedModel = typeof parsed["model"] === "string" ? parsed["model"] : "";
   if (
     observedOrganizationId !== input.organizationId ||
     observedApiVersion !== OPENAI_API_VERSION ||
@@ -248,7 +241,7 @@ function validateResponseIdentity(
       observedOrganizationId,
       requestId,
     },
-    parsed: parsed as Record<string, unknown>,
+    parsed,
   };
 }
 
@@ -305,7 +298,6 @@ function normalizeStrictOutputSchema(
   let schema: unknown;
   try {
     const serialized = JSON.stringify(output.schema);
-    if (serialized === undefined) throw new Error("Schema is not serializable");
     schema = JSON.parse(serialized) as unknown;
   } catch {
     throw new DirectApiBrokerError("request_invalid", "Structured output schema was invalid");
@@ -338,7 +330,7 @@ function normalizeStrictOutputSchema(
   ) {
     throw new DirectApiBrokerError("request_invalid", "Structured output schema was invalid");
   }
-  return schema as Readonly<Record<string, unknown>>;
+  return schema;
 }
 
 function buildInferenceRequest(
@@ -349,8 +341,7 @@ function buildInferenceRequest(
     input.instructions.length === 0 ||
     !Number.isSafeInteger(input.inputTokenCount) ||
     input.inputTokenCount < 1 ||
-    input.inputTokenCount > input.limits.maximumInputTokens ||
-    input.limits.maximumAttempts !== 1
+    input.inputTokenCount > input.limits.maximumInputTokens
   ) {
     throw new DirectApiBrokerError("request_invalid", "Structured text request was invalid");
   }

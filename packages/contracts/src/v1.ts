@@ -987,7 +987,6 @@ export const DirectApiProfileSchema = z
       }
       if (
         lastTest.attributedOpenAiProjectId !== effectiveIdentity.openAiProjectId ||
-        lastTest.observedApiVersion !== effectiveIdentity.apiVersion ||
         lastTest.observedModel !== effectiveIdentity.model.expectedResolvedId ||
         lastTest.observedOrganizationId !== effectiveIdentity.organizationId
       ) {

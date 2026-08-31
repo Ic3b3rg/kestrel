@@ -186,7 +186,15 @@ export function createDirectApiProfileService(
       } catch {
         throw new DirectApiProfileServiceError("service_unavailable");
       }
-      const { apiKey: _apiKey, ...configuration } = command;
+      const configuration = {
+        dataPolicy: command.dataPolicy,
+        displayName: command.displayName,
+        limits: command.limits,
+        model: command.model,
+        openAiProjectId: command.openAiProjectId,
+        organizationId: command.organizationId,
+        priceSnapshot: command.priceSnapshot,
+      };
       let persisted;
       try {
         persisted = await persistDirectApiProfile(pool, {
@@ -355,7 +363,9 @@ export function registerDirectApiProfileRoutes(
       try {
         const result = await service.read(parsedProjectId.data);
         if (!result.projectFound) {
-          return reply.code(404).send(apiError(request, "NOT_FOUND", "The Project is unavailable"));
+          return await reply
+            .code(404)
+            .send(apiError(request, "NOT_FOUND", "The Project is unavailable"));
         }
         return DirectApiProfileResponseSchema.parse({ schemaVersion: 1, profile: result.profile });
       } catch (error) {
@@ -418,7 +428,7 @@ export function registerDirectApiProfileRoutes(
         if (result.credentialCleanupFailed) {
           request.log.warn({ event: "model_profile.replaced_credential_cleanup_failed" });
         }
-        return reply.code(201).send(
+        return await reply.code(201).send(
           DirectApiProfileResponseSchema.parse({
             schemaVersion: 1,
             profile: result.profile,

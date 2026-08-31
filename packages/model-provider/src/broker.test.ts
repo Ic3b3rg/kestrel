@@ -12,8 +12,8 @@ const apiKey = "sk-project-exclusive-test-key-1234567890";
 
 describe("Direct API broker", () => {
   it("certifies only the fixed OpenAI identity with a bounded synthetic structured request", async () => {
-    const transport: OpenAiTransport = {
-      send: vi.fn(async () => ({
+    const send = vi.fn<OpenAiTransport["send"]>(() =>
+      Promise.resolve({
         body: JSON.stringify({
           model: "gpt-test-2026-08-01",
           output: [
@@ -37,8 +37,9 @@ describe("Direct API broker", () => {
           "x-request-id": "req_synthetic_example",
         },
         statusCode: 200,
-      })),
-    };
+      }),
+    );
+    const transport: OpenAiTransport = { send };
 
     const certification = await certifyDirectApiProfile(
       {
@@ -72,8 +73,8 @@ describe("Direct API broker", () => {
       passedAt: "2026-08-31T12:01:00.000Z",
       requestId: "req_synthetic_example",
     });
-    expect(transport.send).toHaveBeenCalledOnce();
-    const request = vi.mocked(transport.send).mock.calls[0]?.[0];
+    expect(send).toHaveBeenCalledOnce();
+    const request = send.mock.calls[0]?.[0];
     expect(request).toMatchObject({
       body: {
         input: "Return the Kestrel synthetic profile-test marker.",
@@ -118,8 +119,8 @@ describe("Direct API broker", () => {
   });
 
   it("permits only one stateless text request with privileged instructions and strict output", async () => {
-    const transport: OpenAiTransport = {
-      send: vi.fn(async () => ({
+    const send = vi.fn<OpenAiTransport["send"]>(() =>
+      Promise.resolve({
         body: JSON.stringify({
           model: "gpt-test-2026-08-01",
           output: [
@@ -143,8 +144,9 @@ describe("Direct API broker", () => {
           "x-request-id": "req_inference_example",
         },
         statusCode: 200,
-      })),
-    };
+      }),
+    );
+    const transport: OpenAiTransport = { send };
     const inference = {
       apiKey,
       input: "A bounded fact manifest.",
@@ -188,8 +190,8 @@ describe("Direct API broker", () => {
       output: { summary: "Bounded facts." },
     });
 
-    expect(transport.send).toHaveBeenCalledOnce();
-    const request = vi.mocked(transport.send).mock.calls[0]?.[0];
+    expect(send).toHaveBeenCalledOnce();
+    const request = send.mock.calls[0]?.[0];
     expect(request?.body).toEqual({
       input: "A bounded fact manifest.",
       instructions: "Organize only the supplied facts.",
@@ -242,12 +244,12 @@ describe("Direct API broker", () => {
         transport,
       ),
     ).rejects.toMatchObject({ code: "request_invalid" });
-    expect(transport.send).toHaveBeenCalledOnce();
+    expect(send).toHaveBeenCalledOnce();
   });
 
   it("fails closed on observed profile drift without exposing the credential", async () => {
-    const transport: OpenAiTransport = {
-      send: vi.fn(async () => ({
+    const send = vi.fn<OpenAiTransport["send"]>(() =>
+      Promise.resolve({
         body: JSON.stringify({
           model: "gpt-floating",
           output: [],
@@ -259,8 +261,9 @@ describe("Direct API broker", () => {
           "x-request-id": "req_drift",
         },
         statusCode: 200,
-      })),
-    };
+      }),
+    );
+    const transport: OpenAiTransport = { send };
 
     const attempt = certifyDirectApiProfile(
       {
@@ -293,9 +296,9 @@ describe("Direct API broker", () => {
 
   it("rejects private, local, and invalid resolved provider addresses", () => {
     for (const address of ["127.0.0.1", "10.1.2.3", "169.254.169.254", "::1", "fd00::1"])
-      expect(() => assertPublicProviderAddress(address)).toThrowError(DirectApiBrokerError);
+      expect(() => assertPublicProviderAddress(address)).toThrow(DirectApiBrokerError);
 
-    expect(() => assertPublicProviderAddress("not-an-ip")).toThrowError(DirectApiBrokerError);
+    expect(() => assertPublicProviderAddress("not-an-ip")).toThrow(DirectApiBrokerError);
     expect(() => assertPublicProviderAddress("104.18.6.192")).not.toThrow();
     expect(() => assertPublicProviderAddress("2606:4700::6812:7c0")).not.toThrow();
   });

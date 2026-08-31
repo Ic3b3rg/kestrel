@@ -196,9 +196,14 @@ describe("Direct API profile routes", () => {
       url: `/api/v1/projects/${projectId}/model-profiles/direct-api`,
     });
     expect(configured.statusCode).toBe(201);
-    expect(service.configure).toHaveBeenCalledWith(command, {
+    expect(service.configure).toHaveBeenCalledOnce();
+    const configureCall = service.configure.mock.calls[0];
+    if (configureCall === undefined) throw new Error("Configure call was not captured");
+    expect(configureCall[0]).toEqual(command);
+    expect(typeof configureCall[1].correlationId).toBe("string");
+    expect(configureCall[1]).toEqual({
       actorId: operatorId,
-      correlationId: expect.any(String),
+      correlationId: configureCall[1].correlationId,
       credentialVersion: "1",
       projectId,
       stepUpProof: "p".repeat(43),

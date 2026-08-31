@@ -63,16 +63,30 @@ function normalizeHeaders(
   );
 }
 
+function hasFixedProviderDestination(value: unknown): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const request = value as Record<string, unknown>;
+  const tls = request["tls"];
+  return (
+    request["url"] === OPENAI_RESPONSES_URL &&
+    request["method"] === "POST" &&
+    request["redirectPolicy"] === "reject" &&
+    typeof tls === "object" &&
+    tls !== null &&
+    !Array.isArray(tls) &&
+    "minimumVersion" in tls &&
+    tls.minimumVersion === "TLSv1.2" &&
+    "rejectUnauthorized" in tls &&
+    tls.rejectUnauthorized === true &&
+    "serverName" in tls &&
+    tls.serverName === "api.openai.com"
+  );
+}
+
 async function sendOpenAiRequest(
   request: OpenAiTransportRequest,
 ): Promise<OpenAiTransportResponse> {
-  if (
-    request.url !== OPENAI_RESPONSES_URL ||
-    request.method !== "POST" ||
-    request.redirectPolicy !== "reject" ||
-    !request.tls.rejectUnauthorized ||
-    request.tls.serverName !== "api.openai.com"
-  ) {
+  if (!hasFixedProviderDestination(request)) {
     throw new DirectApiBrokerError("destination_rejected", "Provider destination was rejected");
   }
 

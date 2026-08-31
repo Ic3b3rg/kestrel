@@ -96,7 +96,8 @@ describe("Direct API profile persistence", () => {
   });
 
   it("consumes the exact model-credential step-up proof before certification", async () => {
-    const query = vi.fn((statement: string, _parameters?: readonly unknown[]) => {
+    const query = vi.fn((statement: string, parameters?: readonly unknown[]) => {
+      void parameters;
       if (statement === "BEGIN" || statement === "COMMIT") return { rowCount: null, rows: [] };
       if (statement.includes("COALESCE(canonical_project_id")) {
         return { rowCount: 1, rows: [{ id: projectId }] };
