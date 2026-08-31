@@ -9,6 +9,9 @@ import {
   serializeJson,
 } from "./openapi.js";
 import {
+  ChangeOverviewPathAreaSchema,
+  ChangeOverviewSchema,
+  ChangeOverviewSourceFactsSchema,
   ChangeIntentSchema,
   ChangeIntentVersionCreatedSchema,
   ConfigureDirectApiProfileCommandSchema,
@@ -503,6 +506,133 @@ describe("V1 public contracts", () => {
     expect(() => ChangeIntentSchema.parse({ ...intent, sources: [source, source] })).toThrow(
       "source identity",
     );
+  });
+
+  it("publishes only source-linked deterministic Change Overview facts", () => {
+    const changeIntent = {
+      id: "018f0f89-9a20-79f9-9990-dda80c9b917e",
+      version: 2,
+      text: "Keep repository access explicit and read-only.",
+      objective: "Keep repository access explicit and read-only.",
+      scopeBoundaries: ["Do not add provider write authority."],
+      acceptanceOutcomes: ["Provider metadata remains optional context."],
+      sources: [
+        {
+          id: "provider_title",
+          kind: "provider_field",
+          label: "GitHub title",
+          text: "Keep repository access explicit",
+          version: "2026-08-24T12:01:00.000Z",
+          provenance: {
+            kind: "provider_field",
+            provider: "github",
+            field: "title",
+            observedAt: "2026-08-24T12:01:00.000Z",
+            canonicalUrl: "https://github.com/openai/openai-node/pull/1234",
+          },
+        },
+      ],
+      sourceDigest: "a".repeat(64),
+      resolution: { state: "resolved", issues: [] },
+      createdAt: "2026-08-24T12:02:00.000Z",
+    } as const;
+    const overview = {
+      state: "ready",
+      createdAt: "2026-08-24T12:03:00.000Z",
+      exactRevision: {
+        id: "018f0f89-9a21-7271-b92d-f1cb0d48bb47",
+        objectFormat: "sha1",
+        base: {
+          objectId: "b".repeat(40),
+          ref: "refs/heads/main",
+          author: "Base Author",
+          subject: "Establish the source boundary",
+        },
+        head: {
+          objectId: "c".repeat(40),
+          ref: "refs/heads/review-source",
+          author: "Head Author",
+          subject: "Keep repository access explicit",
+        },
+      },
+      changeIntent,
+      providerObservation: {
+        canonicalUrl: "https://github.com/openai/openai-node/pull/1234",
+        observedAt: "2026-08-24T12:01:00.000Z",
+        title: "Keep repository access explicit",
+        description: "Retain only the exact committed source.",
+      },
+      sourceFacts: {
+        ruleVersion: 1,
+        commitStatistics: { baseTreeFileCount: 1, headTreeFileCount: 2 },
+        fileStatistics: { added: 1, modified: 1, deleted: 0, total: 2 },
+        changedFiles: [
+          {
+            path: "src/review.ts",
+            status: "modified",
+            base: { mode: "100644", objectId: "d".repeat(40), type: "blob" },
+            head: { mode: "100644", objectId: "e".repeat(40), type: "blob" },
+          },
+          {
+            path: "src/source.ts",
+            status: "added",
+            base: null,
+            head: { mode: "100644", objectId: "f".repeat(40), type: "blob" },
+          },
+        ],
+        pathAreas: [
+          {
+            pathPrefix: "src",
+            changedFileCount: 2,
+            samplePaths: ["src/review.ts", "src/source.ts"],
+          },
+        ],
+        warnings: [],
+      },
+    } as const;
+
+    expect(ChangeOverviewSchema.parse(overview)).toEqual(overview);
+    expect(
+      ChangeOverviewSchema.parse({
+        state: "awaiting_source",
+        exactHeadObjectId: "c".repeat(40),
+      }),
+    ).toEqual({ state: "awaiting_source", exactHeadObjectId: "c".repeat(40) });
+    expect(() => ChangeOverviewSchema.parse({ ...overview, graph: [] })).toThrow();
+    expect(() =>
+      ChangeOverviewSchema.parse({
+        ...overview,
+        sourceFacts: {
+          ...overview.sourceFacts,
+          findings: [{ riskLevel: "high" }],
+        },
+      }),
+    ).toThrow();
+
+    expect(
+      ChangeOverviewPathAreaSchema.parse({
+        pathPrefix: "a".repeat(256),
+        changedFileCount: 1,
+        samplePaths: [`${"a".repeat(256)}/review.ts`],
+      }),
+    ).toEqual({
+      pathPrefix: "a".repeat(256),
+      changedFileCount: 1,
+      samplePaths: [`${"a".repeat(256)}/review.ts`],
+    });
+    expect(
+      ChangeOverviewSourceFactsSchema.parse({
+        ...overview.sourceFacts,
+        pathAreas: [
+          { pathPrefix: null, changedFileCount: 1, samplePaths: ["README.md"] },
+          {
+            pathPrefix: "repository_root",
+            changedFileCount: 1,
+            samplePaths: ["repository_root/review.ts"],
+          },
+        ],
+      }).pathAreas,
+    ).toHaveLength(2);
   });
 
   it("lists bounded local repositories and committed refs without filesystem paths", () => {

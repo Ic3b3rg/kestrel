@@ -177,6 +177,16 @@ canonical HTTPS challenge but are never returned to the browser or stored in the
 Git LFS pointer blobs are retained as pointer bytes and never hydrated; gitlink entries are recorded
 but their submodule target repositories and objects are not fetched or retained.
 
+Once the exact Review Revision is Available, the Project panel exposes a deterministic Change
+Overview tied to that retained base/head pair. It shows the current selected Change Intent, current
+Provider Observation when present, exact commit identity, base/head committed-tree file counts,
+added/modified/deleted file counts, bounded changed paths, path-derived source areas, and explicit
+truncation, gitlink, or Git LFS warnings. A changed proposal head hides prior facts until that exact
+source is retained. Repeating retention for an older Available revision whose fact manifest is
+missing regenerates facts from its verified immutable artifact; it neither reads nor retargets the
+original repository. This is orientation only: it contains no code-level analysis, Graph, Evidence,
+Coverage judgment, Finding, Risk Level, behavioral claim, or review verdict.
+
 A failed acquisition publishes no partial artifact and records a bounded unavailable reason. If
 filesystem publication succeeds but the database completion is uncertain, Kestrel locks and rereads
 the revision: an already-available artifact is preserved; an acquiring artifact is quarantined
@@ -204,7 +214,8 @@ The authenticated PWA reads the opaque local inventory and committed refs throug
 `GET /api/v1/local-repository-sources` and
 `GET /api/v1/local-repository-sources/:repositoryId/references`. It submits the confirmed selection
 to `POST /api/v1/review-revisions`; success exposes the exact identity and Revision State but never
-an artifact locator or local path.
+an artifact locator or local path. The same response and subsequent Project reads expose the Change
+Overview generation state and, when ready, its bounded deterministic fact manifest.
 
 The same PWA reads `GET /api/v1/projects` and may submit a canonical public GitHub pull request URL
 to `POST /api/v1/projects`. Kestrel reads public pull request metadata from GitHub without an

@@ -66,6 +66,7 @@ export interface PublicGitHubObservation {
     | "version"
     | "changeIntent"
     | "changeIntentCandidates"
+    | "changeOverview"
     | "reviewRevisions"
   >;
   repository: RepositorySnapshot;

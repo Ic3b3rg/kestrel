@@ -21,6 +21,7 @@ import {
   discoverRepositories,
   listRepositoryReferences,
   readLocalSourceConfig,
+  readRetainedChangeOverviewFacts,
   readRetainedFile,
   reconcileArtifactRoot,
   resolveRepository,
@@ -535,6 +536,40 @@ describe("exact Review Revision retention", () => {
     expect(retained.baseCommitSubject).toBe("Base source");
     expect(retained.headCommitAuthor).toBe("Kestrel Test");
     expect(retained.headCommitSubject).toBe("Head source");
+    const { changedFiles, ...overviewSummary } = retained.changeOverviewFacts;
+    expect(overviewSummary).toEqual({
+      ruleVersion: 1,
+      commitStatistics: { baseTreeFileCount: 9, headTreeFileCount: 10 },
+      fileStatistics: { added: 1, modified: 1, deleted: 0, total: 2 },
+      pathAreas: [
+        { pathPrefix: null, changedFileCount: 1, samplePaths: ["review.txt"] },
+        {
+          pathPrefix: "vendor",
+          changedFileCount: 1,
+          samplePaths: ["vendor/dependency"],
+        },
+      ],
+      warnings: [
+        {
+          code: "gitlink_not_expanded",
+          affectedFileCount: 1,
+          samplePaths: ["vendor/dependency"],
+        },
+      ],
+    });
+    expect(changedFiles).toHaveLength(2);
+    expect(changedFiles[0]).toMatchObject({
+      path: "review.txt",
+      status: "modified",
+      base: { mode: "100644", type: "blob" },
+      head: { mode: "100644", type: "blob" },
+    });
+    expect(changedFiles[1]).toEqual({
+      path: "vendor/dependency",
+      status: "added",
+      base: null,
+      head: { mode: "160000", objectId: gitlinkTargetObjectId, type: "commit" },
+    });
     await expect(reconcileArtifactRoot(config, [retained.artifactLocator])).resolves.toEqual({
       quarantined: 0,
       removedStaging: 0,
@@ -544,6 +579,12 @@ describe("exact Review Revision retention", () => {
       removedStaging: 0,
     });
     await rename(repository, detachedRepository);
+    await expect(
+      readRetainedChangeOverviewFacts(config, {
+        artifactLocator: retained.artifactLocator,
+        manifestDigest: retained.manifestDigest,
+      }),
+    ).resolves.toEqual(retained.changeOverviewFacts);
     await expect(
       readRetainedFile(config, {
         artifactLocator: retained.artifactLocator,

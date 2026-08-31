@@ -1,11 +1,14 @@
 import type { PoolClient } from "pg";
 
 import {
+  ChangeOverviewSchema,
+  ChangeOverviewSourceFactsSchema,
   ChangeIntentSchema,
   DIRECT_API_SYNTHETIC_TEST_VALIDITY_MILLISECONDS,
   ProjectInboxSchema,
   ProjectUpsertedSchema,
   type ChangeIntent,
+  type ChangeOverview,
   type LocalRepositorySource,
   type ProviderObservedChangeProposal,
   type Project,
@@ -84,6 +87,13 @@ export interface ProjectDatabaseRow {
   revision_failure_reason?: ReviewRevision["failureReason"];
   revision_created_at?: Date | null;
   revision_available_at?: Date | null;
+  revision_base_commit_author?: string | null;
+  revision_base_commit_subject?: string | null;
+  revision_head_commit_author?: string | null;
+  revision_head_commit_subject?: string | null;
+  overview_rule_version?: number | string | null;
+  overview_source_facts?: unknown;
+  overview_created_at?: Date | null;
   candidate_revision_id?: string | null;
   candidate_base_commit_author?: string | null;
   candidate_base_commit_subject?: string | null;
@@ -104,6 +114,7 @@ export interface PublicGitHubProjectObservation {
     | "version"
     | "changeIntent"
     | "changeIntentCandidates"
+    | "changeOverview"
     | "reviewRevisions"
   >;
   repository: RepositorySnapshot;
@@ -328,6 +339,107 @@ function mapReviewRevision(row: ProjectDatabaseRow): ReviewRevision | null {
   };
 }
 
+function mapChangeOverview(
+  row: ProjectDatabaseRow,
+  changeIntent: ChangeIntent | null,
+): ChangeOverview {
+  const awaitingSource = (): ChangeOverview => ({
+    exactHeadObjectId: row.head_object_id,
+    state: "awaiting_source",
+  });
+  if (
+    row.revision_id == null ||
+    row.revision_base_object_id !== row.base_object_id ||
+    row.revision_head_object_id !== row.head_object_id
+  ) {
+    return awaitingSource();
+  }
+  if (row.revision_state === "acquiring") {
+    return {
+      exactHeadObjectId: row.head_object_id,
+      reviewRevisionId: row.revision_id,
+      state: "generating",
+    };
+  }
+  if (row.revision_state === "unavailable") {
+    if (row.revision_failure_reason == null) {
+      throw new Error("Unavailable Change Overview has no failure reason");
+    }
+    return ChangeOverviewSchema.parse({
+      exactHeadObjectId: row.head_object_id,
+      reason: row.revision_failure_reason,
+      reviewRevisionId: row.revision_id,
+      state: "unavailable",
+    });
+  }
+  if (
+    row.revision_state !== "available" ||
+    row.revision_object_format == null ||
+    row.revision_base_ref == null ||
+    row.revision_head_ref == null
+  ) {
+    throw new Error("Change Overview Review Revision is incomplete");
+  }
+  const manifestFields = [
+    row.overview_rule_version,
+    row.overview_source_facts,
+    row.overview_created_at,
+  ];
+  if (manifestFields.every((value) => value === undefined || value === null)) {
+    return {
+      exactHeadObjectId: row.head_object_id,
+      reason: "facts_not_available",
+      reviewRevisionId: row.revision_id,
+      state: "unavailable",
+    };
+  }
+  if (
+    row.overview_rule_version == null ||
+    row.overview_source_facts == null ||
+    row.overview_created_at == null ||
+    changeIntent === null
+  ) {
+    throw new Error("Change Overview fact manifest is incomplete");
+  }
+  const sourceFacts = ChangeOverviewSourceFactsSchema.parse(row.overview_source_facts);
+  if (Number(row.overview_rule_version) !== sourceFacts.ruleVersion) {
+    throw new Error("Change Overview rule version is inconsistent");
+  }
+  const proposalKind = row.proposal_kind ?? "provider_observed";
+  const providerObservation =
+    proposalKind === "local"
+      ? null
+      : {
+          canonicalUrl: row.proposal_canonical_url,
+          description: row.proposal_body ?? null,
+          observedAt: row.observed_at?.toISOString(),
+          title: row.proposal_title,
+        };
+  return ChangeOverviewSchema.parse({
+    changeIntent,
+    createdAt: row.overview_created_at.toISOString(),
+    exactRevision: {
+      base: {
+        author: row.revision_base_commit_author ?? null,
+        objectId: row.revision_base_object_id,
+        ref: row.revision_base_ref,
+        subject: row.revision_base_commit_subject ?? null,
+      },
+      head: {
+        author: row.revision_head_commit_author ?? null,
+        objectId: row.revision_head_object_id,
+        ref: row.revision_head_ref,
+        subject: row.revision_head_commit_subject ?? null,
+      },
+      id: row.revision_id,
+      objectFormat: row.revision_object_format,
+    },
+    providerObservation,
+    sourceFacts,
+    state: "ready",
+  });
+}
+
 function appendRevision(
   proposal: Project["changeProposals"][number],
   revision: ReviewRevision | null,
@@ -406,6 +518,7 @@ export function mapProjectRows(rows: readonly ProjectDatabaseRow[]): ProjectInbo
           base: { objectId: row.base_object_id, ref: row.base_ref_snapshot },
           changeIntent,
           changeIntentCandidates,
+          changeOverview: mapChangeOverview(row, changeIntent),
           createdAt: (row.proposal_created_at ?? row.created_at).toISOString(),
           head: { objectId: row.head_object_id, ref: row.head_ref_snapshot },
           id: row.proposal_id,
@@ -432,6 +545,7 @@ export function mapProjectRows(rows: readonly ProjectDatabaseRow[]): ProjectInbo
           canonicalUrl: row.proposal_canonical_url,
           changeIntent,
           changeIntentCandidates,
+          changeOverview: mapChangeOverview(row, changeIntent),
           head: { objectId: row.head_object_id, ref: row.head_ref_snapshot },
           id: row.proposal_id,
           kind: "provider_observed",
@@ -515,9 +629,16 @@ function projectRowsSelect(requiredRevisionId: "NULL::uuid" | "$2::uuid"): strin
          rr.object_count AS revision_object_count,
          rr.retained_bytes AS revision_retained_bytes,
          rr.failure_reason AS revision_failure_reason,
+         rr.base_commit_author_snapshot AS revision_base_commit_author,
+         rr.base_commit_subject_snapshot AS revision_base_commit_subject,
+         rr.head_commit_author_snapshot AS revision_head_commit_author,
+         rr.head_commit_subject_snapshot AS revision_head_commit_subject,
          rr.created_at AS revision_created_at,
-         rr.available_at AS revision_available_at
-         , candidate_revision.id AS candidate_revision_id,
+         rr.available_at AS revision_available_at,
+         overview.rule_version AS overview_rule_version,
+         overview.source_facts AS overview_source_facts,
+         overview.created_at AS overview_created_at,
+         candidate_revision.id AS candidate_revision_id,
          candidate_revision.base_ref_snapshot AS candidate_base_ref,
          candidate_revision.base_object_id AS candidate_base_object_id,
          candidate_revision.base_commit_author_snapshot AS candidate_base_commit_author,
@@ -583,6 +704,10 @@ function projectRowsSelect(requiredRevisionId: "NULL::uuid" | "$2::uuid"): strin
            revision.object_count,
            revision.retained_bytes,
            revision.failure_reason,
+           revision.base_commit_author_snapshot,
+           revision.base_commit_subject_snapshot,
+           revision.head_commit_author_snapshot,
+           revision.head_commit_subject_snapshot,
            revision.created_at,
            revision.available_at
     FROM review_revisions AS revision
@@ -595,6 +720,8 @@ function projectRowsSelect(requiredRevisionId: "NULL::uuid" | "$2::uuid"): strin
              revision.id
     LIMIT 20
   ) AS rr ON true
+  LEFT JOIN change_overview_fact_manifests AS overview
+    ON overview.review_revision_id = rr.id
   LEFT JOIN LATERAL (
     SELECT revision.id,
            revision.base_ref_snapshot,

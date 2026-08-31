@@ -463,7 +463,8 @@ describe("exact local Review Revision", () => {
             "has_table_privilege(current_user, 'public.' || table_name, 'UPDATE') AS can_update, " +
             "has_table_privilege(current_user, 'public.' || table_name, 'DELETE') AS can_delete " +
             "FROM unnest(ARRAY['projects','change_proposals','local_repository_sources'," +
-            "'change_intents','review_revisions','review_workflows']) AS table_name ORDER BY table_name"
+            "'change_intents','change_overview_fact_manifests','review_revisions'," +
+            "'review_workflows']) AS table_name ORDER BY table_name"
           );
           process.stdout.write(JSON.stringify(result.rows));
         } finally {
@@ -475,6 +476,13 @@ describe("exact local Review Revision", () => {
     expect(privileges).toEqual([
       {
         table_name: "change_intents",
+        can_select: true,
+        can_insert: true,
+        can_update: false,
+        can_delete: false,
+      },
+      {
+        table_name: "change_overview_fact_manifests",
         can_select: true,
         can_insert: true,
         can_update: false,
@@ -575,10 +583,38 @@ describe("exact local Review Revision", () => {
       kind: "provider_observed",
       providerId: "PR_issue90",
     });
+    expect(available.changeProposal.changeOverview).toMatchObject({
+      state: "ready",
+      exactRevision: {
+        base: { objectId: fixture.baseObjectId },
+        head: { objectId: fixture.headObjectId },
+      },
+      changeIntent: { text: command.changeIntent, version: 1 },
+      providerObservation: { title: "Retain a local Review Revision" },
+      sourceFacts: {
+        ruleVersion: 1,
+        commitStatistics: { baseTreeFileCount: 3, headTreeFileCount: 3 },
+        fileStatistics: { added: 0, modified: 1, deleted: 0, total: 1 },
+        changedFiles: [{ path: "review.txt", status: "modified" }],
+        pathAreas: [{ pathPrefix: null, changedFileCount: 1, samplePaths: ["review.txt"] }],
+        warnings: [],
+      },
+    });
     expect(available.project.changeProposals).toHaveLength(1);
     expect(available.project.providerObservation).toMatchObject({ kind: "public_github" });
     expect(JSON.stringify(available)).not.toContain("artifactLocator");
     expect(JSON.stringify(available)).not.toContain(fixture.repositoryPath);
+
+    await stack.executeSql(
+      `DELETE FROM change_overview_fact_manifests WHERE review_revision_id = '${available.reviewRevision.id}'`,
+    );
+    const preMigrationInbox = ProjectInboxSchema.parse(
+      await (await stack.fetchApi("/api/v1/projects")).json(),
+    );
+    expect(preMigrationInbox.projects[0]?.changeProposals[0]?.changeOverview).toMatchObject({
+      state: "unavailable",
+      reason: "facts_not_available",
+    });
 
     const repeated = await stack.fetchApi("/api/v1/review-revisions", {
       body: JSON.stringify(command),
@@ -588,6 +624,13 @@ describe("exact local Review Revision", () => {
     expect(repeated.status).toBe(200);
     const repeatedAvailable = ReviewRevisionAvailableSchema.parse(await repeated.json());
     expect(repeatedAvailable.reviewRevision.id).toBe(available.reviewRevision.id);
+    expect(repeatedAvailable.changeProposal.changeOverview).toMatchObject({
+      state: "ready",
+      sourceFacts: {
+        commitStatistics: { baseTreeFileCount: 3, headTreeFileCount: 3 },
+        changedFiles: [{ path: "review.txt", status: "modified" }],
+      },
+    });
     const aliased = await stack.fetchApi("/api/v1/review-revisions", {
       body: JSON.stringify({
         ...command,
@@ -610,6 +653,17 @@ describe("exact local Review Revision", () => {
       "A later intent must not retarget an available revision",
     );
     expect(aliasedAvailable.changeProposal.changeIntent?.version).toBe(2);
+    expect(aliasedAvailable.changeProposal.changeOverview).toMatchObject({
+      state: "ready",
+      changeIntent: {
+        text: "A later intent must not retarget an available revision",
+        version: 2,
+      },
+      sourceFacts: {
+        fileStatistics: { added: 0, modified: 1, deleted: 0, total: 1 },
+        changedFiles: [{ path: "review.txt", status: "modified" }],
+      },
+    });
     expect(aliasedAvailable.project.changeProposals).toHaveLength(1);
     await expect(
       stack.executeRuntimeSql(

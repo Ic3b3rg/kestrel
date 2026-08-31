@@ -470,6 +470,188 @@ export const LocalRepositorySourceSchema = z.strictObject({
   updatedAt: UtcDateTimeSchema,
 });
 
+const RetainedSourcePathSchema = z
+  .string()
+  .min(1)
+  .max(4096)
+  .refine(
+    (value) =>
+      !value.startsWith("/") &&
+      !value.includes("\0") &&
+      value.split("/").every((segment) => segment !== "" && segment !== "." && segment !== ".."),
+    { message: "Expected a retained source path" },
+  );
+
+export const ChangeOverviewFileEntrySchema = z.strictObject({
+  mode: z.enum(["100644", "100755", "120000", "160000"]),
+  objectId: GitObjectIdSchema,
+  type: z.enum(["blob", "commit"]),
+});
+
+export const ChangeOverviewChangedFileSchema = z
+  .strictObject({
+    path: RetainedSourcePathSchema,
+    status: z.enum(["added", "modified", "deleted"]),
+    base: ChangeOverviewFileEntrySchema.nullable(),
+    head: ChangeOverviewFileEntrySchema.nullable(),
+  })
+  .superRefine((value, context) => {
+    const valid =
+      (value.status === "added" && value.base === null && value.head !== null) ||
+      (value.status === "deleted" && value.base !== null && value.head === null) ||
+      (value.status === "modified" &&
+        value.base !== null &&
+        value.head !== null &&
+        (value.base.mode !== value.head.mode ||
+          value.base.objectId !== value.head.objectId ||
+          value.base.type !== value.head.type));
+    if (!valid) {
+      context.addIssue({
+        code: "custom",
+        message: "Changed file status and retained entries are inconsistent",
+      });
+    }
+  });
+
+export const ChangeOverviewFileStatisticsSchema = z
+  .strictObject({
+    added: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    modified: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    deleted: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    total: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  })
+  .refine(({ added, deleted, modified, total }) => added + modified + deleted === total, {
+    message: "Change Overview file statistics are inconsistent",
+  });
+
+export const ChangeOverviewCommitStatisticsSchema = z.strictObject({
+  baseTreeFileCount: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  headTreeFileCount: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+});
+
+export const ChangeOverviewPathAreaSchema = z.strictObject({
+  pathPrefix: z
+    .string()
+    .min(1)
+    .max(4096)
+    .refine((value) => !value.includes("/") && value !== "." && value !== "..")
+    .nullable(),
+  changedFileCount: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  samplePaths: z.array(RetainedSourcePathSchema).min(1).max(5),
+});
+
+export const ChangeOverviewWarningSchema = z.discriminatedUnion("code", [
+  z.strictObject({
+    code: z.literal("changed_files_truncated"),
+    omittedCount: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  }),
+  z.strictObject({
+    code: z.literal("path_areas_truncated"),
+    omittedCount: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  }),
+  z.strictObject({
+    code: z.enum(["gitlink_not_expanded", "git_lfs_pointer_not_hydrated"]),
+    affectedFileCount: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    samplePaths: z.array(RetainedSourcePathSchema).min(1).max(5),
+  }),
+]);
+
+export const ChangeOverviewSourceFactsSchema = z
+  .strictObject({
+    ruleVersion: z.literal(1),
+    commitStatistics: ChangeOverviewCommitStatisticsSchema,
+    fileStatistics: ChangeOverviewFileStatisticsSchema,
+    changedFiles: z.array(ChangeOverviewChangedFileSchema).max(200),
+    pathAreas: z.array(ChangeOverviewPathAreaSchema).max(20),
+    warnings: z.array(ChangeOverviewWarningSchema).max(4),
+  })
+  .superRefine((value, context) => {
+    const changedPaths = new Set(value.changedFiles.map(({ path }) => path));
+    if (changedPaths.size !== value.changedFiles.length) {
+      context.addIssue({ code: "custom", message: "Changed file paths must be unique" });
+    }
+    const areaPrefixes = new Set(value.pathAreas.map(({ pathPrefix }) => pathPrefix));
+    if (areaPrefixes.size !== value.pathAreas.length) {
+      context.addIssue({ code: "custom", message: "Path-derived areas must be unique" });
+    }
+    const warningCodes = new Set(value.warnings.map(({ code }) => code));
+    if (warningCodes.size !== value.warnings.length) {
+      context.addIssue({ code: "custom", message: "Change Overview warnings must be unique" });
+    }
+    const omittedFiles = value.fileStatistics.total - value.changedFiles.length;
+    const fileWarning = value.warnings.find(({ code }) => code === "changed_files_truncated");
+    const warnedOmittedFiles =
+      fileWarning?.code === "changed_files_truncated" ? fileWarning.omittedCount : null;
+    if (
+      omittedFiles < 0 ||
+      (omittedFiles === 0 && fileWarning !== undefined) ||
+      (omittedFiles > 0 && (fileWarning === undefined || warnedOmittedFiles !== omittedFiles))
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Changed file truncation metadata is inconsistent",
+      });
+    }
+  });
+
+const ChangeOverviewExactCommitSchema = GitRevisionPointerSchema.extend({
+  author: z.string().min(1).max(256).nullable(),
+  subject: z.string().min(1).max(512).nullable(),
+});
+
+const ChangeOverviewExactRevisionSchema = z
+  .strictObject({
+    id: KestrelIdSchema,
+    objectFormat: GitObjectFormatSchema,
+    base: ChangeOverviewExactCommitSchema,
+    head: ChangeOverviewExactCommitSchema,
+  })
+  .superRefine((value, context) => {
+    const expectedLength = value.objectFormat === "sha1" ? 40 : 64;
+    for (const side of ["base", "head"] as const) {
+      if (value[side].objectId.length !== expectedLength) {
+        context.addIssue({
+          code: "custom",
+          message: `Expected a ${value.objectFormat} object ID`,
+          path: [side, "objectId"],
+        });
+      }
+    }
+  });
+
+const ChangeOverviewProviderObservationSchema = z.strictObject({
+  canonicalUrl: PublicGitHubPullRequestUrlSchema,
+  observedAt: UtcDateTimeSchema,
+  title: z.string().min(1).max(512),
+  description: z.string().max(65_536).nullable(),
+});
+
+export const ChangeOverviewSchema = z.discriminatedUnion("state", [
+  z.strictObject({
+    state: z.literal("awaiting_source"),
+    exactHeadObjectId: GitObjectIdSchema,
+  }),
+  z.strictObject({
+    state: z.literal("generating"),
+    exactHeadObjectId: GitObjectIdSchema,
+    reviewRevisionId: KestrelIdSchema,
+  }),
+  z.strictObject({
+    state: z.literal("unavailable"),
+    exactHeadObjectId: GitObjectIdSchema,
+    reviewRevisionId: KestrelIdSchema,
+    reason: z.union([ReviewRevisionFailureReasonSchema, z.literal("facts_not_available")]),
+  }),
+  z.strictObject({
+    state: z.literal("ready"),
+    createdAt: UtcDateTimeSchema,
+    exactRevision: ChangeOverviewExactRevisionSchema,
+    changeIntent: ChangeIntentSchema,
+    providerObservation: ChangeOverviewProviderObservationSchema.nullable(),
+    sourceFacts: ChangeOverviewSourceFactsSchema,
+  }),
+]);
+
 export const ProviderObservedChangeProposalSchema = z.strictObject({
   kind: z.literal("provider_observed"),
   id: KestrelIdSchema,
@@ -492,6 +674,7 @@ export const ProviderObservedChangeProposalSchema = z.strictObject({
   changeIntent: ChangeIntentSchema.nullable(),
   changeIntentCandidates: z.array(ChangeIntentSourceSchema).max(20),
   reviewRevisions: z.array(ReviewRevisionSchema).max(20),
+  changeOverview: ChangeOverviewSchema.optional(),
 });
 
 export const LocalChangeProposalSchema = z.strictObject({
@@ -504,6 +687,7 @@ export const LocalChangeProposalSchema = z.strictObject({
   changeIntent: ChangeIntentSchema,
   changeIntentCandidates: z.array(ChangeIntentSourceSchema).max(20),
   reviewRevisions: z.array(ReviewRevisionSchema).max(20),
+  changeOverview: ChangeOverviewSchema.optional(),
   createdAt: UtcDateTimeSchema,
   updatedAt: UtcDateTimeSchema,
 });
@@ -1165,6 +1349,10 @@ export type InstallationEvent = z.infer<typeof InstallationEventSchema>;
 export type InstallationEventType = z.infer<typeof InstallationEventTypeSchema>;
 export type InstallationSnapshot = z.infer<typeof InstallationSnapshotSchema>;
 export type InstallationState = z.infer<typeof InstallationStateSchema>;
+export type ChangeOverview = z.infer<typeof ChangeOverviewSchema>;
+export type ChangeOverviewChangedFile = z.infer<typeof ChangeOverviewChangedFileSchema>;
+export type ChangeOverviewSourceFacts = z.infer<typeof ChangeOverviewSourceFactsSchema>;
+export type ChangeOverviewWarning = z.infer<typeof ChangeOverviewWarningSchema>;
 export type ChangeIntent = z.infer<typeof ChangeIntentSchema>;
 export type ChangeIntentSource = z.infer<typeof ChangeIntentSourceSchema>;
 export type ChangeIntentVersionCreated = z.infer<typeof ChangeIntentVersionCreatedSchema>;

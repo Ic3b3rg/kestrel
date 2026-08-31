@@ -3,9 +3,11 @@ import { createHash, randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 
 import {
+  ChangeOverviewSourceFactsSchema,
   ChangeIntentSchema,
   ChangeIntentSourceSchema,
   type ChangeIntent,
+  type ChangeOverviewSourceFacts,
   type ReviewRevision,
 } from "@kestrel/contracts";
 
@@ -54,6 +56,7 @@ export interface RetainedArtifactObservation {
   artifactLocator: string;
   baseCommitAuthor: string | null;
   baseCommitSubject: string | null;
+  changeOverviewFacts: ChangeOverviewSourceFacts;
   headCommitAuthor: string | null;
   headCommitSubject: string | null;
   manifestDigest: string;
@@ -69,6 +72,18 @@ export interface CompleteReviewRevisionInput {
   head: { objectId: string; ref: string };
   objectFormat: "sha1" | "sha256";
   projectId: string;
+  revisionId: string;
+}
+
+export interface ChangeOverviewBackfillReference {
+  artifactLocator: string;
+  manifestDigest: string;
+}
+
+export interface BackfillChangeOverviewFactsInput extends ChangeOverviewBackfillReference {
+  actorId: string;
+  changeOverviewFacts: ChangeOverviewSourceFacts;
+  correlationId: string;
   revisionId: string;
 }
 
@@ -1669,9 +1684,10 @@ function validateArtifact(
   artifact: RetainedArtifactObservation,
   projectId: string,
   revisionId: string,
-): void {
+): ChangeOverviewSourceFacts {
   const validSnapshot = (value: string | null, maximumLength: number) =>
     value === null || (value.length >= 1 && value.length <= maximumLength);
+  const overviewFacts = ChangeOverviewSourceFactsSchema.safeParse(artifact.changeOverviewFacts);
   if (
     artifact.artifactLocator !== `projects/${projectId}/revisions/${revisionId}` ||
     !validSnapshot(artifact.baseCommitAuthor, 256) ||
@@ -1682,9 +1698,129 @@ function validateArtifact(
     !Number.isSafeInteger(artifact.objectCount) ||
     artifact.objectCount < 1 ||
     !Number.isSafeInteger(artifact.retainedBytes) ||
-    artifact.retainedBytes < 0
+    artifact.retainedBytes < 0 ||
+    !overviewFacts.success
   ) {
     throw new Error("Retained artifact observation is invalid");
+  }
+  return overviewFacts.data;
+}
+
+export async function readChangeOverviewBackfillReference(
+  pool: DatabasePool,
+  revisionId: string,
+): Promise<ChangeOverviewBackfillReference | null> {
+  const result = await pool.query<{
+    artifact_locator: string | null;
+    manifest_digest: string | null;
+  }>(
+    `
+      SELECT revision.artifact_locator, revision.manifest_digest
+      FROM review_revisions AS revision
+      LEFT JOIN change_overview_fact_manifests AS overview
+        ON overview.review_revision_id = revision.id
+      WHERE revision.id = $1
+        AND revision.revision_state = 'available'
+        AND overview.review_revision_id IS NULL
+    `,
+    [revisionId],
+  );
+  if (result.rowCount === 0) return null;
+  const row = result.rows[0];
+  if (
+    result.rowCount !== 1 ||
+    row?.artifact_locator == null ||
+    row.manifest_digest == null ||
+    !row.artifact_locator.endsWith(`/revisions/${revisionId}`) ||
+    !/^[a-f0-9]{64}$/u.test(row.manifest_digest)
+  ) {
+    throw new Error("Available Review Revision artifact reference is incomplete");
+  }
+  return { artifactLocator: row.artifact_locator, manifestDigest: row.manifest_digest };
+}
+
+export async function backfillChangeOverviewFacts(
+  pool: DatabasePool,
+  input: BackfillChangeOverviewFactsInput,
+): Promise<boolean> {
+  const overviewFacts = ChangeOverviewSourceFactsSchema.parse(input.changeOverviewFacts);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const revision = await client.query<{ change_proposal_id: string }>(
+      `
+        SELECT revision.change_proposal_id
+        FROM review_revisions AS revision
+        WHERE revision.id = $1
+          AND revision.revision_state = 'available'
+          AND revision.artifact_locator = $2
+          AND revision.manifest_digest = $3
+        FOR UPDATE
+      `,
+      [input.revisionId, input.artifactLocator, input.manifestDigest],
+    );
+    const revisionRow = revision.rows[0];
+    if (revision.rowCount !== 1 || revisionRow === undefined) {
+      throw new ReviewRevisionPersistenceError("revision_state_conflict");
+    }
+    const inserted = await client.query<{ created_at: Date }>(
+      `
+        INSERT INTO change_overview_fact_manifests (
+          review_revision_id,
+          rule_version,
+          source_facts
+        )
+        VALUES ($1, $2, $3::jsonb)
+        ON CONFLICT (review_revision_id) DO NOTHING
+        RETURNING created_at
+      `,
+      [input.revisionId, overviewFacts.ruleVersion, JSON.stringify(overviewFacts)],
+    );
+    if (inserted.rowCount === 0) {
+      await client.query("COMMIT");
+      return false;
+    }
+    if (inserted.rowCount !== 1 || inserted.rows[0] === undefined) {
+      throw new Error("Change Overview fact backfill failed");
+    }
+    const proposal = await client.query(
+      `
+        UPDATE change_proposals AS canonical
+        SET optimistic_version = canonical.optimistic_version + 1,
+            updated_at = clock_timestamp()
+        WHERE canonical.id = (
+          SELECT COALESCE(storage.canonical_change_proposal_id, storage.id)
+          FROM change_proposals AS storage
+          WHERE storage.id = $1
+        )
+      `,
+      [revisionRow.change_proposal_id],
+    );
+    if (proposal.rowCount !== 1) {
+      throw new Error("Change Overview Change Proposal version advance failed");
+    }
+    await appendAuditRecordInTransaction(client, {
+      actorId: input.actorId,
+      actorType: "operator",
+      causationId: null,
+      correlationId: input.correlationId,
+      denialReason: null,
+      eventType: "change_overview.facts_backfilled",
+      facts: {
+        changedFileCount: overviewFacts.fileStatistics.total,
+        overviewRuleVersion: overviewFacts.ruleVersion,
+      },
+      outcome: "succeeded",
+      targetId: input.revisionId,
+      targetType: "review_revision",
+    });
+    await client.query("COMMIT");
+    return true;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
   }
 }
 
@@ -1692,7 +1828,7 @@ export async function completeReviewRevision(
   pool: DatabasePool,
   input: CompleteReviewRevisionInput,
 ): Promise<ReviewRevision> {
-  validateArtifact(input.artifact, input.projectId, input.revisionId);
+  const overviewFacts = validateArtifact(input.artifact, input.projectId, input.revisionId);
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -1733,6 +1869,21 @@ export async function completeReviewRevision(
     const row = result.rows[0];
     if (result.rowCount !== 1 || row === undefined) {
       throw new ReviewRevisionPersistenceError("revision_state_conflict");
+    }
+    const overview = await client.query<{ created_at: Date }>(
+      `
+        INSERT INTO change_overview_fact_manifests (
+          review_revision_id,
+          rule_version,
+          source_facts
+        )
+        VALUES ($1, $2, $3::jsonb)
+        RETURNING created_at
+      `,
+      [input.revisionId, overviewFacts.ruleVersion, JSON.stringify(overviewFacts)],
+    );
+    if (overview.rowCount !== 1 || overview.rows[0] === undefined) {
+      throw new Error("Change Overview fact manifest persistence failed");
     }
     const project = await client.query(
       `
@@ -1776,7 +1927,9 @@ export async function completeReviewRevision(
       denialReason: null,
       eventType: "review_revision.available",
       facts: {
+        changedFileCount: overviewFacts.fileStatistics.total,
         objectCount: input.artifact.objectCount,
+        overviewRuleVersion: overviewFacts.ruleVersion,
         retainedBytes: input.artifact.retainedBytes,
       },
       outcome: "succeeded",

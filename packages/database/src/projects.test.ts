@@ -4,6 +4,21 @@ import { mapProjectRows, readProject, type ProjectDatabaseRow } from "./projects
 
 const projectId = "018f0f89-949a-75a8-8f61-6df78a843b1e";
 const proposalId = "018f0f89-9192-755f-aa96-f72094c734dd";
+const overviewFacts = {
+  ruleVersion: 1,
+  commitStatistics: { baseTreeFileCount: 1, headTreeFileCount: 1 },
+  fileStatistics: { added: 0, modified: 1, deleted: 0, total: 1 },
+  changedFiles: [
+    {
+      path: "src/review.ts",
+      status: "modified",
+      base: { mode: "100644", objectId: "c".repeat(40), type: "blob" },
+      head: { mode: "100644", objectId: "d".repeat(40), type: "blob" },
+    },
+  ],
+  pathAreas: [{ pathPrefix: "src", changedFileCount: 1, samplePaths: ["src/review.ts"] }],
+  warnings: [],
+} as const;
 
 function projectRow(overrides: Partial<ProjectDatabaseRow> = {}): ProjectDatabaseRow {
   return {
@@ -96,6 +111,13 @@ function localProjectRow(): ProjectDatabaseRow {
     revision_failure_reason: null,
     revision_created_at: new Date("2026-08-24T12:00:30.000Z"),
     revision_available_at: new Date("2026-08-24T12:01:00.000Z"),
+    revision_base_commit_author: "Base Author",
+    revision_base_commit_subject: "Establish the source boundary",
+    revision_head_commit_author: "Head Author",
+    revision_head_commit_subject: "Keep repository access explicit",
+    overview_rule_version: "1",
+    overview_source_facts: overviewFacts,
+    overview_created_at: new Date("2026-08-24T12:01:00.000Z"),
     candidate_revision_id: "018f0f89-9a21-7271-b92d-f1cb0d48bb47",
     candidate_base_commit_author: "Base Author",
     candidate_base_commit_subject: "Establish the source boundary",
@@ -106,6 +128,27 @@ function localProjectRow(): ProjectDatabaseRow {
     candidate_head_object_id: "b".repeat(40),
     candidate_head_ref: "refs/heads/review-source",
   } as unknown as ProjectDatabaseRow;
+}
+
+function providerProjectRowWithOverview(): ProjectDatabaseRow {
+  return {
+    ...localProjectRow(),
+    author_login_snapshot: "octocat",
+    author_provider_id: "U_kgDOA",
+    observed_at: new Date("2026-08-24T12:01:00.000Z"),
+    proposal_body: "Keep provider metadata optional.",
+    proposal_canonical_url: "https://github.com/openai/openai-node/pull/1234",
+    proposal_kind: "provider_observed",
+    proposal_number: "1234",
+    proposal_provider_id: "PR_kwDOGx",
+    proposal_state: "open",
+    provider: "github",
+    provider_observation_kind: "public_github",
+    provider_repository_id: "R_kgDOGx",
+    repository_canonical_url_snapshot: "https://github.com/openai/openai-node",
+    repository_name_snapshot: "openai-node",
+    repository_owner_snapshot: "openai",
+  };
 }
 
 describe("Project persistence mapping", () => {
@@ -127,8 +170,21 @@ describe("Project persistence mapping", () => {
       projects: [
         {
           changeProposals: [
-            expect.objectContaining({ id: proposalId, number: 1234 }),
-            expect.objectContaining({ number: 1235 }),
+            expect.objectContaining({
+              changeOverview: {
+                state: "awaiting_source",
+                exactHeadObjectId: "b".repeat(40),
+              },
+              id: proposalId,
+              number: 1234,
+            }),
+            expect.objectContaining({
+              changeOverview: {
+                state: "awaiting_source",
+                exactHeadObjectId: "b".repeat(40),
+              },
+              number: 1235,
+            }),
           ],
           createdAt: "2026-08-24T12:00:00.000Z",
           id: projectId,
@@ -224,6 +280,70 @@ describe("Project persistence mapping", () => {
     ]);
     expect(proposal?.reviewRevisions[0]?.state).toBe("available");
     expect(proposal?.reviewRevisions[0]?.objectCount).toBe(7);
+    expect(proposal?.changeOverview).toEqual({
+      state: "ready",
+      createdAt: "2026-08-24T12:01:00.000Z",
+      exactRevision: {
+        id: "018f0f89-9a21-7271-b92d-f1cb0d48bb47",
+        objectFormat: "sha1",
+        base: {
+          ref: "refs/heads/main",
+          objectId: "a".repeat(40),
+          author: "Base Author",
+          subject: "Establish the source boundary",
+        },
+        head: {
+          ref: "refs/heads/review-source",
+          objectId: "b".repeat(40),
+          author: "Head Author",
+          subject: "Keep repository access explicit",
+        },
+      },
+      changeIntent: proposal?.changeIntent,
+      providerObservation: null,
+      sourceFacts: overviewFacts,
+    });
+  });
+
+  it("hides prior overview facts as soon as the selected source changes", () => {
+    const row = localProjectRow();
+    row.head_object_id = "e".repeat(40);
+    row.head_ref_snapshot = "refs/heads/new-review-source";
+
+    const overview = mapProjectRows([row]).projects[0]?.changeProposals[0]?.changeOverview;
+
+    expect(overview).toEqual({
+      state: "awaiting_source",
+      exactHeadObjectId: "e".repeat(40),
+    });
+    expect(JSON.stringify(overview)).not.toContain("src/review.ts");
+  });
+
+  it("refreshes only current provider facts while retaining exact source facts", () => {
+    const before = mapProjectRows([providerProjectRowWithOverview()]).projects[0]
+      ?.changeProposals[0]?.changeOverview;
+    const refreshed = providerProjectRowWithOverview();
+    refreshed.proposal_title = "Current provider title";
+    refreshed.proposal_body = "Current provider description.";
+    refreshed.observed_at = new Date("2026-08-24T12:02:00.000Z");
+
+    const after = mapProjectRows([refreshed]).projects[0]?.changeProposals[0]?.changeOverview;
+
+    expect(before?.state).toBe("ready");
+    expect(after).toMatchObject({
+      state: "ready",
+      providerObservation: {
+        title: "Current provider title",
+        description: "Current provider description.",
+        observedAt: "2026-08-24T12:02:00.000Z",
+      },
+      sourceFacts: overviewFacts,
+    });
+    if (before?.state !== "ready" || after?.state !== "ready") {
+      throw new Error("Ready provider Change Overview fixture is unavailable");
+    }
+    expect(after.exactRevision).toEqual(before.exactRevision);
+    expect(after.sourceFacts).toEqual(before.sourceFacts);
   });
 
   it("fails closed when retained Review Revision identity columns are incomplete", () => {

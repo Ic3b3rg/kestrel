@@ -20,12 +20,14 @@ import {
   inspectRepository,
   listRepositoryReferences,
   quarantineUnattachedArtifact,
+  readRetainedChangeOverviewFacts,
   resolveRepository,
   resolveSelectedRevision,
   retainRevision,
   withGitHubPullRequestObjects,
   type LocalSourceConfig,
   type RetainedArtifact,
+  type RetainedChangeOverviewFacts,
   type SelectedRevision,
 } from "@kestrel/local-source";
 
@@ -66,6 +68,10 @@ export interface LocalReviewRevisionSourceService extends LocalRepositoryService
     signal?: AbortSignal,
   ): Promise<PreparedReviewRevision>;
   quarantine(artifactLocator: string): Promise<void>;
+  readChangeOverviewFacts(input: {
+    artifactLocator: string;
+    manifestDigest: string;
+  }): Promise<RetainedChangeOverviewFacts>;
   retain(input: {
     prepared: PreparedReviewRevision;
     projectId: string;
@@ -217,6 +223,7 @@ export function createLocalRepositoryService(
       };
     },
     quarantine: (artifactLocator) => quarantineUnattachedArtifact(config, artifactLocator),
+    readChangeOverviewFacts: (input) => readRetainedChangeOverviewFacts(config, input),
     async retain({ prepared, projectId, revisionId, signal }) {
       const retentionConfig = {
         ...config,

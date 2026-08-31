@@ -164,14 +164,33 @@ test.describe("local-first Project flow", () => {
     await expect(localTrigger).toBeFocused();
     await expect(page.getByRole("status")).toContainText("The exact Review Revision is available.");
     await expect(page.getByText("Available", { exact: true })).toHaveCount(2);
-    await expect(page.getByText("Change Intent v1", { exact: true })).toBeVisible();
+    await expect(
+      page.locator("dl.commit-pointer-list").getByText("Change Intent v1", { exact: true }),
+    ).toBeVisible();
     await expect(
       page
+        .locator("dl.commit-pointer-list")
         .getByRole("definition")
         .filter({ hasText: "Review the exact committed authorization boundary" }),
     ).toBeVisible();
     await expect(page.getByText("Not observed", { exact: true })).toBeVisible();
     await expect(page.getByText("Not configured", { exact: true })).toBeVisible();
+
+    const overview = page.getByRole("region", { name: "Change Overview" });
+    await expect(overview.getByText("Ready", { exact: true })).toBeVisible();
+    await expect(overview.getByText("Deterministic orientation facts only")).toBeVisible();
+    await expect(
+      overview.getByLabel(`Change Overview exact head object ID ${fixture.headObjectId}`),
+    ).toBeVisible();
+    await expect(
+      overview.getByText("1 changed file · 0 added · 1 modified · 0 deleted"),
+    ).toBeVisible();
+    await expect(overview.getByText("Base snapshot · 3 files", { exact: true })).toBeVisible();
+    await expect(overview.getByText("Head snapshot · 3 files", { exact: true })).toBeVisible();
+    await expect(overview.getByText("review.txt", { exact: true })).toBeVisible();
+    await expect(overview.getByRole("heading", { name: "Source areas" })).toBeVisible();
+    await expect(overview.getByText("Repository root", { exact: true })).toBeVisible();
+    await expect(overview).not.toContainText(/Graph|Evidence|Coverage|Finding|Risk|Verdict/u);
 
     const preparation = page.getByRole("region", { name: "Review preparation" });
     await preparation.getByRole("button", { name: "Prepare Review" }).click();
