@@ -1,13 +1,9 @@
-ALTER TABLE review_revisions
-ADD CONSTRAINT review_revisions_id_change_proposal_unique
-UNIQUE (id, change_proposal_id);
-
 CREATE TABLE review_workflows (
   id uuid PRIMARY KEY DEFAULT uuidv7(),
   project_id uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   change_proposal_id uuid NOT NULL REFERENCES change_proposals(id) ON DELETE CASCADE,
-  review_revision_id uuid NOT NULL,
-  change_intent_id uuid NOT NULL,
+  review_revision_id uuid NOT NULL REFERENCES review_revisions(id) ON DELETE RESTRICT,
+  change_intent_id uuid NOT NULL REFERENCES change_intents(id) ON DELETE RESTRICT,
   requested_by_operator_id uuid NOT NULL REFERENCES operators(id) ON DELETE RESTRICT,
   input_digest text NOT NULL CHECK (input_digest ~ '^[a-f0-9]{64}$'),
   analysis_configuration jsonb NOT NULL CHECK (
@@ -26,12 +22,50 @@ CREATE TABLE review_workflows (
   requested_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   UNIQUE (change_proposal_id, input_digest),
   FOREIGN KEY (change_proposal_id, project_id)
-    REFERENCES change_proposals (id, project_id) ON DELETE CASCADE,
-  FOREIGN KEY (review_revision_id, change_proposal_id)
-    REFERENCES review_revisions (id, change_proposal_id) ON DELETE RESTRICT,
-  FOREIGN KEY (change_intent_id, change_proposal_id)
-    REFERENCES change_intents (id, change_proposal_id) ON DELETE RESTRICT
+    REFERENCES change_proposals (id, project_id) ON DELETE CASCADE
 );
+
+CREATE FUNCTION enforce_review_workflow_input_family()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public, pg_temp
+AS $$
+DECLARE
+  intent_proposal_id uuid;
+  revision_proposal_id uuid;
+  workflow_proposal_id uuid;
+BEGIN
+  SELECT COALESCE(proposal.canonical_change_proposal_id, proposal.id)
+  INTO workflow_proposal_id
+  FROM public.change_proposals AS proposal
+  WHERE proposal.id = NEW.change_proposal_id;
+
+  SELECT COALESCE(proposal.canonical_change_proposal_id, proposal.id)
+  INTO revision_proposal_id
+  FROM public.review_revisions AS revision
+  INNER JOIN public.change_proposals AS proposal ON proposal.id = revision.change_proposal_id
+  WHERE revision.id = NEW.review_revision_id;
+
+  SELECT COALESCE(proposal.canonical_change_proposal_id, proposal.id)
+  INTO intent_proposal_id
+  FROM public.change_intents AS intent
+  INNER JOIN public.change_proposals AS proposal ON proposal.id = intent.change_proposal_id
+  WHERE intent.id = NEW.change_intent_id;
+
+  IF workflow_proposal_id IS DISTINCT FROM NEW.change_proposal_id
+     OR revision_proposal_id IS DISTINCT FROM NEW.change_proposal_id
+     OR intent_proposal_id IS DISTINCT FROM NEW.change_proposal_id THEN
+    RAISE EXCEPTION 'Review Workflow inputs must belong to one canonical Change Proposal family'
+      USING ERRCODE = '23514', CONSTRAINT = 'review_workflows_input_proposal_family';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER review_workflows_input_family
+BEFORE INSERT ON review_workflows
+FOR EACH ROW
+EXECUTE FUNCTION enforce_review_workflow_input_family();
 
 CREATE FUNCTION enforce_review_workflow_frozen_inputs()
 RETURNS trigger

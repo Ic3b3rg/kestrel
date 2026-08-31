@@ -11,7 +11,6 @@ import { ApiClientError, fetchReviewPreparation, startReviewWorkflow } from "./a
 export interface ReviewPreparationPanelProps {
   disabled: boolean;
   onAuthenticationError?: (error: unknown) => boolean;
-  onStarted?: (result: ReviewWorkflowAccepted) => void;
   projectId: string;
   proposalId: string;
   readPreparation?: typeof fetchReviewPreparation;
@@ -31,6 +30,19 @@ const modelRouteLabels = {
   direct_api: "Direct API",
   subscription_acp: "Subscription ACP",
 } as const;
+
+const modelRouteAvailabilityLabels = {
+  available: "Route available",
+  unavailable: "Route unavailable",
+} as const;
+
+function formatBytes(value: number): string {
+  const gibibyte = 1024 ** 3;
+  if (value % gibibyte === 0) return `${String(value / gibibyte)} GiB`;
+  const mebibyte = 1024 ** 2;
+  if (value % mebibyte === 0) return `${String(value / mebibyte)} MiB`;
+  return `${new Intl.NumberFormat("en-GB").format(value)} bytes`;
+}
 
 function formatObservedAt(value: string): string {
   return new Intl.DateTimeFormat("en-GB", {
@@ -148,6 +160,7 @@ function ReviewInputFacts({ preparation }: { preparation: ReviewPreparation }) {
               <code>Digest {analysis.digest}</code>
             </>
           )}
+          <span>{modelRouteAvailabilityLabels[preparation.modelRouteAvailability]}</span>
         </dd>
       </div>
       <div>
@@ -174,6 +187,15 @@ function ReviewInputFacts({ preparation }: { preparation: ReviewPreparation }) {
                 {resource.displayName} · v{resource.version}
               </strong>
               <code>{resource.id}</code>
+              <span>{formatBytes(resource.limits.maximumMemoryBytes)} memory</span>
+              <span>{resource.limits.maximumProcesses} processes</span>
+              <span>{formatBytes(resource.limits.maximumWritableDiskBytes)} writable disk</span>
+              <span>{resource.limits.maximumCpuMillicores} millicores</span>
+              <span>
+                {resource.limits.maximumConcurrentAttempts} concurrent attempt
+                {resource.limits.maximumConcurrentAttempts === 1 ? "" : "s"}
+              </span>
+              <span>Partial or failed on exhaustion · uncovered areas must be disclosed</span>
               <code>Digest {resource.digest}</code>
             </>
           )}
@@ -186,7 +208,6 @@ function ReviewInputFacts({ preparation }: { preparation: ReviewPreparation }) {
 export function ReviewPreparationPanel({
   disabled,
   onAuthenticationError,
-  onStarted,
   projectId,
   proposalId,
   readPreparation = fetchReviewPreparation,
@@ -240,7 +261,6 @@ export function ReviewPreparationPanel({
         active.signal,
       );
       setAccepted(result);
-      onStarted?.(result);
     } catch (caught) {
       if (!active.signal.aborted && onAuthenticationError?.(caught) !== true) {
         setError(

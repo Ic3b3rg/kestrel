@@ -269,10 +269,13 @@ npm run contracts:check
   reconciliation, and detached artifact reads.
 
 Review preparation now exposes the exact retained revision, resolved intent, source provenance,
-analysis profile, authority, Resource Envelope, and blockers before confirmation. Starting a ready
-Review Workflow freezes those bindings transactionally; model access and workflow execution are
-delivered by later issues. TLS/Caddy and Repository Provider Connections are outside the local-first
-V1 contract.
+analysis profile and route availability, authority, Resource Envelope, and blockers before
+confirmation. A configured Resource Envelope includes explicit memory, process, writable-disk, CPU,
+and concurrency limits plus its terminal exhaustion boundary; the built-in profile remains blocked
+until benchmark-derived limits are supplied rather than inventing a default. Starting a ready Review
+Workflow freezes those bindings transactionally; model access, resource admission, and workflow
+execution are delivered by later issues. TLS/Caddy and Repository Provider Connections are outside
+the local-first V1 contract.
 
 The development Compose file keeps database ownership out of the long-running services. The one-shot
 migration and role-preparation containers use the database owner; web and worker connect as

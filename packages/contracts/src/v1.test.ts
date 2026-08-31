@@ -661,6 +661,7 @@ describe("V1 public contracts", () => {
         modelRoute: "direct_api",
         digest: "d".repeat(64),
       },
+      modelRouteAvailability: "available",
       authority: {
         action: "start_review",
         operatorId: "018f0f89-a3fb-75ee-bccc-08c031ce5f10",
@@ -670,6 +671,17 @@ describe("V1 public contracts", () => {
         id: "review-first-v1-default",
         version: 1,
         displayName: "Review First V1 default envelope",
+        limits: {
+          maximumMemoryBytes: 1_073_741_824,
+          maximumProcesses: 64,
+          maximumWritableDiskBytes: 2_147_483_648,
+          maximumCpuMillicores: 1_000,
+          maximumConcurrentAttempts: 1,
+        },
+        terminalBoundary: {
+          onExhaustion: "partial_or_failed",
+          requiresUncoveredAreaDisclosure: true,
+        },
         digest: "e".repeat(64),
       },
       readiness: "ready",
@@ -687,12 +699,19 @@ describe("V1 public contracts", () => {
 
     const blocked = {
       ...preparation,
-      analysisConfiguration: null,
+      modelRouteAvailability: "unavailable",
       readiness: "blocked",
       blockers: ["model_route_not_available"],
       preparationDigest: null,
     } as const;
     expect(ReviewPreparationSchema.parse(blocked)).toEqual(blocked);
+    expect(blocked.analysisConfiguration).toEqual(preparation.analysisConfiguration);
+    expect(() =>
+      ReviewPreparationSchema.parse({
+        ...preparation,
+        analysisConfiguration: null,
+      }),
+    ).toThrow("Available model route requires a selected Analysis Configuration");
   });
 
   it("starts a Review Workflow from only the server-issued preparation digest", () => {
@@ -730,6 +749,17 @@ describe("V1 public contracts", () => {
           id: "review-first-v1-default",
           version: 1,
           displayName: "Review First V1 default envelope",
+          limits: {
+            maximumMemoryBytes: 1_073_741_824,
+            maximumProcesses: 64,
+            maximumWritableDiskBytes: 2_147_483_648,
+            maximumCpuMillicores: 1_000,
+            maximumConcurrentAttempts: 1,
+          },
+          terminalBoundary: {
+            onExhaustion: "partial_or_failed",
+            requiresUncoveredAreaDisclosure: true,
+          },
           digest: "e".repeat(64),
         },
         state: "queued",

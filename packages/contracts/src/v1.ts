@@ -552,6 +552,8 @@ export const ReviewAnalysisConfigurationSchema = z.strictObject({
   digest: RequestDigestSchema,
 });
 
+export const ReviewModelRouteAvailabilitySchema = z.enum(["available", "unavailable"]);
+
 export const ReviewAuthoritySchema = z
   .strictObject({
     action: z.literal("start_review"),
@@ -575,6 +577,17 @@ export const ReviewResourceEnvelopeSchema = z.strictObject({
   id: ReviewResourceEnvelopeIdSchema,
   version: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
   displayName: z.string().min(1).max(256),
+  limits: z.strictObject({
+    maximumMemoryBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    maximumProcesses: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    maximumWritableDiskBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    maximumCpuMillicores: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    maximumConcurrentAttempts: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  }),
+  terminalBoundary: z.strictObject({
+    onExhaustion: z.literal("partial_or_failed"),
+    requiresUncoveredAreaDisclosure: z.literal(true),
+  }),
   digest: RequestDigestSchema,
 });
 
@@ -606,6 +619,7 @@ export const ReviewPreparationSchema = z
       providerObservation: ReviewProviderObservationSchema.nullable(),
     }),
     analysisConfiguration: ReviewAnalysisConfigurationSchema.nullable(),
+    modelRouteAvailability: ReviewModelRouteAvailabilitySchema,
     authority: ReviewAuthoritySchema,
     resourceEnvelope: ReviewResourceEnvelopeSchema.nullable(),
     readiness: z.enum(["ready", "blocked"]),
@@ -629,6 +643,7 @@ export const ReviewPreparationSchema = z
       exactRevision &&
       value.changeIntent?.resolution.state === "resolved" &&
       value.analysisConfiguration !== null &&
+      value.modelRouteAvailability === "available" &&
       value.authority.state === "available" &&
       value.resourceEnvelope !== null &&
       value.blockers.length === 0 &&
@@ -638,6 +653,12 @@ export const ReviewPreparationSchema = z
       context.addIssue({
         code: "custom",
         message: "Ready Review preparation requires complete valid inputs",
+      });
+    }
+    if (value.modelRouteAvailability === "available" && value.analysisConfiguration === null) {
+      context.addIssue({
+        code: "custom",
+        message: "Available model route requires a selected Analysis Configuration",
       });
     }
     if (
@@ -946,6 +967,7 @@ export type ReviewRevisionAvailable = z.infer<typeof ReviewRevisionAvailableSche
 export type ReviewRevisionFailureReason = z.infer<typeof ReviewRevisionFailureReasonSchema>;
 export type ReviewAnalysisConfiguration = z.infer<typeof ReviewAnalysisConfigurationSchema>;
 export type ReviewAuthority = z.infer<typeof ReviewAuthoritySchema>;
+export type ReviewModelRouteAvailability = z.infer<typeof ReviewModelRouteAvailabilitySchema>;
 export type ReviewPreparation = z.infer<typeof ReviewPreparationSchema>;
 export type ReviewPreparationBlocker = z.infer<typeof ReviewPreparationBlockerSchema>;
 export type ReviewProviderObservation = z.infer<typeof ReviewProviderObservationSchema>;

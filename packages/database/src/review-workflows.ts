@@ -9,6 +9,7 @@ import {
   type ChangeProposal,
   type Project,
   type ReviewAnalysisConfiguration,
+  type ReviewModelRouteAvailability,
   type ReviewPreparation,
   type ReviewPreparationBlocker,
   type ReviewProviderObservation,
@@ -23,6 +24,7 @@ import { readProject, readProjectInTransaction } from "./projects.js";
 
 export interface ReviewExecutionProfile {
   analysisConfiguration: ReviewAnalysisConfiguration | null;
+  modelRouteAvailability: ReviewModelRouteAvailability;
   resourceEnvelope: ReviewResourceEnvelope | null;
 }
 
@@ -138,6 +140,19 @@ function digestReviewInputs(preparation: ReviewDigestInputs): string {
           id: preparation.resourceEnvelope.id,
           version: preparation.resourceEnvelope.version,
           displayName: preparation.resourceEnvelope.displayName,
+          limits: {
+            maximumMemoryBytes: preparation.resourceEnvelope.limits.maximumMemoryBytes,
+            maximumProcesses: preparation.resourceEnvelope.limits.maximumProcesses,
+            maximumWritableDiskBytes: preparation.resourceEnvelope.limits.maximumWritableDiskBytes,
+            maximumCpuMillicores: preparation.resourceEnvelope.limits.maximumCpuMillicores,
+            maximumConcurrentAttempts:
+              preparation.resourceEnvelope.limits.maximumConcurrentAttempts,
+          },
+          terminalBoundary: {
+            onExhaustion: preparation.resourceEnvelope.terminalBoundary.onExhaustion,
+            requiresUncoveredAreaDisclosure:
+              preparation.resourceEnvelope.terminalBoundary.requiresUncoveredAreaDisclosure,
+          },
           digest: preparation.resourceEnvelope.digest,
         },
       }),
@@ -162,7 +177,9 @@ function buildReviewPreparation(
   if (changeIntent === null || changeIntent.resolution.state !== "resolved") {
     blockers.push("change_intent_not_resolved");
   }
-  if (profile.analysisConfiguration === null) blockers.push("model_route_not_available");
+  if (profile.analysisConfiguration === null || profile.modelRouteAvailability !== "available") {
+    blockers.push("model_route_not_available");
+  }
   if (profile.resourceEnvelope === null) blockers.push("resource_envelope_not_available");
 
   const base = {
@@ -177,6 +194,7 @@ function buildReviewPreparation(
       providerObservation: observedSource(project, proposal),
     },
     analysisConfiguration: profile.analysisConfiguration,
+    modelRouteAvailability: profile.modelRouteAvailability,
     authority: {
       action: "start_review" as const,
       operatorId: actorId,
@@ -206,7 +224,16 @@ export async function readReviewPreparation(
   input: ReadReviewPreparationInput,
   profile: ReviewExecutionProfile,
 ): Promise<ReviewPreparation> {
-  const project = await readProject(pool, input.projectId);
+  let project: Project;
+  try {
+    project = await readProject(pool, input.projectId);
+  } catch (error) {
+    const exists = await pool.query<{ id: string }>("SELECT id FROM projects WHERE id = $1", [
+      input.projectId,
+    ]);
+    if (exists.rowCount === 0) throw new ReviewWorkflowPersistenceError("not_found");
+    throw error;
+  }
   return buildReviewPreparation(
     project,
     findProposal(project, input.changeProposalId),

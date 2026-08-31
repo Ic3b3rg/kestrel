@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-
 import type { FastifyInstance, FastifyRequest } from "fastify";
 
 import {
@@ -15,7 +13,6 @@ import {
   startReviewWorkflowCommandJsonSchema,
   type ApiError,
   type ReviewPreparation,
-  type ReviewResourceEnvelope,
   type ReviewWorkflowAccepted,
   type StartReviewWorkflowCommand,
 } from "@kestrel/contracts";
@@ -47,22 +44,10 @@ export interface ReviewWorkflowService {
   ): Promise<ReviewWorkflowAccepted>;
 }
 
-const resourceEnvelopeMaterial = {
-  id: "review-first-v1-default",
-  version: 1,
-  displayName: "Review First V1 default envelope",
-} as const;
-
-const resourceEnvelope: ReviewResourceEnvelope = {
-  ...resourceEnvelopeMaterial,
-  digest: createHash("sha256")
-    .update(JSON.stringify(resourceEnvelopeMaterial), "utf8")
-    .digest("hex"),
-};
-
 const executionProfile = {
   analysisConfiguration: null,
-  resourceEnvelope,
+  modelRouteAvailability: "unavailable",
+  resourceEnvelope: null,
 } satisfies ReviewExecutionProfile;
 
 export function createDatabaseReviewWorkflowService(pool: DatabasePool): ReviewWorkflowService {

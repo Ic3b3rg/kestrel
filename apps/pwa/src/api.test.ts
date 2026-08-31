@@ -194,6 +194,7 @@ describe("PWA API client", () => {
       changeIntent: null,
       source: { localRepositorySource: null, providerObservation: null },
       analysisConfiguration: null,
+      modelRouteAvailability: "unavailable",
       authority: {
         action: "start_review",
         operatorId: "018f0f89-a3fb-75ee-bccc-08c031ce5f10",
@@ -203,6 +204,17 @@ describe("PWA API client", () => {
         id: "review-first-v1-default",
         version: 1,
         displayName: "Review First V1 default envelope",
+        limits: {
+          maximumMemoryBytes: 1_073_741_824,
+          maximumProcesses: 64,
+          maximumWritableDiskBytes: 2_147_483_648,
+          maximumCpuMillicores: 1_000,
+          maximumConcurrentAttempts: 1,
+        },
+        terminalBoundary: {
+          onExhaustion: "partial_or_failed",
+          requiresUncoveredAreaDisclosure: true,
+        },
         digest: "e".repeat(64),
       },
       readiness: "blocked",

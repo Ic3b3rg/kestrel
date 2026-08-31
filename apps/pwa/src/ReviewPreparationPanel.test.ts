@@ -89,6 +89,7 @@ const blockedPreparation: ReviewPreparation = {
     },
   },
   analysisConfiguration: null,
+  modelRouteAvailability: "unavailable",
   authority: { action: "start_review", operatorId: null, state: "unavailable" },
   resourceEnvelope: null,
   readiness: "blocked",
@@ -109,11 +110,23 @@ const readyPreparation: ReviewPreparation = {
     modelRoute: "direct_api",
     digest: "d".repeat(64),
   },
+  modelRouteAvailability: "available",
   authority: { action: "start_review", operatorId, state: "available" },
   resourceEnvelope: {
     id: "review-first-v1-default",
     version: 1,
     displayName: "Review First V1 default envelope",
+    limits: {
+      maximumMemoryBytes: 1_073_741_824,
+      maximumProcesses: 64,
+      maximumWritableDiskBytes: 2_147_483_648,
+      maximumCpuMillicores: 1_000,
+      maximumConcurrentAttempts: 1,
+    },
+    terminalBoundary: {
+      onExhaustion: "partial_or_failed",
+      requiresUncoveredAreaDisclosure: true,
+    },
     digest: "e".repeat(64),
   },
   readiness: "ready",
@@ -177,6 +190,7 @@ describe("ReviewPreparationPanel", () => {
     expect(container.textContent).toContain("kestrel · detached · sha1");
     expect(container.textContent).toContain("operator on github.com");
     expect(container.textContent).toContain("PR_kwDOGx");
+    expect(container.textContent).toContain("Route unavailable");
     expect(container.textContent).toContain("Model route is not available");
     expect(container.textContent).toContain("Operator authority is not available");
     expect(container.textContent).toContain("Resource Envelope is not available");
@@ -237,5 +251,11 @@ describe("ReviewPreparationPanel", () => {
       expect.any(AbortSignal),
     );
     expect(container.textContent).toContain("Review queued");
+    expect(container.textContent).toContain("1 GiB memory");
+    expect(container.textContent).toContain("64 processes");
+    expect(container.textContent).toContain("2 GiB writable disk");
+    expect(container.textContent).toContain("1000 millicores");
+    expect(container.textContent).toContain("1 concurrent attempt");
+    expect(container.textContent).toContain("Partial or failed on exhaustion");
   });
 });

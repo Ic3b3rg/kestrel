@@ -22,9 +22,24 @@ const resourceEnvelope: ReviewResourceEnvelope = {
   id: "review-first-v1-default",
   version: 1,
   displayName: "Review First V1 default envelope",
+  limits: {
+    maximumMemoryBytes: 1_073_741_824,
+    maximumProcesses: 64,
+    maximumWritableDiskBytes: 2_147_483_648,
+    maximumCpuMillicores: 1_000,
+    maximumConcurrentAttempts: 1,
+  },
+  terminalBoundary: {
+    onExhaustion: "partial_or_failed",
+    requiresUncoveredAreaDisclosure: true,
+  },
   digest: "e".repeat(64),
 };
-const executionProfile = { analysisConfiguration, resourceEnvelope };
+const executionProfile = {
+  analysisConfiguration,
+  modelRouteAvailability: "available" as const,
+  resourceEnvelope,
+};
 
 function readyProjectRow(overrides: Partial<ProjectDatabaseRow> = {}): ProjectDatabaseRow {
   return {
@@ -148,11 +163,9 @@ describe("Review Workflow persistence", () => {
           version: analysisConfiguration.version,
           id: analysisConfiguration.id,
         },
+        modelRouteAvailability: "available",
         resourceEnvelope: {
-          digest: resourceEnvelope.digest,
-          displayName: resourceEnvelope.displayName,
-          version: resourceEnvelope.version,
-          id: resourceEnvelope.id,
+          ...resourceEnvelope,
         },
       },
     );
@@ -166,6 +179,95 @@ describe("Review Workflow persistence", () => {
       route: { account: "another-operator", host: "github.com" },
     });
     expect(refreshed.preparationDigest).toBe(first.preparationDigest);
+  });
+
+  it("keeps a selected profile visible while its model route is unavailable", async () => {
+    const preparation = await readReviewPreparation(
+      { query: vi.fn().mockResolvedValue({ rowCount: 1, rows: [readyProjectRow()] }) } as never,
+      { actorId: operatorId, changeProposalId: proposalId, projectId },
+      {
+        analysisConfiguration,
+        modelRouteAvailability: "unavailable",
+        resourceEnvelope,
+      },
+    );
+
+    expect(preparation).toMatchObject({
+      analysisConfiguration,
+      modelRouteAvailability: "unavailable",
+      readiness: "blocked",
+      blockers: ["model_route_not_available"],
+      preparationDigest: null,
+    });
+  });
+
+  it("rechecks model-route availability inside the start transaction", async () => {
+    const row = readyProjectRow();
+    const prepared = await readReviewPreparation(
+      { query: vi.fn().mockResolvedValue({ rowCount: 1, rows: [row] }) } as never,
+      { actorId: operatorId, changeProposalId: proposalId, projectId },
+      executionProfile,
+    );
+    const query = vi.fn((statement: string) => {
+      if (statement === "BEGIN" || statement === "ROLLBACK") {
+        return { rowCount: null, rows: [] };
+      }
+      if (statement.includes("FOR UPDATE OF project, proposal")) {
+        return {
+          rowCount: 1,
+          rows: [{ canonical_project_id: projectId, canonical_proposal_id: proposalId }],
+        };
+      }
+      if (statement.includes("FROM change_intents") && statement.includes("FOR SHARE")) {
+        return { rowCount: 1, rows: [{ id: intentId }] };
+      }
+      if (statement.includes("FROM review_revisions") && statement.includes("FOR SHARE")) {
+        return { rowCount: 1, rows: [{ id: revisionId }] };
+      }
+      if (statement.includes("LEFT JOIN LATERAL") && statement.includes("AS candidate_revision")) {
+        return { rowCount: 1, rows: [row] };
+      }
+      throw new Error(`Unexpected query: ${statement}`);
+    });
+    const release = vi.fn();
+
+    await expect(
+      startReviewWorkflow(
+        { connect: vi.fn(() => ({ query, release })) } as never,
+        {
+          actorId: operatorId,
+          changeProposalId: proposalId,
+          command: { preparationDigest: prepared.preparationDigest ?? "" },
+          correlationId: "018f0f89-a3fb-75ee-bccc-08c031ce5f10",
+          projectId,
+        },
+        {
+          analysisConfiguration,
+          modelRouteAvailability: "unavailable",
+          resourceEnvelope,
+        },
+      ),
+    ).rejects.toEqual(expect.objectContaining({ code: "not_ready" }));
+    expect(query.mock.calls.map(([statement]) => statement)).toContain("ROLLBACK");
+    expect(
+      query.mock.calls.some(([statement]) => statement.includes("INSERT INTO review_workflows")),
+    ).toBe(false);
+    expect(release).toHaveBeenCalledOnce();
+  });
+
+  it("normalizes a missing Project to the Review Workflow not-found error", async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ rowCount: 0, rows: [] })
+      .mockResolvedValueOnce({ rowCount: 0, rows: [] });
+
+    await expect(
+      readReviewPreparation(
+        { query } as never,
+        { actorId: operatorId, changeProposalId: proposalId, projectId },
+        executionProfile,
+      ),
+    ).rejects.toEqual(expect.objectContaining({ code: "not_found" }));
   });
 
   it("rechecks and freezes one prepared Review atomically", async () => {
