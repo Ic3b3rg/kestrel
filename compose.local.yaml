@@ -1,0 +1,4 @@
+services:
+  postgres:
+    ports: !override
+      - "127.0.0.1:${KESTREL_DATABASE_PORT:-54320}:5432"
