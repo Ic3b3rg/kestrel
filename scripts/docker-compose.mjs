@@ -1,32 +1,10 @@
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync } from "node:fs";
-import { dirname } from "node:path";
 
-const MAC_DOCKER = "/Applications/Docker.app/Contents/Resources/bin/docker";
+import { environmentForDocker, resolveDocker } from "./host-executables.mjs";
 
-function resolveDockerBinary() {
-  if (process.env.DOCKER_BIN) {
-    return process.env.DOCKER_BIN;
-  }
-
-  const systemDocker = spawnSync("docker", ["compose", "version"], { stdio: "ignore" });
-  if (!systemDocker.error) {
-    return "docker";
-  }
-
-  if (existsSync(MAC_DOCKER)) {
-    return MAC_DOCKER;
-  }
-
-  throw new Error("Docker with the Compose plugin is required");
-}
-
-const docker = resolveDockerBinary();
-const dockerEnvironment =
-  docker === MAC_DOCKER
-    ? { ...process.env, PATH: `${dirname(docker)}:${process.env.PATH ?? ""}` }
-    : process.env;
+const docker = await resolveDocker(process.env);
+const dockerEnvironment = environmentForDocker(docker, process.env);
 const environment = {
   ...dockerEnvironment,
   SESSION_SIGNING_KEY: process.env.SESSION_SIGNING_KEY ?? randomBytes(32).toString("base64url"),
