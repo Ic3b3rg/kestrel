@@ -1,10 +1,15 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { constants } from "node:fs";
-import { access, chmod, lstat, mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
-import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
+import { chmod, lstat, mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { isAbsolute, join, resolve } from "node:path";
 
-const MAC_DOCKER = "/Applications/Docker.app/Contents/Resources/bin/docker";
+import {
+  environmentForDocker,
+  findExecutable,
+  requireExecutable,
+  resolveDocker,
+} from "./host-executables.mjs";
+
 const LOOPBACK = "127.0.0.1";
 const DEFAULT_DATABASE_PORT = 54_320;
 const DEFAULT_WEB_PORT = 3_000;
@@ -22,46 +27,6 @@ function readPositiveInteger(environment, key, defaultValue, maximum = 65_535) {
     throw new Error(`${key} must be at most ${String(maximum)}`);
   }
   return parsed;
-}
-
-async function canonicalExecutable(candidate) {
-  if (!isAbsolute(candidate)) return null;
-  try {
-    const canonical = await realpath(candidate);
-    if (!(await stat(canonical)).isFile()) return null;
-    await access(canonical, constants.X_OK);
-    return canonical;
-  } catch {
-    return null;
-  }
-}
-
-async function findExecutable(name, environment = process.env) {
-  if (isAbsolute(name)) return canonicalExecutable(name);
-  for (const directory of (environment.PATH ?? "").split(delimiter).filter(Boolean)) {
-    const executable = await canonicalExecutable(resolve(directory, name));
-    if (executable !== null) return executable;
-  }
-  return null;
-}
-
-async function requireExecutable(name, configured, environment = process.env) {
-  const executable = await findExecutable(configured ?? name, environment);
-  if (executable === null) {
-    throw new Error(`${name} is required but was not found as an absolute executable`);
-  }
-  return executable;
-}
-
-async function resolveDocker(environment = process.env) {
-  if (environment.DOCKER_BIN !== undefined) {
-    return requireExecutable("Docker", environment.DOCKER_BIN, environment);
-  }
-  return (
-    (await findExecutable("docker", environment)) ??
-    (await canonicalExecutable(MAC_DOCKER)) ??
-    Promise.reject(new Error("Docker with the Compose plugin is required"))
-  );
 }
 
 async function ensurePrivateDirectory(path) {
@@ -139,6 +104,25 @@ function startHostProcess(command, args, environment) {
   });
 }
 
+function startObservedHostProcess(command, args, environment) {
+  let output = "";
+  const child = spawn(command, args, {
+    detached: process.platform !== "win32",
+    env: environment,
+    shell: false,
+    stdio: ["inherit", "pipe", "pipe"],
+  });
+  const forward = (stream, destination) => {
+    stream.on("data", (chunk) => {
+      destination.write(chunk);
+      output = `${output}${chunk.toString("utf8")}`.slice(-8_192);
+    });
+  };
+  forward(child.stdout, process.stdout);
+  forward(child.stderr, process.stderr);
+  return { child, readOutput: () => output };
+}
+
 function signalHostProcess(child, signal) {
   if (child.exitCode !== null || child.signalCode !== null) return;
   if (process.platform !== "win32" && child.pid !== undefined) {
@@ -190,6 +174,18 @@ async function waitForHttp(url, child, timeoutMs) {
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 100));
   }
   throw new Error(`Timed out waiting for ${url}`);
+}
+
+async function waitForProcessOutput(observed, expected, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (observed.readOutput().includes(expected)) return;
+    if (observed.child.exitCode !== null || observed.child.signalCode !== null) {
+      throw new Error(`Host process stopped before reporting ${expected}`);
+    }
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 100));
+  }
+  throw new Error(`Timed out waiting for host process output ${expected}`);
 }
 
 async function main() {
@@ -274,24 +270,51 @@ async function main() {
   const docker = await resolveDocker(environment);
   const compose = ["compose", "-f", "compose.yaml", "-f", "compose.local.yaml"];
   const dockerEnvironment = {
-    ...environment,
-    PATH: `${dirname(docker)}${delimiter}${environment.PATH ?? ""}`,
+    ...environmentForDocker(docker, environment),
+    KESTREL_ARTIFACT_ROOT: artifactRoot,
+    KESTREL_MODEL_PROVIDER_SECRET_ROOT: modelProviderSecretRoot,
     SESSION_SIGNING_KEY: sessionSigningKey,
   };
   console.log("[kestrel] Preparing PostgreSQL and database state...");
+  await run(
+    docker,
+    [...compose, "rm", "--stop", "--force", "web", "worker", "pwa"],
+    dockerEnvironment,
+  );
   await run(docker, [...compose, "build", "migrate"], dockerEnvironment);
   await run(docker, [...compose, "up", "--detach", "--wait", "postgres"], dockerEnvironment);
   await run(docker, [...compose, "run", "--rm", "--no-deps", "migrate"], dockerEnvironment);
   await run(docker, [...compose, "run", "--rm", "--no-deps", "database-role"], dockerEnvironment);
+  await run(
+    docker,
+    [...compose, "run", "--rm", "--no-deps", "legacy-state-import"],
+    dockerEnvironment,
+  );
   console.log("[kestrel] Building host applications...");
   await run(npm, ["run", "build"], hostEnvironment);
 
+  const worker = startObservedHostProcess(
+    npm,
+    ["--silent", "run", "start", "-w", "@kestrel/worker"],
+    serverEnvironment,
+  );
   const children = [
-    startHostProcess(npm, ["run", "start", "-w", "@kestrel/web"], webEnvironment),
-    startHostProcess(npm, ["run", "start", "-w", "@kestrel/worker"], serverEnvironment),
+    startHostProcess(npm, ["--silent", "run", "start", "-w", "@kestrel/web"], webEnvironment),
+    worker.child,
     startHostProcess(
       npm,
-      ["run", "dev", "-w", "@kestrel/pwa", "--", "--host", LOOPBACK, "--port", String(pwaPort)],
+      [
+        "--silent",
+        "run",
+        "dev",
+        "-w",
+        "@kestrel/pwa",
+        "--",
+        "--host",
+        LOOPBACK,
+        "--port",
+        String(pwaPort),
+      ],
       { ...hostEnvironment, VITE_API_PROXY: `http://${LOOPBACK}:${String(webPort)}` },
     ),
   ];
@@ -332,6 +355,7 @@ async function main() {
         startupTimeoutMs,
       ),
       waitForHttp(`http://${LOOPBACK}:${String(pwaPort)}`, children[2], startupTimeoutMs),
+      waitForProcessOutput(worker, '"event":"worker.started"', startupTimeoutMs),
     ]);
     if (!shuttingDown) {
       console.log(

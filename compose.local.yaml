@@ -8,3 +8,30 @@ services:
 
   database-role:
     image: ${KESTREL_DEVELOPMENT_IMAGE:-kestrel-dev-host:local}
+
+  legacy-state-import:
+    image: ${KESTREL_DEVELOPMENT_IMAGE:-kestrel-dev-host:local}
+    command:
+      - sh
+      - -eu
+      - -c
+      - |
+        cp -a -n /legacy-model-provider/. /host-model-provider/
+        cp -a -n /legacy-review-artifacts/. /host-review-artifacts/
+    restart: "no"
+    volumes:
+      - type: volume
+        source: model-provider-secrets
+        target: /legacy-model-provider
+        read_only: true
+      - type: volume
+        source: review-artifacts
+        target: /legacy-review-artifacts
+        read_only: true
+      - type: bind
+        source:
+          ${KESTREL_MODEL_PROVIDER_SECRET_ROOT:?KESTREL_MODEL_PROVIDER_SECRET_ROOT must be set}
+        target: /host-model-provider
+      - type: bind
+        source: ${KESTREL_ARTIFACT_ROOT:?KESTREL_ARTIFACT_ROOT must be set}
+        target: /host-review-artifacts

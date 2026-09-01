@@ -49,6 +49,11 @@ ignored, owner-only `.kestrel/development` directory by default. Set `KESTREL_ST
 absolute Operator-owned path when needed. PostgreSQL listens only on
 `127.0.0.1:${KESTREL_DATABASE_PORT:-54320}` for the host processes.
 
+On the first start after upgrading from the Compose-only lifecycle, the launcher stops and removes
+the old application containers, then imports retained model-provider secrets and Review Revisions
+from their named volumes without overwriting newer host files. PostgreSQL and its named volume stay
+in place throughout the transition.
+
 Create the first Operator from the trusted host. The password prompts are hidden, and rerunning the
 command leaves the existing Operator unchanged:
 
@@ -96,8 +101,8 @@ npm run dev:down
 This preserves the named `kestrel_postgres-data` volume and `.kestrel/development`. A later
 `npm run dev` presents the same Installation, sessions, confirmed diagnostic operations, Direct API
 credential handles, and retained Review Revisions. An intentional complete reset requires both
-`docker compose -f compose.yaml -f compose.local.yaml down --volumes` and removal of the exact
-configured `KESTREL_STATE_ROOT`; inspect both targets before deleting them.
+`npm run dev:down -- --volumes` and removal of the exact configured `KESTREL_STATE_ROOT`; inspect
+both targets before deleting them.
 
 ## Configure direct OpenAI API access
 

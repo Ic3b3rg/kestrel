@@ -196,14 +196,17 @@ import { appendFileSync } from "node:fs";
 import { delimiter, dirname } from "node:path";
 appendFileSync(process.env.KESTREL_LIFECYCLE_TEST_LOG, JSON.stringify({
   args: process.argv.slice(2),
+  artifactRoot: process.env.KESTREL_ARTIFACT_ROOT,
   dockerDirectoryFirstOnPath: process.env.PATH.split(delimiter)[0] === dirname(process.argv[1]),
   hasSessionSigningKey: Boolean(process.env.SESSION_SIGNING_KEY),
-  kind: "docker"
+  kind: "docker",
+  modelProviderSecretRoot: process.env.KESTREL_MODEL_PROVIDER_SECRET_ROOT
 }) + "\\n");
 `;
     await writeExecutable(join(dockerTools, "docker"), `#!/usr/bin/env node\n${recorder}`);
 
     const hostProcess = `#!/usr/bin/env node
+import { execFileSync } from "node:child_process";
 import { appendFileSync, constants, accessSync } from "node:fs";
 import { createServer } from "node:http";
 
@@ -213,6 +216,12 @@ const workspace = workspaceIndex === -1 ? "build" : args[workspaceIndex + 1];
 const service = workspace === "@kestrel/web" ? "web" :
   workspace === "@kestrel/worker" ? "worker" :
   workspace === "@kestrel/pwa" ? "pwa" : "build";
+let resolvedHostTools = false;
+if (service !== "build") {
+  if (service === "web") accessSync(process.env.LOCAL_GIT_EXECUTABLE, constants.X_OK);
+  for (const tool of ["git", "gh", "codex"]) execFileSync(tool, ["--version"]);
+  resolvedHostTools = true;
+}
 const record = (phase, signal) => appendFileSync(
   process.env.KESTREL_LIFECYCLE_TEST_LOG,
   JSON.stringify({
@@ -226,13 +235,19 @@ const record = (phase, signal) => appendFileSync(
     kind: "npm",
     modelProviderSecretRoot: process.env.MODEL_PROVIDER_SECRET_ROOT,
     phase,
+    resolvedHostTools,
     service,
     signal
   }) + "\\n"
 );
 record("start");
 if (service === "build") process.exit(0);
-if (service === "web") accessSync(process.env.LOCAL_GIT_EXECUTABLE, constants.X_OK);
+if (service === "worker") {
+  setTimeout(() => {
+    record("ready");
+    console.log(JSON.stringify({ event: "worker.started" }));
+  }, 250);
+}
 
 let server;
 if (service === "web" || service === "pwa") {
@@ -246,6 +261,9 @@ if (service === "web" || service === "pwa") {
 }
 
 const stop = (signal) => {
+  if (service === "pwa" && !args.includes("--silent")) {
+    console.error("npm error Lifecycle script failed");
+  }
   record("stop", signal);
   if (server) server.close(() => process.exit(0));
   else process.exit(0);
@@ -313,6 +331,19 @@ setInterval(() => undefined, 1_000);
       .map((line) => JSON.parse(line) as Record<string, unknown>);
     const dockerEntries = entries.filter((entry) => entry.kind === "docker");
     expect(dockerEntries.map((entry) => entry.args)).toEqual([
+      [
+        "compose",
+        "-f",
+        "compose.yaml",
+        "-f",
+        "compose.local.yaml",
+        "rm",
+        "--stop",
+        "--force",
+        "web",
+        "worker",
+        "pwa",
+      ],
       ["compose", "-f", "compose.yaml", "-f", "compose.local.yaml", "build", "migrate"],
       [
         "compose",
@@ -347,10 +378,25 @@ setInterval(() => undefined, 1_000);
         "--no-deps",
         "database-role",
       ],
+      [
+        "compose",
+        "-f",
+        "compose.yaml",
+        "-f",
+        "compose.local.yaml",
+        "run",
+        "--rm",
+        "--no-deps",
+        "legacy-state-import",
+      ],
     ]);
     expect(
       dockerEntries.every(
-        (entry) => entry.dockerDirectoryFirstOnPath === true && entry.hasSessionSigningKey === true,
+        (entry) =>
+          entry.artifactRoot === join(stateRoot, "review-artifacts") &&
+          entry.dockerDirectoryFirstOnPath === true &&
+          entry.hasSessionSigningKey === true &&
+          entry.modelProviderSecretRoot === join(stateRoot, "model-provider-secrets"),
       ),
     ).toBe(true);
     const startedServices = entries
@@ -358,6 +404,18 @@ setInterval(() => undefined, 1_000);
       .map((entry) => entry.service);
     expect(startedServices[0]).toBe("build");
     expect(startedServices.slice(1).sort()).toEqual(["pwa", "web", "worker"]);
+    expect(
+      entries.some(
+        (entry) => entry.kind === "npm" && entry.phase === "ready" && entry.service === "worker",
+      ),
+    ).toBe(true);
+    expect(
+      entries
+        .filter(
+          (entry) => entry.kind === "npm" && entry.phase === "start" && entry.service !== "build",
+        )
+        .every((entry) => entry.resolvedHostTools === true),
+    ).toBe(true);
     expect(
       entries
         .filter((entry) => entry.kind === "npm" && entry.phase === "stop")
@@ -375,6 +433,7 @@ setInterval(() => undefined, 1_000);
       hasSessionSigningKey: true,
       host: "127.0.0.1",
       modelProviderSecretRoot: join(stateRoot, "model-provider-secrets"),
+      resolvedHostTools: true,
     });
     expect(
       entries
@@ -398,6 +457,7 @@ setInterval(() => undefined, 1_000);
     expect(output).toContain(`git=${join(tools, "git")}`);
     expect(output).toContain(`gh=${join(tools, "gh")}`);
     expect(output).toContain(`codex=${join(tools, "codex")}`);
+    expect(output).not.toContain("npm error");
     expect((await stat(join(stateRoot, "review-artifacts"))).mode & 0o777).toBe(0o700);
     expect((await stat(join(stateRoot, "model-provider-secrets"))).mode & 0o777).toBe(0o700);
   });
