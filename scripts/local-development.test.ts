@@ -1,12 +1,15 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { chmod, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { promisify } from "node:util";
 
 import { afterEach, describe, expect, it } from "vitest";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
+const npmCli = process.env.npm_execpath;
+const execFileAsync = promisify(execFile);
 const temporaryDirectories: string[] = [];
 const runningChildren: ChildProcess[] = [];
 
@@ -29,6 +32,10 @@ async function allocateLoopbackPort(): Promise<number> {
 async function writeExecutable(path: string, source: string): Promise<void> {
   await writeFile(path, source, { mode: 0o755 });
   await chmod(path, 0o755);
+}
+
+function parseJson(value: string): unknown {
+  return JSON.parse(value) as unknown;
 }
 
 function waitForOutput(
@@ -57,16 +64,31 @@ function waitForOutput(
   });
 }
 
-function waitForExit(child: ChildProcess): Promise<number | null> {
+function waitForExit(
+  child: ChildProcess,
+): Promise<{ code: number | null; signal: NodeJS.Signals | null }> {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return Promise.resolve({ code: child.exitCode, signal: child.signalCode });
+  }
   return new Promise((resolvePromise, rejectPromise) => {
     child.once("error", rejectPromise);
-    child.once("close", resolvePromise);
+    child.once("close", (code, signal) => resolvePromise({ code, signal }));
   });
 }
 
 afterEach(async () => {
   for (const child of runningChildren.splice(0)) {
-    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+    if (child.exitCode === null && child.signalCode === null) {
+      if (process.platform !== "win32" && child.pid !== undefined) {
+        try {
+          process.kill(-child.pid, "SIGKILL");
+          continue;
+        } catch {
+          // Fall through to the direct child when its process group is already gone.
+        }
+      }
+      child.kill("SIGKILL");
+    }
   }
   await Promise.all(
     temporaryDirectories
@@ -76,7 +98,89 @@ afterEach(async () => {
 });
 
 describe("supported local development lifecycle", () => {
+  it("stops Compose infrastructure without deleting Kestrel-owned state", async () => {
+    if (npmCli === undefined)
+      throw new Error("npm did not expose its CLI path to the test process");
+    const fixture = await realpath(await mkdtemp(join(tmpdir(), "kestrel-local-down-")));
+    temporaryDirectories.push(fixture);
+    const docker = join(fixture, "docker");
+    const logPath = join(fixture, "docker.json");
+    const retainedState = join(fixture, "retained-state");
+    await writeFile(retainedState, "keep\n", "utf8");
+    await writeExecutable(
+      docker,
+      `#!/usr/bin/env node
+import { writeFileSync } from "node:fs";
+writeFileSync(process.env.KESTREL_LIFECYCLE_TEST_LOG, JSON.stringify(process.argv.slice(2)));
+`,
+    );
+
+    await execFileAsync(process.execPath, [npmCli, "run", "dev:down"], {
+      cwd: repositoryRoot,
+      env: {
+        ...process.env,
+        DOCKER_BIN: docker,
+        KESTREL_LIFECYCLE_TEST_LOG: logPath,
+      },
+    });
+
+    await expect(readFile(logPath, "utf8").then(parseJson)).resolves.toEqual([
+      "compose",
+      "-f",
+      "compose.yaml",
+      "down",
+    ]);
+    await expect(readFile(retainedState, "utf8")).resolves.toBe("keep\n");
+  });
+
+  it.each(["bootstrap", "reset-password"])(
+    "runs %s from the trusted host instead of an application container",
+    async (command) => {
+      if (npmCli === undefined) {
+        throw new Error("npm did not expose its CLI path to the test process");
+      }
+      const fixture = await realpath(await mkdtemp(join(tmpdir(), "kestrel-local-command-")));
+      temporaryDirectories.push(fixture);
+      const tools = join(fixture, "tools");
+      const stateRoot = join(fixture, "state");
+      const logPath = join(fixture, "command.json");
+      await import("node:fs/promises").then(({ mkdir }) => mkdir(tools));
+      await writeExecutable(
+        join(tools, "npm"),
+        `#!/usr/bin/env node
+import { writeFileSync } from "node:fs";
+writeFileSync(process.env.KESTREL_LIFECYCLE_TEST_LOG, JSON.stringify({
+  args: process.argv.slice(2),
+  databaseUrl: process.env.DATABASE_URL,
+  host: process.env.HOST
+}));
+`,
+      );
+      await writeExecutable(join(tools, "git"), "#!/usr/bin/env node\n");
+
+      await execFileAsync(process.execPath, [npmCli, "run", command], {
+        cwd: repositoryRoot,
+        env: {
+          ...process.env,
+          DOCKER_BIN: join(tools, "missing-docker"),
+          KESTREL_DATABASE_PORT: "55432",
+          KESTREL_LIFECYCLE_TEST_LOG: logPath,
+          KESTREL_STATE_ROOT: stateRoot,
+          PATH: `${tools}:${process.env.PATH ?? ""}`,
+        },
+      });
+
+      await expect(readFile(logPath, "utf8").then(parseJson)).resolves.toEqual({
+        args: ["run", command, "-w", "@kestrel/web"],
+        databaseUrl: "postgres://kestrel_runtime:kestrel_runtime_dev@127.0.0.1:55432/kestrel",
+        host: "127.0.0.1",
+      });
+    },
+  );
+
   it("runs only database preparation in Compose and supervises loopback host processes", async () => {
+    if (npmCli === undefined)
+      throw new Error("npm did not expose its CLI path to the test process");
     const fixture = await realpath(await mkdtemp(join(tmpdir(), "kestrel-local-development-")));
     temporaryDirectories.push(fixture);
     const tools = join(fixture, "tools");
@@ -157,8 +261,9 @@ setInterval(() => undefined, 1_000);
       allocateLoopbackPort(),
     ]);
     let output = "";
-    const child = spawn(process.execPath, ["scripts/local-development.mjs"], {
+    const child = spawn(process.execPath, [npmCli, "run", "dev"], {
       cwd: repositoryRoot,
+      detached: process.platform !== "win32",
       env: {
         ...process.env,
         DOCKER_BIN: join(tools, "docker"),
@@ -177,8 +282,23 @@ setInterval(() => undefined, 1_000);
     child.stderr.on("data", (chunk: Buffer) => (output += chunk.toString("utf8")));
 
     await waitForOutput(child, () => output, "Kestrel is ready");
-    child.kill("SIGINT");
-    await expect(waitForExit(child)).resolves.toBe(0);
+    if (process.platform !== "win32" && child.pid !== undefined) process.kill(-child.pid, "SIGINT");
+    else child.kill("SIGINT");
+    const result = await Promise.race([
+      waitForExit(child),
+      new Promise<never>((_resolvePromise, rejectPromise) => {
+        setTimeout(
+          () =>
+            rejectPromise(
+              new Error(
+                `Timed out waiting for npm to exit (code=${String(child.exitCode)}, signal=${String(child.signalCode)}): ${output}`,
+              ),
+            ),
+          2_000,
+        );
+      }),
+    ]);
+    expect(result.code === 0 || result.signal === "SIGINT").toBe(true);
 
     const entries = (await readFile(logPath, "utf8"))
       .trim()

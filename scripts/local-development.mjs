@@ -158,10 +158,11 @@ function waitForClose(child) {
 }
 
 async function stopHostProcesses(children) {
+  const closed = children.map(waitForClose);
   for (const child of children) signalHostProcess(child, "SIGTERM");
   let timeout;
   const stopped = await Promise.race([
-    Promise.all(children.map(waitForClose)).then(() => true),
+    Promise.all(closed).then(() => true),
     new Promise((resolvePromise) => {
       timeout = setTimeout(() => resolvePromise(false), PROCESS_STOP_TIMEOUT_MS);
     }),
@@ -169,7 +170,7 @@ async function stopHostProcesses(children) {
   if (timeout !== undefined) clearTimeout(timeout);
   if (!stopped) {
     for (const child of children) signalHostProcess(child, "SIGKILL");
-    await Promise.all(children.map(waitForClose));
+    await Promise.all(closed);
   }
 }
 
@@ -193,6 +194,10 @@ async function waitForHttp(url, child, timeoutMs) {
 
 async function main() {
   const environment = process.env;
+  const action = process.argv[2] ?? "start";
+  if (!["start", "bootstrap", "reset-password"].includes(action) || process.argv.length > 3) {
+    throw new Error("Usage: local-development.mjs [start|bootstrap|reset-password]");
+  }
   const databasePort = readPositiveInteger(
     environment,
     "KESTREL_DATABASE_PORT",
@@ -209,8 +214,7 @@ async function main() {
   const configuredStateRoot = environment.KESTREL_STATE_ROOT ?? resolve(".kestrel/development");
   if (!isAbsolute(configuredStateRoot)) throw new Error("KESTREL_STATE_ROOT must be absolute");
 
-  const [docker, npm, git, gh, codex] = await Promise.all([
-    resolveDocker(environment),
+  const [npm, git, gh, codex] = await Promise.all([
     requireExecutable("npm", "npm", environment),
     requireExecutable("git", environment.LOCAL_GIT_EXECUTABLE ?? "git", environment),
     findExecutable("gh", environment),
@@ -242,6 +246,12 @@ async function main() {
   console.log(
     `[kestrel] Host tools: git=${git} gh=${gh ?? "unavailable"} codex=${codex ?? "unavailable"}`,
   );
+  if (action !== "start") {
+    await run(npm, ["run", action, "-w", "@kestrel/web"], applicationEnvironment);
+    return;
+  }
+
+  const docker = await resolveDocker(environment);
   console.log("[kestrel] Preparing PostgreSQL and database state...");
   await run(
     docker,
@@ -287,8 +297,8 @@ async function main() {
     await stopHostProcesses(children);
     resolveShutdown();
   };
-  process.once("SIGINT", () => void shutdown("SIGINT", 0));
-  process.once("SIGTERM", () => void shutdown("SIGTERM", 0));
+  process.on("SIGINT", () => void shutdown("SIGINT", 0));
+  process.on("SIGTERM", () => void shutdown("SIGTERM", 0));
   for (const child of children) {
     child.once("error", (error) => {
       console.error(`[kestrel] Host process failed: ${error.message}`);
