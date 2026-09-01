@@ -12,6 +12,10 @@ import {
 } from "@kestrel/contracts";
 
 import { appendAuditRecordInTransaction } from "./audit.js";
+import {
+  enqueueChangeOverviewRendering,
+  type ChangeOverviewRenderingJobCoordinator,
+} from "./change-overview-renderings.js";
 import type { DatabasePool } from "./pool.js";
 import { lockGitHubRepositoryIdentity } from "./provider-identity.js";
 
@@ -1827,6 +1831,7 @@ export async function backfillChangeOverviewFacts(
 export async function completeReviewRevision(
   pool: DatabasePool,
   input: CompleteReviewRevisionInput,
+  renderingJobCoordinator: ChangeOverviewRenderingJobCoordinator,
 ): Promise<ReviewRevision> {
   const overviewFacts = validateArtifact(input.artifact, input.projectId, input.revisionId);
   const client = await pool.connect();
@@ -1900,6 +1905,11 @@ export async function completeReviewRevision(
     if (project.rowCount !== 1) {
       throw new Error("Review Revision Project availability update failed");
     }
+    await enqueueChangeOverviewRendering(client, renderingJobCoordinator, {
+      correlationId: input.correlationId,
+      projectId: input.projectId,
+      revisionId: input.revisionId,
+    });
     const proposal = await client.query(
       `
         UPDATE change_proposals AS canonical

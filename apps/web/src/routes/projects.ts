@@ -23,6 +23,7 @@ import {
   readProjectGitHubCoordinates,
   upsertPublicGitHubProject,
   upsertHostGitHubProject,
+  type ChangeOverviewRenderingJobCoordinator,
   type DatabasePool,
   type UpsertPublicGitHubProjectInput,
 } from "@kestrel/database";
@@ -63,7 +64,10 @@ export interface HostGitHubProjectService {
   ): Promise<ProjectUpserted>;
 }
 
-export function createHostGitHubProjectService(pool: DatabasePool): HostGitHubProjectService {
+export function createHostGitHubProjectService(
+  pool: DatabasePool,
+  renderingCoordinator: ChangeOverviewRenderingJobCoordinator,
+): HostGitHubProjectService {
   const cli = createHostGitHubCli();
   const cache = new Map<string, { expiresAt: number; value: HostGitHubProjectInbox }>();
   const coordinates = async (projectId: string) => {
@@ -121,11 +125,19 @@ export function createHostGitHubProjectService(pool: DatabasePool): HostGitHubPr
       const account = status.status.account;
       if (account === null) throw new HostGitHubError("needs_authentication");
       const observation = await cli.observePullRequest(projectCoordinates, number, account, signal);
-      return upsertHostGitHubProject(pool, {
-        ...context,
-        observation,
-        route: { kind: "host_gh", host: status.status.host, account: status.status.account ?? "" },
-      });
+      return upsertHostGitHubProject(
+        pool,
+        {
+          ...context,
+          observation,
+          route: {
+            kind: "host_gh",
+            host: status.status.host,
+            account: status.status.account ?? "",
+          },
+        },
+        renderingCoordinator,
+      );
     },
   };
 }
@@ -143,10 +155,13 @@ export function createProjectService(
   };
 }
 
-export function createDatabaseProjectService(pool: DatabasePool): ProjectService {
+export function createDatabaseProjectService(
+  pool: DatabasePool,
+  renderingCoordinator: ChangeOverviewRenderingJobCoordinator,
+): ProjectService {
   return createProjectService(createPublicGitHubReader(), {
     readInbox: () => readProjectInbox(pool),
-    upsert: (input) => upsertPublicGitHubProject(pool, input),
+    upsert: (input) => upsertPublicGitHubProject(pool, input, renderingCoordinator),
   });
 }
 

@@ -29,6 +29,7 @@ const sourceId = "018f0f89-9a1d-7484-b224-866ef9d69990";
 const proposalId = "018f0f89-9192-755f-aa96-f72094c734dd";
 const intentId = "018f0f89-9a20-79f9-9990-dda80c9b917d";
 const revisionId = "018f0f89-9a21-7271-b92d-f1cb0d48bb47";
+const generationToken = "018f0f89-9a23-7d64-a5dd-18cc3e317401";
 const timestamp = new Date("2026-08-24T12:00:30.000Z");
 const overviewFacts = ChangeOverviewSourceFactsSchema.parse({
   ruleVersion: 1,
@@ -272,27 +273,31 @@ describe("Review Revision persistence", () => {
     const pool = { connect: vi.fn() } as unknown as DatabasePool;
 
     await expect(
-      completeReviewRevision(pool, {
-        actorId: operatorId,
-        artifact: {
-          artifactLocator:
-            "projects/018f0f89-9a22-7864-aac2-8df71bf60420/revisions/018f0f89-9a21-7271-b92d-f1cb0d48bb48",
-          baseCommitAuthor: "Base Author",
-          baseCommitSubject: "Base subject",
-          changeOverviewFacts: overviewFacts,
-          headCommitAuthor: "Head Author",
-          headCommitSubject: "Head subject",
-          manifestDigest: "d".repeat(64),
-          objectCount: 8,
-          retainedBytes: 4096,
+      completeReviewRevision(
+        pool,
+        {
+          actorId: operatorId,
+          artifact: {
+            artifactLocator:
+              "projects/018f0f89-9a22-7864-aac2-8df71bf60420/revisions/018f0f89-9a21-7271-b92d-f1cb0d48bb48",
+            baseCommitAuthor: "Base Author",
+            baseCommitSubject: "Base subject",
+            changeOverviewFacts: overviewFacts,
+            headCommitAuthor: "Head Author",
+            headCommitSubject: "Head subject",
+            manifestDigest: "d".repeat(64),
+            objectCount: 8,
+            retainedBytes: 4096,
+          },
+          base: { objectId: "a".repeat(40), ref: "refs/heads/main" },
+          correlationId: "0c14b018-0260-4aa0-a5e9-61d212b948ce",
+          head: { objectId: "b".repeat(40), ref: "refs/heads/review-source" },
+          objectFormat: "sha1",
+          projectId,
+          revisionId,
         },
-        base: { objectId: "a".repeat(40), ref: "refs/heads/main" },
-        correlationId: "0c14b018-0260-4aa0-a5e9-61d212b948ce",
-        head: { objectId: "b".repeat(40), ref: "refs/heads/review-source" },
-        objectFormat: "sha1",
-        projectId,
-        revisionId,
-      }),
+        { upsert: vi.fn() },
+      ),
     ).rejects.toThrow("Retained artifact observation is invalid");
     expect(
       (pool as unknown as { connect: ReturnType<typeof vi.fn> }).connect,
@@ -565,6 +570,23 @@ describe("Review Revision persistence", () => {
         return { rowCount: 1, rows: [] };
       }
       if (
+        normalized.startsWith("WITH target AS") &&
+        normalized.includes("change_overview_renderings")
+      ) {
+        return {
+          rowCount: 1,
+          rows: [
+            {
+              change_proposal_id: proposalId,
+              exact_head_object_id: "b".repeat(40),
+              generation_token: generationToken,
+              project_id: projectId,
+              review_revision_id: revisionId,
+            },
+          ],
+        };
+      }
+      if (
         normalized.startsWith("UPDATE change_proposals AS canonical") &&
         normalized.includes("optimistic_version")
       ) {
@@ -588,28 +610,33 @@ describe("Review Revision persistence", () => {
     const pool = {
       connect: vi.fn(() => ({ query, release })),
     } as unknown as DatabasePool;
+    const upsert = vi.fn(() => ({ inserted: 1, jobs: [generationToken], updated: 0 }));
 
     await expect(
-      completeReviewRevision(pool, {
-        actorId: operatorId,
-        artifact: {
-          artifactLocator: `projects/${projectId}/revisions/${revisionId}`,
-          baseCommitAuthor: "Base Author",
-          baseCommitSubject: "Base subject",
-          changeOverviewFacts: overviewFacts,
-          headCommitAuthor: "Head Author",
-          headCommitSubject: "Head subject",
-          manifestDigest: "d".repeat(64),
-          objectCount: 8,
-          retainedBytes: 4096,
+      completeReviewRevision(
+        pool,
+        {
+          actorId: operatorId,
+          artifact: {
+            artifactLocator: `projects/${projectId}/revisions/${revisionId}`,
+            baseCommitAuthor: "Base Author",
+            baseCommitSubject: "Base subject",
+            changeOverviewFacts: overviewFacts,
+            headCommitAuthor: "Head Author",
+            headCommitSubject: "Head subject",
+            manifestDigest: "d".repeat(64),
+            objectCount: 8,
+            retainedBytes: 4096,
+          },
+          base: { objectId: "a".repeat(40), ref: "refs/heads/main" },
+          correlationId: "0c14b018-0260-4aa0-a5e9-61d212b948ce",
+          head: { objectId: "b".repeat(40), ref: "refs/heads/review-source" },
+          objectFormat: "sha1",
+          projectId,
+          revisionId,
         },
-        base: { objectId: "a".repeat(40), ref: "refs/heads/main" },
-        correlationId: "0c14b018-0260-4aa0-a5e9-61d212b948ce",
-        head: { objectId: "b".repeat(40), ref: "refs/heads/review-source" },
-        objectFormat: "sha1",
-        projectId,
-        revisionId,
-      }),
+        { upsert } as never,
+      ),
     ).resolves.toMatchObject({ id: revisionId, state: "available", objectCount: 8 });
     expect(statements[0]).toBe("BEGIN");
     expect(
@@ -625,6 +652,9 @@ describe("Review Revision persistence", () => {
       ),
     ).toBeLessThan(statements.findIndex((value) => value.startsWith("UPDATE projects")));
     expect(statements.findIndex((value) => value.startsWith("UPDATE projects"))).toBeLessThan(
+      statements.findIndex((value) => value.startsWith("WITH target AS")),
+    );
+    expect(statements.findIndex((value) => value.startsWith("WITH target AS"))).toBeLessThan(
       statements.findIndex((value) => value.startsWith("UPDATE change_proposals AS canonical")),
     );
     expect(
@@ -647,6 +677,16 @@ describe("Review Revision persistence", () => {
     ]);
     expect(parameters[2]?.slice(0, 2)).toEqual([revisionId, 1]);
     expect(JSON.parse(String(parameters[2]?.[2]))).toEqual(overviewFacts);
+    expect(upsert).toHaveBeenCalledOnce();
+    expect(upsert).toHaveBeenCalledWith(
+      "change-overview-render-v1",
+      expect.objectContaining({
+        changeProposalId: proposalId,
+        exactHeadObjectId: "b".repeat(40),
+        reviewRevisionId: revisionId,
+      }),
+      expect.objectContaining({ priority: -10, singletonKey: proposalId }),
+    );
     expect(statements.at(-1)).toBe("COMMIT");
   });
 

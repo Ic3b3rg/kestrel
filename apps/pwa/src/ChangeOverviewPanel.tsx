@@ -1,4 +1,8 @@
-import type { ChangeOverview, ChangeOverviewWarning } from "@kestrel/contracts";
+import type {
+  ChangeOverview,
+  ChangeOverviewModelRendering,
+  ChangeOverviewWarning,
+} from "@kestrel/contracts";
 
 import { ShortObjectId } from "./ShortObjectId.js";
 
@@ -6,6 +10,9 @@ interface ChangeOverviewPanelProps {
   headingId: string;
   overview: ChangeOverview;
 }
+
+const MODEL_CHANGED_FILE_FACT_LIMIT = 40;
+const MODEL_PATH_AREA_FACT_LIMIT = 12;
 
 const statusLabels = {
   awaiting_source: "Awaiting exact source",
@@ -22,6 +29,10 @@ const changedFileLabels = {
 
 function pluralize(value: number, singular: string, plural = `${singular}s`): string {
   return `${String(value)} ${value === 1 ? singular : plural}`;
+}
+
+function sourceFactTargetId(revisionId: string, sourceFactId: string): string {
+  return `${revisionId}-source-fact-${sourceFactId}`;
 }
 
 function warningText(warning: ChangeOverviewWarning): string {
@@ -65,12 +76,112 @@ function PendingOverview({ overview }: { overview: Exclude<ChangeOverview, { sta
   );
 }
 
+const modelRenderingFailureMessages = {
+  credential_unavailable: "The configured model credential is unavailable.",
+  invalid_rendering: "The model response was not supported by its cited source facts.",
+  model_unavailable: "The model service is unavailable.",
+  profile_not_configured: "No available model profile was configured for this source.",
+  profile_unavailable: "The exact model profile is unavailable or stale.",
+  timed_out: "The model request timed out.",
+} as const;
+
+function ModelRendering({
+  headingId,
+  rendering,
+  revisionId,
+}: {
+  headingId: string;
+  rendering: ChangeOverviewModelRendering;
+  revisionId: string;
+}) {
+  let content;
+  switch (rendering.state) {
+    case "not_generated":
+      content = (
+        <p className="change-overview-model-state">
+          Natural-language orientation was not generated for this retained source.
+        </p>
+      );
+      break;
+    case "queued":
+      content = (
+        <p className="change-overview-model-state" aria-busy="true">
+          Queued as low-priority background work; explicit review work takes precedence.
+        </p>
+      );
+      break;
+    case "rendering":
+      content = (
+        <p className="change-overview-model-state" aria-busy="true">
+          Organizing the cited source facts in the background.
+        </p>
+      );
+      break;
+    case "unavailable":
+      content = (
+        <p className="change-overview-model-error">
+          {modelRenderingFailureMessages[rendering.reason]} The deterministic facts below remain
+          available.
+        </p>
+      );
+      break;
+    case "ready":
+      content = (
+        <>
+          <ul className="change-overview-model-sentences">
+            {rendering.sentences.map((sentence, index) => (
+              <li key={`${String(index)}-${sentence.sourceFactIds.join("-")}`}>
+                <p>{sentence.text}</p>
+                <small>
+                  Source {sentence.sourceFactIds.length === 1 ? "fact" : "facts"}:{" "}
+                  {sentence.sourceFactIds.map((sourceFactId, sourceIndex) => (
+                    <span key={sourceFactId}>
+                      {sourceIndex === 0 ? null : ", "}
+                      <a href={`#${sourceFactTargetId(revisionId, sourceFactId)}`}>
+                        <code>{sourceFactId}</code>
+                      </a>
+                    </span>
+                  ))}
+                </small>
+              </li>
+            ))}
+          </ul>
+          <p className="change-overview-model-performance">
+            Kestrel {String(rendering.performance.kestrelMilliseconds)} ms · Model{" "}
+            {String(rendering.performance.modelMilliseconds)} ms · Queue{" "}
+            {String(rendering.performance.queueMilliseconds)} ms
+          </p>
+        </>
+      );
+      break;
+  }
+
+  return (
+    <section className="change-overview-model" aria-labelledby={headingId}>
+      <h6 id={headingId}>Natural-language orientation</h6>
+      <p className="change-overview-model-boundary">
+        Optional wording only organizes the cited deterministic facts.
+      </p>
+      {content}
+    </section>
+  );
+}
+
 function ReadyOverview({ overview }: { overview: Extract<ChangeOverview, { state: "ready" }> }) {
   const { exactRevision, sourceFacts } = overview;
   const statistics = sourceFacts.fileStatistics;
   return (
     <div className="change-overview-ready">
-      <dl className="change-overview-facts">
+      <ModelRendering
+        headingId={`${exactRevision.id}-model-rendering`}
+        rendering={overview.modelRendering}
+        revisionId={exactRevision.id}
+      />
+
+      <dl
+        className="change-overview-facts"
+        id={sourceFactTargetId(exactRevision.id, "exact_revision")}
+      >
         <div>
           <dt>Exact base</dt>
           <dd>
@@ -121,7 +232,10 @@ function ReadyOverview({ overview }: { overview: Extract<ChangeOverview, { state
 
       <section className="change-overview-group" aria-labelledby={`${exactRevision.id}-files`}>
         <h6 id={`${exactRevision.id}-files`}>Changed files</h6>
-        <p className="change-overview-summary">
+        <p
+          className="change-overview-summary"
+          id={sourceFactTargetId(exactRevision.id, "commit_statistics")}
+        >
           <span>
             Base snapshot · {pluralize(sourceFacts.commitStatistics.baseTreeFileCount, "file")}
           </span>{" "}
@@ -130,7 +244,10 @@ function ReadyOverview({ overview }: { overview: Extract<ChangeOverview, { state
             Head snapshot · {pluralize(sourceFacts.commitStatistics.headTreeFileCount, "file")}
           </span>
         </p>
-        <p className="change-overview-summary">
+        <p
+          className="change-overview-summary"
+          id={sourceFactTargetId(exactRevision.id, "file_statistics")}
+        >
           {pluralize(statistics.total, "changed file")} · {String(statistics.added)} added ·{" "}
           {String(statistics.modified)} modified · {String(statistics.deleted)} deleted
         </p>
@@ -138,8 +255,14 @@ function ReadyOverview({ overview }: { overview: Extract<ChangeOverview, { state
           <p>No committed file changes exist between the exact base and head.</p>
         ) : (
           <ul className="changed-file-list">
-            {sourceFacts.changedFiles.map((file) => (
-              <li key={file.path}>
+            {sourceFacts.changedFiles.map((file, index) => (
+              <li
+                id={sourceFactTargetId(
+                  exactRevision.id,
+                  `changed_file_${String(index + 1).padStart(3, "0")}`,
+                )}
+                key={file.path}
+              >
                 <strong>{changedFileLabels[file.status]}</strong>
                 <code>{file.path}</code>
                 <small>
@@ -157,12 +280,38 @@ function ReadyOverview({ overview }: { overview: Extract<ChangeOverview, { state
         )}
       </section>
 
+      {sourceFacts.changedFiles.length > MODEL_CHANGED_FILE_FACT_LIMIT ||
+      sourceFacts.pathAreas.length > MODEL_PATH_AREA_FACT_LIMIT ? (
+        <p
+          className="change-overview-summary"
+          id={sourceFactTargetId(exactRevision.id, "manifest_bounds")}
+        >
+          Model fact manifest ·{" "}
+          {pluralize(
+            Math.max(0, sourceFacts.changedFiles.length - MODEL_CHANGED_FILE_FACT_LIMIT),
+            "changed file",
+          )}{" "}
+          omitted ·{" "}
+          {pluralize(
+            Math.max(0, sourceFacts.pathAreas.length - MODEL_PATH_AREA_FACT_LIMIT),
+            "source area",
+          )}{" "}
+          omitted
+        </p>
+      ) : null}
+
       {sourceFacts.pathAreas.length === 0 ? null : (
         <section className="change-overview-group" aria-labelledby={`${exactRevision.id}-areas`}>
           <h6 id={`${exactRevision.id}-areas`}>Source areas</h6>
           <ul className="source-area-list">
-            {sourceFacts.pathAreas.map((area) => (
-              <li key={area.pathPrefix ?? "repository-root"}>
+            {sourceFacts.pathAreas.map((area, index) => (
+              <li
+                id={sourceFactTargetId(
+                  exactRevision.id,
+                  `path_area_${String(index + 1).padStart(3, "0")}`,
+                )}
+                key={area.pathPrefix ?? "repository-root"}
+              >
                 <strong>{area.pathPrefix ?? "Repository root"}</strong>
                 <span>{pluralize(area.changedFileCount, "changed file")}</span>
                 <small>Samples: {area.samplePaths.join(", ")}</small>
@@ -179,8 +328,16 @@ function ReadyOverview({ overview }: { overview: Extract<ChangeOverview, { state
         >
           <h6 id={`${exactRevision.id}-warnings`}>Source warnings</h6>
           <ul>
-            {sourceFacts.warnings.map((warning) => (
-              <li key={warning.code}>{warningText(warning)}</li>
+            {sourceFacts.warnings.map((warning, index) => (
+              <li
+                id={sourceFactTargetId(
+                  exactRevision.id,
+                  `source_warning_${String(index + 1).padStart(3, "0")}`,
+                )}
+                key={warning.code}
+              >
+                {warningText(warning)}
+              </li>
             ))}
           </ul>
         </section>
@@ -206,7 +363,8 @@ export function ChangeOverviewPanel({ headingId, overview }: ChangeOverviewPanel
         </strong>
       </div>
       <p className="change-overview-boundary">
-        Deterministic orientation facts only. This is not a Conceptual Review, analysis, or verdict.
+        Deterministic facts with optional source-linked model wording. This is not a Conceptual
+        Review, analysis, or verdict.
       </p>
       {overview.state === "ready" ? (
         <ReadyOverview overview={overview} />

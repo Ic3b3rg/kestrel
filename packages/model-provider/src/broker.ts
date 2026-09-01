@@ -15,6 +15,7 @@ export type DirectApiBrokerErrorCode =
   | "identity_drift"
   | "provider_unavailable"
   | "request_invalid"
+  | "request_timeout"
   | "response_invalid"
   | "synthetic_test_failed";
 

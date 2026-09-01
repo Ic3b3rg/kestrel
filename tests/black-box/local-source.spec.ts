@@ -178,7 +178,11 @@ test.describe("local-first Project flow", () => {
 
     const overview = page.getByRole("region", { name: "Change Overview" });
     await expect(overview.getByText("Ready", { exact: true })).toBeVisible();
-    await expect(overview.getByText("Deterministic orientation facts only")).toBeVisible();
+    await expect(
+      overview.getByText("Deterministic facts with optional source-linked model wording", {
+        exact: false,
+      }),
+    ).toBeVisible();
     await expect(
       overview.getByLabel(`Change Overview exact head object ID ${fixture.headObjectId}`),
     ).toBeVisible();
@@ -190,6 +194,14 @@ test.describe("local-first Project flow", () => {
     await expect(overview.getByText("review.txt", { exact: true })).toBeVisible();
     await expect(overview.getByRole("heading", { name: "Source areas" })).toBeVisible();
     await expect(overview.getByText("Repository root", { exact: true })).toBeVisible();
+    await expect(
+      overview.getByRole("heading", { name: "Natural-language orientation" }),
+    ).toBeVisible();
+    await expect(
+      overview.getByText("No available model profile was configured for this source."),
+    ).toBeVisible();
+    await expect(overview.getByText("review.txt", { exact: true })).toBeVisible();
+    await expect(overview).not.toContainText("Operator Attention");
     await expect(overview).not.toContainText(/Graph|Evidence|Coverage|Finding|Risk|Verdict/u);
 
     const preparation = page.getByRole("region", { name: "Review preparation" });

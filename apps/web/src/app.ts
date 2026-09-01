@@ -137,7 +137,9 @@ export async function buildApp({
     listRepositories: () => Promise.resolve({ schemaVersion: 1, repositories: [] }),
     listReferences: () => Promise.reject(new Error("Local repository access is not configured")),
   },
-  projectService = createDatabaseProjectService(pool),
+  projectService = createDatabaseProjectService(pool, {
+    upsert: () => Promise.reject(new Error("Change Overview rendering coordinator unavailable")),
+  }),
   hostGitHubProjectService,
   reviewRevisionService = {
     retain: () => Promise.reject(new Error("Review Revision acquisition is not configured")),

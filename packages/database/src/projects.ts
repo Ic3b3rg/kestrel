@@ -2,6 +2,7 @@ import type { PoolClient } from "pg";
 
 import {
   ChangeOverviewSchema,
+  ChangeOverviewModelRenderingSchema,
   ChangeOverviewSourceFactsSchema,
   ChangeIntentSchema,
   DIRECT_API_SYNTHETIC_TEST_VALIDITY_MILLISECONDS,
@@ -9,6 +10,7 @@ import {
   ProjectUpsertedSchema,
   type ChangeIntent,
   type ChangeOverview,
+  type ChangeOverviewModelRendering,
   type LocalRepositorySource,
   type ProviderObservedChangeProposal,
   type Project,
@@ -19,6 +21,10 @@ import {
 } from "@kestrel/contracts";
 
 import { appendAuditRecordInTransaction } from "./audit.js";
+import {
+  enqueueChangeOverviewRendering,
+  type ChangeOverviewRenderingJobCoordinator,
+} from "./change-overview-renderings.js";
 import { buildChangeIntentCandidates } from "./change-intents.js";
 import type { DatabasePool } from "./pool.js";
 import { lockGitHubRepositoryIdentity } from "./provider-identity.js";
@@ -94,6 +100,26 @@ export interface ProjectDatabaseRow {
   overview_rule_version?: number | string | null;
   overview_source_facts?: unknown;
   overview_created_at?: Date | null;
+  rendering_state?: "queued" | "rendering" | "ready" | "unavailable" | null;
+  rendering_review_revision_id?: string | null;
+  rendering_head_object_id?: string | null;
+  rendering_requested_at?: Date | null;
+  rendering_started_at?: Date | null;
+  rendering_completed_at?: Date | null;
+  rendering_provider_request_id?: string | null;
+  rendering_sentences?: unknown;
+  rendering_failure_reason?:
+    | "credential_unavailable"
+    | "invalid_rendering"
+    | "model_unavailable"
+    | "profile_not_configured"
+    | "profile_unavailable"
+    | "timed_out"
+    | null;
+  rendering_queue_milliseconds?: number | string | null;
+  rendering_model_milliseconds?: number | string | null;
+  rendering_kestrel_milliseconds?: number | string | null;
+  rendering_total_milliseconds?: number | string | null;
   candidate_revision_id?: string | null;
   candidate_base_commit_author?: string | null;
   candidate_base_commit_subject?: string | null;
@@ -415,6 +441,7 @@ function mapChangeOverview(
           observedAt: row.observed_at?.toISOString(),
           title: row.proposal_title,
         };
+  const modelRendering = mapChangeOverviewModelRendering(row);
   return ChangeOverviewSchema.parse({
     changeIntent,
     createdAt: row.overview_created_at.toISOString(),
@@ -434,9 +461,103 @@ function mapChangeOverview(
       id: row.revision_id,
       objectFormat: row.revision_object_format,
     },
+    modelRendering,
     providerObservation,
     sourceFacts,
     state: "ready",
+  });
+}
+
+function renderingMilliseconds(value: number | string | null | undefined): number {
+  const milliseconds = Number(value);
+  if (!Number.isSafeInteger(milliseconds) || milliseconds < 0) {
+    throw new Error("Change Overview rendering latency is incomplete");
+  }
+  return milliseconds;
+}
+
+function mapChangeOverviewModelRendering(row: ProjectDatabaseRow): ChangeOverviewModelRendering {
+  const renderingState = row.rendering_state;
+  if (renderingState == null) {
+    const renderingFields = [
+      row.rendering_review_revision_id,
+      row.rendering_head_object_id,
+      row.rendering_requested_at,
+      row.rendering_started_at,
+      row.rendering_completed_at,
+      row.rendering_provider_request_id,
+      row.rendering_sentences,
+      row.rendering_failure_reason,
+      row.rendering_queue_milliseconds,
+      row.rendering_model_milliseconds,
+      row.rendering_kestrel_milliseconds,
+      row.rendering_total_milliseconds,
+    ];
+    if (renderingFields.some((value) => value !== undefined && value !== null)) {
+      throw new Error("Change Overview rendering state is incomplete");
+    }
+    return { state: "not_generated" };
+  }
+  if (
+    row.rendering_review_revision_id !== row.revision_id ||
+    row.rendering_head_object_id !== row.head_object_id ||
+    row.rendering_head_object_id !== row.revision_head_object_id
+  ) {
+    return { state: "not_generated" };
+  }
+  if (row.rendering_requested_at == null) {
+    throw new Error("Change Overview rendering request timestamp is incomplete");
+  }
+  const requestedAt = row.rendering_requested_at.toISOString();
+  if (renderingState === "queued") {
+    return ChangeOverviewModelRenderingSchema.parse({ state: renderingState, requestedAt });
+  }
+  if (renderingState === "rendering") {
+    if (row.rendering_started_at == null) {
+      throw new Error("Change Overview rendering start timestamp is incomplete");
+    }
+    return ChangeOverviewModelRenderingSchema.parse({
+      state: renderingState,
+      requestedAt,
+      startedAt: row.rendering_started_at.toISOString(),
+    });
+  }
+  if (row.rendering_completed_at == null) {
+    throw new Error("Change Overview rendering completion timestamp is incomplete");
+  }
+  const performance = {
+    queueMilliseconds: renderingMilliseconds(row.rendering_queue_milliseconds),
+    modelMilliseconds: renderingMilliseconds(row.rendering_model_milliseconds),
+    kestrelMilliseconds: renderingMilliseconds(row.rendering_kestrel_milliseconds),
+    totalMilliseconds: renderingMilliseconds(row.rendering_total_milliseconds),
+  };
+  if (renderingState === "unavailable") {
+    if (row.rendering_failure_reason == null) {
+      throw new Error("Change Overview rendering failure reason is incomplete");
+    }
+    return ChangeOverviewModelRenderingSchema.parse({
+      state: renderingState,
+      requestedAt,
+      completedAt: row.rendering_completed_at.toISOString(),
+      reason: row.rendering_failure_reason,
+      performance,
+    });
+  }
+  if (
+    row.rendering_started_at == null ||
+    row.rendering_provider_request_id == null ||
+    row.rendering_sentences == null
+  ) {
+    throw new Error("Ready Change Overview rendering is incomplete");
+  }
+  return ChangeOverviewModelRenderingSchema.parse({
+    state: renderingState,
+    requestedAt,
+    startedAt: row.rendering_started_at.toISOString(),
+    completedAt: row.rendering_completed_at.toISOString(),
+    providerRequestId: row.rendering_provider_request_id,
+    sentences: row.rendering_sentences,
+    performance,
   });
 }
 
@@ -638,6 +759,19 @@ function projectRowsSelect(requiredRevisionId: "NULL::uuid" | "$2::uuid"): strin
          overview.rule_version AS overview_rule_version,
          overview.source_facts AS overview_source_facts,
          overview.created_at AS overview_created_at,
+         rendering.review_revision_id AS rendering_review_revision_id,
+         rendering.exact_head_object_id AS rendering_head_object_id,
+         rendering.rendering_state,
+         rendering.requested_at AS rendering_requested_at,
+         rendering.started_at AS rendering_started_at,
+         rendering.completed_at AS rendering_completed_at,
+         rendering.provider_request_id AS rendering_provider_request_id,
+         rendering.sentences AS rendering_sentences,
+         rendering.failure_reason AS rendering_failure_reason,
+         rendering.queue_milliseconds AS rendering_queue_milliseconds,
+         rendering.model_milliseconds AS rendering_model_milliseconds,
+         rendering.kestrel_milliseconds AS rendering_kestrel_milliseconds,
+         rendering.total_milliseconds AS rendering_total_milliseconds,
          candidate_revision.id AS candidate_revision_id,
          candidate_revision.base_ref_snapshot AS candidate_base_ref,
          candidate_revision.base_object_id AS candidate_base_object_id,
@@ -722,6 +856,10 @@ function projectRowsSelect(requiredRevisionId: "NULL::uuid" | "$2::uuid"): strin
   ) AS rr ON true
   LEFT JOIN change_overview_fact_manifests AS overview
     ON overview.review_revision_id = rr.id
+  LEFT JOIN change_overview_renderings AS rendering
+    ON rendering.change_proposal_id = cp.id
+   AND rendering.review_revision_id = rr.id
+   AND rendering.exact_head_object_id = cp.head_object_id
   LEFT JOIN LATERAL (
     SELECT revision.id,
            revision.base_ref_snapshot,
@@ -941,10 +1079,10 @@ async function upsertProviderProposal(
   client: PoolClient,
   projectId: string,
   proposal: PublicGitHubProjectObservation["proposal"],
-): Promise<void> {
-  const existing = await client.query<{ id: string }>(
+): Promise<{ changeProposalId: string; renderingTrigger: boolean }> {
+  const existing = await client.query<{ head_object_id: string; id: string }>(
     `
-      SELECT id
+      SELECT id, head_object_id
       FROM change_proposals
       WHERE project_id = $1
         AND proposal_kind = 'provider_observed'
@@ -968,6 +1106,7 @@ async function upsertProviderProposal(
     [projectId, proposal.base.objectId, proposal.head.objectId],
   );
   const existingProviderProposalId = existing.rows[0]?.id ?? null;
+  const existingProviderHeadObjectId = existing.rows[0]?.head_object_id ?? null;
   const localProposalId = localMatch.rows[0]?.id ?? null;
   let proposalId = existingProviderProposalId ?? localProposalId;
   if (
@@ -1042,9 +1181,14 @@ async function upsertProviderProposal(
     if (updated.rowCount !== 1) {
       throw new Error("Public GitHub Change Proposal enrichment did not affect one row");
     }
-    return;
+    return {
+      changeProposalId: proposalId,
+      renderingTrigger:
+        existingProviderProposalId !== null &&
+        existingProviderHeadObjectId !== proposal.head.objectId,
+    };
   }
-  const inserted = await client.query(
+  const inserted = await client.query<{ id: string }>(
     `
       INSERT INTO change_proposals (
         project_id,
@@ -1062,17 +1206,59 @@ async function upsertProviderProposal(
         author_login_snapshot
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      RETURNING id
     `,
     parameters,
   );
-  if (inserted.rowCount !== 1) {
+  const insertedId = inserted.rows[0]?.id;
+  if (inserted.rowCount !== 1 || insertedId === undefined) {
     throw new Error("Public GitHub Change Proposal upsert did not affect one row");
   }
+  return { changeProposalId: insertedId, renderingTrigger: true };
+}
+
+async function enqueueCurrentChangeOverviewRendering(
+  client: PoolClient,
+  coordinator: ChangeOverviewRenderingJobCoordinator,
+  input: {
+    changeProposalId: string;
+    correlationId: string;
+    projectId: string;
+  },
+): Promise<void> {
+  const revision = await client.query<{ id: string }>(
+    `
+      SELECT candidate.id
+      FROM review_revisions AS candidate
+      INNER JOIN change_proposals AS storage
+        ON storage.id = candidate.change_proposal_id
+      INNER JOIN change_proposals AS canonical
+        ON canonical.id = COALESCE(storage.canonical_change_proposal_id, storage.id)
+      INNER JOIN change_overview_fact_manifests AS overview
+        ON overview.review_revision_id = candidate.id
+      WHERE canonical.id = $1
+        AND candidate.project_id = $2
+        AND candidate.revision_state = 'available'
+        AND candidate.base_object_id = canonical.base_object_id
+        AND candidate.head_object_id = canonical.head_object_id
+      ORDER BY candidate.available_at DESC, candidate.id DESC
+      LIMIT 1
+    `,
+    [input.changeProposalId, input.projectId],
+  );
+  const revisionId = revision.rows[0]?.id;
+  if (revisionId === undefined) return;
+  await enqueueChangeOverviewRendering(client, coordinator, {
+    correlationId: input.correlationId,
+    projectId: input.projectId,
+    revisionId,
+  });
 }
 
 async function upsertGitHubObservedProject(
   pool: DatabasePool,
   input: UpsertGitHubObservedProjectInput,
+  renderingCoordinator: ChangeOverviewRenderingJobCoordinator,
 ): Promise<ProjectUpserted> {
   const client = await pool.connect();
   try {
@@ -1101,7 +1287,14 @@ async function upsertGitHubObservedProject(
       );
     }
     const proposal = input.observation.proposal;
-    await upsertProviderProposal(client, projectId, proposal);
+    const upsertedProposal = await upsertProviderProposal(client, projectId, proposal);
+    if (upsertedProposal.renderingTrigger) {
+      await enqueueCurrentChangeOverviewRendering(client, renderingCoordinator, {
+        changeProposalId: upsertedProposal.changeProposalId,
+        correlationId: input.correlationId,
+        projectId,
+      });
+    }
 
     const project = await readProjectInTransaction(client, projectId);
     await appendAuditRecordInTransaction(client, {
@@ -1135,19 +1328,25 @@ async function upsertGitHubObservedProject(
 export function upsertPublicGitHubProject(
   pool: DatabasePool,
   input: UpsertPublicGitHubProjectInput,
+  renderingCoordinator: ChangeOverviewRenderingJobCoordinator,
 ): Promise<ProjectUpserted> {
-  return upsertGitHubObservedProject(pool, {
-    actorId: input.actorId,
-    correlationId: input.correlationId,
-    observation: input.observation,
-  });
+  return upsertGitHubObservedProject(
+    pool,
+    {
+      actorId: input.actorId,
+      correlationId: input.correlationId,
+      observation: input.observation,
+    },
+    renderingCoordinator,
+  );
 }
 
 export function upsertHostGitHubProject(
   pool: DatabasePool,
   input: UpsertHostGitHubProjectInput,
+  renderingCoordinator: ChangeOverviewRenderingJobCoordinator,
 ): Promise<ProjectUpserted> {
-  return upsertGitHubObservedProject(pool, input);
+  return upsertGitHubObservedProject(pool, input, renderingCoordinator);
 }
 
 export async function readProjectGitHubCoordinates(

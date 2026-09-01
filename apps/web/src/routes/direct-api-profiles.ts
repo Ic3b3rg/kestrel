@@ -115,6 +115,7 @@ function classifyBrokerFailure(error: DirectApiBrokerError): {
     case "identity_drift":
       return { availabilityReason: "identity_drift", serviceCode: "profile_test_failed" };
     case "provider_unavailable":
+    case "request_timeout":
     case "destination_rejected":
       return { availabilityReason: "provider_unavailable", serviceCode: "service_unavailable" };
     case "request_invalid":

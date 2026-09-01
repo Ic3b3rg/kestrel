@@ -114,6 +114,30 @@ async function retainedFile(
   return JSON.parse(await stack.executeWebModule(source)) as { code?: string; content?: string };
 }
 
+async function waitForCompletedModelRendering(
+  stack: RunningStack,
+  projectId: string,
+  changeProposalId: string,
+) {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const inbox = ProjectInboxSchema.parse(await (await stack.fetchApi("/api/v1/projects")).json());
+    const overview = inbox.projects
+      .find(({ id }) => id === projectId)
+      ?.changeProposals.find(({ id }) => id === changeProposalId)?.changeOverview;
+    if (
+      overview?.state === "ready" &&
+      overview.modelRendering.state !== "not_generated" &&
+      overview.modelRendering.state !== "queued" &&
+      overview.modelRendering.state !== "rendering"
+    ) {
+      return overview;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error("Timed out waiting for Change Overview model rendering");
+}
+
 async function observePublicGitHubProject(
   stack: RunningStack,
   input: {
@@ -463,7 +487,8 @@ describe("exact local Review Revision", () => {
             "has_table_privilege(current_user, 'public.' || table_name, 'UPDATE') AS can_update, " +
             "has_table_privilege(current_user, 'public.' || table_name, 'DELETE') AS can_delete " +
             "FROM unnest(ARRAY['projects','change_proposals','local_repository_sources'," +
-            "'change_intents','change_overview_fact_manifests','review_revisions'," +
+            "'change_intents','change_overview_fact_manifests','change_overview_renderings'," +
+            "'review_revisions'," +
             "'review_workflows']) AS table_name ORDER BY table_name"
           );
           process.stdout.write(JSON.stringify(result.rows));
@@ -488,7 +513,12 @@ describe("exact local Review Revision", () => {
         can_update: false,
         can_delete: false,
       },
-      ...["change_proposals", "local_repository_sources", "projects"].map((table_name) => ({
+      ...[
+        "change_overview_renderings",
+        "change_proposals",
+        "local_repository_sources",
+        "projects",
+      ].map((table_name) => ({
         table_name,
         can_select: true,
         can_insert: true,
@@ -604,6 +634,21 @@ describe("exact local Review Revision", () => {
     expect(available.project.providerObservation).toMatchObject({ kind: "public_github" });
     expect(JSON.stringify(available)).not.toContain("artifactLocator");
     expect(JSON.stringify(available)).not.toContain(fixture.repositoryPath);
+    const modelFallback = await waitForCompletedModelRendering(
+      stack,
+      available.project.id,
+      available.changeProposal.id,
+    );
+    expect(modelFallback).toMatchObject({
+      state: "ready",
+      modelRendering: {
+        state: "unavailable",
+        reason: "profile_not_configured",
+      },
+      sourceFacts: {
+        changedFiles: [{ path: "review.txt" }],
+      },
+    });
 
     await stack.executeSql(
       `DELETE FROM change_overview_fact_manifests WHERE review_revision_id = '${available.reviewRevision.id}'`,
@@ -697,6 +742,246 @@ describe("exact local Review Revision", () => {
     ]) {
       expect(webLogs).not.toContain(secret);
     }
+  });
+
+  it("renders only fact-grounded latest output and measures Kestrel overhead separately", async () => {
+    if (stack === undefined || available === undefined) {
+      throw new Error("Change Overview rendering fixture is unavailable");
+    }
+    const retained = available;
+    const fallback = await waitForCompletedModelRendering(
+      stack,
+      retained.project.id,
+      retained.changeProposal.id,
+    );
+    expect(fallback).toMatchObject({
+      state: "ready",
+      modelRendering: {
+        state: "unavailable",
+        reason: "profile_not_configured",
+      },
+      sourceFacts: {
+        fileStatistics: { total: 1 },
+        changedFiles: [{ path: "review.txt" }],
+      },
+    });
+
+    const benchmark = JSON.parse(
+      await stack.executeWebModule(`
+        import {
+          claimChangeOverviewRendering,
+          completeChangeOverviewRendering,
+          createPool
+        } from '@kestrel/database';
+        import {
+          CHANGE_OVERVIEW_KESTREL_P95_TARGET_MILLISECONDS,
+          createChangeOverviewRenderer
+        } from './apps/web/dist/change-overview-renderer.js';
+
+        const pool = createPool(
+          process.env.DATABASE_URL,
+          'kestrel-overview-rendering-black-box'
+        );
+        const projectId = ${JSON.stringify(retained.project.id)};
+        const changeProposalId = ${JSON.stringify(retained.changeProposal.id)};
+        const reviewRevisionId = ${JSON.stringify(retained.reviewRevision.id)};
+        const exactHeadObjectId = ${JSON.stringify(retained.reviewRevision.head.objectId)};
+        const correlationId = '0c14b018-0260-4aa0-a5e9-61d212b948ce';
+        const profile = {
+          availability: 'available',
+          effectiveIdentity: {
+            model: {
+              expectedResolvedId: 'gpt-test-2026-08-01',
+              requestedId: 'gpt-test-2026-08-01',
+              versionPolicy: 'pinned'
+            },
+            openAiProjectId: 'proj_test',
+            organizationId: 'org_test'
+          },
+          limits: {
+            maximumAttempts: 1,
+            maximumConcurrentRequests: 1,
+            maximumCostUsd: '1.00',
+            maximumInputTokens: 20000,
+            maximumOutputTokens: 4096,
+            maximumRequestBytes: 65536,
+            requestTimeoutMilliseconds: 60000
+          },
+          projectId
+        };
+        const reset = async () => {
+          const result = await pool.query(
+            "UPDATE change_overview_renderings SET generation_token = uuidv7(), " +
+            "rendering_state = 'queued', " +
+            "requested_at = clock_timestamp() - interval '25 milliseconds', " +
+            "started_at = NULL, completed_at = NULL, provider_request_id = NULL, " +
+            "sentences = NULL, failure_reason = NULL, queue_milliseconds = NULL, " +
+            "model_milliseconds = NULL, kestrel_milliseconds = NULL, " +
+            "total_milliseconds = NULL, updated_at = clock_timestamp() " +
+            "WHERE change_proposal_id = $1 RETURNING generation_token",
+            [changeProposalId]
+          );
+          if (result.rowCount !== 1) throw new Error('rendering row missing');
+          return result.rows[0].generation_token;
+        };
+        const jobFor = (generationToken) => ({
+          changeProposalId,
+          correlationId,
+          exactHeadObjectId,
+          generationToken,
+          projectId,
+          reviewRevisionId
+        });
+        const persistence = {
+          claim: (job) => claimChangeOverviewRendering(pool, job),
+          complete: (job, outcome) =>
+            completeChangeOverviewRendering(pool, job, outcome),
+          readProfile: async () => ({
+            projectFound: true,
+            reference: { credentialHandle: 'cred_test', profile }
+          })
+        };
+        const response = (output) => ({
+          body: JSON.stringify({
+            model: 'gpt-test-2026-08-01',
+            output: [{
+              content: [{ text: JSON.stringify(output), type: 'output_text' }]
+            }],
+            status: 'completed'
+          }),
+          headers: {
+            'openai-organization': 'org_test',
+            'openai-version': '2020-10-01',
+            'x-request-id': 'req_overview_black_box'
+          },
+          statusCode: 200
+        });
+        const renderer = (output) => {
+          let simulatedModelMilliseconds = 0;
+          return createChangeOverviewRenderer({
+            clock: () => performance.now() + simulatedModelMilliseconds,
+            credentialStore: { read: async () => 'sk-test-key' },
+            persistence,
+            transport: {
+              send: async () => {
+                simulatedModelMilliseconds += 1000;
+                return response(output);
+              }
+            }
+          });
+        };
+        const safeOutput = {
+          sentences: [{
+            text: 'The exact head is ' + exactHeadObjectId + '.',
+            sourceFactIds: ['exact_revision']
+          }]
+        };
+
+        try {
+          const staleToken = await reset();
+          const currentToken = await reset();
+          const staleResult = await renderer(safeOutput).process(jobFor(staleToken));
+          const invalidResult = await renderer({
+            sentences: [{
+              text: 'The change prevents unauthorized access.',
+              sourceFactIds: ['file_statistics']
+            }]
+          }).process(jobFor(currentToken));
+          const invalid = await pool.query(
+            'SELECT rendering_state, failure_reason, sentences ' +
+            'FROM change_overview_renderings WHERE change_proposal_id = $1',
+            [changeProposalId]
+          );
+
+          const runs = [];
+          for (let index = 0; index < 20; index += 1) {
+            const token = await reset();
+            const result = await renderer(safeOutput).process(jobFor(token));
+            const timing = await pool.query(
+              'SELECT kestrel_milliseconds, model_milliseconds ' +
+              'FROM change_overview_renderings WHERE change_proposal_id = $1',
+              [changeProposalId]
+            );
+            runs.push({ result, ...timing.rows[0] });
+          }
+          const ordered = runs
+            .map(({ kestrel_milliseconds }) => Number(kestrel_milliseconds))
+            .sort((left, right) => left - right);
+          const p95 = ordered[Math.ceil(ordered.length * 0.95) - 1];
+          process.stdout.write(JSON.stringify({
+            invalid: invalid.rows[0],
+            invalidResult,
+            p95,
+            runs,
+            staleResult,
+            target: CHANGE_OVERVIEW_KESTREL_P95_TARGET_MILLISECONDS
+          }));
+        } finally {
+          await pool.end();
+        }
+      `),
+    ) as {
+      invalid: {
+        failure_reason: string | null;
+        rendering_state: string;
+        sentences: unknown;
+      };
+      invalidResult: string;
+      p95: number;
+      runs: Array<{
+        kestrel_milliseconds: string;
+        model_milliseconds: string;
+        result: string;
+      }>;
+      staleResult: string;
+      target: number;
+    };
+
+    expect(benchmark.staleResult).toBe("superseded");
+    expect(benchmark.invalidResult).toBe("unavailable");
+    expect(benchmark.invalid).toEqual({
+      failure_reason: "invalid_rendering",
+      rendering_state: "unavailable",
+      sentences: null,
+    });
+    expect(benchmark.runs).toHaveLength(20);
+    expect(benchmark.runs.every(({ result }) => result === "ready")).toBe(true);
+    const modelTimings = benchmark.runs.map(({ model_milliseconds }) => Number(model_milliseconds));
+    expect(modelTimings.every((milliseconds) => milliseconds >= 1_000)).toBe(true);
+    expect(modelTimings.every((milliseconds) => milliseconds < 1_100)).toBe(true);
+    expect(benchmark.p95).toBeLessThanOrEqual(benchmark.target);
+
+    const completed = await waitForCompletedModelRendering(
+      stack,
+      retained.project.id,
+      retained.changeProposal.id,
+    );
+    expect(completed).toMatchObject({
+      state: "ready",
+      modelRendering: {
+        state: "ready",
+        sentences: [
+          {
+            text: `The exact head is ${retained.reviewRevision.head.objectId}.`,
+            sourceFactIds: ["exact_revision"],
+          },
+        ],
+      },
+      sourceFacts: {
+        changedFiles: [{ path: "review.txt" }],
+      },
+    });
+    if (completed.modelRendering.state !== "ready") {
+      throw new Error("Measured Change Overview rendering was not ready");
+    }
+    expect(completed.modelRendering.performance.modelMilliseconds).toBeGreaterThanOrEqual(1_000);
+    expect(completed.modelRendering.performance.modelMilliseconds).toBeLessThan(1_100);
+    expect(completed.modelRendering.performance.kestrelMilliseconds).toBeLessThanOrEqual(
+      benchmark.target,
+    );
+    expect(JSON.stringify(completed)).not.toMatch(
+      /prevents unauthorized|Graph|Evidence|Coverage|Finding|Risk|Verdict/u,
+    );
   });
 
   it("rechecks and freezes a prepared Review digest in one database transaction", async () => {
