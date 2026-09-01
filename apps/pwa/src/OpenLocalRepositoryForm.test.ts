@@ -43,8 +43,10 @@ const references: LocalRepositoryReferences = {
 };
 const repositories: LocalRepositoryInventory = {
   schemaVersion: 1,
+  inventoryState: "ready",
   repositories: [{ repositoryId, displayName: "kestrel", attachmentState: "unattached" }],
 };
+const trustedHostCommand = `LOCAL_REPOSITORY_ROOTS='["/absolute/path/to/authorized-parent"]' npm run dev`;
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -311,7 +313,7 @@ describe("Open local repository form", () => {
     await changeValue(findControl(container, "Head reference"), "refs/heads/topic");
   }
 
-  it("ignores a stale inventory response after close and reopen, then renders an empty result", async () => {
+  it("shows loading without an empty select, ignores a stale response, then explains missing roots", async () => {
     const first = deferred<LocalRepositoryInventory>();
     const second = deferred<LocalRepositoryInventory>();
     const loadRepositories = vi
@@ -322,11 +324,14 @@ describe("Open local repository form", () => {
 
     await click(findButton(container, "Open local repository"));
     expect(container.textContent).toContain("Reading repositories…");
+    expect(container.querySelector("form")?.hidden).toBe(true);
+    expect(container.textContent).toContain(trustedHostCommand);
     await click(findButton(container, "Close"));
     await click(findButton(container, "Open local repository"));
     await act(async () => {
       first.resolve({
         schemaVersion: 1,
+        inventoryState: "ready",
         repositories: [
           { repositoryId, displayName: "stale repository", attachmentState: "unattached" },
         ],
@@ -335,12 +340,58 @@ describe("Open local repository form", () => {
     });
     expect(container.textContent).not.toContain("stale repository");
     await act(async () => {
-      second.resolve({ schemaVersion: 1, repositories: [] });
+      second.resolve({
+        schemaVersion: 1,
+        inventoryState: "no_configured_roots",
+        repositories: [],
+      });
       await second.promise;
     });
 
     expect(loadRepositories).toHaveBeenCalledTimes(2);
-    expect(container.textContent).toContain("No authorized local repositories are available.");
+    expect(container.textContent).toContain("No repository roots are configured");
+    expect(container.textContent).toContain(trustedHostCommand);
+    expect(container.querySelector("form")?.hidden).toBe(true);
+  });
+
+  it("explains when configured roots contain no repositories", async () => {
+    await renderForm({
+      loadRepositories: () =>
+        Promise.resolve({
+          schemaVersion: 1,
+          inventoryState: "no_repositories_found",
+          repositories: [],
+        }),
+    });
+
+    await click(findButton(container, "Open local repository"));
+
+    expect(container.textContent).toContain("No Git repositories were found");
+    expect(container.textContent).toContain("The configured roots were loaded successfully");
+    expect(container.textContent).toContain(trustedHostCommand);
+    expect(container.querySelector("form")?.hidden).toBe(true);
+  });
+
+  it("turns a discovery failure into actionable trusted-host guidance", async () => {
+    await renderForm({
+      loadRepositories: () =>
+        Promise.reject(
+          new ApiClientError(503, {
+            schemaVersion: 1,
+            code: "SERVICE_UNAVAILABLE",
+            message: "Local repository discovery is unavailable",
+            correlationId: "0c14b018-0260-4aa0-a5e9-61d212b948ce",
+          }),
+        ),
+    });
+
+    await click(findButton(container, "Open local repository"));
+
+    expect(container.textContent).toContain("Repository discovery failed");
+    expect(container.textContent).toContain("Local repository discovery is unavailable");
+    expect(container.textContent).toContain("0c14b018-0260-4aa0-a5e9-61d212b948ce");
+    expect(container.textContent).toContain(trustedHostCommand);
+    expect(container.querySelector("form")?.hidden).toBe(true);
   });
 
   it("copies commit suggestions only explicitly and explains the UTF-8 byte boundary", async () => {

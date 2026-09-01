@@ -15,6 +15,7 @@ import {
   fetchLocalRepositoryReferences,
   retainReviewRevision,
 } from "./api.js";
+import { RepositorySetupState } from "./RepositorySetupState.js";
 
 interface RetainCommandFields {
   baseRef: string;
@@ -343,8 +344,19 @@ export function OpenLocalRepositoryForm({
           <p id={descriptionId}>
             Kestrel reads only committed Git objects and retains a verified base/head snapshot.
           </p>
+          {repositories?.inventoryState !== "ready" ? (
+            <RepositorySetupState
+              state={
+                loading === "repositories" || (repositories === null && error === null)
+                  ? "loading"
+                  : (repositories?.inventoryState ?? "discovery_failed")
+              }
+              {...(error === null ? {} : { error })}
+            />
+          ) : null}
           <form
             className="local-repository-form"
+            hidden={repositories?.inventoryState !== "ready"}
             onSubmit={(event) => void submit(event)}
             noValidate
           >
@@ -365,9 +377,6 @@ export function OpenLocalRepositoryForm({
                 ))}
               </select>
             </div>
-            {repositories?.repositories.length === 0 ? (
-              <p className="local-empty">No authorized local repositories are available.</p>
-            ) : null}
             <fieldset
               disabled={disabled || pending || loading === "references" || references === null}
             >
@@ -492,13 +501,7 @@ export function OpenLocalRepositoryForm({
                 </div>
               </dl>
             ) : null}
-            {loading !== null ? (
-              <p role="status">
-                {loading === "repositories"
-                  ? "Reading repositories…"
-                  : "Reading committed references…"}
-              </p>
-            ) : null}
+            {loading === "references" ? <p role="status">Reading committed references…</p> : null}
             {error ? (
               <p className="project-form-error" role="alert">
                 {error}

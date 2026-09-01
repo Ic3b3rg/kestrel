@@ -134,7 +134,12 @@ export async function buildApp({
   eventPool = pool,
   pwaRoot,
   localRepositoryService = {
-    listRepositories: () => Promise.resolve({ schemaVersion: 1, repositories: [] }),
+    listRepositories: () =>
+      Promise.resolve({
+        schemaVersion: 1,
+        inventoryState: "no_configured_roots" as const,
+        repositories: [],
+      }),
     listReferences: () => Promise.reject(new Error("Local repository access is not configured")),
   },
   projectService = createDatabaseProjectService(pool, {

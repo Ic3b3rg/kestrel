@@ -497,6 +497,7 @@ describe("PWA API client", () => {
   it("uses only opaque local repository identities and enumerated refs", async () => {
     const inventory: LocalRepositoryInventory = {
       schemaVersion: 1,
+      inventoryState: "ready",
       repositories: [
         {
           repositoryId: "018f0f89-9a1d-7484-b224-866ef9d69990",

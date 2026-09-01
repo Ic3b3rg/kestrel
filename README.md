@@ -158,6 +158,11 @@ roots. The browser never submits a path. Select two enumerated committed refs an
 explicitly copy a commit-subject suggestion into Change Intent. Kestrel re-resolves both refs to
 exact object IDs before acquisition; later branch movement cannot retarget the Review Revision.
 
+Until that inventory is ready, the dialog names the current state: checking configuration, no
+configured roots, configured roots with no discoverable repository, or discovery failure. It shows
+the trusted-host command above instead of an unexplained empty selector; host filesystem paths are
+never returned to the browser.
+
 The retained closure contains the selected base/head commit objects and all trees and blobs needed
 to materialize those two exact source trees. It deliberately excludes ancestor history, unrelated
 branches, gitlink targets, the index, and dirty, staged, ignored, or untracked working-tree bytes.
