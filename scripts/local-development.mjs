@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { constants } from "node:fs";
 import { access, chmod, lstat, mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
-import { delimiter, isAbsolute, join, resolve } from "node:path";
+import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 
 const MAC_DOCKER = "/Applications/Docker.app/Contents/Resources/bin/docker";
 const LOOPBACK = "127.0.0.1";
@@ -228,11 +228,31 @@ async function main() {
   const sessionSigningKey = await readOrCreateSessionSigningKey(stateRoot);
   const databasePassword = environment.KESTREL_RUNTIME_DATABASE_PASSWORD ?? "kestrel_runtime_dev";
   const databaseUrl = `postgres://kestrel_runtime:${encodeURIComponent(databasePassword)}@${LOOPBACK}:${String(databasePort)}/kestrel`;
-  const applicationEnvironment = {
-    ...environment,
-    ARTIFACT_ROOT: artifactRoot,
+  const hostEnvironment = { ...environment };
+  for (const key of [
+    "ARTIFACT_ROOT",
+    "DATABASE_URL",
+    "EVENT_RETENTION_LIMIT",
+    "HOST",
+    "LOCAL_GIT_EXECUTABLE",
+    "LOCAL_REPOSITORY_ROOTS",
+    "MODEL_PROVIDER_SECRET_ROOT",
+    "PORT",
+    "REVIEW_REVISION_MAX_BYTES",
+    "REVIEW_REVISION_MAX_OBJECTS",
+    "SESSION_SIGNING_KEY",
+    "VITE_API_PROXY",
+  ]) {
+    delete hostEnvironment[key];
+  }
+  const serverEnvironment = {
+    ...hostEnvironment,
     DATABASE_URL: databaseUrl,
     EVENT_RETENTION_LIMIT: environment.EVENT_RETENTION_LIMIT ?? "1000",
+  };
+  const webEnvironment = {
+    ...serverEnvironment,
+    ARTIFACT_ROOT: artifactRoot,
     HOST: LOOPBACK,
     LOCAL_GIT_EXECUTABLE: git,
     LOCAL_REPOSITORY_ROOTS: environment.LOCAL_REPOSITORY_ROOTS ?? "[]",
@@ -247,40 +267,32 @@ async function main() {
     `[kestrel] Host tools: git=${git} gh=${gh ?? "unavailable"} codex=${codex ?? "unavailable"}`,
   );
   if (action !== "start") {
-    await run(npm, ["run", action, "-w", "@kestrel/web"], applicationEnvironment);
+    await run(npm, ["run", action, "-w", "@kestrel/web"], webEnvironment);
     return;
   }
 
   const docker = await resolveDocker(environment);
+  const compose = ["compose", "-f", "compose.yaml", "-f", "compose.local.yaml"];
+  const dockerEnvironment = {
+    ...environment,
+    PATH: `${dirname(docker)}${delimiter}${environment.PATH ?? ""}`,
+    SESSION_SIGNING_KEY: sessionSigningKey,
+  };
   console.log("[kestrel] Preparing PostgreSQL and database state...");
-  await run(
-    docker,
-    [
-      "compose",
-      "-f",
-      "compose.yaml",
-      "-f",
-      "compose.local.yaml",
-      "up",
-      "--build",
-      "--detach",
-      "--wait",
-      "postgres",
-      "migrate",
-      "database-role",
-    ],
-    environment,
-  );
+  await run(docker, [...compose, "build", "migrate"], dockerEnvironment);
+  await run(docker, [...compose, "up", "--detach", "--wait", "postgres"], dockerEnvironment);
+  await run(docker, [...compose, "run", "--rm", "--no-deps", "migrate"], dockerEnvironment);
+  await run(docker, [...compose, "run", "--rm", "--no-deps", "database-role"], dockerEnvironment);
   console.log("[kestrel] Building host applications...");
-  await run(npm, ["run", "build"], applicationEnvironment);
+  await run(npm, ["run", "build"], hostEnvironment);
 
   const children = [
-    startHostProcess(npm, ["run", "start", "-w", "@kestrel/web"], applicationEnvironment),
-    startHostProcess(npm, ["run", "start", "-w", "@kestrel/worker"], applicationEnvironment),
+    startHostProcess(npm, ["run", "start", "-w", "@kestrel/web"], webEnvironment),
+    startHostProcess(npm, ["run", "start", "-w", "@kestrel/worker"], serverEnvironment),
     startHostProcess(
       npm,
       ["run", "dev", "-w", "@kestrel/pwa", "--", "--host", LOOPBACK, "--port", String(pwaPort)],
-      { ...applicationEnvironment, VITE_API_PROXY: `http://${LOOPBACK}:${String(webPort)}` },
+      { ...hostEnvironment, VITE_API_PROXY: `http://${LOOPBACK}:${String(webPort)}` },
     ),
   ];
   let shuttingDown = false;

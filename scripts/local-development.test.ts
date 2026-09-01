@@ -184,18 +184,24 @@ writeFileSync(process.env.KESTREL_LIFECYCLE_TEST_LOG, JSON.stringify({
     const fixture = await realpath(await mkdtemp(join(tmpdir(), "kestrel-local-development-")));
     temporaryDirectories.push(fixture);
     const tools = join(fixture, "tools");
+    const dockerTools = join(fixture, "docker-tools");
     const stateRoot = join(fixture, "state");
     const logPath = join(fixture, "lifecycle.jsonl");
-    await import("node:fs/promises").then(({ mkdir }) => mkdir(tools));
+    await import("node:fs/promises").then(async ({ mkdir }) => {
+      await Promise.all([mkdir(tools), mkdir(dockerTools)]);
+    });
 
     const recorder = `
 import { appendFileSync } from "node:fs";
+import { delimiter, dirname } from "node:path";
 appendFileSync(process.env.KESTREL_LIFECYCLE_TEST_LOG, JSON.stringify({
   args: process.argv.slice(2),
+  dockerDirectoryFirstOnPath: process.env.PATH.split(delimiter)[0] === dirname(process.argv[1]),
+  hasSessionSigningKey: Boolean(process.env.SESSION_SIGNING_KEY),
   kind: "docker"
 }) + "\\n");
 `;
-    await writeExecutable(join(tools, "docker"), `#!/usr/bin/env node\n${recorder}`);
+    await writeExecutable(join(dockerTools, "docker"), `#!/usr/bin/env node\n${recorder}`);
 
     const hostProcess = `#!/usr/bin/env node
 import { appendFileSync, constants, accessSync } from "node:fs";
@@ -214,6 +220,7 @@ const record = (phase, signal) => appendFileSync(
     artifactRoot: process.env.ARTIFACT_ROOT,
     databaseUrl: process.env.DATABASE_URL,
     gitExecutable: process.env.LOCAL_GIT_EXECUTABLE,
+    hasModelProviderSecretRoot: Boolean(process.env.MODEL_PROVIDER_SECRET_ROOT),
     hasSessionSigningKey: Boolean(process.env.SESSION_SIGNING_KEY),
     host: process.env.HOST,
     kind: "npm",
@@ -225,7 +232,7 @@ const record = (phase, signal) => appendFileSync(
 );
 record("start");
 if (service === "build") process.exit(0);
-accessSync(process.env.LOCAL_GIT_EXECUTABLE, constants.X_OK);
+if (service === "web") accessSync(process.env.LOCAL_GIT_EXECUTABLE, constants.X_OK);
 
 let server;
 if (service === "web" || service === "pwa") {
@@ -266,7 +273,7 @@ setInterval(() => undefined, 1_000);
       detached: process.platform !== "win32",
       env: {
         ...process.env,
-        DOCKER_BIN: join(tools, "docker"),
+        DOCKER_BIN: join(dockerTools, "docker"),
         KESTREL_DATABASE_PORT: String(databasePort),
         KESTREL_LIFECYCLE_TEST_LOG: logPath,
         KESTREL_PWA_PORT: String(pwaPort),
@@ -304,20 +311,48 @@ setInterval(() => undefined, 1_000);
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line) as Record<string, unknown>);
-    expect(entries.find((entry) => entry.kind === "docker")?.args).toEqual([
-      "compose",
-      "-f",
-      "compose.yaml",
-      "-f",
-      "compose.local.yaml",
-      "up",
-      "--build",
-      "--detach",
-      "--wait",
-      "postgres",
-      "migrate",
-      "database-role",
+    const dockerEntries = entries.filter((entry) => entry.kind === "docker");
+    expect(dockerEntries.map((entry) => entry.args)).toEqual([
+      ["compose", "-f", "compose.yaml", "-f", "compose.local.yaml", "build", "migrate"],
+      [
+        "compose",
+        "-f",
+        "compose.yaml",
+        "-f",
+        "compose.local.yaml",
+        "up",
+        "--detach",
+        "--wait",
+        "postgres",
+      ],
+      [
+        "compose",
+        "-f",
+        "compose.yaml",
+        "-f",
+        "compose.local.yaml",
+        "run",
+        "--rm",
+        "--no-deps",
+        "migrate",
+      ],
+      [
+        "compose",
+        "-f",
+        "compose.yaml",
+        "-f",
+        "compose.local.yaml",
+        "run",
+        "--rm",
+        "--no-deps",
+        "database-role",
+      ],
     ]);
+    expect(
+      dockerEntries.every(
+        (entry) => entry.dockerDirectoryFirstOnPath === true && entry.hasSessionSigningKey === true,
+      ),
+    ).toBe(true);
     const startedServices = entries
       .filter((entry) => entry.kind === "npm" && entry.phase === "start")
       .map((entry) => entry.service);
@@ -336,10 +371,30 @@ setInterval(() => undefined, 1_000);
       artifactRoot: join(stateRoot, "review-artifacts"),
       databaseUrl: `postgres://kestrel_runtime:kestrel_runtime_dev@127.0.0.1:${String(databasePort)}/kestrel`,
       gitExecutable: join(tools, "git"),
+      hasModelProviderSecretRoot: true,
       hasSessionSigningKey: true,
       host: "127.0.0.1",
       modelProviderSecretRoot: join(stateRoot, "model-provider-secrets"),
     });
+    expect(
+      entries
+        .filter(
+          (entry) =>
+            entry.kind === "npm" &&
+            entry.phase === "start" &&
+            ["build", "pwa", "worker"].includes(String(entry.service)),
+        )
+        .map((entry) => ({
+          hasModelProviderSecretRoot: entry.hasModelProviderSecretRoot,
+          hasSessionSigningKey: entry.hasSessionSigningKey,
+          service: entry.service,
+        }))
+        .sort((left, right) => String(left.service).localeCompare(String(right.service))),
+    ).toEqual([
+      { hasModelProviderSecretRoot: false, hasSessionSigningKey: false, service: "build" },
+      { hasModelProviderSecretRoot: false, hasSessionSigningKey: false, service: "pwa" },
+      { hasModelProviderSecretRoot: false, hasSessionSigningKey: false, service: "worker" },
+    ]);
     expect(output).toContain(`git=${join(tools, "git")}`);
     expect(output).toContain(`gh=${join(tools, "gh")}`);
     expect(output).toContain(`codex=${join(tools, "codex")}`);

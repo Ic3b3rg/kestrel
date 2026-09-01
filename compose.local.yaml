@@ -2,3 +2,9 @@ services:
   postgres:
     ports: !override
       - "127.0.0.1:${KESTREL_DATABASE_PORT:-54320}:5432"
+
+  migrate:
+    image: ${KESTREL_DEVELOPMENT_IMAGE:-kestrel-dev-host:local}
+
+  database-role:
+    image: ${KESTREL_DEVELOPMENT_IMAGE:-kestrel-dev-host:local}

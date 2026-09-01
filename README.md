@@ -12,9 +12,10 @@ must be materialized from exact commits available through an authorized local Gi
 GitHub and the Operator's existing host `gh` session may provide optional pull-request discovery,
 but Kestrel stores no Repository Provider credential. A separately configured Direct API profile may
 store one encrypted Model Provider key as described below. Supported VPS/cloud operation, GitHub
-App, webhooks, GitLab, and remote availability are deferred. The development Compose configuration
-disables host repository discovery by default. Enabling it requires one explicit read-only bind
-mount as documented below; Kestrel never scans arbitrary host paths.
+App, webhooks, GitLab, and remote availability are deferred. The supported development path runs
+web, worker, and PWA under the current macOS Operator while Docker owns only PostgreSQL and one-shot
+database preparation. Local repository discovery remains disabled until the Operator supplies an
+explicit root; Kestrel never scans arbitrary host paths.
 
 ## Start the development Installation
 
@@ -29,12 +30,24 @@ Install the pinned workspace dependencies once:
 npm ci
 ```
 
-Then start PostgreSQL, the Fastify web process, the pg-boss worker, and the Vite PWA with one
-command. It returns after the required services are ready and leaves them running in the background:
+Then start PostgreSQL, prepare the database, and supervise the Fastify web process, pg-boss worker,
+and Vite PWA with one command:
 
 ```sh
 npm run dev
 ```
+
+PostgreSQL, migrations, and runtime-role preparation run in Kestrel-owned containers. The three
+long-running applications run as the current Operator and inherit the host `PATH`, so the launcher
+can resolve the existing `git`, `gh`, and `codex` executables without copying credentials into a
+container. `git` is required; unavailable optional tools are reported without preventing startup.
+The launcher prints the loopback URLs only after the API and PWA are ready, then remains attached
+and streams the host-process logs until `Ctrl-C` stops all three processes.
+
+Development artifacts, model-provider secrets, and the stable session-signing key live under the
+ignored, owner-only `.kestrel/development` directory by default. Set `KESTREL_STATE_ROOT` to another
+absolute Operator-owned path when needed. PostgreSQL listens only on
+`127.0.0.1:${KESTREL_DATABASE_PORT:-54320}` for the host processes.
 
 Create the first Operator from the trusted host. The password prompts are hidden, and rerunning the
 command leaves the existing Operator unchanged:
@@ -43,8 +56,8 @@ command leaves the existing Operator unchanged:
 npm run bootstrap
 ```
 
-Open [http://localhost:5173](http://localhost:5173) and sign in. The API and the production-shaped
-compiled PWA are also available at [http://localhost:3000](http://localhost:3000).
+Open [http://127.0.0.1:5173](http://127.0.0.1:5173) and sign in. The API and the production-shaped
+compiled PWA are also available at [http://127.0.0.1:3000](http://127.0.0.1:3000).
 
 If the password or every signed-in device is lost, recover the sole Operator from the trusted host:
 
@@ -56,32 +69,35 @@ The command accepts the new password only through hidden prompts (or stdin for a
 the username, and invalidates every existing session. Kestrel deliberately exposes no remote
 password-recovery endpoint.
 
-The Compose ports bind only to loopback. Operator sessions use signed, host-only, secure cookies
-with an absolute seven-day lifetime. Every browser mutation requires an exact same-origin request;
+Every listener binds only to loopback. Operator sessions use signed, host-only, secure cookies with
+an absolute seven-day lifetime. Every browser mutation requires an exact same-origin request;
 authenticated mutations also require the session-bound CSRF header. TLS termination is still a later
 delivery, so do not expose this development stack to an untrusted network.
 
-Follow their logs when needed:
+The attached `npm run dev` terminal shows web, worker, and PWA logs. Inspect only the database
+infrastructure logs from another terminal when needed:
 
 ```sh
 npm run dev:logs
 ```
 
-Press `Ctrl-C` to leave the log view; the services keep running.
+Press `Ctrl-C` to leave this infrastructure log view; the supervised host processes are controlled
+by the original `npm run dev` terminal.
 
 ### Stop without deleting state
 
-Stop and remove the development containers with:
+First press `Ctrl-C` in the `npm run dev` terminal, then stop and remove the database infrastructure
+containers with:
 
 ```sh
 npm run dev:down
 ```
 
-This preserves the named `kestrel_postgres-data`, `kestrel_model-provider-secrets`, and
-`kestrel_review-artifacts` volumes. A later `npm run dev` presents the same Installation, confirmed
-diagnostic operations, Direct API credential handles, and retained Review Revisions. Use
-`docker compose down --volumes` only when deliberately resetting all local Kestrel data, secrets,
-and retained source.
+This preserves the named `kestrel_postgres-data` volume and `.kestrel/development`. A later
+`npm run dev` presents the same Installation, sessions, confirmed diagnostic operations, Direct API
+credential handles, and retained Review Revisions. An intentional complete reset requires both
+`docker compose -f compose.yaml -f compose.local.yaml down --volumes` and removal of the exact
+configured `KESTREL_STATE_ROOT`; inspect both targets before deleting them.
 
 ## Configure direct OpenAI API access
 
@@ -98,28 +114,22 @@ successful synthetic test is valid for 24 hours; after that the profile is stale
 re-test succeeds.
 
 The database and PWA contain only safe profile metadata. The API key is encrypted behind a random,
-Project-exclusive handle under `MODEL_PROVIDER_SECRET_ROOT`; Compose mounts the separate
-`model-provider-secrets` volume into `web` only, never `worker` or `pwa`. For a native web process,
-set this variable to an absolute, mode-0700 directory owned by the web user. Removing that directory
-or its wrapping key makes the profile unavailable; it does not expose or silently replace the key.
+Project-exclusive handle under `MODEL_PROVIDER_SECRET_ROOT`. The local launcher sets this to the
+owner-only `model-provider-secrets` directory beneath `KESTREL_STATE_ROOT` for `web` only; it is not
+passed to a container or the browser. Removing that directory or its wrapping key makes the profile
+unavailable; it does not expose or silently replace the key.
 
 ## Authorize local repositories
 
-Local discovery is disabled safely by the default `LOCAL_REPOSITORY_ROOTS=[]`. To enable it in
-Compose, add a local override with an explicit host directory mounted read-only and refer to the
-container path, never the host path, in configuration:
+Local discovery is disabled safely by the default `LOCAL_REPOSITORY_ROOTS=[]`. To enable it for the
+current development Installation, pass a JSON array containing only the absolute parent directories
+the Operator intends to authorize:
 
-```yaml
-services:
-  web:
-    environment:
-      LOCAL_REPOSITORY_ROOTS: '["/repositories"]'
-    volumes:
-      - type: bind
-        source: /absolute/path/to/authorized-parent
-        target: /repositories
-        read_only: true
+```sh
+LOCAL_REPOSITORY_ROOTS='["/absolute/path/to/authorized-parent"]' npm run dev
 ```
+
+The path is read by the host-native web process; it is never mounted into an application container.
 
 The web process validates all five local-source settings before listening:
 
@@ -129,25 +139,14 @@ The web process validates all five local-source settings before listening:
 - `REVIEW_REVISION_MAX_BYTES` — positive maximum retained bytes per exact revision;
 - `REVIEW_REVISION_MAX_OBJECTS` — positive maximum unique retained objects per revision.
 
-The image uses `/usr/bin/git` and the separate `review-artifacts` volume. For a native web process,
-create the artifact directory as the web service user with owner-only access. After exporting the
-normal database and session settings, a complete local-source configuration and native start looks
-like this:
+The launcher discovers an absolute Git executable and creates the artifact directory with mode 0700.
+`LOCAL_GIT_EXECUTABLE`, `ARTIFACT_ROOT`, `REVIEW_REVISION_MAX_BYTES`, and
+`REVIEW_REVISION_MAX_OBJECTS` remain explicit overrides for a specialized native run. Restart the
+web process after changing authorized roots.
 
-```sh
-install -d -m 0700 /var/lib/kestrel/review-revisions
-npm run build
-LOCAL_REPOSITORY_ROOTS='["/srv/kestrel-repositories"]' \
-LOCAL_GIT_EXECUTABLE=/usr/bin/git \
-ARTIFACT_ROOT=/var/lib/kestrel/review-revisions \
-REVIEW_REVISION_MAX_BYTES=10485760 \
-REVIEW_REVISION_MAX_OBJECTS=10000 \
-npm run start -w @kestrel/web
-```
-
-The configured repository root must already exist and be readable by the web service user. Restart
-the web process after changing authorized roots. Duplicate, nested, symlinked, escaped,
-inaccessible, or source/artifact-overlapping roots fail closed before the listener starts.
+The configured repository root must already exist and be readable by the web service user.
+Duplicate, nested, symlinked, escaped, inaccessible, or source/artifact-overlapping roots fail
+closed before the listener starts.
 
 In the PWA, “Open local repository” lists only bounded display labels and opaque IDs beneath these
 roots. The browser never submits a path. Select two enumerated committed refs and write or
@@ -339,12 +338,12 @@ Change Overview wording; binding it into Conceptual Review execution, resource a
 workflow execution is delivered by later issues. TLS/Caddy and Repository Provider Connections are
 outside the local-first V1 contract.
 
-The development Compose file keeps database ownership out of the long-running services. The one-shot
-migration and role-preparation containers use the database owner; web and worker connect as
-`kestrel_runtime`, which cannot alter schema or update, delete, truncate, or disable protection on
-Installation Audit records. Review-domain grants are similarly narrow: Change Intent is
-select/insert-only and the Project, proposal, source, and revision lifecycle tables expose no DELETE
-authority; Review Workflow records are select/insert-only, and database constraints preserve frozen
-inputs, immutable revisions, and canonical-family associations. The loopback-only development
-defaults can be overridden with `KESTREL_MIGRATOR_DATABASE_PASSWORD` and
+The development Compose files keep database ownership out of the host-native long-running services.
+The one-shot migration and role-preparation containers use the database owner; host web and worker
+connect over loopback as `kestrel_runtime`, which cannot alter schema or update, delete, truncate,
+or disable protection on Installation Audit records. Review-domain grants are similarly narrow:
+Change Intent is select/insert-only and the Project, proposal, source, and revision lifecycle tables
+expose no DELETE authority; Review Workflow records are select/insert-only, and database constraints
+preserve frozen inputs, immutable revisions, and canonical-family associations. The loopback-only
+development defaults can be overridden with `KESTREL_MIGRATOR_DATABASE_PASSWORD` and
 `KESTREL_RUNTIME_DATABASE_PASSWORD`; a certified release must supply generated values.

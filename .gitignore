@@ -10,3 +10,4 @@ test-results/
 *.key
 *.log
 .DS_Store
+.kestrel/
