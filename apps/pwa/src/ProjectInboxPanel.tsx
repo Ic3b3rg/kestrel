@@ -17,6 +17,7 @@ import { ChangeOverviewPanel } from "./ChangeOverviewPanel.js";
 import { ShortObjectId } from "./ShortObjectId.js";
 import { ReviewPreparationPanel } from "./ReviewPreparationPanel.js";
 import { DirectApiProfilePanel } from "./DirectApiProfilePanel.js";
+import { currentReviewRevision } from "./current-review-revision.js";
 
 interface ProjectInboxPanelProps {
   error: string | null;
@@ -154,7 +155,7 @@ function ProjectFacts({ project }: { project: Project }) {
         </dd>
       </div>
       <div>
-        <dt>Provider metadata</dt>
+        <dt>Provider Observation</dt>
         <dd>
           <strong>
             {provider === null
@@ -165,10 +166,10 @@ function ProjectFacts({ project }: { project: Project }) {
           </strong>
           <span>
             {provider === null
-              ? "No Provider observation is attached."
+              ? "No Provider Observation is attached."
               : provider.kind === "host_gh"
                 ? `Observed as ${provider.account} on ${provider.host}; Kestrel stores no token.`
-                : "Provider observation is read without a GitHub account or token."}
+                : "Provider Observation is read without a GitHub account or token."}
           </span>
         </dd>
       </div>
@@ -179,7 +180,7 @@ function ProjectFacts({ project }: { project: Project }) {
           <span>
             {provider === null
               ? "Exact retained base and head commits are independent of repository attachment."
-              : "Refresh is Manual only; provider metadata alone never authorizes source."}
+              : "Refresh is Manual only; Provider Observation never authorizes source."}
           </span>
         </dd>
       </div>
@@ -266,7 +267,7 @@ function ChangeProposalRecord({
   onRefresh: () => void;
   projectId: string;
 }) {
-  const revision = changeProposal.reviewRevisions[0];
+  const revision = currentReviewRevision(changeProposal);
   const changeOverview = changeProposal.changeOverview ?? {
     exactHeadObjectId: changeProposal.head.objectId,
     state: "awaiting_source" as const,

@@ -422,6 +422,23 @@ describe("Project persistence mapping", () => {
     expect(JSON.stringify(overview)).not.toContain("src/review.ts");
   });
 
+  it("keeps source-head facts current when only the observed target changes", () => {
+    const row = providerProjectRowWithOverview();
+    row.base_object_id = "e".repeat(40);
+    row.base_ref_snapshot = "release";
+
+    const overview = mapProjectRows([row]).projects[0]?.changeProposals[0]?.changeOverview;
+
+    expect(overview).toMatchObject({
+      state: "ready",
+      exactRevision: {
+        base: { objectId: "a".repeat(40) },
+        head: { objectId: "b".repeat(40) },
+      },
+      sourceFacts: overviewFacts,
+    });
+  });
+
   it("refreshes only current provider facts while retaining exact source facts", () => {
     const before = mapProjectRows([providerProjectRowWithOverview()]).projects[0]
       ?.changeProposals[0]?.changeOverview;
