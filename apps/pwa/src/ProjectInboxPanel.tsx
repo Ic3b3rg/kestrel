@@ -180,7 +180,7 @@ function ProjectFacts({ project }: { project: Project }) {
           <span>
             {provider === null
               ? "Exact retained base and head commits are independent of repository attachment."
-              : "Refresh is manual only; Provider Observation never authorizes source."}
+              : "Refresh is Manual only; Provider Observation never authorizes source."}
           </span>
         </dd>
       </div>
