@@ -67,7 +67,15 @@ compiled PWA are also available at [http://127.0.0.1:3000](http://127.0.0.1:3000
 After sign-in, use **Open Project** in the persistent Project rail to select one repository from the
 trusted-host inventory. Kestrel creates or reuses its durable Project and selects it through a
 `/projects/:id` URL, so the same Project remains selected after reload without browser storage.
-Settings remains available from the rail for Installation, repository-access, and Operator controls.
+Settings remains available from the rail for Installation, host connections, repository access, and
+Operator controls.
+
+In **Settings → Connections**, Kestrel runs a fresh read-only host probe for GitHub CLI and the
+selected Project. It shows the validated `github.com` account and repository access only after the
+probe succeeds; **Verify again** reruns version, authentication, account-drift, and access checks.
+Action-required states provide the exact trusted-host command or access step to correct them. GitHub
+CLI keeps custody of its credentials, and Kestrel does not return or persist token or auth-config
+material.
 
 If the password or every signed-in device is lost, recover the sole Operator from the trusted host:
 

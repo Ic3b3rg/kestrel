@@ -9,6 +9,7 @@ import type {
   ConfigureDirectApiProfileCommand,
   InstallationEvent,
   InstallationSnapshot,
+  HostGitHubConnection,
   ProjectInbox,
   LocalRepositoryInventory,
   LocalRepositoryReferences,
@@ -22,6 +23,7 @@ import {
   configureDirectApiProfile,
   fetchDirectApiProfile,
   fetchInstallation,
+  fetchHostGitHubConnection,
   fetchProjectInbox,
   fetchLocalRepositories,
   fetchLocalRepositoryReferences,
@@ -685,6 +687,34 @@ describe("PWA API client", () => {
     expect(new Headers(mutation?.headers).get("X-Kestrel-CSRF")).toBe(
       `${"A".repeat(43)}.${"B".repeat(43)}`,
     );
+  });
+
+  it("reads a fresh host GitHub Connection for one opaque Project", async () => {
+    const connection: HostGitHubConnection = {
+      schemaVersion: 1,
+      state: "ready",
+      reason: null,
+      cli: { version: "2.87.0", supported: true },
+      identity: { host: "github.com", account: "operator" },
+      projectAccess: {
+        state: "verified",
+        projectId: directApiProjectId,
+        repository: { owner: "Ic3b3rg", name: "kestrel" },
+      },
+      checkedAt: "2026-09-02T12:00:00.000Z",
+    };
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(connection));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchHostGitHubConnection(directApiProjectId)).resolves.toEqual(connection);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/v1/connections/github?projectId=${directApiProjectId}`,
+      expect.objectContaining({ credentials: "same-origin", method: "GET" }),
+    );
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ ...connection, token: "never" }));
+    await expect(fetchHostGitHubConnection()).rejects.toThrow("invalid host GitHub Connection");
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/v1/connections/github");
   });
 
   it("opens a local Project without sending a filesystem path", async () => {

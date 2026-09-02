@@ -5,6 +5,7 @@ import {
   ProjectInboxSchema,
   ReviewRevisionAvailableSchema,
   type ChangeIntentVersionCreated,
+  type HostGitHubConnection,
   type ProjectUpserted,
 } from "@kestrel/contracts";
 
@@ -635,6 +636,53 @@ test.describe("observable Installation PWA", () => {
       await route.fulfill({ json: openedProject, status: 200 });
     });
 
+    let connectionProbeCount = 0;
+    let connectionActionRequired = false;
+    let connectionProbeBlocked = true;
+    let releaseFirstConnectionProbe: () => void = () => undefined;
+    const firstConnectionProbeGate = new Promise<void>((resolve) => {
+      releaseFirstConnectionProbe = resolve;
+    });
+    await page.route("**/api/v1/connections/github*", async (route) => {
+      connectionProbeCount += 1;
+      if (connectionProbeBlocked) await firstConnectionProbeGate;
+      const selectedProjectId = new URL(route.request().url()).searchParams.get("projectId");
+      const selectedRepository =
+        selectedProjectId === openedProject.project.id
+          ? { owner: "Ic3b3rg", name: "kestrel" }
+          : { owner: "openai", name: "openai-node" };
+      const connection: HostGitHubConnection = connectionActionRequired
+        ? {
+            schemaVersion: 1,
+            state: "action_required",
+            reason: "authentication_required",
+            cli: { version: "2.87.0", supported: true },
+            identity: null,
+            projectAccess:
+              selectedProjectId === null
+                ? null
+                : { state: "not_verified", projectId: selectedProjectId, repository: null },
+            checkedAt: "2026-09-02T12:01:00.000Z",
+          }
+        : {
+            schemaVersion: 1,
+            state: "ready",
+            reason: null,
+            cli: { version: "2.87.0", supported: true },
+            identity: { host: "github.com", account: "operator" },
+            projectAccess:
+              selectedProjectId === null
+                ? null
+                : {
+                    state: "verified",
+                    projectId: selectedProjectId,
+                    repository: selectedRepository,
+                  },
+            checkedAt: "2026-09-02T12:00:00.000Z",
+          };
+      await route.fulfill({ json: connection, status: 200 });
+    });
+
     await page.goto(runningStack.pwaUrl);
     await expect(page.getByRole("heading", { name: "Sign in to Kestrel" })).toBeVisible();
     await page.keyboard.press("Tab");
@@ -683,6 +731,23 @@ test.describe("observable Installation PWA", () => {
     );
     expect(projectPostCount).toBe(1);
     await page.getByRole("link", { name: "Settings", exact: true }).click();
+    const connectionPanel = page.locator(".github-connection");
+    await expect(connectionPanel.getByRole("status")).toContainText("Checking");
+    connectionProbeBlocked = false;
+    releaseFirstConnectionProbe();
+    await expect(connectionPanel.getByRole("status")).toContainText("Ready");
+    await connectionPanel.getByLabel("Project access").selectOption(openedProject.project.id);
+    await expect(connectionPanel).toContainText("Ic3b3rg/kestrel");
+    await expect(connectionPanel).toContainText("operator");
+    connectionActionRequired = true;
+    await connectionPanel.getByRole("button", { name: "Verify again" }).click();
+    await expect(connectionPanel.getByRole("status")).toContainText("Action required");
+    await expect(connectionPanel).toContainText("gh auth login --hostname github.com");
+    await expect(connectionPanel.getByText("Account", { exact: true })).toHaveCount(0);
+    connectionActionRequired = false;
+    await connectionPanel.getByRole("button", { name: "Verify again" }).click();
+    await expect(connectionPanel.getByRole("status")).toContainText("Ready");
+    expect(connectionProbeCount).toBeGreaterThanOrEqual(4);
     await expect(page.getByText("05 / OPERATOR", { exact: true })).toBeVisible();
     await expect(
       page.getByText(`Signed in as ${TEST_OPERATOR_CREDENTIALS.username}`, { exact: true }),
@@ -722,6 +787,7 @@ test.describe("observable Installation PWA", () => {
       page.getByRole("heading", { name: "Reconnect to view product data" }),
     ).toBeVisible();
     await expect(page.getByRole("button", { name: "Run diagnostic" })).toBeDisabled();
+    await expect(connectionPanel.getByRole("status")).toContainText("Unavailable");
     await expect(
       page.getByText(installationId ?? "missing Installation ID", { exact: true }),
     ).toHaveCount(0);

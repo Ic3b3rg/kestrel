@@ -12,6 +12,7 @@ import {
   InstallationEventSchema,
   InstallationSnapshotSchema,
   KestrelIdSchema,
+  HostGitHubConnectionSchema,
   HostGitHubProjectInboxSchema,
   ObserveHostGitHubPullRequestCommandSchema,
   LoginCommandSchema,
@@ -40,6 +41,7 @@ import {
   type EventCursor,
   type InstallationEvent,
   type InstallationSnapshot,
+  type HostGitHubConnection,
   type HostGitHubProjectInbox,
   type ObserveHostGitHubPullRequestCommand,
   type LoginCommand,
@@ -180,6 +182,23 @@ export async function fetchProjectInbox(signal?: AbortSignal): Promise<ProjectIn
     signal: signal ?? null,
   });
   return requireJson(response, ProjectInboxSchema, "Project inbox");
+}
+
+export async function fetchHostGitHubConnection(
+  projectId?: string,
+  signal?: AbortSignal,
+): Promise<HostGitHubConnection> {
+  const query =
+    projectId === undefined
+      ? ""
+      : `?projectId=${encodeURIComponent(KestrelIdSchema.parse(projectId))}`;
+  const response = await fetch(`/api/v1/connections/github${query}`, {
+    credentials: "same-origin",
+    headers: { Accept: "application/json" },
+    method: "GET",
+    signal: signal ?? null,
+  });
+  return requireJson(response, HostGitHubConnectionSchema, "host GitHub Connection");
 }
 
 export async function fetchReviewPreparation(
