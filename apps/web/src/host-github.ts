@@ -15,6 +15,8 @@ const MAX_STDOUT_BYTES = 2 * 1024 * 1024;
 const MAX_STDERR_BYTES = 32 * 1024;
 const DEFAULT_TIMEOUT_MS = 10_000;
 const HOST = "github.com";
+const ACCOUNT_ARGUMENTS = ["api", "--hostname", HOST, "/user", "--jq", "{login: .login}"] as const;
+const REPOSITORY_PROJECTION = "{id, name, node_id, owner: {login: .owner.login}}";
 
 const AccountSchema = z.strictObject({ login: z.string().min(1).max(100) });
 const RepositorySchema = z.strictObject({
@@ -86,6 +88,17 @@ function unverifiedProjectAccess(project: ConnectionProject | null) {
   return project === null
     ? null
     : ({ state: "not_verified", projectId: project.projectId, repository: null } as const);
+}
+
+function repositoryArguments(coordinates: Coordinates): string[] {
+  return [
+    "api",
+    "--hostname",
+    HOST,
+    `/repos/${coordinates.owner}/${coordinates.repository}`,
+    "--jq",
+    REPOSITORY_PROJECTION,
+  ];
 }
 
 type ConnectionCli = NonNullable<HostGitHubConnection["cli"]>;
@@ -213,14 +226,6 @@ function parseVersion(text: string): { supported: boolean; version: string } {
   };
 }
 
-function parseSupportedVersion(text: string): string {
-  const parsed = parseVersion(text);
-  if (!parsed.supported) {
-    throw new HostGitHubError("unavailable");
-  }
-  return parsed.version;
-}
-
 function failedConnection(
   error: unknown,
   stage: ConnectionProbeStage,
@@ -257,6 +262,21 @@ function failedConnection(
     reason,
     cli,
     identity: stage === "project" && reason !== "authentication_required" ? identity : null,
+    projectAccess: unverifiedProjectAccess(project),
+    checkedAt: new Date().toISOString(),
+  });
+}
+
+function driftedConnection(
+  project: ConnectionProject | null,
+  cli: ConnectionCli,
+): HostGitHubConnection {
+  return HostGitHubConnectionSchema.parse({
+    schemaVersion: 1,
+    state: "action_required",
+    reason: "account_drift",
+    cli,
+    identity: null,
     projectAccess: unverifiedProjectAccess(project),
     checkedAt: new Date().toISOString(),
   });
@@ -327,6 +347,28 @@ function assertProjectPullRequest(coordinates: Coordinates, number: number, url:
 export function createHostGitHubCli(options: HostGitHubCliOptions = {}) {
   const executable = options.executable ?? process.env.KESTREL_GH_EXECUTABLE ?? "gh";
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const readCliVersion = async (signal?: AbortSignal) =>
+    parseVersion((await run(executable, ["version"], timeoutMs, signal)).stdout);
+  const readSupportedCliVersion = async (signal?: AbortSignal) => {
+    const cli = await readCliVersion(signal);
+    if (!cli.supported) throw new HostGitHubError("unavailable");
+    return cli.version;
+  };
+  const readAccount = async (signal?: AbortSignal) =>
+    parseJson(AccountSchema, (await run(executable, ACCOUNT_ARGUMENTS, timeoutMs, signal)).stdout);
+  const readRepository = async (coordinates: Coordinates, signal?: AbortSignal) => {
+    const repository = parseJson(
+      RepositorySchema,
+      (await run(executable, repositoryArguments(coordinates), timeoutMs, signal)).stdout,
+    );
+    if (
+      repository.owner.login.toLowerCase() !== coordinates.owner.toLowerCase() ||
+      repository.name.toLowerCase() !== coordinates.repository.toLowerCase()
+    ) {
+      throw new HostGitHubError("invalid_response");
+    }
+    return repository;
+  };
   return {
     async readConnection(
       project: ConnectionProject | null,
@@ -334,7 +376,7 @@ export function createHostGitHubCli(options: HostGitHubCliOptions = {}) {
     ): Promise<HostGitHubConnection> {
       let cli: ConnectionCli;
       try {
-        cli = parseVersion((await run(executable, ["version"], timeoutMs, signal)).stdout);
+        cli = await readCliVersion(signal);
       } catch (error) {
         return failedConnection(error, "version", project, null);
       }
@@ -352,27 +394,13 @@ export function createHostGitHubCli(options: HostGitHubCliOptions = {}) {
       let account: z.infer<typeof AccountSchema>;
       let confirmedAccount: z.infer<typeof AccountSchema>;
       try {
-        account = parseJson(
-          AccountSchema,
-          (await run(executable, ["api", "--hostname", HOST, "/user"], timeoutMs, signal)).stdout,
-        );
-        confirmedAccount = parseJson(
-          AccountSchema,
-          (await run(executable, ["api", "--hostname", HOST, "/user"], timeoutMs, signal)).stdout,
-        );
+        account = await readAccount(signal);
+        confirmedAccount = await readAccount(signal);
       } catch (error) {
         return failedConnection(error, "identity", project, cli);
       }
       if (confirmedAccount.login !== account.login) {
-        return HostGitHubConnectionSchema.parse({
-          schemaVersion: 1,
-          state: "action_required",
-          reason: "account_drift",
-          cli,
-          identity: null,
-          projectAccess: unverifiedProjectAccess(project),
-          checkedAt: new Date().toISOString(),
-        });
+        return driftedConnection(project, cli);
       }
       if (project === null) {
         return HostGitHubConnectionSchema.parse({
@@ -398,34 +426,20 @@ export function createHostGitHubCli(options: HostGitHubCliOptions = {}) {
       }
       let repository: z.infer<typeof RepositorySchema>;
       try {
-        repository = parseJson(
-          RepositorySchema,
-          (
-            await run(
-              executable,
-              [
-                "api",
-                "--hostname",
-                HOST,
-                `/repos/${project.coordinates.owner}/${project.coordinates.repository}`,
-              ],
-              timeoutMs,
-              signal,
-            )
-          ).stdout,
-        );
-        if (
-          repository.owner.login.toLowerCase() !== project.coordinates.owner.toLowerCase() ||
-          repository.name.toLowerCase() !== project.coordinates.repository.toLowerCase()
-        ) {
-          throw new HostGitHubError("invalid_response");
-        }
+        repository = await readRepository(project.coordinates, signal);
       } catch (error) {
         return failedConnection(error, "project", project, cli, {
           host: HOST,
           account: account.login,
         });
       }
+      let accessedAccount: z.infer<typeof AccountSchema>;
+      try {
+        accessedAccount = await readAccount(signal);
+      } catch (error) {
+        return failedConnection(error, "identity", project, cli);
+      }
+      if (accessedAccount.login !== account.login) return driftedConnection(project, cli);
       return HostGitHubConnectionSchema.parse({
         schemaVersion: 1,
         state: "ready",
@@ -441,42 +455,19 @@ export function createHostGitHubCli(options: HostGitHubCliOptions = {}) {
       });
     },
     async readVersion(signal?: AbortSignal): Promise<string> {
-      return parseSupportedVersion((await run(executable, ["version"], timeoutMs, signal)).stdout);
+      return readSupportedCliVersion(signal);
     },
     async readActiveAccount(signal?: AbortSignal): Promise<string> {
-      return parseJson(
-        AccountSchema,
-        (await run(executable, ["api", "--hostname", HOST, "/user"], timeoutMs, signal)).stdout,
-      ).login;
+      return (await readAccount(signal)).login;
     },
     async readProjectInbox(
       projectId: string,
       coordinates: Coordinates,
       signal?: AbortSignal,
     ): Promise<HostGitHubProjectInbox> {
-      const executableVersion = parseSupportedVersion(
-        (await run(executable, ["version"], timeoutMs, signal)).stdout,
-      );
-      const account = parseJson(
-        AccountSchema,
-        (await run(executable, ["api", "--hostname", HOST, "/user"], timeoutMs, signal)).stdout,
-      );
-      const repository = parseJson(
-        RepositorySchema,
-        (
-          await run(
-            executable,
-            ["api", "--hostname", HOST, `/repos/${coordinates.owner}/${coordinates.repository}`],
-            timeoutMs,
-            signal,
-          )
-        ).stdout,
-      );
-      if (
-        repository.owner.login.toLowerCase() !== coordinates.owner.toLowerCase() ||
-        repository.name.toLowerCase() !== coordinates.repository.toLowerCase()
-      )
-        throw new HostGitHubError("invalid_response");
+      const executableVersion = await readSupportedCliVersion(signal);
+      const account = await readAccount(signal);
+      await readRepository(coordinates, signal);
       const all = parseJson(
         SearchSchema,
         (await run(executable, searchArgs(coordinates, "all"), timeoutMs, signal)).stdout,
@@ -540,27 +531,10 @@ export function createHostGitHubCli(options: HostGitHubCliOptions = {}) {
           )
         ).stdout,
       );
-      const repository = parseJson(
-        RepositorySchema,
-        (
-          await run(
-            executable,
-            ["api", "--hostname", HOST, `/repos/${coordinates.owner}/${coordinates.repository}`],
-            timeoutMs,
-            signal,
-          )
-        ).stdout,
-      );
-      const account = parseJson(
-        AccountSchema,
-        (await run(executable, ["api", "--hostname", HOST, "/user"], timeoutMs, signal)).stdout,
-      );
+      const repository = await readRepository(coordinates, signal);
+      const account = await readAccount(signal);
       if (account.login !== expectedAccount) throw new HostGitHubError("access_denied");
-      if (
-        repository.owner.login.toLowerCase() !== coordinates.owner.toLowerCase() ||
-        repository.name.toLowerCase() !== coordinates.repository.toLowerCase() ||
-        pull.number !== number
-      ) {
+      if (pull.number !== number) {
         throw new HostGitHubError("invalid_response");
       }
       assertProjectPullRequest(coordinates, pull.number, pull.url);

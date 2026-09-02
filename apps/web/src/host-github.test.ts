@@ -15,6 +15,7 @@ async function fakeGh(
     | "malformed"
     | "slow"
     | "account_drift"
+    | "post_access_drift"
     | "not_authenticated"
     | "old_version"
     | "rate_limited"
@@ -31,8 +32,8 @@ case "$1 $2" in
   "version ") ${mode === "malformed" ? "printf 'not-json'" : mode === "old_version" ? "printf 'gh version 2.39.1 (test)\\\\n'" : "printf 'gh version 2.87.0 (test)\\\\n'"} ;;
   "api --hostname")
     case "$4" in
-      "/user") ${mode === "account_drift" ? `if [ -f '${join(directory, "seen-user")}' ]; then printf '{"login":"intruder"}'; else touch '${join(directory, "seen-user")}'; printf '{"login":"operator"}'; fi` : mode === "not_authenticated" ? "printf 'not logged into github.com ghp_never_expose_this' >&2; exit 1" : mode === "rate_limited" ? "printf 'API rate limit exceeded' >&2; exit 1" : 'printf \'{"login":"operator"}\''} ;;
-      *) ${mode === "sso_denied" ? "printf 'Resource protected by organization SAML enforcement ghp_never_expose_this' >&2; exit 1" : 'printf \'{"id":1,"name":"kestrel","node_id":"R_test","owner":{"login":"Ic3b3rg"}}\''} ;;
+      "/user") ${mode === "account_drift" ? `if [ -f '${join(directory, "seen-user")}' ]; then printf '{"login":"intruder"}'; else touch '${join(directory, "seen-user")}'; printf '{"login":"operator"}'; fi` : mode === "post_access_drift" ? `if [ -f '${join(directory, "repository-read")}' ]; then printf '{"login":"intruder"}'; else printf '{"login":"operator"}'; fi` : mode === "not_authenticated" ? "printf 'not logged into github.com ghp_never_expose_this' >&2; exit 1" : mode === "rate_limited" ? "printf 'API rate limit exceeded' >&2; exit 1" : 'if [ "$5" = "--jq" ]; then printf \'{"login":"operator"}\'; else printf \'{"login":"operator","name":"extra provider field"}\'; fi'} ;;
+      *) ${mode === "sso_denied" ? "printf 'Resource protected by organization SAML enforcement ghp_never_expose_this' >&2; exit 1" : `${mode === "post_access_drift" ? `touch '${join(directory, "repository-read")}'; ` : ""}if [ "$5" = "--jq" ]; then printf '{"id":1,"name":"kestrel","node_id":"R_test","owner":{"login":"Ic3b3rg"}}'; else printf '{"id":1,"name":"kestrel","node_id":"R_test","owner":{"login":"Ic3b3rg"},"private":true}'; fi`} ;;
     esac ;;
   "search prs")
     case "$*" in
@@ -77,9 +78,10 @@ describe("host GitHub CLI", () => {
     });
     expect((await readFile(fake.log, "utf8")).trim().split("\n")).toEqual([
       "version",
-      "api --hostname github.com /user",
-      "api --hostname github.com /user",
-      "api --hostname github.com /repos/Ic3b3rg/kestrel",
+      "api --hostname github.com /user --jq {login: .login}",
+      "api --hostname github.com /user --jq {login: .login}",
+      "api --hostname github.com /repos/Ic3b3rg/kestrel --jq {id, name, node_id, owner: {login: .owner.login}}",
+      "api --hostname github.com /user --jq {login: .login}",
     ]);
     expect(JSON.stringify(connection)).not.toMatch(/token|config|environment/iu);
   });
@@ -99,8 +101,8 @@ describe("host GitHub CLI", () => {
     });
     expect((await readFile(fake.log, "utf8")).trim().split("\n")).toEqual([
       "version",
-      "api --hostname github.com /user",
-      "api --hostname github.com /user",
+      "api --hostname github.com /user --jq {login: .login}",
+      "api --hostname github.com /user --jq {login: .login}",
     ]);
   });
 
@@ -118,8 +120,8 @@ describe("host GitHub CLI", () => {
     });
     expect((await readFile(fake.log, "utf8")).trim().split("\n")).toEqual([
       "version",
-      "api --hostname github.com /user",
-      "api --hostname github.com /user",
+      "api --hostname github.com /user --jq {login: .login}",
+      "api --hostname github.com /user --jq {login: .login}",
     ]);
   });
 
@@ -141,6 +143,24 @@ describe("host GitHub CLI", () => {
     });
     expect(JSON.stringify(connection)).not.toMatch(/operator|intruder/iu);
     expect(await readFile(fake.log, "utf8")).not.toMatch(/search prs|pr view/iu);
+  });
+
+  it("fails closed when the account drifts during selected-Project access", async () => {
+    const fake = await fakeGh("post_access_drift");
+    const connection = await createHostGitHubCli({
+      executable: fake.executable,
+    }).readConnection({
+      projectId,
+      coordinates: { owner: "Ic3b3rg", repository: "kestrel" },
+    });
+
+    expect(connection).toMatchObject({
+      state: "action_required",
+      reason: "account_drift",
+      identity: null,
+      projectAccess: { state: "not_verified", projectId, repository: null },
+    });
+    expect(JSON.stringify(connection)).not.toMatch(/operator|intruder/iu);
   });
 
   it("requires an upgrade without probing identity when the installed CLI is unsupported", async () => {
@@ -199,9 +219,9 @@ describe("host GitHub CLI", () => {
     expect(JSON.stringify(connection)).not.toMatch(/ghp_|SAML/iu);
     expect((await readFile(fake.log, "utf8")).trim().split("\n")).toEqual([
       "version",
-      "api --hostname github.com /user",
-      "api --hostname github.com /user",
-      "api --hostname github.com /repos/Ic3b3rg/kestrel",
+      "api --hostname github.com /user --jq {login: .login}",
+      "api --hostname github.com /user --jq {login: .login}",
+      "api --hostname github.com /repos/Ic3b3rg/kestrel --jq {id, name, node_id, owner: {login: .owner.login}}",
     ]);
   });
 

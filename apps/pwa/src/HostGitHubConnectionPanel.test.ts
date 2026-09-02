@@ -136,6 +136,8 @@ describe("host GitHub Connection Settings", () => {
 
     expect(container.textContent).toContain("Unavailable");
     expect(container.textContent).toContain("Reconnect this workstation");
+    expect(container.textContent).toContain("Not checked while offline");
+    expect(container.textContent).not.toContain("GitHub CLIChecking");
     expect(findButton(container, "Verify again").disabled).toBe(true);
     expect(loadConnection).not.toHaveBeenCalled();
   });

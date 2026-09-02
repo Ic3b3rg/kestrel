@@ -111,6 +111,15 @@ export function HostGitHubConnectionPanel({
         : loading
           ? "Checking selected Project"
           : "Not verified";
+  const cliLabel = !online
+    ? "Not checked while offline"
+    : failed
+      ? "Probe unavailable"
+      : connection?.cli === null
+        ? "Not detected"
+        : connection?.cli.version === undefined
+          ? "Checking"
+          : `Installed · ${connection.cli.version}`;
   const recovery = !online
     ? "Reconnect this workstation, then verify the host connection again."
     : failed
@@ -168,13 +177,7 @@ export function HostGitHubConnectionPanel({
       <dl className="fact-list connection-facts">
         <div>
           <dt>GitHub CLI</dt>
-          <dd>
-            {connection?.cli === null
-              ? "Not detected"
-              : connection?.cli.version === undefined
-                ? "Checking"
-                : `Installed · ${connection.cli.version}`}
-          </dd>
+          <dd>{cliLabel}</dd>
         </div>
         {connection?.identity === null || connection?.identity === undefined ? null : (
           <>
