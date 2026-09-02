@@ -1400,7 +1400,6 @@ export async function readProjectGitHubCoordinates(
        AND source.attachment_state = 'attached'
        AND source.github_owner_snapshot IS NOT NULL
        AND source.github_name_snapshot IS NOT NULL
-       AND installation.singleton = true
      LIMIT 1`,
     [projectId],
   );

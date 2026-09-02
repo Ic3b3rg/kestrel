@@ -317,6 +317,10 @@ async function main() {
     [...compose, "run", "--rm", "--no-deps", "legacy-state-import"],
     dockerEnvironment,
   );
+  await Promise.all([
+    ensurePrivateDirectory(artifactRoot),
+    ensurePrivateDirectory(modelProviderSecretRoot),
+  ]);
   console.log("[kestrel] Building host applications...");
   await run(npm, ["run", "build"], hostEnvironment);
 

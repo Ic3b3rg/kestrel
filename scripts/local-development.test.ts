@@ -192,16 +192,21 @@ writeFileSync(process.env.KESTREL_LIFECYCLE_TEST_LOG, JSON.stringify({
     });
 
     const recorder = `
-import { appendFileSync } from "node:fs";
+import { appendFileSync, chmodSync } from "node:fs";
 import { delimiter, dirname } from "node:path";
+const args = process.argv.slice(2);
 appendFileSync(process.env.KESTREL_LIFECYCLE_TEST_LOG, JSON.stringify({
-  args: process.argv.slice(2),
+  args,
   artifactRoot: process.env.KESTREL_ARTIFACT_ROOT,
   dockerDirectoryFirstOnPath: process.env.PATH.split(delimiter)[0] === dirname(process.argv[1]),
   hasSessionSigningKey: Boolean(process.env.SESSION_SIGNING_KEY),
   kind: "docker",
   modelProviderSecretRoot: process.env.KESTREL_MODEL_PROVIDER_SECRET_ROOT
 }) + "\\n");
+if (args.at(-1) === "legacy-state-import") {
+  chmodSync(process.env.KESTREL_ARTIFACT_ROOT, 0o755);
+  chmodSync(process.env.KESTREL_MODEL_PROVIDER_SECRET_ROOT, 0o755);
+}
 `;
     await writeExecutable(join(dockerTools, "docker"), `#!/usr/bin/env node\n${recorder}`);
 
