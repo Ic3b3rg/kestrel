@@ -144,6 +144,11 @@ describe("Project routes", () => {
         authentication: "authenticated",
         account: "operator",
       },
+      groupStates: [
+        { group: "review_requested", state: "available", failureReason: null },
+        { group: "authored", state: "available", failureReason: null },
+        { group: "other", state: "available", failureReason: null },
+      ],
       pullRequests: [],
       observedAt: "2026-08-27T10:00:00.000Z",
     });

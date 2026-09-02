@@ -1615,6 +1615,54 @@
       "HostGitHubProjectInbox": {
         "additionalProperties": false,
         "properties": {
+          "groupStates": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "failureReason": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "authentication_required",
+                        "project_access_denied",
+                        "rate_limited",
+                        "timed_out",
+                        "unexpected_response"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "group": {
+                  "enum": [
+                    "review_requested",
+                    "authored",
+                    "other"
+                  ],
+                  "type": "string"
+                },
+                "state": {
+                  "enum": [
+                    "available",
+                    "unavailable"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "group",
+                "state",
+                "failureReason"
+              ],
+              "type": "object"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "type": "array"
+          },
           "limitations": {
             "items": {
               "maxLength": 256,
@@ -1770,6 +1818,7 @@
           "route",
           "limitations",
           "status",
+          "groupStates",
           "pullRequests",
           "observedAt"
         ],

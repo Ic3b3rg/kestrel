@@ -19,6 +19,7 @@ async function fakeGh(
     | "not_authenticated"
     | "old_version"
     | "rate_limited"
+    | "authored_rate_limited"
     | "sso_denied" = "ok",
 ) {
   const directory = await mkdtemp(join(tmpdir(), "kestrel-fake-gh-"));
@@ -38,7 +39,7 @@ case "$1 $2" in
   "search prs")
     case "$*" in
       *"--review-requested @me"*) printf '[{"author":{"login":"reviewer"},"body":"review body","number":2,"title":"Review me","updatedAt":"2026-08-27T10:00:00Z","url":"https://github.com/Ic3b3rg/kestrel/pull/2"}]' ;;
-      *"--author @me"*) printf '[{"author":{"login":"operator"},"body":"authored body","number":1,"title":"Mine","updatedAt":"2026-08-27T11:00:00Z","url":"https://github.com/Ic3b3rg/kestrel/pull/1"}]' ;;
+      *"--author @me"*) ${mode === "authored_rate_limited" ? "printf 'API rate limit exceeded' >&2; exit 1" : 'printf \'[{"author":{"login":"operator"},"body":"authored body","number":1,"title":"Mine","updatedAt":"2026-08-27T11:00:00Z","url":"https://github.com/Ic3b3rg/kestrel/pull/1"}]\''} ;;
       *) printf '[{"author":{"login":"operator"},"body":"authored body","number":1,"title":"Mine","updatedAt":"2026-08-27T11:00:00Z","url":"https://github.com/Ic3b3rg/kestrel/pull/1"}]' ;;
     esac ;;
   "pr view") printf '{"author":{"id":"U_test","login":"operator"},"baseRefName":"master","baseRefOid":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","body":"body","headRefName":"feature","headRefOid":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","id":"PR_test","mergedAt":null,"number":1,"state":"OPEN","title":"Mine","url":"https://github.com/Ic3b3rg/kestrel/pull/1"}' ;;
@@ -276,6 +277,11 @@ describe("host GitHub CLI", () => {
       [2, "review_requested"],
       [1, "authored"],
     ]);
+    expect(inbox.groupStates).toEqual([
+      { group: "review_requested", state: "available", failureReason: null },
+      { group: "authored", state: "available", failureReason: null },
+      { group: "other", state: "available", failureReason: null },
+    ]);
     const commands = await readFile(fake.log, "utf8");
     expect(commands).toContain("api --hostname github.com /repos/Ic3b3rg/kestrel");
     expect(commands.match(/search prs/g)).toHaveLength(3);
@@ -283,6 +289,23 @@ describe("host GitHub CLI", () => {
     expect(commands).not.toMatch(
       /(?:--method|-X)\s+(?:POST|PATCH|PUT|DELETE)|\bpr\s+(?:merge|close|comment|review)\b/iu,
     );
+  });
+
+  it("keeps successful groups visible when one bounded search is rate limited", async () => {
+    const fake = await fakeGh("authored_rate_limited");
+    const inbox = await createHostGitHubCli({ executable: fake.executable }).readProjectInbox(
+      projectId,
+      { owner: "Ic3b3rg", repository: "kestrel" },
+    );
+
+    expect(inbox.groupStates).toEqual([
+      { group: "review_requested", state: "available", failureReason: null },
+      { group: "authored", state: "unavailable", failureReason: "rate_limited" },
+      { group: "other", state: "unavailable", failureReason: "rate_limited" },
+    ]);
+    expect(inbox.pullRequests.map(({ number, group }) => [number, group])).toEqual([
+      [2, "review_requested"],
+    ]);
   });
 
   it("rejects malformed output without exposing it", async () => {

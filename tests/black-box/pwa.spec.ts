@@ -374,6 +374,23 @@ test.describe("observable Installation PWA", () => {
             authentication: "unknown",
             account: null,
           },
+          groupStates: [
+            {
+              group: "review_requested",
+              state: "unavailable",
+              failureReason: "unexpected_response",
+            },
+            {
+              group: "authored",
+              state: "unavailable",
+              failureReason: "unexpected_response",
+            },
+            {
+              group: "other",
+              state: "unavailable",
+              failureReason: "unexpected_response",
+            },
+          ],
           pullRequests: [],
           observedAt: "2026-08-28T12:00:00.000Z",
         },

@@ -20,6 +20,7 @@ import {
   type ProjectInbox,
   type ProjectUpserted,
   type HostGitHubProjectInbox,
+  type HostGitHubPullRequestGroupState,
 } from "@kestrel/contracts";
 import {
   ReviewRevisionPersistenceError,
@@ -79,6 +80,33 @@ export interface HostGitHubProjectService {
   ): Promise<ProjectUpserted>;
 }
 
+function unavailableHostGitHubGroups(
+  kind: HostGitHubError["kind"],
+): HostGitHubPullRequestGroupState[] {
+  const failureReason = (() => {
+    switch (kind) {
+      case "needs_authentication":
+        return "authentication_required" as const;
+      case "access_denied":
+      case "project_not_supported":
+        return "project_access_denied" as const;
+      case "rate_limited":
+        return "rate_limited" as const;
+      case "timeout":
+      case "cancelled":
+        return "timed_out" as const;
+      case "invalid_response":
+      case "unavailable":
+        return "unexpected_response" as const;
+    }
+  })();
+  return (["review_requested", "authored", "other"] as const).map((group) => ({
+    group,
+    state: "unavailable",
+    failureReason,
+  }));
+}
+
 export function createHostGitHubProjectService(
   pool: DatabasePool,
   renderingCoordinator: ChangeOverviewRenderingJobCoordinator,
@@ -107,7 +135,9 @@ export function createHostGitHubProjectService(
         if (cached !== undefined && cached.expiresAt > Date.now()) return cached.value;
         value = await cli.readProjectInbox(projectId, projectCoordinates, signal);
         if (value.status.account !== account) throw new HostGitHubError("access_denied");
-        cache.set(key, { expiresAt: Date.now() + 30_000, value });
+        if (value.groupStates.every((groupState) => groupState.state === "available")) {
+          cache.set(key, { expiresAt: Date.now() + 30_000, value });
+        }
       } catch (error) {
         if (!(error instanceof HostGitHubError) || error.kind === "project_not_supported")
           throw error;
@@ -128,6 +158,7 @@ export function createHostGitHubProjectService(
                   : "unknown",
             account: null,
           },
+          groupStates: unavailableHostGitHubGroups(error.kind),
           pullRequests: [],
           observedAt: new Date().toISOString(),
         });

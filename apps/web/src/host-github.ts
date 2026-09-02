@@ -7,6 +7,7 @@ import {
   HostGitHubProjectInboxSchema,
   type HostGitHubConnection,
   type HostGitHubProjectInbox,
+  type HostGitHubPullRequestGroupState,
   type HostGitHubPullRequestSummary,
 } from "@kestrel/contracts";
 import type { PublicGitHubObservation } from "./public-github.js";
@@ -79,6 +80,12 @@ interface Coordinates {
   owner: string;
   repository: string;
 }
+type SearchFilter = "all" | "authored" | "review_requested";
+type SearchItems = z.infer<typeof SearchSchema>;
+type GroupFailureReason = NonNullable<HostGitHubPullRequestGroupState["failureReason"]>;
+type SearchOutcome =
+  | { state: "available"; items: SearchItems }
+  | { state: "unavailable"; failureReason: GroupFailureReason };
 interface ConnectionProject {
   projectId: string;
   coordinates: Coordinates | null;
@@ -282,10 +289,7 @@ function driftedConnection(
   });
 }
 
-function searchArgs(
-  coordinates: Coordinates,
-  filter: "all" | "authored" | "review_requested",
-): string[] {
+function searchArgs(coordinates: Coordinates, filter: SearchFilter): string[] {
   const args = [
     "search",
     "prs",
@@ -307,32 +311,85 @@ function searchArgs(
 }
 
 function normalizeSearch(groups: {
-  all: z.infer<typeof SearchSchema>;
-  authored: z.infer<typeof SearchSchema>;
-  review_requested: z.infer<typeof SearchSchema>;
+  all: SearchOutcome;
+  authored: SearchOutcome;
+  review_requested: SearchOutcome;
 }): HostGitHubPullRequestSummary[] {
-  const authored = new Set(groups.authored.map(({ number }) => number));
-  const requested = new Set(groups.review_requested.map(({ number }) => number));
-  const unique = new Map<number, z.infer<typeof SearchItemSchema>>();
-  for (const item of [...groups.all, ...groups.authored, ...groups.review_requested])
-    unique.set(item.number, item);
-  const rank = { review_requested: 0, authored: 1, other: 2 } as const;
-  return [...unique.values()]
-    .map((item) => ({
+  const requestedItems =
+    groups.review_requested.state === "available" ? groups.review_requested.items : [];
+  const authoredItems = groups.authored.state === "available" ? groups.authored.items : [];
+  const requested = new Set(requestedItems.map(({ number }) => number));
+  const authored = new Set(authoredItems.map(({ number }) => number));
+  const unique = new Map<number, HostGitHubPullRequestSummary>();
+  for (const item of requestedItems) {
+    unique.set(item.number, {
       ...item,
       author: item.author?.login ?? null,
-      group: requested.has(item.number)
-        ? ("review_requested" as const)
-        : authored.has(item.number)
-          ? ("authored" as const)
-          : ("other" as const),
-    }))
-    .sort(
-      (left, right) =>
-        rank[left.group] - rank[right.group] ||
-        right.updatedAt.localeCompare(left.updatedAt) ||
-        left.number - right.number,
-    );
+      group: "review_requested",
+    });
+  }
+  for (const item of authoredItems) {
+    if (!unique.has(item.number))
+      unique.set(item.number, { ...item, author: item.author?.login ?? null, group: "authored" });
+  }
+  if (
+    groups.all.state === "available" &&
+    groups.authored.state === "available" &&
+    groups.review_requested.state === "available"
+  ) {
+    for (const item of groups.all.items) {
+      if (!requested.has(item.number) && !authored.has(item.number)) {
+        unique.set(item.number, { ...item, author: item.author?.login ?? null, group: "other" });
+      }
+    }
+  }
+  const rank = { review_requested: 0, authored: 1, other: 2 } as const;
+  return [...unique.values()].sort(
+    (left, right) =>
+      rank[left.group] - rank[right.group] ||
+      right.updatedAt.localeCompare(left.updatedAt) ||
+      left.number - right.number,
+  );
+}
+
+function groupFailureReason(error: HostGitHubError): GroupFailureReason {
+  switch (error.kind) {
+    case "needs_authentication":
+      return "authentication_required";
+    case "access_denied":
+    case "project_not_supported":
+      return "project_access_denied";
+    case "rate_limited":
+      return "rate_limited";
+    case "timeout":
+    case "cancelled":
+      return "timed_out";
+    case "invalid_response":
+    case "unavailable":
+      return "unexpected_response";
+  }
+}
+
+function searchOutcome(result: PromiseSettledResult<SearchItems>): SearchOutcome {
+  if (result.status === "fulfilled") return { state: "available", items: result.value };
+  if (!(result.reason instanceof HostGitHubError)) throw result.reason;
+  if (
+    result.reason.kind === "cancelled" ||
+    result.reason.kind === "needs_authentication" ||
+    result.reason.kind === "access_denied"
+  ) {
+    throw result.reason;
+  }
+  return { state: "unavailable", failureReason: groupFailureReason(result.reason) };
+}
+
+function displayedGroupState(
+  group: HostGitHubPullRequestGroupState["group"],
+  outcome: SearchOutcome,
+): HostGitHubPullRequestGroupState {
+  return outcome.state === "available"
+    ? { group, state: "available", failureReason: null }
+    : { group, state: "unavailable", failureReason: outcome.failureReason };
 }
 
 function assertProjectPullRequest(coordinates: Coordinates, number: number, url: string): void {
@@ -468,23 +525,31 @@ export function createHostGitHubCli(options: HostGitHubCliOptions = {}) {
       const executableVersion = await readSupportedCliVersion(signal);
       const account = await readAccount(signal);
       await readRepository(coordinates, signal);
-      const all = parseJson(
-        SearchSchema,
-        (await run(executable, searchArgs(coordinates, "all"), timeoutMs, signal)).stdout,
-      );
-      const authored = parseJson(
-        SearchSchema,
-        (await run(executable, searchArgs(coordinates, "authored"), timeoutMs, signal)).stdout,
-      );
-      const review_requested = parseJson(
-        SearchSchema,
-        (await run(executable, searchArgs(coordinates, "review_requested"), timeoutMs, signal))
-          .stdout,
-      );
+      const readSearch = async (filter: SearchFilter): Promise<SearchItems> => {
+        const items = parseJson(
+          SearchSchema,
+          (await run(executable, searchArgs(coordinates, filter), timeoutMs, signal)).stdout,
+        );
+        for (const item of items) assertProjectPullRequest(coordinates, item.number, item.url);
+        return items;
+      };
+      const [allResult, authoredResult, reviewRequestedResult] = await Promise.allSettled([
+        readSearch("all"),
+        readSearch("authored"),
+        readSearch("review_requested"),
+      ]);
+      const all = searchOutcome(allResult);
+      const authored = searchOutcome(authoredResult);
+      const review_requested = searchOutcome(reviewRequestedResult);
       const pullRequests = normalizeSearch({ all, authored, review_requested });
-      for (const pullRequest of pullRequests) {
-        assertProjectPullRequest(coordinates, pullRequest.number, pullRequest.url);
-      }
+      const other =
+        all.state === "unavailable"
+          ? all
+          : authored.state === "unavailable"
+            ? authored
+            : review_requested.state === "unavailable"
+              ? review_requested
+              : ({ state: "available", items: all.items } as const);
       return HostGitHubProjectInboxSchema.parse({
         schemaVersion: 1,
         projectId,
@@ -500,6 +565,11 @@ export function createHostGitHubCli(options: HostGitHubCliOptions = {}) {
           authentication: "authenticated",
           account: account.login,
         },
+        groupStates: [
+          displayedGroupState("review_requested", review_requested),
+          displayedGroupState("authored", authored),
+          displayedGroupState("other", other),
+        ],
         pullRequests,
         observedAt: new Date().toISOString(),
       });
