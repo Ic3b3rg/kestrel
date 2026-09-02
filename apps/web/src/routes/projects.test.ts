@@ -6,6 +6,8 @@ import {
   ProjectUpsertedSchema,
   type Project,
 } from "@kestrel/contracts";
+import { ReviewRevisionPersistenceError } from "@kestrel/database";
+import { LocalSourceError } from "@kestrel/local-source";
 
 import { buildApp } from "../app.js";
 import {
@@ -106,11 +108,13 @@ describe("Project service", () => {
 describe("Project routes", () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
   const projectService: {
+    openLocalProject: ReturnType<typeof vi.fn<ProjectService["openLocalProject"]>>;
     openPublicGitHubPullRequest: ReturnType<
       typeof vi.fn<ProjectService["openPublicGitHubPullRequest"]>
     >;
     readInbox: ReturnType<typeof vi.fn<ProjectService["readInbox"]>>;
   } = {
+    openLocalProject: vi.fn<ProjectService["openLocalProject"]>(),
     openPublicGitHubPullRequest: vi.fn<ProjectService["openPublicGitHubPullRequest"]>(),
     readInbox: vi.fn<ProjectService["readInbox"]>(),
   };
@@ -120,10 +124,12 @@ describe("Project routes", () => {
   };
 
   beforeEach(async () => {
+    projectService.openLocalProject.mockReset();
     projectService.openPublicGitHubPullRequest.mockReset();
     projectService.readInbox.mockReset();
     projectService.readInbox.mockResolvedValue({ schemaVersion: 1, projects: [project] });
     projectService.openPublicGitHubPullRequest.mockResolvedValue({ schemaVersion: 1, project });
+    projectService.openLocalProject.mockResolvedValue({ schemaVersion: 1, project });
     hostGitHubProjectService.read.mockReset();
     hostGitHubProjectService.observe.mockReset();
     hostGitHubProjectService.read.mockResolvedValue({
@@ -259,6 +265,49 @@ describe("Project routes", () => {
     });
     expect(invocation?.[1].actorId).toBe(operatorId);
     expect(invocation?.[1].correlationId).toMatch(/^[a-f0-9-]{36}$/u);
+  });
+
+  it("opens a local Project using only its opaque repository identity", async () => {
+    const repositoryId = "018f0f89-9a1d-7484-b224-866ef9d69990";
+    const response = await app.inject({
+      headers: { ...authenticatedHeaders, "content-type": "application/json" },
+      method: "POST",
+      payload: { repositoryId },
+      url: "/api/v1/projects/local",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(ProjectUpsertedSchema.parse(response.json())).toEqual({ schemaVersion: 1, project });
+    const invocation = projectService.openLocalProject.mock.calls[0];
+    expect(invocation?.[0]).toEqual({ repositoryId });
+    expect(invocation?.[1].actorId).toBe(operatorId);
+    expect(invocation?.[1].correlationId).toMatch(/^[a-f0-9-]{36}$/u);
+    expect(JSON.stringify(invocation)).not.toContain("/Users/");
+  });
+
+  it.each([
+    [new LocalSourceError("repository_not_available"), 404, "REPOSITORY_NOT_AVAILABLE"],
+    [new LocalSourceError("source_containment_violation"), 422, "SOURCE_CONTAINMENT_VIOLATION"],
+    [new LocalSourceError("revision_limit_exceeded"), 413, "REVISION_LIMIT_EXCEEDED"],
+    [new ReviewRevisionPersistenceError("revision_limit_exceeded"), 413, "PROJECT_LIMIT_EXCEEDED"],
+    [
+      new ReviewRevisionPersistenceError("change_proposal_mismatch"),
+      409,
+      "CHANGE_PROPOSAL_MISMATCH",
+    ],
+  ] as const)("maps a local Project rejection without exposing it", async (error, status, code) => {
+    projectService.openLocalProject.mockRejectedValueOnce(error);
+
+    const response = await app.inject({
+      headers: { ...authenticatedHeaders, "content-type": "application/json" },
+      method: "POST",
+      payload: { repositoryId: "018f0f89-9a1d-7484-b224-866ef9d69990" },
+      url: "/api/v1/projects/local",
+    });
+
+    expect(response.statusCode).toBe(status);
+    expect(ApiErrorSchema.parse(response.json())).toMatchObject({ code });
+    expect(response.body).not.toContain(error.message);
   });
 
   it("rejects a non-canonical URL before invoking the service", async () => {

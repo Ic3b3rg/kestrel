@@ -62,6 +62,7 @@ export interface LocalRepositoryService {
 }
 
 export interface LocalReviewRevisionSourceService extends LocalRepositoryService {
+  inspectProjectSource(repositoryId: string): Promise<LocalRepositorySourceObservation>;
   prepare(command: RetainLocalReviewRevisionCommand): Promise<PreparedReviewRevision>;
   prepareObserved(
     selection: ObservedReviewRevisionSelection,
@@ -93,16 +94,16 @@ function sameGitHubRepository(
 
 function preparedSource(
   repository: Awaited<ReturnType<typeof resolveRepository>>,
-  selected: SelectedRevision,
+  inspection: Pick<SelectedRevision, "githubRepository" | "objectFormat" | "sourceIdentity">,
 ): LocalRepositorySourceObservation {
   return {
     displayName: repository.displayName,
-    githubRepository: selected.githubRepository,
-    objectFormat: selected.objectFormat,
+    githubRepository: inspection.githubRepository,
+    objectFormat: inspection.objectFormat,
     relativePath: repository.relativePath,
     repositoryId: repository.repositoryId,
     rootId: repository.rootId,
-    sourceIdentity: selected.sourceIdentity,
+    sourceIdentity: inspection.sourceIdentity,
   };
 }
 
@@ -197,6 +198,12 @@ export function createLocalRepositoryService(
       const resolved = await resolveRepository(config, repositoryId);
       const inventory = await listRepositoryReferences(config, resolved);
       return LocalRepositoryReferencesSchema.parse({ schemaVersion: 1, ...inventory });
+    },
+    async inspectProjectSource(repositoryId) {
+      const config = activeConfig;
+      const repository = await resolveRepository(config, repositoryId);
+      const inspection = await inspectRepository(config, repository);
+      return preparedSource(repository, inspection);
     },
     async prepare(command) {
       const config = activeConfig;

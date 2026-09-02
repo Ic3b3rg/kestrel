@@ -29,6 +29,7 @@ import {
   fetchSession,
   loginOperator,
   logoutOperator,
+  openLocalProject,
   openPublicGitHubPullRequest,
   runDiagnostic,
   retainReviewRevision,
@@ -684,6 +685,29 @@ describe("PWA API client", () => {
     expect(new Headers(mutation?.headers).get("X-Kestrel-CSRF")).toBe(
       `${"A".repeat(43)}.${"B".repeat(43)}`,
     );
+  });
+
+  it("opens a local Project without sending a filesystem path", async () => {
+    const repositoryId = "018f0f89-9a1d-7484-b224-866ef9d69990";
+    const created = { schemaVersion: 1 as const, project: projectInbox.projects[0] };
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(created));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("document", {
+      cookie: `__Host-kestrel-csrf=${"A".repeat(43)}.${"B".repeat(43)}`,
+    });
+
+    await expect(openLocalProject({ repositoryId })).resolves.toEqual(created);
+
+    const request = fetchMock.mock.calls[0]?.[1];
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/v1/projects/local");
+    expect(request).toEqual(
+      expect.objectContaining({
+        body: JSON.stringify({ repositoryId }),
+        credentials: "same-origin",
+        method: "POST",
+      }),
+    );
+    expect(JSON.stringify(request)).not.toContain("/Users/");
   });
 
   it("logs out with CSRF proof and changes credentials through one bound step-up", async () => {

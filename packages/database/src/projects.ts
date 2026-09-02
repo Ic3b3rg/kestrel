@@ -32,24 +32,24 @@ import { lockGitHubRepositoryIdentity } from "./provider-identity.js";
 export interface ProjectDatabaseRow {
   author_login_snapshot: string | null;
   author_provider_id: string | null;
-  base_object_id: string;
-  base_ref_snapshot: string;
+  base_object_id: string | null;
+  base_ref_snapshot: string | null;
   created_at: Date;
   direct_profile_attestation_expires_at?: Date | null;
   direct_profile_availability?: "available" | "stale" | "unavailable" | null;
   direct_profile_last_test_passed_at?: Date | null;
-  head_object_id: string;
-  head_ref_snapshot: string;
+  head_object_id: string | null;
+  head_ref_snapshot: string | null;
   id: string;
   observed_at: Date | null;
   proposal_canonical_url: string | null;
-  proposal_id: string;
+  proposal_id: string | null;
   proposal_number: string | null;
   proposal_provider_id: string | null;
   proposal_state: "closed" | "merged" | "open" | "unknown" | null;
-  proposal_title: string;
+  proposal_title: string | null;
   proposal_body?: string | null;
-  proposal_optimistic_version: string;
+  proposal_optimistic_version: string | null;
   provider: string | null;
   provider_repository_id: string | null;
   provider_observation_kind: string | null;
@@ -130,6 +130,16 @@ export interface ProjectDatabaseRow {
   candidate_head_object_id?: string | null;
   candidate_head_ref?: string | null;
 }
+
+type ProjectDatabaseRowWithProposal = ProjectDatabaseRow & {
+  base_object_id: string;
+  base_ref_snapshot: string;
+  head_object_id: string;
+  head_ref_snapshot: string;
+  proposal_id: string;
+  proposal_optimistic_version: string;
+  proposal_title: string;
+};
 
 export interface PublicGitHubProjectObservation {
   proposal: Omit<
@@ -287,7 +297,7 @@ function mapChangeIntent(row: ProjectDatabaseRow): ChangeIntent | null {
   });
 }
 
-function mapIntentCandidates(row: ProjectDatabaseRow) {
+function mapIntentCandidates(row: ProjectDatabaseRowWithProposal) {
   const proposalKind = row.proposal_kind ?? "provider_observed";
   if (proposalKind !== "local" && proposalKind !== "provider_observed") {
     throw new Error(`Unsupported Change Proposal kind: ${proposalKind}`);
@@ -366,7 +376,7 @@ function mapReviewRevision(row: ProjectDatabaseRow): ReviewRevision | null {
 }
 
 function mapChangeOverview(
-  row: ProjectDatabaseRow,
+  row: ProjectDatabaseRowWithProposal,
   changeIntent: ChangeIntent | null,
 ): ChangeOverview {
   const awaitingSource = (): ChangeOverview => ({
@@ -575,6 +585,23 @@ function appendRevision(
   proposal.reviewRevisions = revisions;
 }
 
+function hasChangeProposal(row: ProjectDatabaseRow): row is ProjectDatabaseRowWithProposal {
+  if (row.proposal_id === null) {
+    return false;
+  }
+  if (
+    row.proposal_optimistic_version === null ||
+    row.proposal_title === null ||
+    row.base_ref_snapshot === null ||
+    row.base_object_id === null ||
+    row.head_ref_snapshot === null ||
+    row.head_object_id === null
+  ) {
+    throw new Error("Change Proposal identity is incomplete");
+  }
+  return true;
+}
+
 export function mapProjectRows(rows: readonly ProjectDatabaseRow[]): ProjectInbox {
   const projects = new Map<string, Project>();
   const now = new Date();
@@ -622,6 +649,9 @@ export function mapProjectRows(rows: readonly ProjectDatabaseRow[]): ProjectInbo
         updatedAt: row.updated_at.toISOString(),
       };
       projects.set(row.id, project);
+    }
+    if (!hasChangeProposal(row)) {
+      continue;
     }
     let proposal = project.changeProposals.find(({ id }) => id === row.proposal_id);
     const changeIntent = mapChangeIntent(row);
@@ -781,10 +811,11 @@ function projectRowsSelect(requiredRevisionId: "NULL::uuid" | "$2::uuid"): strin
          candidate_revision.head_object_id AS candidate_head_object_id,
          candidate_revision.head_commit_author_snapshot AS candidate_head_commit_author,
          candidate_revision.head_commit_subject_snapshot AS candidate_head_commit_subject
-  FROM projects AS p
-  INNER JOIN change_proposals AS cp
+  FROM (
+    SELECT * FROM projects WHERE canonical_project_id IS NULL
+  ) AS p
+  LEFT JOIN change_proposals AS cp
     ON cp.project_id = p.id
-   AND p.canonical_project_id IS NULL
    AND cp.canonical_change_proposal_id IS NULL
   LEFT JOIN direct_api_profiles AS dap ON dap.project_id = p.id
   LEFT JOIN LATERAL (
@@ -913,7 +944,7 @@ export async function readProjectInTransaction(
   const inbox = mapProjectRows(result.rows);
   const project = inbox.projects[0];
   if (project === undefined || inbox.projects.length !== 1) {
-    throw new Error("Public GitHub Project could not be read after persistence");
+    throw new Error("Project could not be read after persistence");
   }
   return project;
 }

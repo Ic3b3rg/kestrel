@@ -64,6 +64,11 @@ npm run bootstrap
 Open [http://127.0.0.1:5173](http://127.0.0.1:5173) and sign in. The API and the production-shaped
 compiled PWA are also available at [http://127.0.0.1:3000](http://127.0.0.1:3000).
 
+After sign-in, use **Open Project** in the persistent Project rail to select one repository from the
+trusted-host inventory. Kestrel creates or reuses its durable Project and selects it through a
+`/projects/:id` URL, so the same Project remains selected after reload without browser storage.
+Settings remains available from the rail for Installation, repository-access, and Operator controls.
+
 If the password or every signed-in device is lost, recover the sole Operator from the trusted host:
 
 ```sh

@@ -28,6 +28,7 @@
                 "PROVIDER_RESOURCE_UNAVAILABLE",
                 "SOURCE_CONTAINMENT_VIOLATION",
                 "REVISION_LIMIT_EXCEEDED",
+                "PROJECT_LIMIT_EXCEEDED",
                 "OBJECT_MISSING",
                 "OBJECT_VERIFICATION_FAILED",
                 "CHANGE_PROPOSAL_MISMATCH",
@@ -2083,6 +2084,20 @@
       },
       "required": [
         "number"
+      ],
+      "type": "object"
+    },
+    "OpenLocalProjectCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "repositoryId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "repositoryId"
       ],
       "type": "object"
     },

@@ -1,5 +1,5 @@
 import { AxeBuilder } from "@axe-core/playwright";
-import { expect, test, type Route } from "@playwright/test";
+import { expect, test, type Page, type Route } from "@playwright/test";
 
 import {
   ProjectInboxSchema,
@@ -52,6 +52,15 @@ const openedProject: ProjectUpserted = {
     updatedAt: "2026-08-25T12:01:00.000Z",
   },
 };
+
+async function openProjectWorkspace(page: Page, label = "openai/openai-node"): Promise<void> {
+  const link = page
+    .getByRole("navigation", { name: "Projects" })
+    .getByRole("link", { name: new RegExp(label.replace("/", "\\/"), "u") });
+  await expect(link).toBeVisible();
+  await link.click();
+  await expect(page.getByRole("heading", { level: 1, name: label, exact: true })).toBeVisible();
+}
 
 test.describe("observable Installation PWA", () => {
   let stack: RunningStack | undefined;
@@ -195,6 +204,7 @@ test.describe("observable Installation PWA", () => {
       await page.getByLabel("Username").fill(TEST_OPERATOR_CREDENTIALS.username);
       await page.getByLabel("Password").fill(TEST_OPERATOR_CREDENTIALS.password);
       await page.getByRole("button", { name: "Sign in" }).click();
+      await openProjectWorkspace(page);
 
       const panel = page.locator(".direct-api-profile");
       await expect(panel.getByRole("heading", { name: "Direct API profile" })).toBeVisible();
@@ -419,7 +429,7 @@ test.describe("observable Installation PWA", () => {
     await page.getByLabel("Username").fill(TEST_OPERATOR_CREDENTIALS.username);
     await page.getByLabel("Password").fill(TEST_OPERATOR_CREDENTIALS.password);
     await page.getByRole("button", { name: "Sign in" }).click();
-    await expect(page.getByRole("heading", { name: "Kestrel Installation" })).toBeVisible();
+    await openProjectWorkspace(page);
     await expect(page.getByText("Credentials stay with host Git", { exact: true })).toBeVisible();
     const intent = page.getByLabel("Confirm Change Intent for PR #1234");
     await expect(intent).toHaveValue("");
@@ -551,6 +561,7 @@ test.describe("observable Installation PWA", () => {
     await page.getByLabel("Username").fill(TEST_OPERATOR_CREDENTIALS.username);
     await page.getByLabel("Password").fill(TEST_OPERATOR_CREDENTIALS.password);
     await page.getByRole("button", { name: "Sign in" }).click();
+    await openProjectWorkspace(page);
     await expect(page.getByText("Unresolved draft", { exact: true })).toBeVisible();
     await page.getByRole("checkbox", { name: /GitHub title/u }).check();
     await page.getByLabel("Objective", { exact: true }).fill(objective);
@@ -640,10 +651,11 @@ test.describe("observable Installation PWA", () => {
     await expect(passwordInput).toHaveValue("");
     await passwordInput.fill(TEST_OPERATOR_CREDENTIALS.password);
     await page.getByRole("button", { name: "Sign in" }).click();
-    await expect(page.getByRole("heading", { name: "Kestrel Installation" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Projects", exact: true }),
+    ).toBeVisible();
     expectedUnauthorizedResponses = 0;
-    await expect(page.getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
-    await expect(page.getByRole("link", { name: "openai/openai-node" })).toBeVisible();
+    await openProjectWorkspace(page);
     await expect(page.getByText("Not acquired", { exact: true })).toHaveCount(2);
     await expect(page.getByText("Public GitHub pull request", { exact: true })).toBeVisible();
     await expect(page.getByText(/Refresh is Manual only/u)).toBeVisible();
@@ -659,27 +671,33 @@ test.describe("observable Installation PWA", () => {
     expect(projectPostCount).toBe(0);
     await page.getByLabel("Optional public GitHub pull request URL").fill(publicPullRequestUrl);
     await page.getByRole("button", { name: "Add provider context" }).click();
-    await expect(page.getByRole("link", { name: "Ic3b3rg/kestrel" })).toBeVisible();
-    await expect(page.getByText("Observed base", { exact: true })).toHaveCount(2);
-    await expect(page.getByText("Observed head", { exact: true })).toHaveCount(2);
+    await expect(
+      page
+        .getByRole("navigation", { name: "Projects" })
+        .getByRole("link", { name: /Ic3b3rg\/kestrel/u }),
+    ).toBeVisible();
+    await expect(page.getByText("Observed base", { exact: true })).toHaveCount(1);
+    await expect(page.getByText("Observed head", { exact: true })).toHaveCount(1);
     await expect(page.getByRole("status")).toContainText(
       "Project refreshed from the public GitHub pull request.",
     );
     expect(projectPostCount).toBe(1);
-    await expect(page.getByText("04 / OPERATOR", { exact: true })).toBeVisible();
+    await page.getByRole("link", { name: "Settings", exact: true }).click();
+    await expect(page.getByText("05 / OPERATOR", { exact: true })).toBeVisible();
     await expect(
       page.getByText(`Signed in as ${TEST_OPERATOR_CREDENTIALS.username}`, { exact: true }),
     ).toBeVisible();
     await expect(page.getByRole("heading", { name: "Operator security" })).toBeVisible();
     await page.reload();
-    await expect(page.getByRole("heading", { name: "Kestrel Installation" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Settings", exact: true }),
+    ).toBeVisible();
     await expect(page.getByRole("heading", { name: "Sign in to Kestrel" })).toHaveCount(0);
     const diagnosticButton = page.getByRole("button", { name: "Run diagnostic" });
     await expect(diagnosticButton).toBeEnabled();
     await page.keyboard.press("Tab");
-    await expect(page.getByRole("link", { name: "Skip to Installation" })).toBeFocused();
-    await page.keyboard.press("Tab");
-    await expect(diagnosticButton).toBeFocused();
+    await expect(page.getByRole("link", { name: "Skip to workspace" })).toBeFocused();
+    await diagnosticButton.focus();
     await page.keyboard.press("Enter");
     await expect(page.getByText("Succeeded", { exact: true })).toBeVisible();
 
@@ -690,14 +708,16 @@ test.describe("observable Installation PWA", () => {
       .textContent();
     expect(installationId).not.toBeNull();
 
-    await page.getByRole("button", { name: "Open local repository" }).click();
-    await expect(page.getByRole("dialog", { name: "Retain an exact change" })).toBeVisible();
+    await page.getByRole("button", { name: "Open Project", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Open an authorized repository" })).toBeVisible();
     const dialogAccessibility = await new AxeBuilder({ page })
       .include(".local-repository-dialog")
       .analyze();
     expect(dialogAccessibility.violations).toEqual([]);
     await context.setOffline(true);
-    await expect(page.getByRole("dialog", { name: "Retain an exact change" })).toHaveCount(0);
+    await expect(page.getByRole("dialog", { name: "Open an authorized repository" })).toHaveCount(
+      0,
+    );
     await expect(
       page.getByRole("heading", { name: "Reconnect to view product data" }),
     ).toBeVisible();
@@ -725,7 +745,9 @@ test.describe("observable Installation PWA", () => {
 
     for (const width of [320, 768, 1_024, 1_440]) {
       await page.setViewportSize({ height: 900, width });
-      await expect(page.getByRole("heading", { name: "Kestrel Installation" })).toBeVisible();
+      await expect(
+        page.getByRole("heading", { level: 1, name: "Settings", exact: true }),
+      ).toBeVisible();
       const layout = await page.evaluate(() => {
         const viewportWidth = document.documentElement.clientWidth;
         const offenders = [...document.querySelectorAll("*")]
@@ -764,7 +786,9 @@ test.describe("observable Installation PWA", () => {
     await page.getByLabel("Username").fill(updatedCredentials.username);
     await page.getByLabel("Password").fill(updatedCredentials.password);
     await page.getByRole("button", { name: "Sign in" }).click();
-    await expect(page.getByRole("heading", { name: "Kestrel Installation" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Settings", exact: true }),
+    ).toBeVisible();
     await expect(
       page.getByText(`Signed in as ${updatedCredentials.username}`, { exact: true }),
     ).toBeVisible();

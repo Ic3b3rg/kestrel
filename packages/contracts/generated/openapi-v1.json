@@ -29,6 +29,7 @@
                   "PROVIDER_RESOURCE_UNAVAILABLE",
                   "SOURCE_CONTAINMENT_VIOLATION",
                   "REVISION_LIMIT_EXCEEDED",
+                  "PROJECT_LIMIT_EXCEEDED",
                   "OBJECT_MISSING",
                   "OBJECT_VERIFICATION_FAILED",
                   "CHANGE_PROPOSAL_MISMATCH",
@@ -2100,6 +2101,20 @@
         },
         "required": [
           "number"
+        ],
+        "type": "object"
+      },
+      "OpenLocalProjectCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "repositoryId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repositoryId"
         ],
         "type": "object"
       },
@@ -20734,6 +20749,144 @@
               }
             },
             "description": "Public GitHub or Project storage is unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/projects/local": {
+      "post": {
+        "description": "Creates or reuses one durable Project from an authorized Local Repository Source without accepting a filesystem path.",
+        "operationId": "openLocalProject",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Origin",
+            "required": true,
+            "schema": {
+              "format": "uri",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Kestrel-CSRF",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenLocalProjectCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectUpserted"
+                }
+              }
+            },
+            "description": "Local Project opened idempotently"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The opaque repository identity is invalid"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Operator authentication is required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Origin or CSRF validation failed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The authorized repository is unavailable"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The repository identity conflicts with an existing Project"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The payload or a configured local-source or Project capacity limit was exceeded"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The command media type is unsupported"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Repository containment validation failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Local repository inspection or Project storage is unavailable"
           }
         }
       }

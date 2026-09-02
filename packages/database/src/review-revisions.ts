@@ -6,8 +6,10 @@ import {
   ChangeOverviewSourceFactsSchema,
   ChangeIntentSchema,
   ChangeIntentSourceSchema,
+  ProjectUpsertedSchema,
   type ChangeIntent,
   type ChangeOverviewSourceFacts,
+  type ProjectUpserted,
   type ReviewRevision,
 } from "@kestrel/contracts";
 
@@ -18,6 +20,7 @@ import {
 } from "./change-overview-renderings.js";
 import type { DatabasePool } from "./pool.js";
 import { lockGitHubRepositoryIdentity } from "./provider-identity.js";
+import { readProjectInTransaction } from "./projects.js";
 
 type ReviewRevisionFailureReason = NonNullable<ReviewRevision["failureReason"]>;
 
@@ -41,6 +44,12 @@ export interface BeginReviewRevisionInput {
   head: { objectId: string; ref: string };
   maxBytes: number;
   maxObjects: number;
+  source: LocalRepositorySourceObservation;
+}
+
+export interface OpenLocalProjectInput {
+  actorId: string;
+  correlationId: string;
   source: LocalRepositorySourceObservation;
 }
 
@@ -783,9 +792,10 @@ async function reconcileExistingSourceProject(
   client: PoolClient,
   installationId: string,
   projectId: string,
-  input: BeginReviewRevisionInput,
+  source: LocalRepositorySourceObservation,
+  changeProposalId?: string,
 ): Promise<{ changeProposalId: string | undefined; projectId: string }> {
-  const github = input.source.githubRepository;
+  const github = source.githubRepository;
   const projectResult = await client.query<RepositoryProjectRow>(
     `
       SELECT id,
@@ -830,16 +840,16 @@ async function reconcileExistingSourceProject(
     ) {
       throw new ReviewRevisionPersistenceError("change_proposal_mismatch");
     }
-    return { changeProposalId: input.changeProposalId, projectId: canonicalProject.id };
+    return { changeProposalId, projectId: canonicalProject.id };
   }
   if (github === null) {
-    return { changeProposalId: input.changeProposalId, projectId };
+    return { changeProposalId, projectId };
   }
   if (project.provider !== null) {
     if (!sameGitHubRepository(project, github)) {
       throw new ReviewRevisionPersistenceError("change_proposal_mismatch");
     }
-    return { changeProposalId: input.changeProposalId, projectId };
+    return { changeProposalId, projectId };
   }
   const matches = await findRepositoryProjects(client, installationId, github);
   const otherMatches = matches.filter((match) => match.id !== projectId);
@@ -848,14 +858,9 @@ async function reconcileExistingSourceProject(
   }
   const providerProject = otherMatches[0];
   if (providerProject !== undefined) {
-    await mergeProviderProjectAsAlias(
-      client,
-      projectId,
-      providerProject,
-      input.changeProposalId ?? null,
-    );
+    await mergeProviderProjectAsAlias(client, projectId, providerProject, changeProposalId ?? null);
   }
-  return { changeProposalId: input.changeProposalId, projectId };
+  return { changeProposalId, projectId };
 }
 
 async function createLocalProject(client: PoolClient, installationId: string): Promise<string> {
@@ -889,7 +894,7 @@ async function attachSource(
   client: PoolClient,
   installationId: string,
   projectId: string,
-  input: BeginReviewRevisionInput,
+  source: LocalRepositorySourceObservation,
 ): Promise<string> {
   await client.query(
     `
@@ -908,7 +913,7 @@ async function attachSource(
           )
         )
     `,
-    [installationId, projectId, input.source.repositoryId, input.source.sourceIdentity],
+    [installationId, projectId, source.repositoryId, source.sourceIdentity],
   );
   const result = await client.query<{ id: string }>(
     `
@@ -931,14 +936,14 @@ async function attachSource(
     [
       installationId,
       projectId,
-      input.source.sourceIdentity,
-      input.source.repositoryId,
-      input.source.rootId,
-      input.source.relativePath,
-      input.source.displayName,
-      input.source.objectFormat,
-      input.source.githubRepository?.owner ?? null,
-      input.source.githubRepository?.name ?? null,
+      source.sourceIdentity,
+      source.repositoryId,
+      source.rootId,
+      source.relativePath,
+      source.displayName,
+      source.objectFormat,
+      source.githubRepository?.owner ?? null,
+      source.githubRepository?.name ?? null,
     ],
   );
   const id = result.rows[0]?.id;
@@ -946,6 +951,147 @@ async function attachSource(
     throw new Error("Local Repository Source attachment failed");
   }
   return id;
+}
+
+async function refreshSourceAttachment(
+  client: PoolClient,
+  installationId: string,
+  projectId: string,
+  sourceId: string,
+  source: LocalRepositorySourceObservation,
+): Promise<void> {
+  await client.query(
+    `
+      UPDATE local_repository_sources
+      SET attachment_state = 'detached',
+          updated_at = clock_timestamp()
+      WHERE id <> $5
+        AND attachment_state = 'attached'
+        AND (
+          project_id IN (
+            SELECT id FROM projects WHERE id = $2 OR canonical_project_id = $2
+          )
+          OR (
+            installation_id = $1
+            AND repository_id = $3
+            AND source_identity <> $4
+          )
+        )
+    `,
+    [installationId, projectId, source.repositoryId, source.sourceIdentity, sourceId],
+  );
+  await client.query(
+    `
+      UPDATE local_repository_sources
+      SET repository_id = $2,
+          root_id = $3,
+          repository_relative_locator = $4,
+          display_name_snapshot = $5,
+          github_owner_snapshot = $6,
+          github_name_snapshot = $7,
+          attachment_state = 'attached',
+          updated_at = clock_timestamp()
+      WHERE id = $1
+    `,
+    [
+      sourceId,
+      source.repositoryId,
+      source.rootId,
+      source.relativePath,
+      source.displayName,
+      source.githubRepository?.owner ?? null,
+      source.githubRepository?.name ?? null,
+    ],
+  );
+}
+
+async function auditSourceAttachment(
+  client: PoolClient,
+  input: OpenLocalProjectInput,
+  sourceId: string,
+): Promise<void> {
+  await appendAuditRecordInTransaction(client, {
+    actorId: input.actorId,
+    actorType: "operator",
+    causationId: null,
+    correlationId: input.correlationId,
+    denialReason: null,
+    eventType: "local_repository_source.attached",
+    facts: { objectFormat: input.source.objectFormat },
+    outcome: "succeeded",
+    targetId: sourceId,
+    targetType: "local_repository_source",
+  });
+}
+
+export async function openLocalProject(
+  pool: DatabasePool,
+  input: OpenLocalProjectInput,
+): Promise<ProjectUpserted> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const installationId = await readInstallationId(client);
+    await client.query(
+      "SELECT pg_advisory_xact_lock(hashtextextended('kestrel-local-source:' || $1, 0))",
+      [input.source.sourceIdentity],
+    );
+    if (input.source.githubRepository !== null) {
+      await lockGitHubRepositoryIdentity(client, input.source.githubRepository);
+    }
+    const existingSource = await client.query<SourceRow>(
+      `
+        SELECT id, project_id, object_format, attachment_state
+        FROM local_repository_sources
+        WHERE installation_id = $1 AND source_identity = $2
+        FOR UPDATE
+      `,
+      [installationId, input.source.sourceIdentity],
+    );
+    const sourceRow = existingSource.rows[0];
+    let projectId: string;
+    let sourceId: string;
+    let sourceAttached: boolean;
+    if (sourceRow === undefined) {
+      const repositoryMatches =
+        input.source.githubRepository === null
+          ? []
+          : await findRepositoryProjects(client, installationId, input.source.githubRepository);
+      if (repositoryMatches.length > 1) {
+        throw new ReviewRevisionPersistenceError("change_proposal_mismatch");
+      }
+      projectId = repositoryMatches[0]?.id ?? (await createLocalProject(client, installationId));
+      sourceId = await attachSource(client, installationId, projectId, input.source);
+      sourceAttached = true;
+    } else {
+      if (sourceRow.object_format !== input.source.objectFormat) {
+        throw new ReviewRevisionPersistenceError("revision_state_conflict");
+      }
+      const reconciled = await reconcileExistingSourceProject(
+        client,
+        installationId,
+        sourceRow.project_id,
+        input.source,
+      );
+      projectId = reconciled.projectId;
+      sourceId = sourceRow.id;
+      sourceAttached = sourceRow.attachment_state === "detached";
+      await refreshSourceAttachment(client, installationId, projectId, sourceId, input.source);
+    }
+    if (sourceAttached) {
+      await auditSourceAttachment(client, input, sourceId);
+    }
+    const project = await readProjectInTransaction(client, projectId);
+    await client.query("COMMIT");
+    return ProjectUpsertedSchema.parse({ project, schemaVersion: 1 });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw isCapacityConstraint(error)
+      ? new ReviewRevisionPersistenceError("revision_limit_exceeded")
+      : error;
+  } finally {
+    client.release();
+  }
 }
 
 async function createLocalProposal(
@@ -1447,7 +1593,7 @@ async function beginReviewRevisionOnClient(
         throw new ReviewRevisionPersistenceError("change_proposal_mismatch");
       }
       proposalId = providerMatch?.proposalId ?? undefined;
-      sourceId = await attachSource(client, installationId, projectId, input);
+      sourceId = await attachSource(client, installationId, projectId, input.source);
       sourceAttached = true;
     } else {
       if (sourceRow.object_format !== input.source.objectFormat) {
@@ -1460,7 +1606,8 @@ async function beginReviewRevisionOnClient(
         client,
         installationId,
         projectId,
-        input,
+        input.source,
+        input.changeProposalId,
       );
       projectId = reconciledProject.projectId;
       if (input.expectedProjectId !== undefined && projectId !== input.expectedProjectId) {
@@ -1470,55 +1617,7 @@ async function beginReviewRevisionOnClient(
         reconciledProject.changeProposalId === undefined
           ? input
           : { ...input, changeProposalId: reconciledProject.changeProposalId };
-      await client.query(
-        `
-          UPDATE local_repository_sources
-          SET attachment_state = 'detached',
-              updated_at = clock_timestamp()
-          WHERE id <> $5
-            AND attachment_state = 'attached'
-            AND (
-              project_id IN (
-                SELECT id FROM projects WHERE id = $2 OR canonical_project_id = $2
-              )
-              OR (
-                installation_id = $1
-                AND repository_id = $3
-                AND source_identity <> $4
-              )
-            )
-        `,
-        [
-          installationId,
-          projectId,
-          input.source.repositoryId,
-          input.source.sourceIdentity,
-          sourceId,
-        ],
-      );
-      await client.query(
-        `
-          UPDATE local_repository_sources
-          SET repository_id = $2,
-              root_id = $3,
-              repository_relative_locator = $4,
-              display_name_snapshot = $5,
-              github_owner_snapshot = $6,
-              github_name_snapshot = $7,
-              attachment_state = 'attached',
-              updated_at = clock_timestamp()
-          WHERE id = $1
-        `,
-        [
-          sourceId,
-          input.source.repositoryId,
-          input.source.rootId,
-          input.source.relativePath,
-          input.source.displayName,
-          input.source.githubRepository?.owner ?? null,
-          input.source.githubRepository?.name ?? null,
-        ],
-      );
+      await refreshSourceAttachment(client, installationId, projectId, sourceId, input.source);
       proposalId = (await findExistingProposal(client, projectId, canonicalInput)) ?? undefined;
     }
     proposalId ??= await createLocalProposal(client, projectId, input);
@@ -1568,18 +1667,7 @@ async function beginReviewRevisionOnClient(
       outcome = "acquire";
     }
     if (sourceAttached) {
-      await appendAuditRecordInTransaction(client, {
-        actorId: input.actorId,
-        actorType: "operator",
-        causationId: null,
-        correlationId: input.correlationId,
-        denialReason: null,
-        eventType: "local_repository_source.attached",
-        facts: { objectFormat: input.source.objectFormat },
-        outcome: "succeeded",
-        targetId: sourceId,
-        targetType: "local_repository_source",
-      });
+      await auditSourceAttachment(client, input, sourceId);
     }
     if (reclaimed && existingRevision !== null) {
       await appendAuditRecordInTransaction(client, {

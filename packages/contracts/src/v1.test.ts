@@ -26,6 +26,7 @@ import {
   LoginCommandSchema,
   LocalRepositoryInventorySchema,
   LocalRepositoryReferencesSchema,
+  OpenLocalProjectCommandSchema,
   OpenPublicGitHubPullRequestCommandSchema,
   ProjectInboxSchema,
   RetainReviewRevisionCommandSchema,
@@ -356,6 +357,20 @@ describe("V1 public contracts", () => {
     ]) {
       expect(() => OpenPublicGitHubPullRequestCommandSchema.parse({ url })).toThrow();
     }
+  });
+
+  it("opens a local Project from only an opaque repository identity", () => {
+    const command = {
+      repositoryId: "018f0f89-9a1d-7484-b224-866ef9d69990",
+    };
+
+    expect(OpenLocalProjectCommandSchema.parse(command)).toEqual(command);
+    expect(() =>
+      OpenLocalProjectCommandSchema.parse({
+        ...command,
+        path: "/Users/operator/repository",
+      }),
+    ).toThrow();
   });
 
   it("accepts only opaque local-repository acquisition input", () => {
@@ -1231,6 +1246,7 @@ describe("V1 public contracts", () => {
         "/api/v1/session": {},
         "/api/v1/operator/credentials": {},
         "/api/v1/projects": {},
+        "/api/v1/projects/local": {},
         "/api/v1/projects/{projectId}/model-profiles/direct-api": {},
         "/api/v1/projects/{projectId}/model-profiles/direct-api/test": {},
         "/api/v1/projects/{projectId}/change-proposals/{changeProposalId}/change-intents": {},
@@ -1279,6 +1295,16 @@ describe("V1 public contracts", () => {
               "415": {},
               "429": {},
               "503": {},
+            },
+          },
+        },
+        "/api/v1/projects/local": {
+          post: {
+            responses: {
+              "413": {
+                description:
+                  "The payload or a configured local-source or Project capacity limit was exceeded",
+              },
             },
           },
         },

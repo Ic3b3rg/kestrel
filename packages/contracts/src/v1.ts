@@ -185,6 +185,10 @@ export const OpenPublicGitHubPullRequestCommandSchema = z.strictObject({
   url: PublicGitHubPullRequestUrlSchema,
 });
 
+export const OpenLocalProjectCommandSchema = z.strictObject({
+  repositoryId: KestrelIdSchema,
+});
+
 export const HostGitHubPullRequestGroupSchema = z.enum(["review_requested", "authored", "other"]);
 
 export const HostGitHubStatusSchema = z.strictObject({
@@ -1384,6 +1388,7 @@ const StandardApiErrorSchema = z.strictObject({
     "PROVIDER_RESOURCE_UNAVAILABLE",
     "SOURCE_CONTAINMENT_VIOLATION",
     "REVISION_LIMIT_EXCEEDED",
+    "PROJECT_LIMIT_EXCEEDED",
     "OBJECT_MISSING",
     "OBJECT_VERIFICATION_FAILED",
     "CHANGE_PROPOSAL_MISMATCH",
@@ -1470,6 +1475,7 @@ export type HostGitHubStatus = z.infer<typeof HostGitHubStatusSchema>;
 export type ObserveHostGitHubPullRequestCommand = z.infer<
   typeof ObserveHostGitHubPullRequestCommandSchema
 >;
+export type OpenLocalProjectCommand = z.infer<typeof OpenLocalProjectCommandSchema>;
 export type OpenPublicGitHubPullRequestCommand = z.infer<
   typeof OpenPublicGitHubPullRequestCommandSchema
 >;

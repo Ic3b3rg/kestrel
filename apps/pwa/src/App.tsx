@@ -27,8 +27,11 @@ import {
   updateOperatorCredentials,
   type EventConnectionState,
 } from "./api.js";
+import { AuthenticatedShell, projectLabel } from "./AuthenticatedShell.js";
+import { appPath, readAppRoute, type AppRoute } from "./app-route.js";
 import { InstallationView, type PwaConnectionState } from "./InstallationView.js";
 import { LoginView } from "./LoginView.js";
+import { OpenProjectForm } from "./OpenProjectForm.js";
 import {
   OperatorSecurityPanel,
   type OperatorCredentialFormValue,
@@ -157,6 +160,7 @@ function hasPendingChangeOverviewRendering(inbox: ProjectInbox | null): boolean 
 }
 
 export function App() {
+  const [route, setRoute] = useState<AppRoute>(() => readAppRoute(window.location.pathname));
   const [online, setOnline] = useState(() => navigator.onLine);
   const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -180,9 +184,24 @@ export function App() {
   const commandController = useRef<AbortController | null>(null);
   const loginController = useRef<AbortController | null>(null);
   const projectCommandController = useRef<AbortController | null>(null);
+  const projectInboxController = useRef<AbortController | null>(null);
   const securityController = useRef<AbortController | null>(null);
 
+  const navigate = useCallback((nextRoute: Exclude<AppRoute, { kind: "not_found" }>) => {
+    const path = appPath(nextRoute);
+    if (window.location.pathname !== path) window.history.pushState(null, "", path);
+    setRoute(nextRoute);
+  }, []);
+
+  useEffect(() => {
+    const handlePopState = () => setRoute(readAppRoute(window.location.pathname));
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
   const resetProjectState = useCallback(() => {
+    projectInboxController.current?.abort();
+    projectInboxController.current = null;
     setProjectInbox(null);
     setProjectLoading(false);
     setProjectPending(false);
@@ -380,20 +399,25 @@ export function App() {
 
     const controller = new AbortController();
     let active = true;
+    projectInboxController.current?.abort();
+    projectInboxController.current = controller;
     setProjectLoading(true);
     setProjectError(null);
 
     void fetchProjectInbox(controller.signal).then(
       (inbox) => {
-        if (active) {
-          setProjectInbox(inbox);
-          setProjectLoading(false);
-        }
-      },
-      (error: unknown) => {
-        if (!active || controller.signal.aborted) {
+        if (!active || controller.signal.aborted || projectInboxController.current !== controller) {
           return;
         }
+        projectInboxController.current = null;
+        setProjectInbox(inbox);
+        setProjectLoading(false);
+      },
+      (error: unknown) => {
+        if (!active || controller.signal.aborted || projectInboxController.current !== controller) {
+          return;
+        }
+        projectInboxController.current = null;
         setProjectLoading(false);
         if (!handleAuthenticationBoundaryError(error)) {
           setProjectError(errorMessage(error, PROJECT_ERROR_MESSAGE));
@@ -404,6 +428,9 @@ export function App() {
     return () => {
       active = false;
       controller.abort();
+      if (projectInboxController.current === controller) {
+        projectInboxController.current = null;
+      }
     };
   }, [handleAuthenticationBoundaryError, online, projectReloadGeneration, session]);
 
@@ -484,6 +511,7 @@ export function App() {
     try {
       const result = await openPublicGitHubPullRequest({ url }, controller.signal);
       setProjectInbox((current) => withUpsertedProject(current, result.project));
+      navigate({ kind: "project", projectId: result.project.id });
       setAnnouncement("Project refreshed from the public GitHub pull request.");
     } catch (error) {
       if (!controller.signal.aborted) {
@@ -498,6 +526,16 @@ export function App() {
         setProjectPending(false);
       }
     }
+  };
+
+  const handleProjectOpened = (result: ProjectUpserted): void => {
+    projectInboxController.current?.abort();
+    projectInboxController.current = null;
+    setProjectInbox((current) => withUpsertedProject(current, result.project));
+    setProjectReloadGeneration((generation) => generation + 1);
+    setProjectError(null);
+    navigate({ kind: "project", projectId: result.project.id });
+    setAnnouncement("Project opened from the authorized local repository.");
   };
 
   const handleLocalRevisionAvailable = (result: ReviewRevisionAvailable): void => {
@@ -604,18 +642,22 @@ export function App() {
     );
   }
 
-  return (
-    <InstallationView
-      announcement={announcement}
-      commandPending={commandPending}
-      connection={connection}
-      loading={online && !synchronized && requestError === null}
-      online={online}
-      projectControls={
+  const selectedProject =
+    route.kind === "project"
+      ? (projectInbox?.projects.find((project) => project.id === route.projectId) ?? null)
+      : null;
+  const projectWorkspace =
+    selectedProject === null ? null : (
+      <div className="project-workspace">
+        <header className="project-workspace-header">
+          <p className="eyebrow">PROJECT / LOCAL WORKSPACE</p>
+          <h1>{projectLabel(selectedProject)}</h1>
+          <p className="lede">Repository context from one durable Project record.</p>
+        </header>
         <ProjectInboxPanel
-          error={projectError}
-          inbox={projectInbox}
-          loading={projectLoading}
+          error={null}
+          inbox={{ schemaVersion: 1, projects: [selectedProject] }}
+          loading={false}
           online={online}
           pending={projectPending}
           onAuthenticationError={handleAuthenticationBoundaryError}
@@ -643,29 +685,115 @@ export function App() {
           }}
           onRetry={() => setProjectReloadGeneration((generation) => generation + 1)}
         />
-      }
-      operatorControls={
-        <OperatorSecurityPanel
-          error={securityError}
-          online={online}
-          pending={securityPending}
-          session={session}
-          onChangeCredentials={handleCredentialChange}
-          onLogout={handleLogout}
-        />
-      }
-      repositoryControls={
-        <RepositoryAccessPanel
-          online={online}
+      </div>
+    );
+  const workspace = (() => {
+    switch (route.kind) {
+      case "projects":
+        return (
+          <section className="workspace-landing" aria-labelledby="workspace-title">
+            <p className="eyebrow">LOCAL RUNTIME / PROJECTS</p>
+            <h1 id="workspace-title">Projects</h1>
+            <p className="lede">
+              Open an authorized repository, then use the persistent rail to switch Project context.
+            </p>
+          </section>
+        );
+      case "settings":
+        return (
+          <InstallationView
+            commandPending={commandPending}
+            connection={connection}
+            loading={online && !synchronized && requestError === null}
+            online={online}
+            operatorControls={
+              <OperatorSecurityPanel
+                error={securityError}
+                online={online}
+                pending={securityPending}
+                session={session}
+                onChangeCredentials={handleCredentialChange}
+                onLogout={handleLogout}
+              />
+            }
+            repositoryControls={
+              <RepositoryAccessPanel
+                online={online}
+                onAuthenticationError={handleAuthenticationBoundaryError}
+              />
+            }
+            requestError={requestError}
+            showData={online && synchronized}
+            snapshot={snapshot}
+            onRetry={() => setReloadGeneration((generation) => generation + 1)}
+            onRunDiagnostic={() => void handleRunDiagnostic()}
+          />
+        );
+      case "project":
+        if (projectWorkspace !== null) return projectWorkspace;
+        if (projectInbox === null && projectLoading) {
+          return (
+            <section className="workspace-state" aria-busy="true">
+              <p className="section-index">PROJECT / SYNC</p>
+              <h1>Reading selected Project</h1>
+              <p>Waiting for the authoritative Project record.</p>
+            </section>
+          );
+        }
+        if (projectInbox === null) {
+          return (
+            <section className="workspace-state">
+              <p className="section-index">PROJECT / UNAVAILABLE</p>
+              <h1>Project unavailable</h1>
+              <p>Retry the Project inventory from the navigation rail.</p>
+            </section>
+          );
+        }
+        return (
+          <section className="workspace-state">
+            <p className="section-index">PROJECT / NOT FOUND</p>
+            <h1>Project not found</h1>
+            <p>The URL does not identify a durable Project in this Installation.</p>
+            <button type="button" onClick={() => navigate({ kind: "projects" })}>
+              Back to Projects
+            </button>
+          </section>
+        );
+      case "not_found":
+        return (
+          <section className="workspace-state">
+            <p className="section-index">ROUTE / NOT FOUND</p>
+            <h1>Page not found</h1>
+            <p>Use Projects or Settings to return to an authoritative workspace.</p>
+            <button type="button" onClick={() => navigate({ kind: "projects" })}>
+              Back to Projects
+            </button>
+          </section>
+        );
+    }
+  })();
+
+  return (
+    <AuthenticatedShell
+      announcement={announcement}
+      connection={connection}
+      error={projectError}
+      inbox={projectInbox}
+      loading={projectLoading}
+      online={online}
+      openProjectControl={
+        <OpenProjectForm
+          disabled={!online || projectPending}
           onAuthenticationError={handleAuthenticationBoundaryError}
+          onOpened={handleProjectOpened}
         />
       }
       operatorUsername={session.operator.username}
-      requestError={requestError}
-      showData={online && synchronized}
-      snapshot={snapshot}
-      onRetry={() => setReloadGeneration((generation) => generation + 1)}
-      onRunDiagnostic={() => void handleRunDiagnostic()}
-    />
+      route={route}
+      onNavigate={navigate}
+      onRetry={() => setProjectReloadGeneration((generation) => generation + 1)}
+    >
+      {workspace}
+    </AuthenticatedShell>
   );
 }

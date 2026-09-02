@@ -5,20 +5,24 @@ import {
   HostGitHubProjectInboxSchema,
   KestrelIdSchema,
   ObserveHostGitHubPullRequestCommandSchema,
+  OpenLocalProjectCommandSchema,
   OpenPublicGitHubPullRequestCommandSchema,
   ProjectInboxSchema,
   ProjectUpsertedSchema,
   apiErrorJsonSchema,
   jsonSchemaForEmbedding,
+  openLocalProjectCommandJsonSchema,
   openPublicGitHubPullRequestCommandJsonSchema,
   projectInboxJsonSchema,
   projectUpsertedJsonSchema,
   type OpenPublicGitHubPullRequestCommand,
+  type OpenLocalProjectCommand,
   type ProjectInbox,
   type ProjectUpserted,
   type HostGitHubProjectInbox,
 } from "@kestrel/contracts";
 import {
+  ReviewRevisionPersistenceError,
   readProjectInbox,
   readProjectGitHubCoordinates,
   upsertPublicGitHubProject,
@@ -27,6 +31,7 @@ import {
   type DatabasePool,
   type UpsertPublicGitHubProjectInput,
 } from "@kestrel/database";
+import { LocalSourceError } from "@kestrel/local-source";
 
 import { AUTHENTICATED_MUTATION_ROUTE_CONFIG } from "../authentication.js";
 import {
@@ -42,6 +47,10 @@ export interface ProjectServiceContext {
 }
 
 export interface ProjectService {
+  openLocalProject(
+    command: OpenLocalProjectCommand,
+    context: ProjectServiceContext,
+  ): Promise<ProjectUpserted>;
   openPublicGitHubPullRequest(
     command: OpenPublicGitHubPullRequestCommand,
     context: ProjectServiceContext,
@@ -53,6 +62,11 @@ export interface ProjectStore {
   readInbox(): Promise<ProjectInbox>;
   upsert(input: UpsertPublicGitHubProjectInput): Promise<ProjectUpserted>;
 }
+
+export type OpenLocalProjectHandler = (
+  command: OpenLocalProjectCommand,
+  context: ProjectServiceContext,
+) => Promise<ProjectUpserted>;
 
 export interface HostGitHubProjectService {
   read(projectId: string, refresh: boolean, signal?: AbortSignal): Promise<HostGitHubProjectInbox>;
@@ -145,8 +159,11 @@ export function createHostGitHubProjectService(
 export function createProjectService(
   reader: PublicGitHubReader,
   store: ProjectStore,
+  openLocalProject: OpenLocalProjectHandler = () =>
+    Promise.reject(new Error("Local Project opening is not configured")),
 ): ProjectService {
   return {
+    openLocalProject,
     async openPublicGitHubPullRequest(command, context) {
       const observation = await reader.read(command.url);
       return store.upsert({ ...context, observation });
@@ -158,16 +175,30 @@ export function createProjectService(
 export function createDatabaseProjectService(
   pool: DatabasePool,
   renderingCoordinator: ChangeOverviewRenderingJobCoordinator,
+  openLocalProject?: OpenLocalProjectHandler,
 ): ProjectService {
-  return createProjectService(createPublicGitHubReader(), {
-    readInbox: () => readProjectInbox(pool),
-    upsert: (input) => upsertPublicGitHubProject(pool, input, renderingCoordinator),
-  });
+  return createProjectService(
+    createPublicGitHubReader(),
+    {
+      readInbox: () => readProjectInbox(pool),
+      upsert: (input) => upsertPublicGitHubProject(pool, input, renderingCoordinator),
+    },
+    openLocalProject,
+  );
 }
 
 function apiError(
   request: FastifyRequest,
-  code: "INVALID_REQUEST" | "NOT_FOUND" | "RATE_LIMITED" | "SERVICE_UNAVAILABLE",
+  code:
+    | "CHANGE_PROPOSAL_MISMATCH"
+    | "INVALID_REQUEST"
+    | "NOT_FOUND"
+    | "PROJECT_LIMIT_EXCEEDED"
+    | "RATE_LIMITED"
+    | "REPOSITORY_NOT_AVAILABLE"
+    | "REVISION_LIMIT_EXCEEDED"
+    | "SERVICE_UNAVAILABLE"
+    | "SOURCE_CONTAINMENT_VIOLATION",
   message: string,
 ) {
   return ApiErrorSchema.parse({
@@ -176,6 +207,71 @@ function apiError(
     message,
     correlationId: request.id,
   });
+}
+
+function sendLocalProjectError(
+  error: LocalSourceError | ReviewRevisionPersistenceError,
+  request: FastifyRequest,
+  reply: FastifyReply,
+): FastifyReply {
+  if (error instanceof LocalSourceError) {
+    switch (error.code) {
+      case "repository_not_available":
+        return reply
+          .code(404)
+          .send(apiError(request, "REPOSITORY_NOT_AVAILABLE", "The repository is unavailable"));
+      case "repository_invalid":
+      case "source_containment_violation":
+        return reply
+          .code(422)
+          .send(
+            apiError(
+              request,
+              "SOURCE_CONTAINMENT_VIOLATION",
+              "The repository failed source containment validation",
+            ),
+          );
+      case "discovery_limit_exceeded":
+      case "reference_limit_exceeded":
+      case "revision_limit_exceeded":
+        return reply
+          .code(413)
+          .send(
+            apiError(
+              request,
+              "REVISION_LIMIT_EXCEEDED",
+              "The configured local-source limit was exceeded",
+            ),
+          );
+      default:
+        return reply
+          .code(503)
+          .send(apiError(request, "SERVICE_UNAVAILABLE", "Local Project is unavailable"));
+    }
+  }
+  switch (error.code) {
+    case "change_proposal_mismatch":
+    case "revision_state_conflict":
+      return reply
+        .code(409)
+        .send(
+          apiError(
+            request,
+            "CHANGE_PROPOSAL_MISMATCH",
+            "The local repository identity conflicts with an existing Project",
+          ),
+        );
+    case "revision_limit_exceeded":
+      return reply
+        .code(413)
+        .send(
+          apiError(request, "PROJECT_LIMIT_EXCEEDED", "The configured Project limit was exceeded"),
+        );
+    case "installation_not_available":
+      return reply
+        .code(503)
+        .send(apiError(request, "SERVICE_UNAVAILABLE", "Local Project is unavailable"));
+  }
 }
 
 function rateLimitRetryAfter(reset: string | null): string {
@@ -262,6 +358,53 @@ export function registerProjectRoutes(
         return reply
           .code(503)
           .send(apiError(request, "SERVICE_UNAVAILABLE", "Project storage is unavailable"));
+      }
+    },
+  );
+
+  app.post(
+    "/api/v1/projects/local",
+    {
+      bodyLimit: 128,
+      config: AUTHENTICATED_MUTATION_ROUTE_CONFIG,
+      schema: {
+        body: jsonSchemaForEmbedding(openLocalProjectCommandJsonSchema),
+        response: {
+          200: jsonSchemaForEmbedding(projectUpsertedJsonSchema),
+          400: jsonSchemaForEmbedding(apiErrorJsonSchema),
+          401: jsonSchemaForEmbedding(apiErrorJsonSchema),
+          403: jsonSchemaForEmbedding(apiErrorJsonSchema),
+          404: jsonSchemaForEmbedding(apiErrorJsonSchema),
+          409: jsonSchemaForEmbedding(apiErrorJsonSchema),
+          413: jsonSchemaForEmbedding(apiErrorJsonSchema),
+          415: jsonSchemaForEmbedding(apiErrorJsonSchema),
+          422: jsonSchemaForEmbedding(apiErrorJsonSchema),
+          503: jsonSchemaForEmbedding(apiErrorJsonSchema),
+        },
+      },
+    },
+    async (request, reply) => {
+      const command = OpenLocalProjectCommandSchema.parse(request.body);
+      const session = request.operatorSession;
+      if (session === null) {
+        throw new Error("Authenticated local Project route has no Operator session");
+      }
+      try {
+        return ProjectUpsertedSchema.parse(
+          await service.openLocalProject(command, {
+            actorId: session.operator.id,
+            correlationId: request.id,
+          }),
+        );
+      } catch (error) {
+        if (error instanceof LocalSourceError || error instanceof ReviewRevisionPersistenceError) {
+          request.log.warn({ event: "project.local_open_rejected", kind: error.code });
+          return sendLocalProjectError(error, request, reply);
+        }
+        request.log.error({ err: error, event: "project.local_open_failed" });
+        return reply
+          .code(503)
+          .send(apiError(request, "SERVICE_UNAVAILABLE", "Local Project is unavailable"));
       }
     },
   );

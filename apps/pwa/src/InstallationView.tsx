@@ -8,14 +8,11 @@ export type PwaConnectionState = EventConnectionState | "disconnected" | "offlin
 type DiagnosticStatus = NonNullable<InstallationSnapshot["diagnostic"]>["status"];
 
 interface InstallationViewProps {
-  announcement: string;
   commandPending: boolean;
   connection: PwaConnectionState;
   loading: boolean;
   online: boolean;
-  operatorUsername: string;
   operatorControls: ReactNode;
-  projectControls: ReactNode;
   repositoryControls: ReactNode;
   onRetry: () => void;
   onRunDiagnostic: () => void;
@@ -23,15 +20,6 @@ interface InstallationViewProps {
   showData: boolean;
   snapshot: InstallationSnapshot | null;
 }
-
-const connectionLabels: Record<PwaConnectionState, string> = {
-  connected: "Connected",
-  connecting: "Connecting",
-  "cursor-expired": "Refreshing history",
-  disconnected: "Disconnected",
-  offline: "Offline",
-  reconnecting: "Reconnecting",
-};
 
 const diagnosticLabels: Record<DiagnosticStatus, string> = {
   queued: "Queued",
@@ -182,96 +170,63 @@ export function InstallationView(props: InstallationViewProps) {
     !props.online || !props.showData || props.commandPending || diagnosticActive;
 
   return (
-    <>
-      <a className="skip-link" href="#installation-main">
-        Skip to Installation
-      </a>
-      <header className="site-header">
-        <p className="wordmark">
-          <span aria-hidden="true">K</span> KESTREL
-        </p>
-        <div
-          className={`connection connection-${props.connection}`}
-          aria-label={`Event stream: ${connectionLabels[props.connection]}`}
-        >
-          <span className="connection-dot" aria-hidden="true" />
-          <span>Event stream</span>
-          <strong>{connectionLabels[props.connection]}</strong>
+    <div className="settings-view">
+      <section className="intro">
+        <div>
+          <p className="eyebrow">LOCAL RUNTIME / SETTINGS</p>
+          <h1 id="page-title">Settings</h1>
+          <p className="lede">Installation, repository access, and Operator security.</p>
         </div>
-      </header>
+        <div className="command-panel">
+          <button
+            type="button"
+            disabled={commandDisabled}
+            aria-describedby="command-help"
+            onClick={props.onRunDiagnostic}
+          >
+            {props.commandPending ? "Requesting…" : "Run diagnostic"}
+          </button>
+          <p id="command-help">
+            {!props.online
+              ? "Unavailable while offline."
+              : diagnosticActive
+                ? "A diagnostic is already in progress."
+                : "Creates one durable background operation."}
+          </p>
+        </div>
+      </section>
 
-      <main id="installation-main" tabIndex={-1}>
-        <section className="intro" aria-labelledby="page-title">
+      {props.requestError ? (
+        <section className="error-state" role="alert">
           <div>
-            <p className="eyebrow">LOCAL RUNTIME / INSTALLATION</p>
-            <h1 id="page-title">Kestrel Installation</h1>
-            <p className="lede">
-              One durable system record, observed from command to completed work.
-            </p>
+            <p className="section-index">REQUEST FAILED</p>
+            <h2>Installation data is unavailable</h2>
+            <p>{props.requestError}</p>
           </div>
-          <div className="command-panel">
-            <button
-              type="button"
-              disabled={commandDisabled}
-              aria-describedby="command-help"
-              onClick={props.onRunDiagnostic}
-            >
-              {props.commandPending ? "Requesting…" : "Run diagnostic"}
-            </button>
-            <p id="command-help">
-              {!props.online
-                ? "Unavailable while offline."
-                : diagnosticActive
-                  ? "A diagnostic is already in progress."
-                  : "Creates one durable background operation."}
-            </p>
-          </div>
+          <button type="button" onClick={props.onRetry} disabled={!props.online}>
+            Try again
+          </button>
         </section>
+      ) : null}
 
-        {props.requestError ? (
-          <section className="error-state" role="alert">
-            <div>
-              <p className="section-index">REQUEST FAILED</p>
-              <h2>Installation data is unavailable</h2>
-              <p>{props.requestError}</p>
-            </div>
-            <button type="button" onClick={props.onRetry} disabled={!props.online}>
-              Try again
-            </button>
-          </section>
-        ) : null}
+      {!props.online ? (
+        <section className="system-state offline-state">
+          <p className="section-index">SYSTEM / OFFLINE</p>
+          <h2>Reconnect to view product data</h2>
+          <p>
+            The cached application shell contains no Installation state. A full refetch will run
+            when the network returns.
+          </p>
+        </section>
+      ) : props.loading ? (
+        <LoadingState historyRefresh={props.connection === "cursor-expired"} />
+      ) : props.showData && props.snapshot ? (
+        <InstallationRecord snapshot={props.snapshot} />
+      ) : null}
 
-        {!props.online ? (
-          <section className="system-state offline-state">
-            <p className="section-index">SYSTEM / OFFLINE</p>
-            <h2>Reconnect to view product data</h2>
-            <p>
-              The cached application shell contains no Installation state. A full refetch will run
-              when the network returns.
-            </p>
-          </section>
-        ) : props.loading ? (
-          <LoadingState historyRefresh={props.connection === "cursor-expired"} />
-        ) : props.showData && props.snapshot ? (
-          <InstallationRecord snapshot={props.snapshot} />
-        ) : null}
+      {props.repositoryControls}
 
-        {props.projectControls}
-
-        {props.repositoryControls}
-
-        {props.operatorControls}
-
-        <p className="activity-line" role="status" aria-live="polite" aria-atomic="true">
-          <span>Activity</span>
-          {props.announcement}
-        </p>
-      </main>
-
-      <footer>
-        <span>Kestrel V1</span>
-        <span>Signed in as {props.operatorUsername}</span>
-      </footer>
-    </>
+      {props.operatorControls}
+    </div>
   );
 }

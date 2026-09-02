@@ -15,6 +15,7 @@ import {
   HostGitHubProjectInboxSchema,
   ObserveHostGitHubPullRequestCommandSchema,
   LoginCommandSchema,
+  OpenLocalProjectCommandSchema,
   OpenPublicGitHubPullRequestCommandSchema,
   LocalRepositoryInventorySchema,
   LocalRepositoryReferencesSchema,
@@ -42,6 +43,7 @@ import {
   type HostGitHubProjectInbox,
   type ObserveHostGitHubPullRequestCommand,
   type LoginCommand,
+  type OpenLocalProjectCommand,
   type OpenPublicGitHubPullRequestCommand,
   type LocalRepositoryInventory,
   type LocalRepositoryReferences,
@@ -339,6 +341,21 @@ export async function openPublicGitHubPullRequest(
     signal: signal ?? null,
   });
   return requireJson(response, ProjectUpsertedSchema, "Project response");
+}
+
+export async function openLocalProject(
+  command: OpenLocalProjectCommand,
+  signal?: AbortSignal,
+): Promise<ProjectUpserted> {
+  const validated = OpenLocalProjectCommandSchema.parse(command);
+  const response = await fetch("/api/v1/projects/local", {
+    body: JSON.stringify(validated),
+    credentials: "same-origin",
+    headers: authenticatedMutationHeaders(),
+    method: "POST",
+    signal: signal ?? null,
+  });
+  return requireJson(response, ProjectUpsertedSchema, "local Project response");
 }
 
 function directApiProfileUrl(projectId: string): string {
