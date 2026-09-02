@@ -21,6 +21,7 @@ import {
   DiagnosticAcceptedSchema,
   DirectApiProfileResponseSchema,
   EventCursorSchema,
+  HostGitHubConnectionSchema,
   InstallationEventSchema,
   InstallationSnapshotSchema,
   LoginCommandSchema,
@@ -357,6 +358,45 @@ describe("V1 public contracts", () => {
     ]) {
       expect(() => OpenPublicGitHubPullRequestCommandSchema.parse({ url })).toThrow();
     }
+  });
+
+  it("exposes only validated host GitHub connection facts", () => {
+    const connection = {
+      schemaVersion: 1,
+      state: "ready",
+      reason: null,
+      cli: { version: "2.87.0", supported: true },
+      identity: { host: "github.com", account: "operator" },
+      projectAccess: {
+        state: "verified",
+        projectId: "018f0f89-949a-75a8-8f61-6df78a843b1e",
+        repository: { owner: "Ic3b3rg", name: "kestrel" },
+      },
+      checkedAt: "2026-09-02T12:00:00.000Z",
+    } as const;
+
+    expect(HostGitHubConnectionSchema.parse(connection)).toEqual(connection);
+    expect(() =>
+      HostGitHubConnectionSchema.parse({
+        ...connection,
+        token: "ghp_never_expose_this",
+      }),
+    ).toThrow();
+    expect(() =>
+      HostGitHubConnectionSchema.parse({
+        ...connection,
+        state: "unavailable",
+      }),
+    ).toThrow("overall state");
+    expect(() =>
+      HostGitHubConnectionSchema.parse({
+        ...connection,
+        identity: {
+          ...connection.identity,
+          authConfiguration: "/Users/operator/.config/gh/hosts.yml",
+        },
+      }),
+    ).toThrow();
   });
 
   it("opens a local Project from only an opaque repository identity", () => {
@@ -1243,6 +1283,7 @@ describe("V1 public contracts", () => {
         "/auth/logout": {},
         "/auth/login": {},
         "/auth/step-up": {},
+        "/api/v1/connections/github": {},
         "/api/v1/session": {},
         "/api/v1/operator/credentials": {},
         "/api/v1/projects": {},
@@ -1269,6 +1310,12 @@ describe("V1 public contracts", () => {
           },
         },
         "/api/v1/events": { get: { responses: { "401": {} } } },
+        "/api/v1/connections/github": {
+          get: {
+            parameters: [{ in: "query", name: "projectId", required: false }],
+            responses: { "200": {}, "400": {}, "401": {}, "503": {} },
+          },
+        },
         "/api/v1/installation": { get: { responses: { "401": {} } } },
         "/api/v1/installation/diagnostics": {
           post: {
