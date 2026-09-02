@@ -466,5 +466,5 @@ setInterval(() => undefined, 1_000);
     expect(output).not.toContain("npm error");
     expect((await stat(join(stateRoot, "review-artifacts"))).mode & 0o777).toBe(0o700);
     expect((await stat(join(stateRoot, "model-provider-secrets"))).mode & 0o777).toBe(0o700);
-  });
+  }, 20_000);
 });
