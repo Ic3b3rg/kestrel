@@ -33,5 +33,9 @@ export async function registerPwaRoutes(app: FastifyInstance, root: string): Pro
       },
       wildcard: false,
     });
+
+    for (const route of ["/projects/:projectId", "/settings"]) {
+      publicApp.get(route, (_request, reply) => reply.sendFile("index.html"));
+    }
   });
 }

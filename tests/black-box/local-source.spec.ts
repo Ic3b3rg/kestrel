@@ -1,6 +1,8 @@
 import { AxeBuilder } from "@axe-core/playwright";
 import { expect, test, type Page, type Route } from "@playwright/test";
 
+import { ProjectInboxSchema } from "@kestrel/contracts";
+
 import { startStack, TEST_OPERATOR_CREDENTIALS, type RunningStack } from "./support/compose.js";
 import { createGitFixture, type GitFixture } from "./support/git-fixture.js";
 
@@ -39,6 +41,7 @@ test.describe("local-first Project flow", () => {
 
   test.beforeAll(async () => {
     fixture = await createGitFixture();
+    await fixture.createSibling("falcon", "falcon");
     stack = await startStack({ repositoryRoot: fixture.rootPath });
     await stack.bootstrapOperator(TEST_OPERATOR_CREDENTIALS);
   });
@@ -46,6 +49,91 @@ test.describe("local-first Project flow", () => {
   test.afterAll(async () => {
     if (stack !== undefined) await stack.close();
     if (fixture !== undefined) await fixture.close();
+  });
+
+  test("the Project rail opens, switches, and reloads durable local context", async ({ page }) => {
+    if (stack === undefined) throw new Error("Local-source browser fixture is unavailable");
+
+    await page.goto(stack.pwaUrl);
+    await page.getByLabel("Username").fill(TEST_OPERATOR_CREDENTIALS.username);
+    await page.getByLabel("Password").fill(TEST_OPERATOR_CREDENTIALS.password);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Projects", exact: true }),
+    ).toBeVisible();
+
+    const openRepository = async (name: "falcon" | "kestrel") => {
+      await page.getByRole("button", { name: "Open Project", exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: "Open an authorized repository" });
+      await expect(dialog).toBeVisible();
+      const option = dialog.getByRole("option", {
+        name: name === "kestrel" ? /^kestrel/u : /^falcon/u,
+      });
+      const repositoryId = await option.getAttribute("value");
+      if (repositoryId === null) throw new Error(`Repository option ${name} has no identity`);
+      await dialog.getByLabel("Repository").selectOption(repositoryId);
+      await dialog.getByRole("button", { name: "Open selected Project" }).click();
+      await expect(dialog).toHaveCount(0);
+      await expect(page.getByRole("heading", { level: 1, name, exact: true })).toBeVisible();
+      await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/u);
+      return page.url();
+    };
+
+    const kestrelUrl = await openRepository("kestrel");
+    await page.reload();
+    await expect(page).toHaveURL(kestrelUrl);
+    await expect(
+      page.getByRole("heading", { level: 1, name: "kestrel", exact: true }),
+    ).toBeVisible();
+
+    const falconUrl = await openRepository("falcon");
+    expect(falconUrl).not.toBe(kestrelUrl);
+    const projectNavigation = page.getByRole("navigation", { name: "Projects" });
+    const kestrelLink = projectNavigation.getByRole("link", { name: /kestrel/u });
+    const falconLink = projectNavigation.getByRole("link", { name: /falcon/u });
+    await expect(kestrelLink).toBeVisible();
+    await expect(falconLink).toHaveAttribute("aria-current", "page");
+
+    await kestrelLink.focus();
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(kestrelUrl);
+    await expect(kestrelLink).toHaveAttribute("aria-current", "page");
+
+    const settingsLink = page.getByRole("link", { name: "Settings", exact: true });
+    await settingsLink.focus();
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(/\/settings$/u);
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Settings", exact: true }),
+    ).toBeVisible();
+    await expect(settingsLink).toHaveAttribute("aria-current", "page");
+
+    await kestrelLink.focus();
+    await page.keyboard.press("Enter");
+    await openRepository("kestrel");
+    const inbox = ProjectInboxSchema.parse(
+      await page.evaluate(async () => {
+        const response = await fetch("/api/v1/projects", {
+          headers: { Accept: "application/json" },
+        });
+        return response.json() as Promise<unknown>;
+      }),
+    );
+    expect(inbox.projects).toHaveLength(2);
+    expect(
+      await page.evaluate(() => ({ local: localStorage.length, session: sessionStorage.length })),
+    ).toEqual({ local: 0, session: 0 });
+
+    await page.setViewportSize({ height: 812, width: 375 });
+    await expect(projectNavigation).toBeVisible();
+    await expect(settingsLink).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+    const accessibility = await new AxeBuilder({ page }).analyze();
+    expect(accessibility.violations).toEqual([]);
   });
 
   test("the Operator retains an exact local revision without a page reload", async ({ page }) => {
@@ -56,7 +144,22 @@ test.describe("local-first Project flow", () => {
     await page.getByLabel("Username").fill(TEST_OPERATOR_CREDENTIALS.username);
     await page.getByLabel("Password").fill(TEST_OPERATOR_CREDENTIALS.password);
     await page.getByRole("button", { name: "Sign in" }).click();
-    await expect(page.getByRole("heading", { name: "Kestrel Installation" })).toBeVisible();
+    await page.getByRole("button", { name: "Open Project", exact: true }).click();
+    const openProjectDialog = page.getByRole("dialog", {
+      name: "Open an authorized repository",
+    });
+    const kestrelOption = openProjectDialog.getByRole("option", { name: /^kestrel/u });
+    const kestrelRepositoryId = await kestrelOption.getAttribute("value");
+    if (kestrelRepositoryId === null) throw new Error("Kestrel repository identity is missing");
+    await openProjectDialog.getByLabel("Repository").selectOption(kestrelRepositoryId);
+    await openProjectDialog.getByRole("button", { name: "Open selected Project" }).click();
+    await expect(
+      page.getByRole("heading", { level: 1, name: "kestrel", exact: true }),
+    ).toBeVisible();
+    await page.getByRole("link", { name: "Settings", exact: true }).click();
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Settings", exact: true }),
+    ).toBeVisible();
     const repositorySettings = page.getByRole("region", { name: "Settings" });
     await expect(
       repositorySettings.getByRole("heading", { name: "Repository access" }),
@@ -67,6 +170,11 @@ test.describe("local-first Project flow", () => {
     );
     await repositorySettings.getByRole("button", { name: "Refresh repositories" }).click();
     await expect(repositorySettings.getByText("kestrel", { exact: true })).toBeVisible();
+
+    await page
+      .getByRole("navigation", { name: "Projects" })
+      .getByRole("link", { name: /kestrel/u })
+      .click();
 
     const localTrigger = page.getByRole("button", { name: "Open local repository" });
     const publicInput = page.getByLabel("Optional public GitHub pull request URL");
@@ -109,7 +217,7 @@ test.describe("local-first Project flow", () => {
     await expect(dialog.getByText("No authorized local repositories are available.")).toHaveCount(
       0,
     );
-    await page.getByLabel("Repository").selectOption({ label: "kestrel" });
+    await page.getByLabel("Repository").selectOption(kestrelRepositoryId);
     await expect(page.getByLabel("Base reference")).toBeEnabled();
     await page.getByLabel("Base reference").selectOption({ label: "main" });
     await page.getByLabel("Head reference").selectOption({ label: "review-source" });
@@ -258,7 +366,25 @@ test.describe("local-first Project flow", () => {
     await page.getByLabel("Username").fill(TEST_OPERATOR_CREDENTIALS.username);
     await page.getByLabel("Password").fill(TEST_OPERATOR_CREDENTIALS.password);
     await page.getByRole("button", { name: "Sign in" }).click();
-    await expect(page.getByRole("heading", { name: "Kestrel Installation" })).toBeVisible();
+    const kestrelLink = page
+      .getByRole("navigation", { name: "Projects" })
+      .getByRole("link", { name: /kestrel/u });
+    if ((await kestrelLink.count()) === 0) {
+      await page.getByRole("button", { name: "Open Project", exact: true }).click();
+      const openProjectDialog = page.getByRole("dialog", {
+        name: "Open an authorized repository",
+      });
+      const option = openProjectDialog.getByRole("option", { name: /^kestrel/u });
+      const repositoryId = await option.getAttribute("value");
+      if (repositoryId === null) throw new Error("Kestrel repository identity is missing");
+      await openProjectDialog.getByLabel("Repository").selectOption(repositoryId);
+      await openProjectDialog.getByRole("button", { name: "Open selected Project" }).click();
+    } else {
+      await kestrelLink.click();
+    }
+    await expect(
+      page.getByRole("heading", { level: 1, name: "kestrel", exact: true }),
+    ).toBeVisible();
 
     const inventoryUrl = "**/api/v1/local-repository-sources";
     const trigger = page.getByRole("button", { name: "Open local repository" });

@@ -278,13 +278,11 @@ describe("Project routes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(ProjectUpsertedSchema.parse(response.json())).toEqual({ schemaVersion: 1, project });
-    expect(projectService.openLocalRepository).toHaveBeenCalledWith(
-      { repositoryId },
-      expect.objectContaining({ actorId: operatorId, correlationId: expect.any(String) }),
-    );
-    expect(JSON.stringify(projectService.openLocalRepository.mock.calls[0])).not.toContain(
-      "/Users/",
-    );
+    const invocation = projectService.openLocalRepository.mock.calls[0];
+    expect(invocation?.[0]).toEqual({ repositoryId });
+    expect(invocation?.[1].actorId).toBe(operatorId);
+    expect(invocation?.[1].correlationId).toMatch(/^[a-f0-9-]{36}$/u);
+    expect(JSON.stringify(invocation)).not.toContain("/Users/");
   });
 
   it.each([
