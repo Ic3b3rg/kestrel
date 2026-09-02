@@ -559,8 +559,13 @@ export function ProjectInboxPanel(props: ProjectInboxPanelProps) {
               />
               {project.localRepositorySource?.state === "attached" ? (
                 <HostGitHubProjectPanel
+                  key={project.id}
                   projectId={project.id}
                   disabled={unavailable}
+                  online={props.online}
+                  {...(props.onAuthenticationError === undefined
+                    ? {}
+                    : { onAuthenticationError: props.onAuthenticationError })}
                   onObserved={(observed) => props.onHostObserved?.(observed)}
                 />
               ) : null}

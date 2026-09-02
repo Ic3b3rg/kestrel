@@ -275,6 +275,13 @@ to `POST /api/v1/projects`. Kestrel reads public pull request metadata from GitH
 account or token, then persists the Project, Change Proposal, exact base/head refs and SHAs, and an
 audit record atomically. Opening the same pull request again is a manual, idempotent refresh.
 
+For a selected Project with an attached GitHub source, the PWA reads the host-session pull request
+inbox in the ordered groups Review requested, Authored, and Others. Each group retains its own
+loading, empty, or bounded failure state, so a partial rate-limit or timeout does not hide
+successful groups. Refresh remains an explicit Operator action. Selecting a pull request sends only
+its number and creates or reuses the same Project's Provider Observation and Change Proposal; it
+performs no provider write and does not acquire source or a Review Revision.
+
 Provider Observation is limited by GitHub's shared unauthenticated allowance of 60 REST API requests
 per hour per Installation IP and never falls back to credentials. It does not supply source. When a
 sanitized local GitHub remote and exact commits match an observed proposal, local source attaches to
@@ -297,6 +304,9 @@ Useful endpoints on port 3000:
 - `/api/v1/operator/credentials` — step-up-protected username/password change;
 - `/api/v1/installation` — authoritative snapshot;
 - `/api/v1/projects` — Project inbox read and public GitHub pull request open/refresh;
+- `/api/v1/projects/:projectId/provider/github` — bounded, grouped host-session pull request inbox;
+- `/api/v1/projects/:projectId/provider/github/pull-requests/observe` — record one selected pull
+  request on that Project without acquiring source;
 - `/api/v1/projects/:projectId/model-profiles/direct-api` — read or step-up configure the exact
   Direct API profile;
 - `/api/v1/projects/:projectId/model-profiles/direct-api/test` — re-test the stored profile;
