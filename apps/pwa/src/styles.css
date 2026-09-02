@@ -312,6 +312,26 @@ main {
   line-height: 1.5;
 }
 
+.local-inventory-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 1rem 1.5rem 0;
+}
+
+.local-inventory-actions p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.local-inventory-actions button {
+  width: auto;
+}
+
 .repository-setup-state {
   display: grid;
   gap: 0.75rem;
@@ -520,6 +540,7 @@ h1 {
 .record-section,
 .operator-security,
 .projects-section,
+.repository-access,
 .system-state,
 .error-state {
   padding: 2rem 0;
@@ -527,8 +548,93 @@ h1 {
 }
 
 .projects-section,
+.repository-access,
 .operator-security {
   border-bottom-color: var(--ink);
+}
+
+.repository-access-intro,
+.repository-access-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.repository-access-intro {
+  margin-top: 1rem;
+  padding: 1.5rem;
+  border: 1px solid var(--ink);
+  background: var(--surface);
+}
+
+.repository-access-intro h3,
+.repository-access-intro p,
+.repository-access-offline h3,
+.repository-access-offline p {
+  margin: 0;
+}
+
+.repository-access-intro p,
+.repository-access-offline p {
+  max-width: 42rem;
+  margin-top: 0.5rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.repository-access-intro button {
+  width: auto;
+}
+
+.repository-inventory {
+  display: grid;
+  gap: 0;
+  margin: 1rem 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  list-style: none;
+}
+
+.repository-inventory li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-width: 0;
+  padding: 1rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.repository-inventory li:last-child {
+  border-bottom: 0;
+}
+
+.repository-inventory span {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.repository-inventory small {
+  color: var(--muted);
+}
+
+.repository-inventory code {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.repository-access > .repository-setup-action {
+  padding: 1rem;
+  border: 1px solid var(--line);
+}
+
+.repository-access-offline {
+  margin-top: 1rem;
+  padding: 1.5rem;
+  border: 1px dashed var(--line);
 }
 
 .projects-heading {

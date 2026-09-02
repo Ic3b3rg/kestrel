@@ -34,6 +34,7 @@ import {
   type OperatorCredentialFormValue,
 } from "./OperatorSecurityPanel.js";
 import { ProjectInboxPanel } from "./ProjectInboxPanel.js";
+import { RepositoryAccessPanel } from "./RepositoryAccessPanel.js";
 
 const INSTALLATION_ERROR_MESSAGE =
   "Kestrel could not read authoritative Installation data. Try again.";
@@ -651,6 +652,12 @@ export function App() {
           session={session}
           onChangeCredentials={handleCredentialChange}
           onLogout={handleLogout}
+        />
+      }
+      repositoryControls={
+        <RepositoryAccessPanel
+          online={online}
+          onAuthenticationError={handleAuthenticationBoundaryError}
         />
       }
       operatorUsername={session.operator.username}

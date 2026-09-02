@@ -1,6 +1,7 @@
 import type { LocalRepositoryInventory } from "@kestrel/contracts";
 
-const TRUSTED_HOST_REPOSITORY_COMMAND = `LOCAL_REPOSITORY_ROOTS='["/absolute/path/to/authorized-parent"]' npm run dev`;
+export const TRUSTED_HOST_REPOSITORY_COMMAND =
+  "npm run authorize-repository-root -- /absolute/path/to/authorized-parent";
 
 type RepositorySetupState =
   Exclude<LocalRepositoryInventory["inventoryState"], "ready"> | "discovery_failed" | "loading";
@@ -8,6 +9,17 @@ type RepositorySetupState =
 interface RepositorySetupStateProps {
   error?: string;
   state: RepositorySetupState;
+}
+
+export function TrustedHostRepositoryAction() {
+  return (
+    <div className="repository-setup-action">
+      <strong>Trusted-host action</strong>
+      <p>Authorize an explicit parent directory from a trusted-host terminal:</p>
+      <code>{TRUSTED_HOST_REPOSITORY_COMMAND}</code>
+      <p>Then refresh repositories here or restart Kestrel. The browser never receives the path.</p>
+    </div>
+  );
 }
 
 const stateContent: Record<
@@ -50,12 +62,7 @@ export function RepositorySetupState({ error, state }: RepositorySetupStateProps
       <p className="section-index">REPOSITORY SETUP</p>
       <h4>{content.title}</h4>
       <p>{content.description}</p>
-      <div className="repository-setup-action">
-        <strong>Trusted-host action</strong>
-        <p>Stop Kestrel, authorize an explicit parent directory, then restart with:</p>
-        <code>{TRUSTED_HOST_REPOSITORY_COMMAND}</code>
-        <p>The browser never sends or receives the filesystem path.</p>
-      </div>
+      <TrustedHostRepositoryAction />
     </section>
   );
 }

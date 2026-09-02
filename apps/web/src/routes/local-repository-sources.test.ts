@@ -138,6 +138,36 @@ describe("local repository inventory routes", () => {
     }
   });
 
+  it("reloads trusted-host configuration when the inventory is refreshed", async () => {
+    const configuredRoot = await mkdtemp(join(tmpdir(), "kestrel-refreshed-repository-root-"));
+    const pool = { query: vi.fn() };
+    const config = (repositoryRoots: LocalSourceConfig["repositoryRoots"]): LocalSourceConfig => ({
+      artifactRoot: join(tmpdir(), "kestrel-artifacts"),
+      gitExecutable: "/usr/bin/git",
+      gitObjectReadTimeoutMs: 1_000,
+      maxBytes: 1_000,
+      maxObjects: 100,
+      repositoryRoots,
+    });
+    const reload = vi.fn().mockResolvedValue(config([{ id: repositoryId, path: configuredRoot }]));
+
+    try {
+      const inventory = await createLocalRepositoryService(
+        config([]),
+        pool as never,
+        reload,
+      ).listRepositories();
+
+      expect(reload).toHaveBeenCalledOnce();
+      expect(inventory).toMatchObject({
+        inventoryState: "no_repositories_found",
+        repositories: [],
+      });
+    } finally {
+      await rm(configuredRoot, { recursive: true });
+    }
+  });
+
   it("reads bounded references for one opaque repository ID", async () => {
     const response = await app.inject({
       headers,

@@ -4,6 +4,8 @@ import { constants } from "node:fs";
 import { access, lstat, realpath, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
+import { readRepositoryRootConfiguration } from "./repository-root-configuration.js";
+
 const GIT_VERSION_TIMEOUT_MS = 10_000;
 const GIT_OBJECT_READ_TIMEOUT_MS = 60_000;
 const MAX_GIT_VERSION_OUTPUT_BYTES = 4096;
@@ -236,10 +238,16 @@ export async function readLocalSourceConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<LocalSourceConfig> {
   let configuredRoots: unknown;
-  try {
-    configuredRoots = JSON.parse(env.LOCAL_REPOSITORY_ROOTS ?? "[]") as unknown;
-  } catch {
-    throw configurationError("LOCAL_REPOSITORY_ROOTS", "must be a JSON array");
+  if (env.LOCAL_REPOSITORY_ROOTS !== undefined) {
+    try {
+      configuredRoots = JSON.parse(env.LOCAL_REPOSITORY_ROOTS) as unknown;
+    } catch {
+      throw configurationError("LOCAL_REPOSITORY_ROOTS", "must be a JSON array");
+    }
+  } else if (env.LOCAL_REPOSITORY_ROOTS_FILE !== undefined) {
+    configuredRoots = await readRepositoryRootConfiguration(env.LOCAL_REPOSITORY_ROOTS_FILE);
+  } else {
+    configuredRoots = [];
   }
   if (
     !Array.isArray(configuredRoots) ||

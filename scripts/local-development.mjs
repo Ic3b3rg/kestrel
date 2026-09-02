@@ -191,8 +191,16 @@ async function waitForProcessOutput(observed, expected, timeoutMs) {
 async function main() {
   const environment = process.env;
   const action = process.argv[2] ?? "start";
-  if (!["start", "bootstrap", "reset-password"].includes(action) || process.argv.length > 3) {
-    throw new Error("Usage: local-development.mjs [start|bootstrap|reset-password]");
+  const actionArgument = process.argv[3];
+  const validAction = ["start", "bootstrap", "reset-password"].includes(action)
+    ? actionArgument === undefined && process.argv.length <= 3
+    : action === "authorize-repository-root" &&
+      actionArgument !== undefined &&
+      process.argv.length === 4;
+  if (!validAction) {
+    throw new Error(
+      "Usage: local-development.mjs [start|bootstrap|reset-password|authorize-repository-root <absolute-path>]",
+    );
   }
   const databasePort = readPositiveInteger(
     environment,
@@ -221,6 +229,7 @@ async function main() {
   const modelProviderSecretRoot = await ensurePrivateDirectory(
     join(stateRoot, "model-provider-secrets"),
   );
+  const repositoryRootsConfiguration = join(stateRoot, "repository-roots.json");
   const sessionSigningKey = await readOrCreateSessionSigningKey(stateRoot);
   const databasePassword = environment.KESTREL_RUNTIME_DATABASE_PASSWORD ?? "kestrel_runtime_dev";
   const databaseUrl = `postgres://kestrel_runtime:${encodeURIComponent(databasePassword)}@${LOOPBACK}:${String(databasePort)}/kestrel`;
@@ -232,6 +241,7 @@ async function main() {
     "HOST",
     "LOCAL_GIT_EXECUTABLE",
     "LOCAL_REPOSITORY_ROOTS",
+    "LOCAL_REPOSITORY_ROOTS_FILE",
     "MODEL_PROVIDER_SECRET_ROOT",
     "PORT",
     "REVIEW_REVISION_MAX_BYTES",
@@ -246,12 +256,16 @@ async function main() {
     DATABASE_URL: databaseUrl,
     EVENT_RETENTION_LIMIT: environment.EVENT_RETENTION_LIMIT ?? "1000",
   };
+  const localRepositoryEnvironment =
+    environment.LOCAL_REPOSITORY_ROOTS === undefined
+      ? { LOCAL_REPOSITORY_ROOTS_FILE: repositoryRootsConfiguration }
+      : { LOCAL_REPOSITORY_ROOTS: environment.LOCAL_REPOSITORY_ROOTS };
   const webEnvironment = {
     ...serverEnvironment,
     ARTIFACT_ROOT: artifactRoot,
     HOST: LOOPBACK,
     LOCAL_GIT_EXECUTABLE: git,
-    LOCAL_REPOSITORY_ROOTS: environment.LOCAL_REPOSITORY_ROOTS ?? "[]",
+    ...localRepositoryEnvironment,
     MODEL_PROVIDER_SECRET_ROOT: modelProviderSecretRoot,
     PORT: String(webPort),
     REVIEW_REVISION_MAX_BYTES: environment.REVIEW_REVISION_MAX_BYTES ?? "268435456",
@@ -262,6 +276,17 @@ async function main() {
   console.log(
     `[kestrel] Host tools: git=${git} gh=${gh ?? "unavailable"} codex=${codex ?? "unavailable"}`,
   );
+  if (action === "authorize-repository-root") {
+    const authorizationEnvironment = { ...webEnvironment };
+    delete authorizationEnvironment.LOCAL_REPOSITORY_ROOTS;
+    authorizationEnvironment.LOCAL_REPOSITORY_ROOTS_FILE = repositoryRootsConfiguration;
+    await run(
+      process.execPath,
+      ["--import=tsx", "scripts/authorize-repository-root.ts", actionArgument],
+      authorizationEnvironment,
+    );
+    return;
+  }
   if (action !== "start") {
     await run(npm, ["run", action, "-w", "@kestrel/web"], webEnvironment);
     return;

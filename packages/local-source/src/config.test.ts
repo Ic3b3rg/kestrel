@@ -33,6 +33,33 @@ afterEach(async () => {
 });
 
 describe("local-source configuration", () => {
+  it("loads persisted repository roots when no explicit environment override exists", async () => {
+    const fixture = await temporaryDirectory();
+    const repositoryRoot = join(fixture, "repositories");
+    const artifactRoot = join(fixture, "artifacts");
+    const configurationPath = join(fixture, "repository-roots.json");
+    await mkdir(repositoryRoot);
+    await mkdir(artifactRoot, { mode: 0o700 });
+    await chmod(artifactRoot, 0o700);
+    await writeFile(
+      configurationPath,
+      JSON.stringify({ schemaVersion: 1, repositoryRoots: [repositoryRoot] }),
+      { mode: 0o600 },
+    );
+
+    const config = await readLocalSourceConfig({
+      LOCAL_REPOSITORY_ROOTS_FILE: configurationPath,
+      LOCAL_GIT_EXECUTABLE: "/usr/bin/git",
+      ARTIFACT_ROOT: artifactRoot,
+      REVIEW_REVISION_MAX_BYTES: "1048576",
+      REVIEW_REVISION_MAX_OBJECTS: "1000",
+    });
+
+    expect(config.repositoryRoots.map(({ path }) => path)).toEqual([
+      await realpath(repositoryRoot),
+    ]);
+  });
+
   it.skipIf(process.getuid?.() === 0)(
     "rejects an unreadable configured repository root",
     async () => {

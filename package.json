@@ -13,6 +13,7 @@
     "tests/*"
   ],
   "scripts": {
+    "authorize-repository-root": "node scripts/local-development.mjs authorize-repository-root",
     "bootstrap": "node scripts/local-development.mjs bootstrap",
     "reset-password": "node scripts/local-development.mjs reset-password",
     "build": "npm run build -w @kestrel/contracts && npm run build -w @kestrel/model-provider && npm run build -w @kestrel/local-source && npm run build -w @kestrel/database && npm run build -w @kestrel/pwa && npm run build -w @kestrel/web && npm run build -w @kestrel/worker",

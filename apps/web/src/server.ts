@@ -60,7 +60,11 @@ const boss = createPgBoss({
   applicationName: "kestrel-web-pgboss",
   databaseUrl: config.databaseUrl,
 });
-const localRepositoryService = createLocalRepositoryService(localSourceConfig, pool);
+const localRepositoryService = createLocalRepositoryService(
+  localSourceConfig,
+  pool,
+  process.env.LOCAL_REPOSITORY_ROOTS_FILE === undefined ? undefined : () => readLocalSourceConfig(),
+);
 await withArtifactLifecycleLock(pool, async (lockedPool) => {
   await reconcileAcquiringRevisions(lockedPool);
   const referenced = await readReferencedArtifactLocators(lockedPool);

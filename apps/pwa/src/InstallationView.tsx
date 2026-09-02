@@ -16,6 +16,7 @@ interface InstallationViewProps {
   operatorUsername: string;
   operatorControls: ReactNode;
   projectControls: ReactNode;
+  repositoryControls: ReactNode;
   onRetry: () => void;
   onRunDiagnostic: () => void;
   requestError: string | null;
@@ -256,6 +257,8 @@ export function InstallationView(props: InstallationViewProps) {
         ) : null}
 
         {props.projectControls}
+
+        {props.repositoryControls}
 
         {props.operatorControls}
 
