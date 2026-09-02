@@ -1,6 +1,6 @@
 import type { LocalRepositoryInventory } from "@kestrel/contracts";
 
-export const TRUSTED_HOST_REPOSITORY_COMMAND = `LOCAL_REPOSITORY_ROOTS='["/absolute/path/to/authorized-parent"]' npm run dev`;
+const TRUSTED_HOST_REPOSITORY_COMMAND = `LOCAL_REPOSITORY_ROOTS='["/absolute/path/to/authorized-parent"]' npm run dev`;
 
 type RepositorySetupState =
   Exclude<LocalRepositoryInventory["inventoryState"], "ready"> | "discovery_failed" | "loading";
