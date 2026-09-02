@@ -228,6 +228,7 @@ const record = (phase, signal) => appendFileSync(
     args,
     artifactRoot: process.env.ARTIFACT_ROOT,
     databaseUrl: process.env.DATABASE_URL,
+    ghExecutable: process.env.KESTREL_GH_EXECUTABLE,
     gitExecutable: process.env.LOCAL_GIT_EXECUTABLE,
     hasModelProviderSecretRoot: Boolean(process.env.MODEL_PROVIDER_SECRET_ROOT),
     hasSessionSigningKey: Boolean(process.env.SESSION_SIGNING_KEY),
@@ -296,6 +297,7 @@ setInterval(() => undefined, 1_000);
         DOCKER_BIN: join(dockerTools, "docker"),
         KESTREL_DATABASE_PORT: String(databasePort),
         KESTREL_LIFECYCLE_TEST_LOG: logPath,
+        KESTREL_GH_EXECUTABLE: "/untrusted/inherited-gh",
         KESTREL_PWA_PORT: String(pwaPort),
         KESTREL_STARTUP_TIMEOUT_MS: "5000",
         KESTREL_STATE_ROOT: stateRoot,
@@ -430,6 +432,7 @@ setInterval(() => undefined, 1_000);
     expect(web).toMatchObject({
       artifactRoot: join(stateRoot, "review-artifacts"),
       databaseUrl: `postgres://kestrel_runtime:kestrel_runtime_dev@127.0.0.1:${String(databasePort)}/kestrel`,
+      ghExecutable: join(tools, "gh"),
       gitExecutable: join(tools, "git"),
       hasModelProviderSecretRoot: true,
       hasSessionSigningKey: true,

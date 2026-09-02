@@ -3,7 +3,9 @@ import { spawn } from "node:child_process";
 import { z } from "zod";
 
 import {
+  HostGitHubConnectionSchema,
   HostGitHubProjectInboxSchema,
+  type HostGitHubConnection,
   type HostGitHubProjectInbox,
   type HostGitHubPullRequestSummary,
 } from "@kestrel/contracts";
@@ -75,6 +77,20 @@ interface Coordinates {
   owner: string;
   repository: string;
 }
+interface ConnectionProject {
+  projectId: string;
+  coordinates: Coordinates | null;
+}
+
+function unverifiedProjectAccess(project: ConnectionProject | null) {
+  return project === null
+    ? null
+    : ({ state: "not_verified", projectId: project.projectId, repository: null } as const);
+}
+
+type ConnectionCli = NonNullable<HostGitHubConnection["cli"]>;
+type ConnectionIdentity = NonNullable<HostGitHubConnection["identity"]>;
+type ConnectionProbeStage = "identity" | "project" | "version";
 
 function safeEnvironment(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { GH_HOST: HOST, LANG: "C", LC_ALL: "C", NO_COLOR: "1" };
@@ -183,7 +199,7 @@ function parseJson<T>(schema: z.ZodType<T>, text: string): T {
   }
 }
 
-function parseSupportedVersion(text: string): string {
+function parseVersion(text: string): { supported: boolean; version: string } {
   const match = /^gh version (\d+)\.(\d+)\.([^\s]+)(?:\s|$)/u.exec(text);
   const major = match?.[1];
   const minor = match?.[2];
@@ -191,10 +207,59 @@ function parseSupportedVersion(text: string): string {
   if (major === undefined || minor === undefined || patch === undefined) {
     throw new HostGitHubError("invalid_response");
   }
-  if (Number(major) < 2 || (Number(major) === 2 && Number(minor) < 40)) {
+  return {
+    supported: Number(major) > 2 || (Number(major) === 2 && Number(minor) >= 40),
+    version: `${major}.${minor}.${patch}`,
+  };
+}
+
+function parseSupportedVersion(text: string): string {
+  const parsed = parseVersion(text);
+  if (!parsed.supported) {
     throw new HostGitHubError("unavailable");
   }
-  return `${major}.${minor}.${patch}`;
+  return parsed.version;
+}
+
+function failedConnection(
+  error: unknown,
+  stage: ConnectionProbeStage,
+  project: ConnectionProject | null,
+  cli: ConnectionCli | null,
+  identity: ConnectionIdentity | null = null,
+): HostGitHubConnection {
+  if (!(error instanceof HostGitHubError) || error.kind === "cancelled") throw error;
+  const reason = (() => {
+    switch (error.kind) {
+      case "needs_authentication":
+        return "authentication_required" as const;
+      case "access_denied":
+        return stage === "project"
+          ? ("project_access_denied" as const)
+          : ("authentication_required" as const);
+      case "rate_limited":
+        return "rate_limited" as const;
+      case "timeout":
+        return "timed_out" as const;
+      case "unavailable":
+        return stage === "version"
+          ? ("cli_not_installed" as const)
+          : ("unexpected_response" as const);
+      case "invalid_response":
+      case "project_not_supported":
+        return "unexpected_response" as const;
+    }
+  })();
+  const actionRequired = reason === "authentication_required" || reason === "project_access_denied";
+  return HostGitHubConnectionSchema.parse({
+    schemaVersion: 1,
+    state: actionRequired ? "action_required" : "unavailable",
+    reason,
+    cli,
+    identity: stage === "project" && reason !== "authentication_required" ? identity : null,
+    projectAccess: unverifiedProjectAccess(project),
+    checkedAt: new Date().toISOString(),
+  });
 }
 
 function searchArgs(
@@ -263,6 +328,118 @@ export function createHostGitHubCli(options: HostGitHubCliOptions = {}) {
   const executable = options.executable ?? process.env.KESTREL_GH_EXECUTABLE ?? "gh";
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   return {
+    async readConnection(
+      project: ConnectionProject | null,
+      signal?: AbortSignal,
+    ): Promise<HostGitHubConnection> {
+      let cli: ConnectionCli;
+      try {
+        cli = parseVersion((await run(executable, ["version"], timeoutMs, signal)).stdout);
+      } catch (error) {
+        return failedConnection(error, "version", project, null);
+      }
+      if (!cli.supported) {
+        return HostGitHubConnectionSchema.parse({
+          schemaVersion: 1,
+          state: "action_required",
+          reason: "cli_version_unsupported",
+          cli,
+          identity: null,
+          projectAccess: unverifiedProjectAccess(project),
+          checkedAt: new Date().toISOString(),
+        });
+      }
+      let account: z.infer<typeof AccountSchema>;
+      let confirmedAccount: z.infer<typeof AccountSchema>;
+      try {
+        account = parseJson(
+          AccountSchema,
+          (await run(executable, ["api", "--hostname", HOST, "/user"], timeoutMs, signal)).stdout,
+        );
+        confirmedAccount = parseJson(
+          AccountSchema,
+          (await run(executable, ["api", "--hostname", HOST, "/user"], timeoutMs, signal)).stdout,
+        );
+      } catch (error) {
+        return failedConnection(error, "identity", project, cli);
+      }
+      if (confirmedAccount.login !== account.login) {
+        return HostGitHubConnectionSchema.parse({
+          schemaVersion: 1,
+          state: "action_required",
+          reason: "account_drift",
+          cli,
+          identity: null,
+          projectAccess: unverifiedProjectAccess(project),
+          checkedAt: new Date().toISOString(),
+        });
+      }
+      if (project === null) {
+        return HostGitHubConnectionSchema.parse({
+          schemaVersion: 1,
+          state: "ready",
+          reason: null,
+          cli,
+          identity: { host: HOST, account: account.login },
+          projectAccess: null,
+          checkedAt: new Date().toISOString(),
+        });
+      }
+      if (project.coordinates === null) {
+        return HostGitHubConnectionSchema.parse({
+          schemaVersion: 1,
+          state: "action_required",
+          reason: "project_not_supported",
+          cli,
+          identity: { host: HOST, account: account.login },
+          projectAccess: unverifiedProjectAccess(project),
+          checkedAt: new Date().toISOString(),
+        });
+      }
+      let repository: z.infer<typeof RepositorySchema>;
+      try {
+        repository = parseJson(
+          RepositorySchema,
+          (
+            await run(
+              executable,
+              [
+                "api",
+                "--hostname",
+                HOST,
+                `/repos/${project.coordinates.owner}/${project.coordinates.repository}`,
+              ],
+              timeoutMs,
+              signal,
+            )
+          ).stdout,
+        );
+        if (
+          repository.owner.login.toLowerCase() !== project.coordinates.owner.toLowerCase() ||
+          repository.name.toLowerCase() !== project.coordinates.repository.toLowerCase()
+        ) {
+          throw new HostGitHubError("invalid_response");
+        }
+      } catch (error) {
+        return failedConnection(error, "project", project, cli, {
+          host: HOST,
+          account: account.login,
+        });
+      }
+      return HostGitHubConnectionSchema.parse({
+        schemaVersion: 1,
+        state: "ready",
+        reason: null,
+        cli,
+        identity: { host: HOST, account: account.login },
+        projectAccess: {
+          state: "verified",
+          projectId: project.projectId,
+          repository: { owner: repository.owner.login, name: repository.name },
+        },
+        checkedAt: new Date().toISOString(),
+      });
+    },
     async readVersion(signal?: AbortSignal): Promise<string> {
       return parseSupportedVersion((await run(executable, ["version"], timeoutMs, signal)).stdout);
     },

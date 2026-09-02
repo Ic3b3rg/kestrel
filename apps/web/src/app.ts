@@ -7,6 +7,11 @@ import type { DatabasePool, DiagnosticJobSender } from "@kestrel/database";
 
 import { registerDiagnosticRoutes } from "./routes/diagnostics.js";
 import {
+  createHostGitHubConnectionService,
+  registerHostGitHubConnectionRoutes,
+  type HostGitHubConnectionService,
+} from "./routes/connections.js";
+import {
   createUnavailableDirectApiProfileService,
   registerDirectApiProfileRoutes,
   type DirectApiProfileService,
@@ -55,6 +60,7 @@ export interface BuildAppOptions {
   pool: DatabasePool;
   projectService?: ProjectService;
   hostGitHubProjectService?: HostGitHubProjectService;
+  hostGitHubConnectionService?: HostGitHubConnectionService;
   reviewRevisionService?: ReviewRevisionService;
   reviewWorkflowService?: ReviewWorkflowService;
   pwaRoot?: string;
@@ -146,6 +152,7 @@ export async function buildApp({
     upsert: () => Promise.reject(new Error("Change Overview rendering coordinator unavailable")),
   }),
   hostGitHubProjectService,
+  hostGitHubConnectionService = createHostGitHubConnectionService(pool),
   reviewRevisionService = {
     retain: () => Promise.reject(new Error("Review Revision acquisition is not configured")),
   },
@@ -205,6 +212,7 @@ export async function buildApp({
   registerHealthRoutes(app, pool);
   registerInstallationRoutes(app, pool);
   registerOpenApiRoute(app);
+  registerHostGitHubConnectionRoutes(app, hostGitHubConnectionService);
   registerProjectRoutes(app, projectService, hostGitHubProjectService);
   registerDirectApiProfileRoutes(app, directApiProfileService);
   registerChangeIntentRoutes(app, changeIntentService);
