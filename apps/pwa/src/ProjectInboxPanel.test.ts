@@ -166,10 +166,10 @@ describe("ProjectInboxPanel", () => {
     expect(html).toContain("#1234 · Keep repository access explicit");
     expect(html).toContain("Source");
     expect(html).toContain("Not acquired");
-    expect(html).toContain("Provider observation");
+    expect(html).toContain("<dt>Provider Observation</dt>");
     expect(html).toContain("Public GitHub pull request");
     expect(html).toContain("Refresh");
-    expect(html).toContain("Manual only");
+    expect(html).toContain("manual only");
     expect(html).not.toContain("Synchronization");
     expect(html).toContain("Model access");
     expect(html).toContain("Not configured");

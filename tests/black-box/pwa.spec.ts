@@ -927,6 +927,9 @@ test.describe("observable Installation PWA", () => {
     ).toHaveCount(0);
     await page.getByRole("button", { name: `Select PR #${String(proposal.number)}` }).click();
     const proposalDetail = page.locator(".change-proposal").filter({ hasText: proposal.title });
+    const projectFacts = page.locator(".project-facts");
+    await expect(projectFacts.getByText("Local Repository Source", { exact: true })).toBeVisible();
+    await expect(projectFacts.getByText("Provider Observation", { exact: true })).toBeVisible();
     await expect(proposalDetail).toBeVisible();
     await expect(proposalDetail).toContainText("Revision State");
     await expect(proposalDetail).toContainText("Not acquired");
