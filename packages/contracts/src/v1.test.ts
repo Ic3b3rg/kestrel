@@ -22,6 +22,7 @@ import {
   DirectApiProfileResponseSchema,
   EventCursorSchema,
   HostGitHubConnectionSchema,
+  HostGitHubProjectInboxSchema,
   InstallationEventSchema,
   InstallationSnapshotSchema,
   LoginCommandSchema,
@@ -395,6 +396,65 @@ describe("V1 public contracts", () => {
           ...connection.identity,
           authConfiguration: "/Users/operator/.config/gh/hosts.yml",
         },
+      }),
+    ).toThrow();
+  });
+
+  it("exposes ordered per-group availability for the host GitHub Project inbox", () => {
+    const inbox = {
+      schemaVersion: 1,
+      projectId: "018f0f89-949a-75a8-8f61-6df78a843b1e",
+      route: "host_gh",
+      limitations: ["Manual refresh only"],
+      status: {
+        executableVersion: "2.87.0",
+        availability: "available",
+        host: "github.com",
+        authentication: "authenticated",
+        account: "operator",
+      },
+      groupStates: [
+        { group: "review_requested", state: "available", failureReason: null },
+        { group: "authored", state: "unavailable", failureReason: "rate_limited" },
+        { group: "other", state: "unavailable", failureReason: "rate_limited" },
+      ],
+      pullRequests: [
+        {
+          number: 2,
+          title: "Review the bounded provider read",
+          body: "Keep host credentials outside Kestrel.",
+          url: "https://github.com/Ic3b3rg/kestrel/pull/2",
+          author: "reviewer",
+          updatedAt: "2026-09-02T12:00:00.000Z",
+          group: "review_requested",
+        },
+      ],
+      observedAt: "2026-09-02T12:01:00.000Z",
+    } as const;
+
+    expect(HostGitHubProjectInboxSchema.parse(inbox)).toEqual(inbox);
+    expect(() =>
+      HostGitHubProjectInboxSchema.parse({
+        ...inbox,
+        groupStates: inbox.groupStates.map((groupState) =>
+          groupState.group === "authored" ? { ...groupState, failureReason: null } : groupState,
+        ),
+      }),
+    ).toThrow();
+    expect(() =>
+      HostGitHubProjectInboxSchema.parse({
+        ...inbox,
+        groupStates: [...inbox.groupStates].reverse(),
+      }),
+    ).toThrow();
+    expect(() =>
+      HostGitHubProjectInboxSchema.parse({
+        ...inbox,
+        groupStates: inbox.groupStates.map((groupState) =>
+          groupState.group === "review_requested"
+            ? { ...groupState, state: "unavailable", failureReason: "timed_out" }
+            : groupState,
+        ),
       }),
     ).toThrow();
   });

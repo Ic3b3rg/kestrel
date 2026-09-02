@@ -306,15 +306,79 @@ export const HostGitHubPullRequestSummarySchema = z.strictObject({
   group: HostGitHubPullRequestGroupSchema,
 });
 
-export const HostGitHubProjectInboxSchema = z.strictObject({
-  schemaVersion: SchemaVersionSchema,
-  projectId: KestrelIdSchema,
-  route: z.literal("host_gh"),
-  limitations: z.array(z.string().min(1).max(256)).max(10),
-  status: HostGitHubStatusSchema,
-  pullRequests: z.array(HostGitHubPullRequestSummarySchema).max(300),
-  observedAt: UtcDateTimeSchema,
-});
+export const HostGitHubPullRequestGroupFailureReasonSchema = z.enum([
+  "authentication_required",
+  "project_access_denied",
+  "rate_limited",
+  "timed_out",
+  "unexpected_response",
+]);
+
+export const HostGitHubPullRequestGroupStateSchema = z
+  .strictObject({
+    group: HostGitHubPullRequestGroupSchema,
+    state: z.enum(["available", "unavailable"]),
+    failureReason: HostGitHubPullRequestGroupFailureReasonSchema.nullable(),
+  })
+  .superRefine((groupState, context) => {
+    if (
+      (groupState.state === "available" && groupState.failureReason !== null) ||
+      (groupState.state === "unavailable" && groupState.failureReason === null)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Host GitHub group availability must match its failure reason",
+        path: ["failureReason"],
+      });
+    }
+  });
+
+const HostGitHubPullRequestGroupOrder = ["review_requested", "authored", "other"] as const;
+
+export const HostGitHubProjectInboxSchema = z
+  .strictObject({
+    schemaVersion: SchemaVersionSchema,
+    projectId: KestrelIdSchema,
+    route: z.literal("host_gh"),
+    limitations: z.array(z.string().min(1).max(256)).max(10),
+    status: HostGitHubStatusSchema,
+    groupStates: z.array(HostGitHubPullRequestGroupStateSchema).length(3),
+    pullRequests: z.array(HostGitHubPullRequestSummarySchema).max(300),
+    observedAt: UtcDateTimeSchema,
+  })
+  .superRefine((inbox, context) => {
+    for (const [index, expectedGroup] of HostGitHubPullRequestGroupOrder.entries()) {
+      if (inbox.groupStates[index]?.group !== expectedGroup) {
+        context.addIssue({
+          code: "custom",
+          message: "Host GitHub group states must use the canonical display order",
+          path: ["groupStates", index, "group"],
+        });
+      }
+    }
+
+    const groupStates = new Map(
+      inbox.groupStates.map((groupState) => [groupState.group, groupState]),
+    );
+    const seenNumbers = new Set<number>();
+    for (const [index, pullRequest] of inbox.pullRequests.entries()) {
+      if (seenNumbers.has(pullRequest.number)) {
+        context.addIssue({
+          code: "custom",
+          message: "Host GitHub pull requests must be deduplicated",
+          path: ["pullRequests", index, "number"],
+        });
+      }
+      seenNumbers.add(pullRequest.number);
+      if (groupStates.get(pullRequest.group)?.state !== "available") {
+        context.addIssue({
+          code: "custom",
+          message: "Unavailable Host GitHub groups cannot expose pull requests",
+          path: ["pullRequests", index, "group"],
+        });
+      }
+    }
+  });
 
 export const ObserveHostGitHubPullRequestCommandSchema = z.strictObject({
   number: z.number().int().positive().max(9_999_999_999),
@@ -1567,6 +1631,7 @@ export type LocalRepositoryReferences = z.infer<typeof LocalRepositoryReferences
 export type LocalRepositorySource = z.infer<typeof LocalRepositorySourceSchema>;
 export type ModelAccess = z.infer<typeof ModelAccessSchema>;
 export type HostGitHubProjectInbox = z.infer<typeof HostGitHubProjectInboxSchema>;
+export type HostGitHubPullRequestGroupState = z.infer<typeof HostGitHubPullRequestGroupStateSchema>;
 export type HostGitHubPullRequestSummary = z.infer<typeof HostGitHubPullRequestSummarySchema>;
 export type HostGitHubStatus = z.infer<typeof HostGitHubStatusSchema>;
 export type HostGitHubConnection = z.infer<typeof HostGitHubConnectionSchema>;

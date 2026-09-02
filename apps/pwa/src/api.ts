@@ -280,7 +280,17 @@ export async function fetchHostGitHubProjectInbox(
       signal: signal ?? null,
     },
   );
-  return requireJson(response, HostGitHubProjectInboxSchema, "host GitHub Project inbox");
+  const inbox = await requireJson(
+    response,
+    HostGitHubProjectInboxSchema,
+    "host GitHub Project inbox",
+  );
+  if (inbox.projectId !== validatedId) {
+    throw new InvalidServerResponseError(
+      "The server returned an invalid host GitHub Project inbox",
+    );
+  }
+  return inbox;
 }
 
 export async function observeHostGitHubPullRequest(

@@ -19,6 +19,9 @@ async function fakeGh(
     | "not_authenticated"
     | "old_version"
     | "rate_limited"
+    | "authored_rate_limited"
+    | "review_requested_rate_limited_overlap"
+    | "inbox_account_drift"
     | "sso_denied" = "ok",
 ) {
   const directory = await mkdtemp(join(tmpdir(), "kestrel-fake-gh-"));
@@ -32,13 +35,14 @@ case "$1 $2" in
   "version ") ${mode === "malformed" ? "printf 'not-json'" : mode === "old_version" ? "printf 'gh version 2.39.1 (test)\\\\n'" : "printf 'gh version 2.87.0 (test)\\\\n'"} ;;
   "api --hostname")
     case "$4" in
-      "/user") ${mode === "account_drift" ? `if [ -f '${join(directory, "seen-user")}' ]; then printf '{"login":"intruder"}'; else touch '${join(directory, "seen-user")}'; printf '{"login":"operator"}'; fi` : mode === "post_access_drift" ? `if [ -f '${join(directory, "repository-read")}' ]; then printf '{"login":"intruder"}'; else printf '{"login":"operator"}'; fi` : mode === "not_authenticated" ? "printf 'not logged into github.com ghp_never_expose_this' >&2; exit 1" : mode === "rate_limited" ? "printf 'API rate limit exceeded' >&2; exit 1" : 'if [ "$5" = "--jq" ]; then printf \'{"login":"operator"}\'; else printf \'{"login":"operator","name":"extra provider field"}\'; fi'} ;;
+      "/user") ${mode === "account_drift" ? `if [ -f '${join(directory, "seen-user")}' ]; then printf '{"login":"intruder"}'; else touch '${join(directory, "seen-user")}'; printf '{"login":"operator"}'; fi` : mode === "post_access_drift" ? `if [ -f '${join(directory, "repository-read")}' ]; then printf '{"login":"intruder"}'; else printf '{"login":"operator"}'; fi` : mode === "inbox_account_drift" ? `if [ -f '${join(directory, "search-read")}' ]; then printf '{"login":"intruder"}'; else printf '{"login":"operator"}'; fi` : mode === "not_authenticated" ? "printf 'not logged into github.com ghp_never_expose_this' >&2; exit 1" : mode === "rate_limited" ? "printf 'API rate limit exceeded' >&2; exit 1" : 'if [ "$5" = "--jq" ]; then printf \'{"login":"operator"}\'; else printf \'{"login":"operator","name":"extra provider field"}\'; fi'} ;;
       *) ${mode === "sso_denied" ? "printf 'Resource protected by organization SAML enforcement ghp_never_expose_this' >&2; exit 1" : `${mode === "post_access_drift" ? `touch '${join(directory, "repository-read")}'; ` : ""}if [ "$5" = "--jq" ]; then printf '{"id":1,"name":"kestrel","node_id":"R_test","owner":{"login":"Ic3b3rg"}}'; else printf '{"id":1,"name":"kestrel","node_id":"R_test","owner":{"login":"Ic3b3rg"},"private":true}'; fi`} ;;
     esac ;;
   "search prs")
+    ${mode === "inbox_account_drift" ? `touch '${join(directory, "search-read")}'` : ""}
     case "$*" in
-      *"--review-requested @me"*) printf '[{"author":{"login":"reviewer"},"body":"review body","number":2,"title":"Review me","updatedAt":"2026-08-27T10:00:00Z","url":"https://github.com/Ic3b3rg/kestrel/pull/2"}]' ;;
-      *"--author @me"*) printf '[{"author":{"login":"operator"},"body":"authored body","number":1,"title":"Mine","updatedAt":"2026-08-27T11:00:00Z","url":"https://github.com/Ic3b3rg/kestrel/pull/1"}]' ;;
+      *"--review-requested @me"*) ${mode === "review_requested_rate_limited_overlap" ? "printf 'API rate limit exceeded' >&2; exit 1" : 'printf \'[{"author":{"login":"reviewer"},"body":"review body","number":2,"title":"Review me","updatedAt":"2026-08-27T10:00:00Z","url":"https://github.com/Ic3b3rg/kestrel/pull/2"}]\''} ;;
+      *"--author @me"*) ${mode === "authored_rate_limited" ? "printf 'API rate limit exceeded' >&2; exit 1" : 'printf \'[{"author":{"login":"operator"},"body":"authored body","number":1,"title":"Mine","updatedAt":"2026-08-27T11:00:00Z","url":"https://github.com/Ic3b3rg/kestrel/pull/1"}]\''} ;;
       *) printf '[{"author":{"login":"operator"},"body":"authored body","number":1,"title":"Mine","updatedAt":"2026-08-27T11:00:00Z","url":"https://github.com/Ic3b3rg/kestrel/pull/1"}]' ;;
     esac ;;
   "pr view") printf '{"author":{"id":"U_test","login":"operator"},"baseRefName":"master","baseRefOid":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","body":"body","headRefName":"feature","headRefOid":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","id":"PR_test","mergedAt":null,"number":1,"state":"OPEN","title":"Mine","url":"https://github.com/Ic3b3rg/kestrel/pull/1"}' ;;
@@ -276,6 +280,11 @@ describe("host GitHub CLI", () => {
       [2, "review_requested"],
       [1, "authored"],
     ]);
+    expect(inbox.groupStates).toEqual([
+      { group: "review_requested", state: "available", failureReason: null },
+      { group: "authored", state: "available", failureReason: null },
+      { group: "other", state: "available", failureReason: null },
+    ]);
     const commands = await readFile(fake.log, "utf8");
     expect(commands).toContain("api --hostname github.com /repos/Ic3b3rg/kestrel");
     expect(commands.match(/search prs/g)).toHaveLength(3);
@@ -283,6 +292,49 @@ describe("host GitHub CLI", () => {
     expect(commands).not.toMatch(
       /(?:--method|-X)\s+(?:POST|PATCH|PUT|DELETE)|\bpr\s+(?:merge|close|comment|review)\b/iu,
     );
+  });
+
+  it("keeps successful groups visible when one bounded search is rate limited", async () => {
+    const fake = await fakeGh("authored_rate_limited");
+    const inbox = await createHostGitHubCli({ executable: fake.executable }).readProjectInbox(
+      projectId,
+      { owner: "Ic3b3rg", repository: "kestrel" },
+    );
+
+    expect(inbox.groupStates).toEqual([
+      { group: "review_requested", state: "available", failureReason: null },
+      { group: "authored", state: "unavailable", failureReason: "rate_limited" },
+      { group: "other", state: "unavailable", failureReason: "rate_limited" },
+    ]);
+    expect(inbox.pullRequests.map(({ number, group }) => [number, group])).toEqual([
+      [2, "review_requested"],
+    ]);
+  });
+
+  it("does not misclassify authored pull requests when the higher-priority search fails", async () => {
+    const fake = await fakeGh("review_requested_rate_limited_overlap");
+    const inbox = await createHostGitHubCli({ executable: fake.executable }).readProjectInbox(
+      projectId,
+      { owner: "Ic3b3rg", repository: "kestrel" },
+    );
+
+    expect(inbox.groupStates).toEqual([
+      { group: "review_requested", state: "unavailable", failureReason: "rate_limited" },
+      { group: "authored", state: "unavailable", failureReason: "rate_limited" },
+      { group: "other", state: "unavailable", failureReason: "rate_limited" },
+    ]);
+    expect(inbox.pullRequests).toEqual([]);
+  });
+
+  it("fails closed when the active account drifts during the inbox searches", async () => {
+    const fake = await fakeGh("inbox_account_drift");
+
+    await expect(
+      createHostGitHubCli({ executable: fake.executable }).readProjectInbox(projectId, {
+        owner: "Ic3b3rg",
+        repository: "kestrel",
+      }),
+    ).rejects.toEqual(expect.objectContaining({ kind: "access_denied" }));
   });
 
   it("rejects malformed output without exposing it", async () => {

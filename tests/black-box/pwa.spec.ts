@@ -2,6 +2,7 @@ import { AxeBuilder } from "@axe-core/playwright";
 import { expect, test, type Page, type Route } from "@playwright/test";
 
 import {
+  HostGitHubProjectInboxSchema,
   ProjectInboxSchema,
   ReviewRevisionAvailableSchema,
   type ChangeIntentVersionCreated,
@@ -127,7 +128,7 @@ test.describe("observable Installation PWA", () => {
   test.afterEach(async () => {
     await stack?.executeSql(`
       DELETE FROM local_repository_sources
-      WHERE source_identity = '${"e".repeat(64)}';
+      WHERE source_identity IN ('${"e".repeat(64)}', '${"f".repeat(64)}');
     `);
   });
 
@@ -242,6 +243,358 @@ test.describe("observable Installation PWA", () => {
     } finally {
       await runningStack.executeSql("DELETE FROM direct_api_profiles;");
     }
+  });
+
+  test("the Operator consults and selects the live host pull-request inbox", async ({ page }) => {
+    if (stack === undefined) throw new Error("Host GitHub inbox browser stack is unavailable");
+    const runningStack = stack;
+    await runningStack.executeRuntimeSql(`
+      INSERT INTO local_repository_sources (
+        installation_id,
+        project_id,
+        source_identity,
+        repository_id,
+        root_id,
+        repository_relative_locator,
+        display_name_snapshot,
+        object_format,
+        github_owner_snapshot,
+        github_name_snapshot,
+        attachment_state
+      )
+      SELECT installation_id,
+             id,
+             '${"e".repeat(64)}',
+             '018f0f89-9a1e-7d64-a5dd-18cc3e317401',
+             '018f0f89-9a1f-72ae-82c4-ef8ee27d6932',
+             'openai-node',
+             'openai-node',
+             'sha1',
+             'openai',
+             'openai-node',
+             'attached'
+      FROM projects
+      WHERE provider_repository_id = 'R_kgDOGx';
+
+      WITH switch_project AS (
+        INSERT INTO projects (
+          installation_id,
+          provider_observation_kind,
+          provider,
+          provider_repository_id,
+          repository_owner_snapshot,
+          repository_name_snapshot,
+          repository_canonical_url_snapshot
+        )
+        SELECT id,
+               'public_github',
+               'github',
+               'R_browser_project_switch',
+               'example',
+               'switch-repo',
+               'https://github.com/example/switch-repo'
+        FROM installations
+        RETURNING id, installation_id
+      )
+      INSERT INTO local_repository_sources (
+        installation_id,
+        project_id,
+        source_identity,
+        repository_id,
+        root_id,
+        repository_relative_locator,
+        display_name_snapshot,
+        object_format,
+        github_owner_snapshot,
+        github_name_snapshot,
+        attachment_state
+      )
+      SELECT installation_id,
+             id,
+             '${"f".repeat(64)}',
+             '018f0f89-9a1e-7d64-a5dd-18cc3e317402',
+             '018f0f89-9a1f-72ae-82c4-ef8ee27d6933',
+             'switch-repo',
+             'switch-repo',
+             'sha1',
+             'example',
+             'switch-repo',
+             'attached'
+      FROM switch_project;
+    `);
+    const projectInbox = ProjectInboxSchema.parse(
+      await (await runningStack.fetchApi("/api/v1/projects")).json(),
+    );
+    const project = projectInbox.projects.find(
+      (candidate) => candidate.repository?.name === "openai-node",
+    );
+    const existingProposal = project?.changeProposals.find(
+      (candidate) => candidate.kind === "provider_observed",
+    );
+    if (project === undefined || existingProposal?.kind !== "provider_observed") {
+      throw new Error("Host GitHub inbox browser fixture is unavailable");
+    }
+    const switchProject = projectInbox.projects.find(
+      (candidate) => candidate.repository?.name === "switch-repo",
+    );
+    if (switchProject === undefined) {
+      throw new Error("Host GitHub Project-switch browser fixture is unavailable");
+    }
+
+    const availableInbox = HostGitHubProjectInboxSchema.parse({
+      schemaVersion: 1,
+      projectId: project.id,
+      route: "host_gh",
+      limitations: ["Host session, bounded reads, and manual refresh only."],
+      status: {
+        executableVersion: "2.87.0",
+        availability: "available",
+        host: "github.com",
+        authentication: "authenticated",
+        account: "operator",
+      },
+      groupStates: [
+        { group: "review_requested", state: "available", failureReason: null },
+        { group: "authored", state: "available", failureReason: null },
+        { group: "other", state: "available", failureReason: null },
+      ],
+      pullRequests: [
+        {
+          number: 42,
+          title: "Review the bounded provider read",
+          body: "Keep host credentials outside Kestrel.",
+          url: "https://github.com/openai/openai-node/pull/42",
+          author: "reviewer",
+          updatedAt: "2026-09-02T12:03:00.000Z",
+          group: "review_requested",
+        },
+        {
+          number: 43,
+          title: "Keep the Project inbox scoped",
+          body: "The Operator authored this change.",
+          url: "https://github.com/openai/openai-node/pull/43",
+          author: "operator",
+          updatedAt: "2026-09-02T12:02:00.000Z",
+          group: "authored",
+        },
+        {
+          number: 44,
+          title: "Document the local boundary",
+          body: "",
+          url: "https://github.com/openai/openai-node/pull/44",
+          author: null,
+          updatedAt: "2026-09-02T12:01:00.000Z",
+          group: "other",
+        },
+      ],
+      observedAt: "2026-09-02T12:04:00.000Z",
+    });
+    const partialInbox = HostGitHubProjectInboxSchema.parse({
+      ...availableInbox,
+      groupStates: [
+        { group: "review_requested", state: "available", failureReason: null },
+        { group: "authored", state: "unavailable", failureReason: "rate_limited" },
+        { group: "other", state: "unavailable", failureReason: "rate_limited" },
+      ],
+      pullRequests: [availableInbox.pullRequests[0]],
+      observedAt: "2026-09-02T12:05:00.000Z",
+    });
+    const switchInbox = HostGitHubProjectInboxSchema.parse({
+      ...availableInbox,
+      projectId: switchProject.id,
+      pullRequests: [
+        {
+          number: 77,
+          title: "Keep the switched Project isolated",
+          body: "Only the selected Project owns this inbox result.",
+          url: "https://github.com/example/switch-repo/pull/77",
+          author: "switch-reviewer",
+          updatedAt: "2026-09-02T12:03:30.000Z",
+          group: "review_requested",
+        },
+      ],
+    });
+    const observedProposal = {
+      ...existingProposal,
+      author: { login: "reviewer", providerId: "U_host_42" },
+      canonicalUrl: "https://github.com/openai/openai-node/pull/42",
+      changeIntent: null,
+      changeIntentCandidates: [],
+      id: "018f0f89-9192-755f-aa96-f72094c734ab",
+      number: 42,
+      observedAt: "2026-09-02T12:06:00.000Z",
+      providerId: "PR_host_42",
+      reviewRevisions: [],
+      title: "Review the bounded provider read",
+      version: 1,
+    };
+    const observedProject = ProjectInboxSchema.parse({
+      schemaVersion: 1,
+      projects: [
+        {
+          ...project,
+          changeProposals: [observedProposal, ...project.changeProposals],
+          providerObservation: {
+            account: "operator",
+            authentication: "host_session",
+            host: "github.com",
+            kind: "host_gh",
+            refresh: "manual",
+          },
+          updatedAt: "2026-09-02T12:06:00.000Z",
+        },
+      ],
+    }).projects[0];
+    if (observedProject === undefined) throw new Error("Observed Project fixture is unavailable");
+
+    let releaseInitialRead: () => void = () => undefined;
+    const initialReadGate = new Promise<void>((resolve) => {
+      releaseInitialRead = resolve;
+    });
+    let markInitialRead: () => void = () => undefined;
+    const initialRead = new Promise<void>((resolve) => {
+      markInitialRead = resolve;
+    });
+    let inboxReadCount = 0;
+    let refreshReadCount = 0;
+    let refreshUrl: string | null = null;
+    const inboxPath = `/api/v1/projects/${project.id}/provider/github`;
+    await page.route(
+      (url) => url.pathname === inboxPath,
+      async (route: Route) => {
+        const request = route.request();
+        expect(request.method()).toBe("GET");
+        inboxReadCount += 1;
+        const refresh = new URL(request.url()).searchParams.get("refresh") === "true";
+        if (refresh) {
+          refreshReadCount += 1;
+          refreshUrl = request.url();
+          await route.fulfill({ json: partialInbox, status: 200 });
+          return;
+        }
+        markInitialRead();
+        await initialReadGate;
+        await route.fulfill({ json: availableInbox, status: 200 });
+      },
+    );
+    const switchInboxPath = `/api/v1/projects/${switchProject.id}/provider/github`;
+    let switchInboxReadCount = 0;
+    await page.route(
+      (url) => url.pathname === switchInboxPath,
+      async (route: Route) => {
+        expect(route.request().method()).toBe("GET");
+        switchInboxReadCount += 1;
+        await route.fulfill({ json: switchInbox, status: 200 });
+      },
+    );
+
+    let markSelectionObserved: () => void = () => undefined;
+    const selectionObserved = new Promise<void>((resolve) => {
+      markSelectionObserved = resolve;
+    });
+    const observePath = `${inboxPath}/pull-requests/observe`;
+    await page.route(
+      (url) => url.pathname === observePath,
+      async (route: Route) => {
+        const request = route.request();
+        expect(request.method()).toBe("POST");
+        const command: unknown = request.postDataJSON();
+        expect(command).toEqual({ number: 42 });
+        expect(Object.keys(command as Record<string, unknown>)).toEqual(["number"]);
+        expect(request.headers()["x-kestrel-csrf"]).toBeTruthy();
+        expect(request.headers().authorization).toBeUndefined();
+        markSelectionObserved();
+        await route.fulfill({ json: { schemaVersion: 1, project: observedProject }, status: 200 });
+      },
+    );
+    let revisionRequestCount = 0;
+    page.on("request", (request) => {
+      if (request.method() === "POST" && request.url().endsWith("/api/v1/review-revisions")) {
+        revisionRequestCount += 1;
+      }
+    });
+
+    const browserErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error" || message.type() === "warning") {
+        const text = message.text();
+        if (
+          text !==
+          "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+        ) {
+          browserErrors.push(text);
+        }
+      }
+    });
+    page.on("pageerror", (error) => browserErrors.push(error.message));
+
+    await page.goto(runningStack.pwaUrl);
+    await page.getByLabel("Username").fill(TEST_OPERATOR_CREDENTIALS.username);
+    await page.getByLabel("Password").fill(TEST_OPERATOR_CREDENTIALS.password);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await openProjectWorkspace(page);
+    await initialRead;
+
+    const panel = page.getByRole("region", { name: "Pull request inbox" });
+    const requested = panel.getByRole("region", { name: "Review requested" });
+    const authored = panel.getByRole("region", { name: "Authored" });
+    const others = panel.getByRole("region", { name: "Others" });
+    await expect(requested.getByRole("status")).toContainText("Loading Review requested");
+    await expect(authored.getByRole("status")).toContainText("Loading Authored");
+    await expect(others.getByRole("status")).toContainText("Loading Others");
+    releaseInitialRead();
+
+    await expect(requested).toContainText("#42");
+    await expect(requested).toContainText("Review the bounded provider read");
+    await expect(authored).toContainText("#43");
+    await expect(others).toContainText("#44");
+    expect(await panel.locator(".host-github-group h5").allTextContents()).toEqual([
+      "Review requested",
+      "Authored",
+      "Others",
+    ]);
+    await openProjectWorkspace(page, "example/switch-repo");
+    await expect(panel).toContainText("#77");
+    await expect(panel).toContainText("Keep the switched Project isolated");
+    await expect(panel).not.toContainText("#42");
+    expect(switchInboxReadCount).toBeGreaterThanOrEqual(1);
+    await openProjectWorkspace(page);
+    await expect(panel).toContainText("#42");
+    await expect(panel).not.toContainText("#77");
+    const automaticReadCount = inboxReadCount;
+    expect(automaticReadCount).toBeGreaterThanOrEqual(1);
+    await panel.getByRole("button", { name: "Refresh pull requests" }).click();
+    await expect(authored.getByRole("alert")).toContainText("GitHub rate limit reached");
+    await expect(others.getByRole("alert")).toContainText("GitHub rate limit reached");
+    await expect(requested).toContainText("#42");
+    expect(inboxReadCount).toBe(automaticReadCount + 1);
+    expect(refreshReadCount).toBe(1);
+    expect(refreshUrl).toContain("refresh=true");
+    const inboxReadCountAfterRefresh = inboxReadCount;
+
+    const select = requested.getByRole("button", { name: "Select PR #42" });
+    await select.focus();
+    await page.keyboard.press("Enter");
+    await selectionObserved;
+    await expect(page.getByRole("status").filter({ hasText: "Project refreshed" })).toContainText(
+      "Project refreshed through the host GitHub session.",
+    );
+    await expect(
+      page.getByRole("link", { name: "#42 · Review the bounded provider read" }),
+    ).toBeVisible();
+    expect(inboxReadCount).toBe(inboxReadCountAfterRefresh);
+    expect(revisionRequestCount).toBe(0);
+
+    const accessibility = await new AxeBuilder({ page }).include(".host-github-panel").analyze();
+    expect(accessibility.violations).toEqual([]);
+    await page.setViewportSize({ height: 900, width: 320 });
+    await expect(panel).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+    expect(browserErrors).toEqual([]);
   });
 
   test("the Operator acquires an observed pull request from its Project", async ({ page }) => {
@@ -374,6 +727,23 @@ test.describe("observable Installation PWA", () => {
             authentication: "unknown",
             account: null,
           },
+          groupStates: [
+            {
+              group: "review_requested",
+              state: "unavailable",
+              failureReason: "unexpected_response",
+            },
+            {
+              group: "authored",
+              state: "unavailable",
+              failureReason: "unexpected_response",
+            },
+            {
+              group: "other",
+              state: "unavailable",
+              failureReason: "unexpected_response",
+            },
+          ],
           pullRequests: [],
           observedAt: "2026-08-28T12:00:00.000Z",
         },

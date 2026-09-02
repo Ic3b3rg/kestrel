@@ -1615,6 +1615,54 @@
       "HostGitHubProjectInbox": {
         "additionalProperties": false,
         "properties": {
+          "groupStates": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "failureReason": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "authentication_required",
+                        "project_access_denied",
+                        "rate_limited",
+                        "timed_out",
+                        "unexpected_response"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "group": {
+                  "enum": [
+                    "review_requested",
+                    "authored",
+                    "other"
+                  ],
+                  "type": "string"
+                },
+                "state": {
+                  "enum": [
+                    "available",
+                    "unavailable"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "group",
+                "state",
+                "failureReason"
+              ],
+              "type": "object"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "type": "array"
+          },
           "limitations": {
             "items": {
               "maxLength": 256,
@@ -1770,6 +1818,7 @@
           "route",
           "limitations",
           "status",
+          "groupStates",
           "pullRequests",
           "observedAt"
         ],
@@ -21872,7 +21921,7 @@
     },
     "/api/v1/projects/{projectId}/provider/github": {
       "get": {
-        "description": "Reads a bounded Project-scoped pull-request inbox through the Operator workstation's existing gh session.",
+        "description": "Reads the bounded, Project-scoped Review requested, Authored, and Others pull-request groups through the Operator workstation's existing gh session. Groups report availability independently when a bounded provider read fails.",
         "operationId": "readHostGitHubProjectInbox",
         "parameters": [
           {
@@ -21881,6 +21930,18 @@
             "required": true,
             "schema": {
               "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Set to true only for an explicit Operator refresh that bypasses cache.",
+            "in": "query",
+            "name": "refresh",
+            "required": false,
+            "schema": {
+              "enum": [
+                "true"
+              ],
               "type": "string"
             }
           }
@@ -21894,7 +21955,7 @@
                 }
               }
             },
-            "description": "Attributed host GitHub pull-request inbox"
+            "description": "Attributed host GitHub pull-request inbox with per-group availability"
           },
           "400": {
             "content": {

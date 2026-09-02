@@ -10,6 +10,7 @@ import type {
   InstallationEvent,
   InstallationSnapshot,
   HostGitHubConnection,
+  HostGitHubProjectInbox,
   ProjectInbox,
   LocalRepositoryInventory,
   LocalRepositoryReferences,
@@ -24,6 +25,7 @@ import {
   fetchDirectApiProfile,
   fetchInstallation,
   fetchHostGitHubConnection,
+  fetchHostGitHubProjectInbox,
   fetchProjectInbox,
   fetchLocalRepositories,
   fetchLocalRepositoryReferences,
@@ -33,6 +35,7 @@ import {
   logoutOperator,
   openLocalProject,
   openPublicGitHubPullRequest,
+  observeHostGitHubPullRequest,
   runDiagnostic,
   retainReviewRevision,
   startReviewWorkflow,
@@ -715,6 +718,71 @@ describe("PWA API client", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ ...connection, token: "never" }));
     await expect(fetchHostGitHubConnection()).rejects.toThrow("invalid host GitHub Connection");
     expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/v1/connections/github");
+  });
+
+  it("binds host GitHub inbox reads and pull-request selection to one opaque Project", async () => {
+    const inbox: HostGitHubProjectInbox = {
+      schemaVersion: 1,
+      projectId: directApiProjectId,
+      route: "host_gh",
+      limitations: ["Manual refresh only"],
+      status: {
+        executableVersion: "2.87.0",
+        availability: "available",
+        host: "github.com",
+        authentication: "authenticated",
+        account: "operator",
+      },
+      groupStates: [
+        { group: "review_requested", state: "available", failureReason: null },
+        { group: "authored", state: "available", failureReason: null },
+        { group: "other", state: "available", failureReason: null },
+      ],
+      pullRequests: [],
+      observedAt: "2026-09-02T12:00:00.000Z",
+    };
+    const created = { schemaVersion: 1 as const, project: projectInbox.projects[0] };
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(inbox))
+      .mockResolvedValueOnce(jsonResponse(created))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ...inbox,
+          projectId: "018f0f89-949a-75a8-8f61-6df78a843b20",
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("document", {
+      cookie: `__Host-kestrel-csrf=${"A".repeat(43)}.${"B".repeat(43)}`,
+    });
+
+    await expect(fetchHostGitHubProjectInbox(directApiProjectId, true)).resolves.toEqual(inbox);
+    await expect(observeHostGitHubPullRequest(directApiProjectId, { number: 42 })).resolves.toEqual(
+      created,
+    );
+    await expect(fetchHostGitHubProjectInbox(directApiProjectId)).rejects.toThrow(
+      "invalid host GitHub Project inbox",
+    );
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      `/api/v1/projects/${directApiProjectId}/provider/github?refresh=true`,
+    );
+    const selection = fetchMock.mock.calls[1]?.[1];
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      `/api/v1/projects/${directApiProjectId}/provider/github/pull-requests/observe`,
+    );
+    expect(selection).toEqual(
+      expect.objectContaining({
+        body: JSON.stringify({ number: 42 }),
+        credentials: "same-origin",
+        method: "POST",
+      }),
+    );
+    expect(new Headers(selection?.headers).get("X-Kestrel-CSRF")).toBe(
+      `${"A".repeat(43)}.${"B".repeat(43)}`,
+    );
+    expect(JSON.stringify(selection)).not.toContain("Ic3b3rg/kestrel");
   });
 
   it("opens a local Project without sending a filesystem path", async () => {

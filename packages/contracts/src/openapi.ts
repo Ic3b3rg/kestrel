@@ -1170,7 +1170,7 @@ export const openApiDocument = sortJson({
     "/api/v1/projects/{projectId}/provider/github": {
       get: {
         description:
-          "Reads a bounded Project-scoped pull-request inbox through the Operator workstation's existing gh session.",
+          "Reads the bounded, Project-scoped Review requested, Authored, and Others pull-request groups through the Operator workstation's existing gh session. Groups report availability independently when a bounded provider read fails.",
         operationId: "readHostGitHubProjectInbox",
         parameters: [
           {
@@ -1179,11 +1179,18 @@ export const openApiDocument = sortJson({
             required: true,
             schema: { format: "uuid", type: "string" },
           },
+          {
+            description: "Set to true only for an explicit Operator refresh that bypasses cache.",
+            in: "query",
+            name: "refresh",
+            required: false,
+            schema: { enum: ["true"], type: "string" },
+          },
         ],
         responses: {
           "200": {
             content: { "application/json": { schema: schemaReference("HostGitHubProjectInbox") } },
-            description: "Attributed host GitHub pull-request inbox",
+            description: "Attributed host GitHub pull-request inbox with per-group availability",
           },
           "400": {
             content: { "application/json": { schema: schemaReference("ApiError") } },
