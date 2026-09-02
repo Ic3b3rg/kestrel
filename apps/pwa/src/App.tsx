@@ -30,6 +30,7 @@ import {
 import { AuthenticatedShell, projectLabel } from "./AuthenticatedShell.js";
 import { appPath, readAppRoute, type AppRoute } from "./app-route.js";
 import { InstallationView, type PwaConnectionState } from "./InstallationView.js";
+import { CodexSubscriptionConnectionPanel } from "./CodexSubscriptionConnectionPanel.js";
 import { HostGitHubConnectionPanel } from "./HostGitHubConnectionPanel.js";
 import { LoginView } from "./LoginView.js";
 import { OpenProjectForm } from "./OpenProjectForm.js";
@@ -706,11 +707,17 @@ export function App() {
             commandPending={commandPending}
             connection={connection}
             connectionControls={
-              <HostGitHubConnectionPanel
-                online={online}
-                projects={projectInbox?.projects ?? []}
-                onAuthenticationError={handleAuthenticationBoundaryError}
-              />
+              <>
+                <HostGitHubConnectionPanel
+                  online={online}
+                  projects={projectInbox?.projects ?? []}
+                  onAuthenticationError={handleAuthenticationBoundaryError}
+                />
+                <CodexSubscriptionConnectionPanel
+                  online={online}
+                  onAuthenticationError={handleAuthenticationBoundaryError}
+                />
+              </>
             }
             loading={online && !synchronized && requestError === null}
             online={online}

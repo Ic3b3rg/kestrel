@@ -3,6 +3,7 @@ import { createParser } from "eventsource-parser";
 import {
   ApiErrorSchema,
   ChangeIntentVersionCreatedSchema,
+  CodexSubscriptionConnectionSchema,
   ConfigureDirectApiProfileCommandSchema,
   CreateChangeIntentVersionCommandSchema,
   CredentialChangeCommandSchema,
@@ -34,6 +35,7 @@ import {
   StartReviewWorkflowCommandSchema,
   type ApiError,
   type ChangeIntentVersionCreated,
+  type CodexSubscriptionConnection,
   type ConfigureDirectApiProfileCommand,
   type CreateChangeIntentVersionCommand,
   type DiagnosticAccepted,
@@ -199,6 +201,18 @@ export async function fetchHostGitHubConnection(
     signal: signal ?? null,
   });
   return requireJson(response, HostGitHubConnectionSchema, "host GitHub Connection");
+}
+
+export async function fetchCodexSubscriptionConnection(
+  signal?: AbortSignal,
+): Promise<CodexSubscriptionConnection> {
+  const response = await fetch("/api/v1/connections/codex", {
+    credentials: "same-origin",
+    headers: { Accept: "application/json" },
+    method: "GET",
+    signal: signal ?? null,
+  });
+  return requireJson(response, CodexSubscriptionConnectionSchema, "Codex subscription Connection");
 }
 
 export async function fetchReviewPreparation(
