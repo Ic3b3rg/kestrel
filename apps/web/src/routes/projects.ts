@@ -40,7 +40,11 @@ import {
   createPublicGitHubReader,
   type PublicGitHubReader,
 } from "../public-github.js";
-import { createHostGitHubCli, HostGitHubError } from "../host-github.js";
+import {
+  createHostGitHubCli,
+  hostGitHubGroupFailureReason,
+  HostGitHubError,
+} from "../host-github.js";
 import { withRequestCancellation } from "../request-cancellation.js";
 
 export interface ProjectServiceContext {
@@ -83,27 +87,10 @@ export interface HostGitHubProjectService {
 function unavailableHostGitHubGroups(
   kind: HostGitHubError["kind"],
 ): HostGitHubPullRequestGroupState[] {
-  const failureReason = (() => {
-    switch (kind) {
-      case "needs_authentication":
-        return "authentication_required" as const;
-      case "access_denied":
-      case "project_not_supported":
-        return "project_access_denied" as const;
-      case "rate_limited":
-        return "rate_limited" as const;
-      case "timeout":
-      case "cancelled":
-        return "timed_out" as const;
-      case "invalid_response":
-      case "unavailable":
-        return "unexpected_response" as const;
-    }
-  })();
   return (["review_requested", "authored", "other"] as const).map((group) => ({
     group,
     state: "unavailable",
-    failureReason,
+    failureReason: hostGitHubGroupFailureReason(kind),
   }));
 }
 

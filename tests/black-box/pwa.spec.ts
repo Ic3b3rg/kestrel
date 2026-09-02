@@ -128,7 +128,7 @@ test.describe("observable Installation PWA", () => {
   test.afterEach(async () => {
     await stack?.executeSql(`
       DELETE FROM local_repository_sources
-      WHERE source_identity = '${"e".repeat(64)}';
+      WHERE source_identity IN ('${"e".repeat(64)}', '${"f".repeat(64)}');
     `);
   });
 
@@ -275,6 +275,52 @@ test.describe("observable Installation PWA", () => {
              'attached'
       FROM projects
       WHERE provider_repository_id = 'R_kgDOGx';
+
+      WITH switch_project AS (
+        INSERT INTO projects (
+          installation_id,
+          provider_observation_kind,
+          provider,
+          provider_repository_id,
+          repository_owner_snapshot,
+          repository_name_snapshot,
+          repository_canonical_url_snapshot
+        )
+        SELECT id,
+               'public_github',
+               'github',
+               'R_browser_project_switch',
+               'example',
+               'switch-repo',
+               'https://github.com/example/switch-repo'
+        FROM installations
+        RETURNING id, installation_id
+      )
+      INSERT INTO local_repository_sources (
+        installation_id,
+        project_id,
+        source_identity,
+        repository_id,
+        root_id,
+        repository_relative_locator,
+        display_name_snapshot,
+        object_format,
+        github_owner_snapshot,
+        github_name_snapshot,
+        attachment_state
+      )
+      SELECT installation_id,
+             id,
+             '${"f".repeat(64)}',
+             '018f0f89-9a1e-7d64-a5dd-18cc3e317402',
+             '018f0f89-9a1f-72ae-82c4-ef8ee27d6933',
+             'switch-repo',
+             'switch-repo',
+             'sha1',
+             'example',
+             'switch-repo',
+             'attached'
+      FROM switch_project;
     `);
     const projectInbox = ProjectInboxSchema.parse(
       await (await runningStack.fetchApi("/api/v1/projects")).json(),
@@ -287,6 +333,12 @@ test.describe("observable Installation PWA", () => {
     );
     if (project === undefined || existingProposal?.kind !== "provider_observed") {
       throw new Error("Host GitHub inbox browser fixture is unavailable");
+    }
+    const switchProject = projectInbox.projects.find(
+      (candidate) => candidate.repository?.name === "switch-repo",
+    );
+    if (switchProject === undefined) {
+      throw new Error("Host GitHub Project-switch browser fixture is unavailable");
     }
 
     const availableInbox = HostGitHubProjectInboxSchema.parse({
@@ -346,6 +398,21 @@ test.describe("observable Installation PWA", () => {
       ],
       pullRequests: [availableInbox.pullRequests[0]],
       observedAt: "2026-09-02T12:05:00.000Z",
+    });
+    const switchInbox = HostGitHubProjectInboxSchema.parse({
+      ...availableInbox,
+      projectId: switchProject.id,
+      pullRequests: [
+        {
+          number: 77,
+          title: "Keep the switched Project isolated",
+          body: "Only the selected Project owns this inbox result.",
+          url: "https://github.com/example/switch-repo/pull/77",
+          author: "switch-reviewer",
+          updatedAt: "2026-09-02T12:03:30.000Z",
+          group: "review_requested",
+        },
+      ],
     });
     const observedProposal = {
       ...existingProposal,
@@ -408,6 +475,16 @@ test.describe("observable Installation PWA", () => {
         markInitialRead();
         await initialReadGate;
         await route.fulfill({ json: availableInbox, status: 200 });
+      },
+    );
+    const switchInboxPath = `/api/v1/projects/${switchProject.id}/provider/github`;
+    let switchInboxReadCount = 0;
+    await page.route(
+      (url) => url.pathname === switchInboxPath,
+      async (route: Route) => {
+        expect(route.request().method()).toBe("GET");
+        switchInboxReadCount += 1;
+        await route.fulfill({ json: switchInbox, status: 200 });
       },
     );
 
@@ -476,6 +553,14 @@ test.describe("observable Installation PWA", () => {
       "Authored",
       "Others",
     ]);
+    await openProjectWorkspace(page, "example/switch-repo");
+    await expect(panel).toContainText("#77");
+    await expect(panel).toContainText("Keep the switched Project isolated");
+    await expect(panel).not.toContainText("#42");
+    expect(switchInboxReadCount).toBeGreaterThanOrEqual(1);
+    await openProjectWorkspace(page);
+    await expect(panel).toContainText("#42");
+    await expect(panel).not.toContainText("#77");
     const automaticReadCount = inboxReadCount;
     expect(automaticReadCount).toBeGreaterThanOrEqual(1);
     await panel.getByRole("button", { name: "Refresh pull requests" }).click();

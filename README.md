@@ -275,12 +275,12 @@ to `POST /api/v1/projects`. Kestrel reads public pull request metadata from GitH
 account or token, then persists the Project, Change Proposal, exact base/head refs and SHAs, and an
 audit record atomically. Opening the same pull request again is a manual, idempotent refresh.
 
-For a selected Project with an attached GitHub source, the PWA reads the host-session pull request
-inbox in the ordered groups Review requested, Authored, and Others. Each group retains its own
-loading, empty, or bounded failure state, so a partial rate-limit or timeout does not hide
-successful groups. Refresh remains an explicit Operator action. Selecting a pull request sends only
-its number and creates or reuses the same Project's Provider Observation and Change Proposal; it
-performs no provider write and does not acquire source or a Review Revision.
+For a selected Project with an attached Local Repository Source carrying GitHub coordinates, the PWA
+reads the host-session pull request inbox in the ordered groups Review requested, Authored, and
+Others. Each group retains its own loading, empty, or bounded failure state, so a partial rate-limit
+or timeout does not hide successful groups. Refresh remains an explicit Operator action. Selecting a
+pull request sends only its number and creates or reuses the same Project's Provider Observation and
+Change Proposal; it performs no provider write and does not acquire source or a Review Revision.
 
 Provider Observation is limited by GitHub's shared unauthenticated allowance of 60 REST API requests
 per hour per Installation IP and never falls back to credentials. It does not supply source. When a

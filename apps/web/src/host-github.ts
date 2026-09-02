@@ -352,8 +352,8 @@ function normalizeSearch(groups: {
   );
 }
 
-function groupFailureReason(error: HostGitHubError): GroupFailureReason {
-  switch (error.kind) {
+export function hostGitHubGroupFailureReason(kind: HostGitHubErrorKind): GroupFailureReason {
+  switch (kind) {
     case "needs_authentication":
       return "authentication_required";
     case "access_denied":
@@ -380,7 +380,10 @@ function searchOutcome(result: PromiseSettledResult<SearchItems>): SearchOutcome
   ) {
     throw result.reason;
   }
-  return { state: "unavailable", failureReason: groupFailureReason(result.reason) };
+  return {
+    state: "unavailable",
+    failureReason: hostGitHubGroupFailureReason(result.reason.kind),
+  };
 }
 
 function displayedGroupState(
@@ -538,9 +541,12 @@ export function createHostGitHubCli(options: HostGitHubCliOptions = {}) {
         readSearch("authored"),
         readSearch("review_requested"),
       ]);
+      const confirmedAccount = await readAccount(signal);
+      if (confirmedAccount.login !== account.login) throw new HostGitHubError("access_denied");
       const all = searchOutcome(allResult);
-      const authored = searchOutcome(authoredResult);
       const review_requested = searchOutcome(reviewRequestedResult);
+      const authoredSearch = searchOutcome(authoredResult);
+      const authored = review_requested.state === "unavailable" ? review_requested : authoredSearch;
       const pullRequests = normalizeSearch({ all, authored, review_requested });
       const other =
         all.state === "unavailable"
