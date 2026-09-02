@@ -137,8 +137,8 @@ npm run authorize-repository-root -- /absolute/path/to/authorized-parent
 Each successful command adds one canonical root to the owner-only
 `.kestrel/development/repository-roots.json` file (or beneath the explicit `KESTREL_STATE_ROOT`). It
 stores local configuration only, never credentials. Missing, unreadable, relative, duplicate,
-nested, symlinked, or artifact-overlapping candidates fail without replacing the previous valid file
-and without including the rejected path in the error message.
+nested, symlinked, or Kestrel-storage-overlapping candidates fail without replacing the previous
+valid file and without including the rejected path in the error message.
 
 If Kestrel is already running, choose **Refresh repositories** in Settings or in **Open local
 repository**. A restart reads the same persisted configuration. The path is read only by the
@@ -160,8 +160,9 @@ The launcher discovers an absolute Git executable and creates the artifact direc
 web process after changing authorized roots.
 
 Every configured repository root must already exist and be readable by the web service user.
-Duplicate, nested, symlinked, escaped, inaccessible, or source/artifact-overlapping roots fail
-closed before the listener starts or an inventory refresh activates them.
+Duplicate, nested, symlinked, escaped, inaccessible, or source/Kestrel-storage-overlapping roots
+fail closed before the listener starts or an inventory refresh activates them. Kestrel-owned storage
+includes retained artifacts and model-provider secrets.
 
 In the PWA, “Open local repository” lists only bounded display labels and opaque IDs beneath these
 roots. The browser never submits a path. Select two enumerated committed refs and write or

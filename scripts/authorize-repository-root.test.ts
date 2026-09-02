@@ -101,9 +101,13 @@ describe("trusted-host repository root authorization", () => {
     const validConfiguration = await readFile(configurationPath, "utf8");
     const invalidCandidates = [
       { path: nestedRoot, reason: "must not contain duplicate or nested roots" },
-      { path: symlinkRoot, reason: "must identify an existing directory" },
+      { path: symlinkRoot, reason: "must identify a non-symlink directory" },
       { path: join(fixture, "missing"), reason: "must identify an existing directory" },
       { path: join(stateRoot, "review-artifacts"), reason: "must not overlap a repository root" },
+      {
+        path: join(stateRoot, "model-provider-secrets"),
+        reason: "must not overlap a repository root",
+      },
       { path: "relative-root", reason: "must be absolute" },
     ];
 

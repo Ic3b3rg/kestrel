@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { constants } from "node:fs";
-import { chmod, open, rename, unlink } from "node:fs/promises";
+import { open, rename, unlink } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 
 const MAX_CONFIGURATION_BYTES = 64 * 1024;
@@ -83,6 +83,10 @@ export async function writeRepositoryRootConfiguration(
   if (!isAbsolute(configurationPath)) {
     throw configurationError("must be an absolute path");
   }
+  const contents = `${JSON.stringify({ schemaVersion: 1, repositoryRoots }, null, 2)}\n`;
+  if (Buffer.byteLength(contents, "utf8") > MAX_CONFIGURATION_BYTES) {
+    throw configurationError(`must be at most ${String(MAX_CONFIGURATION_BYTES)} bytes`);
+  }
   const temporaryPath = join(
     dirname(configurationPath),
     `.repository-roots-${randomBytes(16).toString("hex")}.tmp`,
@@ -90,16 +94,13 @@ export async function writeRepositoryRootConfiguration(
   try {
     const handle = await open(temporaryPath, "wx", 0o600);
     try {
-      await handle.writeFile(
-        `${JSON.stringify({ schemaVersion: 1, repositoryRoots }, null, 2)}\n`,
-        "utf8",
-      );
+      await handle.writeFile(contents, "utf8");
+      await handle.chmod(0o600);
       await handle.sync();
     } finally {
       await handle.close();
     }
     await rename(temporaryPath, configurationPath);
-    await chmod(configurationPath, 0o600);
   } catch (error) {
     await unlink(temporaryPath).catch(() => undefined);
     throw error;
