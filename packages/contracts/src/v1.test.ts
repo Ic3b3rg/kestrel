@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   apiErrorJsonSchema,
+  codexSubscriptionConnectionJsonSchema,
   diagnosticAcceptedJsonSchema,
   installationSnapshotJsonSchema,
   jsonSchemaForEmbedding,
@@ -16,6 +17,7 @@ import {
   ChangeIntentSchema,
   ChangeIntentVersionCreatedSchema,
   ConfigureDirectApiProfileCommandSchema,
+  CodexSubscriptionConnectionSchema,
   CreateChangeIntentVersionCommandSchema,
   CredentialChangeCommandSchema,
   DiagnosticAcceptedSchema,
@@ -398,6 +400,58 @@ describe("V1 public contracts", () => {
         },
       }),
     ).toThrow();
+  });
+
+  it("exposes only normalized Codex subscription readiness facts", () => {
+    const connection = {
+      schemaVersion: 1,
+      state: "ready",
+      reason: null,
+      cli: { version: "0.152.1", supported: true, protocol: "app_server_v2" },
+      account: {
+        authentication: "chatgpt",
+        email: "operator@example.com",
+        plan: "plus",
+      },
+      models: [{ id: "gpt-5.6-sol", displayName: "GPT-5.6 Sol", isDefault: true }],
+      usage: {
+        availability: "available",
+        primary: {
+          usedPercent: 25,
+          windowDurationMinutes: 300,
+          resetsAt: "2026-09-02T22:00:00.000Z",
+        },
+        secondary: null,
+      },
+      checkedAt: "2026-09-02T20:00:00.000Z",
+    } as const;
+
+    expect(CodexSubscriptionConnectionSchema.parse(connection)).toEqual(connection);
+    expect(() =>
+      CodexSubscriptionConnectionSchema.parse({
+        ...connection,
+        token: "never-expose-codex-credentials",
+      }),
+    ).toThrow();
+    expect(() =>
+      CodexSubscriptionConnectionSchema.parse({
+        ...connection,
+        state: "waiting_for_usage_reset",
+      }),
+    ).toThrow("overall state");
+    expect(() =>
+      CodexSubscriptionConnectionSchema.parse({
+        ...connection,
+        account: { type: "apiKey" },
+      }),
+    ).toThrow();
+    expect(() =>
+      CodexSubscriptionConnectionSchema.parse({
+        ...connection,
+        state: "action_required",
+        reason: "authentication_required",
+      }),
+    ).toThrow("completed validated probe");
   });
 
   it("exposes ordered per-group availability for the host GitHub Project inbox", () => {
@@ -1335,6 +1389,7 @@ describe("V1 public contracts", () => {
       additionalProperties: false,
     });
     expect(diagnosticAcceptedJsonSchema).toMatchObject({ additionalProperties: false });
+    expect(codexSubscriptionConnectionJsonSchema).toMatchObject({ additionalProperties: false });
     expect(jsonSchemaForEmbedding(diagnosticAcceptedJsonSchema)).not.toHaveProperty("$schema");
     expect(apiErrorJsonSchema).toHaveProperty("oneOf");
     expect(openApiDocument).toMatchObject({
@@ -1344,6 +1399,7 @@ describe("V1 public contracts", () => {
         "/auth/login": {},
         "/auth/step-up": {},
         "/api/v1/connections/github": {},
+        "/api/v1/connections/codex": {},
         "/api/v1/session": {},
         "/api/v1/operator/credentials": {},
         "/api/v1/projects": {},
@@ -1375,6 +1431,9 @@ describe("V1 public contracts", () => {
             parameters: [{ in: "query", name: "projectId", required: false }],
             responses: { "200": {}, "400": {}, "401": {}, "503": {} },
           },
+        },
+        "/api/v1/connections/codex": {
+          get: { responses: { "200": {}, "401": {}, "503": {} } },
         },
         "/api/v1/installation": { get: { responses: { "401": {} } } },
         "/api/v1/installation/diagnostics": {

@@ -6,6 +6,7 @@ import {
   ProjectInboxSchema,
   ReviewRevisionAvailableSchema,
   type ChangeIntentVersionCreated,
+  type CodexSubscriptionConnection,
   type HostGitHubConnection,
   type ProjectUpserted,
 } from "@kestrel/contracts";
@@ -1217,6 +1218,52 @@ test.describe("observable Installation PWA", () => {
       await route.fulfill({ json: connection, status: 200 });
     });
 
+    let codexProbeCount = 0;
+    let codexAuthenticationRequired = false;
+    let codexProbeBlocked = true;
+    let releaseFirstCodexProbe: () => void = () => undefined;
+    const firstCodexProbeGate = new Promise<void>((resolve) => {
+      releaseFirstCodexProbe = resolve;
+    });
+    await page.route("**/api/v1/connections/codex", async (route) => {
+      codexProbeCount += 1;
+      if (codexProbeBlocked) await firstCodexProbeGate;
+      const connection: CodexSubscriptionConnection = codexAuthenticationRequired
+        ? {
+            schemaVersion: 1,
+            state: "action_required",
+            reason: "authentication_required",
+            cli: { version: "0.152.1", supported: true, protocol: "app_server_v2" },
+            account: null,
+            models: [],
+            usage: null,
+            checkedAt: "2026-09-02T20:01:00.000Z",
+          }
+        : {
+            schemaVersion: 1,
+            state: "ready",
+            reason: null,
+            cli: { version: "0.152.1", supported: true, protocol: "app_server_v2" },
+            account: {
+              authentication: "chatgpt",
+              email: "operator@example.com",
+              plan: "plus",
+            },
+            models: [{ id: "gpt-5.6-sol", displayName: "GPT-5.6 Sol", isDefault: true }],
+            usage: {
+              availability: "available",
+              primary: {
+                usedPercent: 25,
+                windowDurationMinutes: 300,
+                resetsAt: "2026-09-02T22:00:00.000Z",
+              },
+              secondary: null,
+            },
+            checkedAt: "2026-09-02T20:00:00.000Z",
+          };
+      await route.fulfill({ json: connection, status: 200 });
+    });
+
     await page.goto(runningStack.pwaUrl);
     await expect(page.getByRole("heading", { name: "Sign in to Kestrel" })).toBeVisible();
     await page.keyboard.press("Tab");
@@ -1266,10 +1313,19 @@ test.describe("observable Installation PWA", () => {
     expect(projectPostCount).toBe(1);
     await page.getByRole("link", { name: "Settings", exact: true }).click();
     const connectionPanel = page.locator(".github-connection");
+    const codexPanel = page.locator(".codex-connection");
     await expect(connectionPanel.getByRole("status")).toContainText("Checking");
+    await expect(codexPanel.getByRole("status")).toContainText("Checking");
     connectionProbeBlocked = false;
     releaseFirstConnectionProbe();
+    codexProbeBlocked = false;
+    releaseFirstCodexProbe();
     await expect(connectionPanel.getByRole("status")).toContainText("Ready");
+    await expect(codexPanel.getByRole("status")).toContainText("Ready");
+    await expect(codexPanel).toContainText("operator@example.com");
+    await expect(codexPanel).toContainText("Plus");
+    await expect(codexPanel).toContainText("GPT-5.6 Sol");
+    await expect(codexPanel).toContainText("25% used");
     await connectionPanel.getByLabel("Project access").selectOption(openedProject.project.id);
     await expect(connectionPanel).toContainText("Ic3b3rg/kestrel");
     await expect(connectionPanel).toContainText("operator");
@@ -1282,6 +1338,15 @@ test.describe("observable Installation PWA", () => {
     await connectionPanel.getByRole("button", { name: "Verify again" }).click();
     await expect(connectionPanel.getByRole("status")).toContainText("Ready");
     expect(connectionProbeCount).toBeGreaterThanOrEqual(4);
+    codexAuthenticationRequired = true;
+    await codexPanel.getByRole("button", { name: "Verify again" }).click();
+    await expect(codexPanel.getByRole("status")).toContainText("Action required");
+    await expect(codexPanel).toContainText("codex login");
+    await expect(codexPanel).not.toContainText("operator@example.com");
+    codexAuthenticationRequired = false;
+    await codexPanel.getByRole("button", { name: "Verify again" }).click();
+    await expect(codexPanel.getByRole("status")).toContainText("Ready");
+    expect(codexProbeCount).toBeGreaterThanOrEqual(3);
     await expect(page.getByText("05 / OPERATOR", { exact: true })).toBeVisible();
     await expect(
       page.getByText(`Signed in as ${TEST_OPERATOR_CREDENTIALS.username}`, { exact: true }),
@@ -1322,6 +1387,7 @@ test.describe("observable Installation PWA", () => {
     ).toBeVisible();
     await expect(page.getByRole("button", { name: "Run diagnostic" })).toBeDisabled();
     await expect(connectionPanel.getByRole("status")).toContainText("Unavailable");
+    await expect(codexPanel.getByRole("status")).toContainText("Unavailable");
     await expect(
       page.getByText(installationId ?? "missing Installation ID", { exact: true }),
     ).toHaveCount(0);

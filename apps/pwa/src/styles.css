@@ -745,7 +745,8 @@ h1 {
 }
 
 .connection-checking,
-.connection-action_required {
+.connection-action_required,
+.connection-waiting_for_usage_reset {
   color: var(--warning);
 }
 
@@ -765,6 +766,13 @@ h1 {
 .connection-remediation {
   border-left-color: var(--warning);
   background: #fbf0d8;
+}
+
+.connection-controls-single > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.5;
 }
 
 .projects-section,

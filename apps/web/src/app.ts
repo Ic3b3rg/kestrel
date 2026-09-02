@@ -7,7 +7,12 @@ import type { DatabasePool, DiagnosticJobSender } from "@kestrel/database";
 
 import { registerDiagnosticRoutes } from "./routes/diagnostics.js";
 import {
+  createCodexAppServerAgentRuntime,
+  type CodexAgentRuntimePort,
+} from "./codex-app-server.js";
+import {
   createHostGitHubConnectionService,
+  registerCodexSubscriptionConnectionRoutes,
   registerHostGitHubConnectionRoutes,
   type HostGitHubConnectionService,
 } from "./routes/connections.js";
@@ -61,6 +66,7 @@ export interface BuildAppOptions {
   projectService?: ProjectService;
   hostGitHubProjectService?: HostGitHubProjectService;
   hostGitHubConnectionService?: HostGitHubConnectionService;
+  codexAgentRuntime?: CodexAgentRuntimePort;
   reviewRevisionService?: ReviewRevisionService;
   reviewWorkflowService?: ReviewWorkflowService;
   pwaRoot?: string;
@@ -153,6 +159,7 @@ export async function buildApp({
   }),
   hostGitHubProjectService,
   hostGitHubConnectionService = createHostGitHubConnectionService(pool),
+  codexAgentRuntime = createCodexAppServerAgentRuntime(),
   reviewRevisionService = {
     retain: () => Promise.reject(new Error("Review Revision acquisition is not configured")),
   },
@@ -212,6 +219,7 @@ export async function buildApp({
   registerHealthRoutes(app, pool);
   registerInstallationRoutes(app, pool);
   registerOpenApiRoute(app);
+  registerCodexSubscriptionConnectionRoutes(app, codexAgentRuntime);
   registerHostGitHubConnectionRoutes(app, hostGitHubConnectionService);
   registerProjectRoutes(app, projectService, hostGitHubProjectService);
   registerDirectApiProfileRoutes(app, directApiProfileService);

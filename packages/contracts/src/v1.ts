@@ -199,6 +199,154 @@ export const HostGitHubStatusSchema = z.strictObject({
   account: z.string().min(1).max(100).nullable(),
 });
 
+const CodexCliVersionSchema = z
+  .string()
+  .min(1)
+  .max(128)
+  .regex(/^\d+\.\d+\.[0-9A-Za-z.+-]+$/u);
+
+export const CodexSubscriptionConnectionReasonSchema = z.enum([
+  "authentication_required",
+  "chatgpt_subscription_required",
+  "cli_not_installed",
+  "cli_version_unsupported",
+  "protocol_unsupported",
+  "timed_out",
+  "unexpected_response",
+  "usage_limit_reached",
+  "waiting_for_usage_reset",
+]);
+
+export const CodexChatGptPlanSchema = z.enum([
+  "free",
+  "go",
+  "plus",
+  "pro",
+  "prolite",
+  "team",
+  "self_serve_business_prolite",
+  "self_serve_business_usage_based",
+  "business",
+  "ent26",
+  "enterprise_cbp_automation",
+  "enterprise_cbp_usage_based",
+  "enterprise",
+  "edu",
+  "edu_plus",
+  "edu_pro",
+  "unknown",
+]);
+
+export const CodexSubscriptionCliSchema = z.strictObject({
+  version: CodexCliVersionSchema,
+  supported: z.boolean(),
+  protocol: z.literal("app_server_v2"),
+});
+
+export const CodexSubscriptionAccountSchema = z.strictObject({
+  authentication: z.literal("chatgpt"),
+  email: z.email().max(320).nullable(),
+  plan: CodexChatGptPlanSchema,
+});
+
+export const CodexSubscriptionModelSchema = z.strictObject({
+  id: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/u),
+  displayName: z.string().min(1).max(128),
+  isDefault: z.boolean(),
+});
+
+export const CodexUsageWindowSchema = z.strictObject({
+  usedPercent: z.number().int().min(0).max(100),
+  windowDurationMinutes: z.number().int().positive().max(525_600).nullable(),
+  resetsAt: UtcDateTimeSchema.nullable(),
+});
+
+export const CodexSubscriptionUsageSchema = z.strictObject({
+  availability: z.enum([
+    "available",
+    "waiting_for_usage_reset",
+    "usage_limit_reached_action_required",
+  ]),
+  primary: CodexUsageWindowSchema.nullable(),
+  secondary: CodexUsageWindowSchema.nullable(),
+});
+
+export const CodexSubscriptionConnectionSchema = z
+  .strictObject({
+    schemaVersion: SchemaVersionSchema,
+    state: z.enum(["ready", "waiting_for_usage_reset", "action_required", "unavailable"]),
+    reason: CodexSubscriptionConnectionReasonSchema.nullable(),
+    cli: CodexSubscriptionCliSchema.nullable(),
+    account: CodexSubscriptionAccountSchema.nullable(),
+    models: z.array(CodexSubscriptionModelSchema).max(500),
+    usage: CodexSubscriptionUsageSchema.nullable(),
+    checkedAt: UtcDateTimeSchema,
+  })
+  .superRefine((connection, context) => {
+    const expectedState =
+      connection.reason === null
+        ? "ready"
+        : connection.reason === "waiting_for_usage_reset"
+          ? "waiting_for_usage_reset"
+          : connection.reason === "timed_out" || connection.reason === "unexpected_response"
+            ? "unavailable"
+            : "action_required";
+    if (connection.state !== expectedState) {
+      context.addIssue({
+        code: "custom",
+        message: "Codex subscription overall state must match its live probe facts",
+        path: ["state"],
+      });
+    }
+
+    const usableRuntime =
+      connection.cli?.supported === true &&
+      connection.account !== null &&
+      connection.models.length > 0 &&
+      connection.usage !== null;
+    const incompleteProbe =
+      connection.reason !== null &&
+      connection.reason !== "waiting_for_usage_reset" &&
+      connection.reason !== "usage_limit_reached";
+    if (
+      ((connection.state === "ready" || connection.state === "waiting_for_usage_reset") &&
+        !usableRuntime) ||
+      (connection.reason === "usage_limit_reached" && !usableRuntime) ||
+      (incompleteProbe &&
+        (connection.account !== null ||
+          connection.models.length > 0 ||
+          connection.usage !== null)) ||
+      (connection.account === null &&
+        (connection.models.length > 0 || connection.usage !== null)) ||
+      connection.models.filter(({ isDefault }) => isDefault).length > 1
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Codex subscription facts must come from one completed validated probe",
+      });
+    }
+
+    if (
+      (connection.reason === "cli_not_installed" && connection.cli !== null) ||
+      (connection.reason === "cli_version_unsupported" && connection.cli?.supported !== false) ||
+      (connection.reason === "waiting_for_usage_reset" &&
+        connection.usage?.availability !== "waiting_for_usage_reset") ||
+      (connection.reason === "usage_limit_reached" &&
+        connection.usage?.availability !== "usage_limit_reached_action_required") ||
+      (connection.reason === null && connection.usage?.availability !== "available")
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Codex subscription reason must match its probe facts",
+        path: ["reason"],
+      });
+    }
+  });
+
 const HostGitHubCliVersionSchema = z
   .string()
   .min(1)
@@ -1623,6 +1771,13 @@ export type CreateChangeIntentVersionCommand = z.infer<
   typeof CreateChangeIntentVersionCommandSchema
 >;
 export type ChangeProposal = z.infer<typeof ChangeProposalSchema>;
+export type CodexChatGptPlan = z.infer<typeof CodexChatGptPlanSchema>;
+export type CodexSubscriptionConnection = z.infer<typeof CodexSubscriptionConnectionSchema>;
+export type CodexSubscriptionConnectionReason = z.infer<
+  typeof CodexSubscriptionConnectionReasonSchema
+>;
+export type CodexSubscriptionModel = z.infer<typeof CodexSubscriptionModelSchema>;
+export type CodexSubscriptionUsage = z.infer<typeof CodexSubscriptionUsageSchema>;
 export type LoginCommand = z.infer<typeof LoginCommandSchema>;
 export type LocalRepositoryInventory = z.infer<typeof LocalRepositoryInventorySchema>;
 export type LocalRepositoryInventoryItem = z.infer<typeof LocalRepositoryInventoryItemSchema>;

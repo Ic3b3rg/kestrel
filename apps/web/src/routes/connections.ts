@@ -3,9 +3,11 @@ import { z } from "zod";
 
 import {
   ApiErrorSchema,
+  CodexSubscriptionConnectionSchema,
   HostGitHubConnectionSchema,
   KestrelIdSchema,
   apiErrorJsonSchema,
+  codexSubscriptionConnectionJsonSchema,
   hostGitHubConnectionJsonSchema,
   jsonSchemaForEmbedding,
   type HostGitHubConnection,
@@ -13,6 +15,7 @@ import {
 import { readProjectGitHubCoordinates, type DatabasePool } from "@kestrel/database";
 
 import { createHostGitHubCli } from "../host-github.js";
+import type { CodexAgentRuntimePort } from "../codex-app-server.js";
 import { withRequestCancellation } from "../request-cancellation.js";
 
 const QuerySchema = z.strictObject({ projectId: KestrelIdSchema.optional() });
@@ -29,6 +32,43 @@ interface HostGitHubConnectionReader {
 
 export interface HostGitHubConnectionService {
   read(projectId: string | null, signal?: AbortSignal): Promise<HostGitHubConnection>;
+}
+
+function codexApiError(request: FastifyRequest) {
+  return ApiErrorSchema.parse({
+    schemaVersion: 1,
+    code: "SERVICE_UNAVAILABLE",
+    message: "Codex connection verification is unavailable",
+    correlationId: request.id,
+  });
+}
+
+export function registerCodexSubscriptionConnectionRoutes(
+  app: FastifyInstance,
+  runtime: CodexAgentRuntimePort,
+): void {
+  app.get(
+    "/api/v1/connections/codex",
+    {
+      schema: {
+        response: {
+          200: jsonSchemaForEmbedding(codexSubscriptionConnectionJsonSchema),
+          401: jsonSchemaForEmbedding(apiErrorJsonSchema),
+          503: jsonSchemaForEmbedding(apiErrorJsonSchema),
+        },
+      },
+    },
+    async (request, reply) => {
+      try {
+        return CodexSubscriptionConnectionSchema.parse(
+          await withRequestCancellation(request, reply, (signal) => runtime.readConnection(signal)),
+        );
+      } catch {
+        request.log.error({ event: "connection.codex_probe_failed" });
+        return reply.code(503).send(codexApiError(request));
+      }
+    },
+  );
 }
 
 export function createHostGitHubConnectionService(

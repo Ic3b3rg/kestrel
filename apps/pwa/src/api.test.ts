@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import type {
   ApiError,
   ChangeIntentVersionCreated,
+  CodexSubscriptionConnection,
   DiagnosticAccepted,
   DirectApiProfileResponse,
   ConfigureDirectApiProfileCommand,
@@ -24,6 +25,7 @@ import {
   configureDirectApiProfile,
   fetchDirectApiProfile,
   fetchInstallation,
+  fetchCodexSubscriptionConnection,
   fetchHostGitHubConnection,
   fetchHostGitHubProjectInbox,
   fetchProjectInbox,
@@ -718,6 +720,32 @@ describe("PWA API client", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ ...connection, token: "never" }));
     await expect(fetchHostGitHubConnection()).rejects.toThrow("invalid host GitHub Connection");
     expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/v1/connections/github");
+  });
+
+  it("reads and validates fresh Codex subscription readiness", async () => {
+    const connection: CodexSubscriptionConnection = {
+      schemaVersion: 1,
+      state: "ready",
+      reason: null,
+      cli: { version: "0.152.1", supported: true, protocol: "app_server_v2" },
+      account: { authentication: "chatgpt", email: "operator@example.com", plan: "plus" },
+      models: [{ id: "gpt-5.6-sol", displayName: "GPT-5.6 Sol", isDefault: true }],
+      usage: { availability: "available", primary: null, secondary: null },
+      checkedAt: "2026-09-02T20:00:00.000Z",
+    };
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(connection));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchCodexSubscriptionConnection()).resolves.toEqual(connection);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/connections/codex",
+      expect.objectContaining({ credentials: "same-origin", method: "GET" }),
+    );
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ ...connection, authToken: "never" }));
+    await expect(fetchCodexSubscriptionConnection()).rejects.toThrow(
+      "invalid Codex subscription Connection",
+    );
   });
 
   it("binds host GitHub inbox reads and pull-request selection to one opaque Project", async () => {
