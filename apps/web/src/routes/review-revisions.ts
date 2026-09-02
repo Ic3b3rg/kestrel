@@ -429,6 +429,7 @@ export function createReviewRevisionService(
                     artifact,
                     base: begun.revision.base,
                     correlationId: context.correlationId,
+                    enqueueModelRendering: "repositoryId" in command,
                     head: begun.revision.head,
                     objectFormat: begun.revision.objectFormat,
                     projectId: begun.artifactProjectId,

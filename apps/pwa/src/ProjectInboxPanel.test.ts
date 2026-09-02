@@ -545,6 +545,47 @@ describe("ProjectInboxPanel", () => {
     expect(html).not.toContain(localProposal.head.objectId);
   });
 
+  it("keeps the retained source head available after only the observed target changes", () => {
+    const project = populatedInbox.projects[0];
+    const proposal = project?.changeProposals[0];
+    const localProject = localInbox.projects[0];
+    const localProposal = localProject?.changeProposals[0];
+    if (
+      project === undefined ||
+      proposal === undefined ||
+      !("providerId" in proposal) ||
+      localProject === undefined ||
+      localProposal?.kind !== "local"
+    ) {
+      throw new Error("Moved provider target fixture is unavailable");
+    }
+    const movedBaseObjectId = "e".repeat(40);
+    const html = render({
+      schemaVersion: 1,
+      projects: [
+        {
+          ...project,
+          localRepositorySource: localProject.localRepositorySource,
+          sourceAvailability: "available",
+          changeProposals: [
+            {
+              ...proposal,
+              base: { ...proposal.base, objectId: movedBaseObjectId },
+              changeIntent: localProposal.changeIntent,
+              reviewRevisions: localProposal.reviewRevisions,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(html).toContain("<dt>Revision State</dt><dd>Available</dd>");
+    expect(html).toContain("Retained head");
+    expect(html).toContain(localProposal.head.objectId);
+    expect(html).toContain(movedBaseObjectId);
+    expect(html).not.toContain("Acquire exact PR #1234");
+  });
+
   it("offers exact observed-PR acquisition only when a local source is attached", () => {
     const project = populatedInbox.projects[0];
     const localSource = localInbox.projects[0]?.localRepositorySource;

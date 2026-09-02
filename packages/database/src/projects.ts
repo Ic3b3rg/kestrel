@@ -383,13 +383,13 @@ function mapChangeOverview(
     exactHeadObjectId: row.head_object_id,
     state: "awaiting_source",
   });
-  if (
-    row.revision_id == null ||
-    row.revision_base_object_id !== row.base_object_id ||
-    row.revision_head_object_id !== row.head_object_id
-  ) {
+  if (row.revision_id == null) {
     return awaitingSource();
   }
+  if (row.revision_base_object_id == null || row.revision_head_object_id == null) {
+    throw new Error("Review Revision is incomplete");
+  }
+  if (row.revision_head_object_id !== row.head_object_id) return awaitingSource();
   if (row.revision_state === "acquiring") {
     return {
       exactHeadObjectId: row.head_object_id,
@@ -881,6 +881,7 @@ function projectRowsSelect(requiredRevisionId: "NULL::uuid" | "$2::uuid"): strin
     WHERE revision_proposal.id = cp.id
        OR revision_proposal.canonical_change_proposal_id = cp.id
     ORDER BY (revision.id = ${requiredRevisionId}) DESC NULLS LAST,
+             (revision.head_object_id = cp.head_object_id) DESC,
              revision.created_at DESC,
              revision.id
     LIMIT 20
@@ -1270,7 +1271,6 @@ async function enqueueCurrentChangeOverviewRendering(
       WHERE canonical.id = $1
         AND candidate.project_id = $2
         AND candidate.revision_state = 'available'
-        AND candidate.base_object_id = canonical.base_object_id
         AND candidate.head_object_id = canonical.head_object_id
       ORDER BY candidate.available_at DESC, candidate.id DESC
       LIMIT 1

@@ -284,9 +284,11 @@ Change Proposal; it performs no provider write and does not acquire source or a 
 selected pull request keeps Provider Observation, Local Repository Source attachment, and its
 current Revision State distinct. The Operator confirms or edits Change Intent before retaining the
 captured exact base/head pair through the same local-source path. Only a Review Revision matching
-both currently observed object IDs is current: after a manual refresh moves either object, prior
+the currently observed source head is current: after a manual refresh moves that head, prior
 retained history remains immutable, its deterministic Change Overview is hidden, and the new exact
-pair must be retained explicitly.
+pair must be retained explicitly. Target-only movement remains visible in Provider Observation
+without invalidating the retained source head. This retention path derives deterministic facts but
+does not enqueue optional model rendering or start a Review Workflow.
 
 Provider Observation is limited by GitHub's shared unauthenticated allowance of 60 REST API requests
 per hour per Installation IP and never falls back to credentials. It does not supply source. When a

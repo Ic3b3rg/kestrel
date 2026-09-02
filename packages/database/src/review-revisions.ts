@@ -82,6 +82,7 @@ export interface CompleteReviewRevisionInput {
   artifact: RetainedArtifactObservation;
   base: { objectId: string; ref: string };
   correlationId: string;
+  enqueueModelRendering: boolean;
   head: { objectId: string; ref: string };
   objectFormat: "sha1" | "sha256";
   projectId: string;
@@ -1993,11 +1994,13 @@ export async function completeReviewRevision(
     if (project.rowCount !== 1) {
       throw new Error("Review Revision Project availability update failed");
     }
-    await enqueueChangeOverviewRendering(client, renderingJobCoordinator, {
-      correlationId: input.correlationId,
-      projectId: input.projectId,
-      revisionId: input.revisionId,
-    });
+    if (input.enqueueModelRendering) {
+      await enqueueChangeOverviewRendering(client, renderingJobCoordinator, {
+        correlationId: input.correlationId,
+        projectId: input.projectId,
+        revisionId: input.revisionId,
+      });
+    }
     const proposal = await client.query(
       `
         UPDATE change_proposals AS canonical

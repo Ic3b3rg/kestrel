@@ -2858,6 +2858,22 @@ describe("observed GitHub pull request acquisition", () => {
       head: { objectId: pullRequest.headObjectId },
     });
     expect(first.changeProposal.id).toBe(proposal.id);
+    const renderingCount = Number(
+      await stack.executeWebModule(`
+        import { createPool } from '@kestrel/database';
+        const pool = createPool(process.env.DATABASE_URL, 'kestrel-observed-retention-rendering-test');
+        try {
+          const result = await pool.query(
+            'SELECT count(*)::text AS count FROM change_overview_renderings WHERE review_revision_id = $1',
+            [${JSON.stringify(first.reviewRevision.id)}]
+          );
+          process.stdout.write(result.rows[0].count);
+        } finally {
+          await pool.end();
+        }
+      `),
+    );
+    expect(renderingCount).toBe(0);
     expect(await fixture.snapshotRepository(pullRequest.repositoryPath)).toBe(beforeFingerprint);
     await expect(
       retainedFile(stack, first.reviewRevision.id, "base", "review.txt"),
