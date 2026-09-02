@@ -70,12 +70,13 @@ trusted-host inventory. Kestrel creates or reuses its durable Project and select
 Settings remains available from the rail for Installation, host connections, repository access, and
 Operator controls.
 
-In **Settings → Connections**, Kestrel runs a fresh read-only host probe for GitHub CLI and the
-selected Project. It shows the validated `github.com` account and repository access only after the
-probe succeeds; **Verify again** reruns version, authentication, account-drift, and access checks.
-Action-required states provide the exact trusted-host command or access step to correct them. GitHub
-CLI keeps custody of its credentials, and Kestrel does not return or persist token or auth-config
-material.
+In **Settings → Connections**, Kestrel runs fresh, bounded host probes for GitHub CLI and Codex CLI.
+The GitHub card shows the validated `github.com` account and selected-Project access only after its
+probe succeeds. The Codex card starts the official App Server, validates its protocol and version,
+then shows the ChatGPT account, plan, available models, and typed usage availability. **Verify
+again** reruns either probe; action-required states provide the exact trusted-host command or access
+step to correct them. Each CLI keeps custody of its credentials, and Kestrel does not read, return,
+or persist tokens or auth-config material.
 
 If the password or every signed-in device is lost, recover the sole Operator from the trusted host:
 
@@ -313,6 +314,7 @@ Useful endpoints on port 3000:
 - `/api/v1/installation` — authoritative snapshot;
 - `/api/v1/projects` — Project inbox read and public GitHub pull request open/refresh;
 - `/api/v1/projects/:projectId/provider/github` — bounded, grouped host-session pull request inbox;
+- `/api/v1/connections/codex` — fresh bounded Codex App Server subscription-readiness probe;
 - `/api/v1/projects/:projectId/provider/github/pull-requests/observe` — record one selected pull
   request on that Project without acquiring source;
 - `/api/v1/projects/:projectId/model-profiles/direct-api` — read or step-up configure the exact
@@ -357,6 +359,13 @@ idempotency. `npm run test:browser` drives local and provider Project flows, dia
 Operator security controls through Chromium, checks keyboard and offline behavior, audits
 accessibility with axe, and verifies mobile and desktop viewports.
 
+An explicit opt-in conformance check probes the current host Codex session without starting a thread
+or review and without printing credential material:
+
+```sh
+KESTREL_LIVE_CODEX=1 npx vitest run apps/web/src/codex-app-server.live.test.ts
+```
+
 The authored Zod schemas live in `packages/contracts/src`. Regenerate committed JSON Schema and
 OpenAPI artifacts after an intentional contract change:
 
@@ -369,8 +378,9 @@ npm run contracts:check
 
 ## Architecture boundaries
 
-- `apps/web` owns the Fastify HTTP/SSE boundary, serves the compiled PWA, and consumes the
-  low-priority Change Overview rendering queue because only that process holds model credentials.
+- `apps/web` owns the Fastify HTTP/SSE boundary, the ephemeral Codex App Server readiness adapter,
+  serves the compiled PWA, and consumes the low-priority Change Overview rendering queue because
+  only that process holds model credentials.
 - `apps/worker` consumes durable acquisition and diagnostic pg-boss jobs.
 - `apps/pwa` owns the browser experience and retains no product data in browser storage.
 - `packages/contracts` owns versioned Zod, JSON Schema, and OpenAPI contracts.
