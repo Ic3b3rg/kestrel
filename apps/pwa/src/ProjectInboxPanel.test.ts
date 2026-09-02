@@ -169,7 +169,7 @@ describe("ProjectInboxPanel", () => {
     expect(html).toContain("<dt>Provider Observation</dt>");
     expect(html).toContain("Public GitHub pull request");
     expect(html).toContain("Refresh");
-    expect(html).toContain("manual only");
+    expect(html).toContain("Manual only");
     expect(html).not.toContain("Synchronization");
     expect(html).toContain("Model access");
     expect(html).toContain("Not configured");
