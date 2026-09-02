@@ -586,7 +586,7 @@
               ],
               "type": "object"
             },
-            "maxItems": 100,
+            "maxItems": 500,
             "type": "array"
           },
           "reason": {

@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { tmpdir } from "node:os";
+import { isAbsolute } from "node:path";
 import { createInterface } from "node:readline";
 
 import { z } from "zod";
@@ -19,47 +20,96 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 const PROCESS_STOP_TIMEOUT_MS = 1_000;
 const MAX_STDOUT_BYTES = 2 * 1024 * 1024;
 const MAX_STDERR_BYTES = 32 * 1024;
+const MODEL_PAGE_SIZE = 100;
+const MAX_MODEL_PAGES = 5;
 const MINIMUM_CODEX_MINOR_VERSION = 152;
 
-const InitializeResultSchema = z.object({
+const InitializeResultSchema = z.strictObject({
   codexHome: z.string().min(1),
   platformFamily: z.literal("unix"),
   platformOs: z.literal("macos"),
   userAgent: z.string().min(1).max(512),
 });
-const AccountResultSchema = z.object({
+const AccountResultSchema = z.strictObject({
   account: z
     .union([
-      z.object({
+      z.strictObject({
         type: z.literal("chatgpt"),
         email: z.email().max(320).nullable(),
         planType: CodexChatGptPlanSchema,
       }),
-      z.object({ type: z.enum(["apiKey", "amazonBedrock"]) }),
+      z.strictObject({ type: z.literal("apiKey") }),
+      z.strictObject({
+        type: z.literal("amazonBedrock"),
+        usesCodexManagedCredentials: z.boolean().optional(),
+      }),
     ])
     .nullable(),
   requiresOpenaiAuth: z.boolean(),
 });
-const ModelListResultSchema = z.object({
-  data: z
+const BoundedProtocolStringSchema = z.string().max(10_000);
+const ModelServiceTierSchema = z.strictObject({
+  description: BoundedProtocolStringSchema,
+  id: z.string().min(1).max(128),
+  name: z.string().min(1).max(128),
+});
+const ModelUpgradeInfoSchema = z.strictObject({
+  migrationMarkdown: BoundedProtocolStringSchema.nullable().optional(),
+  model: z.string().min(1).max(128),
+  modelLink: z.string().max(2_048).nullable().optional(),
+  retirementAt: z.number().int().nonnegative().nullable().optional(),
+  upgradeCopy: BoundedProtocolStringSchema.nullable().optional(),
+});
+const ModelSchema = z.strictObject({
+  additionalSpeedTiers: z.array(z.string().max(128)).max(20).optional(),
+  availabilityNux: z.strictObject({ message: BoundedProtocolStringSchema }).nullable().optional(),
+  defaultReasoningEffort: z.string().min(1).max(128),
+  defaultServiceTier: z.string().min(1).max(128).nullable().optional(),
+  description: BoundedProtocolStringSchema,
+  displayName: z.string().min(1).max(128),
+  hidden: z.literal(false),
+  id: z.string().min(1).max(128),
+  inputModalities: z
+    .array(z.enum(["text", "image", "audio"]))
+    .max(3)
+    .optional(),
+  isDefault: z.boolean(),
+  model: z.string().min(1).max(128),
+  modelSpecialty: z.string().max(128).nullable().optional(),
+  multiAgentVersion: z.enum(["disabled", "v1", "v2"]).nullable().optional(),
+  serviceTiers: z.array(ModelServiceTierSchema).max(20).optional(),
+  supportedReasoningEfforts: z
     .array(
-      z.object({
-        id: z.string().min(1).max(128),
-        displayName: z.string().min(1).max(128),
-        hidden: z.literal(false),
-        isDefault: z.boolean(),
+      z.strictObject({
+        description: BoundedProtocolStringSchema,
+        reasoningEffort: z.string().min(1).max(128),
       }),
     )
-    .max(100),
+    .max(20),
+  supportsPersonality: z.boolean().optional(),
+  upgrade: z.string().max(128).nullable().optional(),
+  upgradeInfo: ModelUpgradeInfoSchema.nullable().optional(),
+});
+const ModelListResultSchema = z.strictObject({
+  data: z.array(ModelSchema).max(MODEL_PAGE_SIZE),
   nextCursor: z.string().min(1).max(512).nullable().optional(),
 });
-const RateLimitWindowSchema = z.object({
+type AppServerModel = z.infer<typeof ModelSchema>;
+type ModelListResult = z.infer<typeof ModelListResultSchema>;
+const RateLimitWindowSchema = z.strictObject({
   usedPercent: z.number().int().min(0).max(100),
   windowDurationMins: z.number().int().positive().max(525_600).nullable().optional(),
   resetsAt: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).nullable().optional(),
 });
-const RateLimitsResultSchema = z.object({
-  rateLimits: z.object({
+const RateLimitsResultSchema = z.strictObject({
+  accountId: z.unknown().optional(),
+  rateLimitResetCredits: z.unknown().optional(),
+  rateLimitUpsell: z.unknown().optional(),
+  rateLimits: z.strictObject({
+    credits: z.unknown().optional(),
+    individualLimit: z.unknown().optional(),
+    limitId: z.unknown().optional(),
+    limitName: z.unknown().optional(),
     planType: CodexChatGptPlanSchema.nullable().optional(),
     primary: RateLimitWindowSchema.nullable().optional(),
     secondary: RateLimitWindowSchema.nullable().optional(),
@@ -75,6 +125,7 @@ const RateLimitsResultSchema = z.object({
       .optional(),
     spendControlReached: z.boolean().nullable().optional(),
   }),
+  rateLimitsByLimitId: z.unknown().optional(),
 });
 
 type CodexAppServerErrorKind =
@@ -281,24 +332,32 @@ class AppServerSession {
     });
   }
 
+  async #waitForClose(): Promise<boolean> {
+    return Promise.race([
+      this.#closed.then(() => true),
+      delay(PROCESS_STOP_TIMEOUT_MS).then(() => false),
+    ]);
+  }
+
   async close(): Promise<void> {
     this.#closing = true;
     clearTimeout(this.#timeout);
     this.#signal?.removeEventListener("abort", this.#onAbort);
     this.#child.stdin.end();
-    const closedNormally = await Promise.race([
-      this.#closed.then(() => true),
-      delay(PROCESS_STOP_TIMEOUT_MS).then(() => false),
-    ]);
+    const closedNormally = await this.#waitForClose();
     if (!closedNormally) {
       killProcessGroup(this.#child, "SIGTERM");
-      const stopped = await Promise.race([
-        this.#closed.then(() => true),
-        delay(PROCESS_STOP_TIMEOUT_MS).then(() => false),
-      ]);
-      if (!stopped) killProcessGroup(this.#child, "SIGKILL");
+      const stopped = await this.#waitForClose();
+      if (!stopped) {
+        killProcessGroup(this.#child, "SIGKILL");
+        if (!(await this.#waitForClose())) {
+          this.#child.unref();
+          this.#child.stdin.destroy();
+          this.#child.stdout.destroy();
+          this.#child.stderr.destroy();
+        }
+      }
     }
-    await this.#closed;
     this.#lines.close();
   }
 }
@@ -313,6 +372,38 @@ function readCodexVersion(userAgent: string): { supported: boolean; version: str
   }
   const supported = Number(major) > 0 || Number(minor) >= MINIMUM_CODEX_MINOR_VERSION;
   return { supported, version: `${major}.${minor}.${patch}` };
+}
+
+async function readAvailableModels(
+  session: AppServerSession,
+): Promise<{ models: AppServerModel[]; nextRequestId: number }> {
+  const models: AppServerModel[] = [];
+  const seenCursors = new Set<string>();
+  let cursor: string | null = null;
+
+  for (let page = 0; page < MAX_MODEL_PAGES; page += 1) {
+    const result: ModelListResult = await session.request(
+      2 + page,
+      "model/list",
+      { cursor, includeHidden: false, limit: MODEL_PAGE_SIZE },
+      ModelListResultSchema,
+    );
+    if (result.data.length === 0) throw new CodexAppServerError("invalid_response");
+    models.push(...result.data);
+
+    const nextCursor: string | null = result.nextCursor ?? null;
+    if (nextCursor === null) {
+      if (new Set(models.map(({ id }) => id)).size !== models.length) {
+        throw new CodexAppServerError("invalid_response");
+      }
+      return { models, nextRequestId: 3 + page };
+    }
+    if (seenCursors.has(nextCursor)) throw new CodexAppServerError("invalid_response");
+    seenCursors.add(nextCursor);
+    cursor = nextCursor;
+  }
+
+  throw new CodexAppServerError("invalid_response");
 }
 
 function mapWindow(window: z.infer<typeof RateLimitWindowSchema> | null | undefined) {
@@ -392,12 +483,16 @@ function failureReason(error: unknown): IncompleteProbeReason {
 export function createCodexAppServerAgentRuntime(
   options: CodexAppServerOptions = {},
 ): CodexAgentRuntimePort {
-  const executable = options.executable ?? process.env.KESTREL_CODEX_EXECUTABLE ?? "codex";
+  const executable = options.executable ?? process.env.KESTREL_CODEX_EXECUTABLE;
   const args = options.arguments ?? DEFAULT_ARGUMENTS;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   return {
     async readConnection(signal) {
+      if (signal?.aborted) throw new CodexAppServerError("cancelled");
+      if (executable === undefined || !isAbsolute(executable)) {
+        return failedConnection("cli_not_installed");
+      }
       const session = new AppServerSession(executable, args, timeoutMs, signal);
       let cli: CodexSubscriptionConnection["cli"] = null;
       try {
@@ -433,21 +528,13 @@ export function createCodexAppServerAgentRuntime(
           return failedConnection("chatgpt_subscription_required", cli);
         }
 
-        const modelResult = await session.request(
-          2,
-          "model/list",
-          { includeHidden: false, limit: 100 },
-          ModelListResultSchema,
-        );
+        const modelResult = await readAvailableModels(session);
         const rateLimits = await session.request(
-          3,
+          modelResult.nextRequestId,
           "account/rateLimits/read",
           null,
           RateLimitsResultSchema,
         );
-        if (modelResult.nextCursor != null || modelResult.data.length === 0) {
-          throw new CodexAppServerError("invalid_response");
-        }
         if (
           rateLimits.rateLimits.planType != null &&
           rateLimits.rateLimits.planType !== accountResult.account.planType
@@ -476,7 +563,7 @@ export function createCodexAppServerAgentRuntime(
             email: accountResult.account.email,
             plan: accountResult.account.planType,
           },
-          models: modelResult.data.map(({ id, displayName, isDefault }) => ({
+          models: modelResult.models.map(({ id, displayName, isDefault }) => ({
             id,
             displayName,
             isDefault,

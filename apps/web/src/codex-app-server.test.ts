@@ -1,6 +1,6 @@
 import { access, chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -22,10 +22,13 @@ type FailureMode =
   | "api_key"
   | "cancelled"
   | "crashed"
+  | "credential_field"
+  | "escaped_pipe"
   | "logged_out"
   | "malformed"
   | "old_version"
   | "oversized"
+  | "paginated"
   | "protocol_mismatch"
   | "timed_out"
   | "usage_action_required"
@@ -62,6 +65,13 @@ lines.on("line", (line) => {
       process.stdout.write("x".repeat(2 * 1024 * 1024 + 1));
       return;
     }
+    if (mode === "escaped_pipe") {
+      const escaped = spawn(process.execPath, ["-e", "setTimeout(() => undefined, 5000)"], {
+        detached: true,
+        stdio: ["ignore", process.stdout, "ignore"]
+      });
+      escaped.unref();
+    }
     console.log(JSON.stringify({ id: message.id, result: mode === "protocol_mismatch" ? {
       protocolVersion: 1
     } : {
@@ -79,14 +89,28 @@ lines.on("line", (line) => {
     } : mode === "api_key" ? {
       account: { type: "apiKey" },
       requiresOpenaiAuth: false
+    } : mode === "credential_field" ? {
+      account: { type: "chatgpt", email: "operator@example.com", planType: "plus" },
+      requiresOpenaiAuth: true,
+      refreshToken: "provider_secret_should_not_escape"
     } : {
       account: { type: "chatgpt", email: "operator@example.com", planType: "plus" },
       requiresOpenaiAuth: true
     }}));
   } else if (message.method === "model/list") {
+    const secondPage = mode === "paginated" && message.params.cursor === "page-2";
     console.log(JSON.stringify({ id: message.id, result: {
-      data: [{ id: "gpt-5.6-sol", displayName: "GPT-5.6 Sol", hidden: false, isDefault: true }],
-      nextCursor: null
+      data: [{
+        id: secondPage ? "gpt-5.6-terra" : "gpt-5.6-sol",
+        model: secondPage ? "gpt-5.6-terra" : "gpt-5.6-sol",
+        displayName: secondPage ? "GPT-5.6 Terra" : "GPT-5.6 Sol",
+        description: "Frontier coding model",
+        hidden: false,
+        isDefault: !secondPage,
+        defaultReasoningEffort: "low",
+        supportedReasoningEfforts: []
+      }],
+      nextCursor: mode === "paginated" && !secondPage ? "page-2" : null
     }}));
   } else if (message.method === "account/rateLimits/read") {
     const reached = mode === "usage_waiting"
@@ -299,6 +323,53 @@ lines.on("close", () => {
     });
     expect(JSON.stringify(connection)).not.toContain(executable);
   });
+
+  it("refuses a relative executable even when PATH could resolve it", async () => {
+    const fixture = await writeFailureFake("logged_out");
+    vi.stubEnv("PATH", `${dirname(fixture.executable)}${delimiter}${process.env.PATH ?? ""}`);
+
+    const connection = await createCodexAppServerAgentRuntime({
+      executable: "codex",
+      arguments: ["logged_out", fixture.logPath, fixture.descendantMarker, "app-server", "--stdio"],
+    }).readConnection();
+
+    expect(connection).toMatchObject({ reason: "cli_not_installed", cli: null });
+    await expectMissing(fixture.logPath);
+  });
+
+  it("rejects unexpected credential-shaped App Server fields", async () => {
+    const fixture = await writeFailureFake("credential_field");
+
+    const connection = await fixture.runtime.readConnection();
+
+    expect(connection).toMatchObject({ state: "unavailable", reason: "unexpected_response" });
+    expect(JSON.stringify(connection)).not.toContain("provider_secret_should_not_escape");
+  });
+
+  it("reads a bounded paginated model catalog", async () => {
+    const fixture = await writeFailureFake("paginated");
+
+    const connection = await fixture.runtime.readConnection();
+
+    expect(connection).toMatchObject({
+      state: "ready",
+      models: [
+        { id: "gpt-5.6-sol", isDefault: true },
+        { id: "gpt-5.6-terra", isDefault: false },
+      ],
+    });
+    expect((await readFile(fixture.logPath, "utf8")).match(/model\/list/gu)).toHaveLength(2);
+  });
+
+  it("keeps cleanup bounded when an escaped process retains the stdout pipe", async () => {
+    const fixture = await writeFailureFake("escaped_pipe");
+    const startedAt = Date.now();
+
+    const connection = await fixture.runtime.readConnection();
+
+    expect(connection.state).toBe("ready");
+    expect(Date.now() - startedAt).toBeLessThan(4_000);
+  }, 7_000);
 
   it.each([
     ["usage_waiting", "waiting_for_usage_reset", "waiting_for_usage_reset"],

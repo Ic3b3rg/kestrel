@@ -282,7 +282,7 @@ export const CodexSubscriptionConnectionSchema = z
     reason: CodexSubscriptionConnectionReasonSchema.nullable(),
     cli: CodexSubscriptionCliSchema.nullable(),
     account: CodexSubscriptionAccountSchema.nullable(),
-    models: z.array(CodexSubscriptionModelSchema).max(100),
+    models: z.array(CodexSubscriptionModelSchema).max(500),
     usage: CodexSubscriptionUsageSchema.nullable(),
     checkedAt: UtcDateTimeSchema,
   })
