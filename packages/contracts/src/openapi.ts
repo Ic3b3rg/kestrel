@@ -11,6 +11,7 @@ import {
   DirectApiProfileResponseSchema,
   EventCursorSchema,
   HealthStatusSchema,
+  HostGitHubConnectionSchema,
   HostGitHubProjectInboxSchema,
   InstallationEventSchema,
   InstallationSnapshotSchema,
@@ -98,6 +99,7 @@ export const openPublicGitHubPullRequestCommandJsonSchema = asJsonSchema(
 );
 export const projectInboxJsonSchema = asJsonSchema(ProjectInboxSchema);
 export const projectUpsertedJsonSchema = asJsonSchema(ProjectUpsertedSchema);
+export const hostGitHubConnectionJsonSchema = asJsonSchema(HostGitHubConnectionSchema);
 export const hostGitHubProjectInboxJsonSchema = asJsonSchema(HostGitHubProjectInboxSchema);
 export const observeHostGitHubPullRequestCommandJsonSchema = asJsonSchema(
   ObserveHostGitHubPullRequestCommandSchema,
@@ -132,6 +134,7 @@ export const contractBundle = sortJson({
     ),
     ProjectInbox: asComponentSchema(projectInboxJsonSchema),
     ProjectUpserted: asComponentSchema(projectUpsertedJsonSchema),
+    HostGitHubConnection: asComponentSchema(hostGitHubConnectionJsonSchema),
     HostGitHubProjectInbox: asComponentSchema(hostGitHubProjectInboxJsonSchema),
     ObserveHostGitHubPullRequestCommand: asComponentSchema(
       observeHostGitHubPullRequestCommandJsonSchema,
@@ -215,6 +218,7 @@ export const openApiDocument = sortJson({
       ),
       ProjectInbox: asComponentSchema(projectInboxJsonSchema),
       ProjectUpserted: asComponentSchema(projectUpsertedJsonSchema),
+      HostGitHubConnection: asComponentSchema(hostGitHubConnectionJsonSchema),
       HostGitHubProjectInbox: asComponentSchema(hostGitHubProjectInboxJsonSchema),
       ObserveHostGitHubPullRequestCommand: asComponentSchema(
         observeHostGitHubPullRequestCommandJsonSchema,
@@ -238,6 +242,39 @@ export const openApiDocument = sortJson({
   jsonSchemaDialect: "https://json-schema.org/draft/2020-12/schema",
   openapi: "3.1.1",
   paths: {
+    "/api/v1/connections/github": {
+      get: {
+        description:
+          "Runs a fresh bounded probe of the Operator workstation's GitHub CLI connection and optional selected-Project access.",
+        operationId: "readHostGitHubConnection",
+        parameters: [
+          {
+            in: "query",
+            name: "projectId",
+            required: false,
+            schema: { format: "uuid", type: "string" },
+          },
+        ],
+        responses: {
+          "200": {
+            content: { "application/json": { schema: schemaReference("HostGitHubConnection") } },
+            description: "Fresh host GitHub connection status",
+          },
+          "400": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Invalid Project identity",
+          },
+          "401": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Operator authentication is required",
+          },
+          "503": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "The Project lookup or connection probe is unavailable",
+          },
+        },
+      },
+    },
     "/api/v1/events": {
       get: {
         operationId: "streamInstallationEvents",

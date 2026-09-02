@@ -1415,6 +1415,186 @@
       ],
       "type": "object"
     },
+    "HostGitHubConnection": {
+      "additionalProperties": false,
+      "properties": {
+        "checkedAt": {
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+          "type": "string"
+        },
+        "cli": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "supported": {
+                  "type": "boolean"
+                },
+                "version": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^\\d+\\.\\d+\\.[0-9A-Za-z.+-]+$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "version",
+                "supported"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "identity": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "account": {
+                  "maxLength": 39,
+                  "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$",
+                  "type": "string"
+                },
+                "host": {
+                  "const": "github.com",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "host",
+                "account"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "projectAccess": {
+          "anyOf": [
+            {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "projectId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                      "type": "string"
+                    },
+                    "repository": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "name": {
+                          "maxLength": 100,
+                          "minLength": 1,
+                          "pattern": "^[A-Za-z0-9._-]+$",
+                          "type": "string"
+                        },
+                        "owner": {
+                          "maxLength": 39,
+                          "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "owner",
+                        "name"
+                      ],
+                      "type": "object"
+                    },
+                    "state": {
+                      "const": "verified",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "projectId",
+                    "repository"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "projectId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                      "type": "string"
+                    },
+                    "repository": {
+                      "type": "null"
+                    },
+                    "state": {
+                      "const": "not_verified",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "projectId",
+                    "repository"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "account_drift",
+                "authentication_required",
+                "cli_not_installed",
+                "cli_version_unsupported",
+                "project_access_denied",
+                "project_not_supported",
+                "rate_limited",
+                "timed_out",
+                "unexpected_response"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "schemaVersion": {
+          "const": 1,
+          "type": "number"
+        },
+        "state": {
+          "enum": [
+            "ready",
+            "action_required",
+            "unavailable"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "state",
+        "reason",
+        "cli",
+        "identity",
+        "projectAccess",
+        "checkedAt"
+      ],
+      "type": "object"
+    },
     "HostGitHubProjectInbox": {
       "additionalProperties": false,
       "properties": {

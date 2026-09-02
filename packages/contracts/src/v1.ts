@@ -199,6 +199,103 @@ export const HostGitHubStatusSchema = z.strictObject({
   account: z.string().min(1).max(100).nullable(),
 });
 
+const HostGitHubCliVersionSchema = z
+  .string()
+  .min(1)
+  .max(128)
+  .regex(/^\d+\.\d+\.[0-9A-Za-z.+-]+$/u);
+export const HostGitHubConnectionReasonSchema = z.enum([
+  "account_drift",
+  "authentication_required",
+  "cli_not_installed",
+  "cli_version_unsupported",
+  "project_access_denied",
+  "project_not_supported",
+  "rate_limited",
+  "timed_out",
+  "unexpected_response",
+]);
+
+export const HostGitHubCliInstallationSchema = z.strictObject({
+  version: HostGitHubCliVersionSchema,
+  supported: z.boolean(),
+});
+export const HostGitHubConnectionIdentitySchema = z.strictObject({
+  host: z.literal("github.com"),
+  account: GitHubOwnerSchema,
+});
+export const HostGitHubProjectAccessSchema = z.discriminatedUnion("state", [
+  z.strictObject({
+    state: z.literal("verified"),
+    projectId: KestrelIdSchema,
+    repository: z.strictObject({ owner: GitHubOwnerSchema, name: GitHubRepositoryNameSchema }),
+  }),
+  z.strictObject({
+    state: z.literal("not_verified"),
+    projectId: KestrelIdSchema,
+    repository: z.null(),
+  }),
+]);
+
+export const HostGitHubConnectionSchema = z
+  .strictObject({
+    schemaVersion: SchemaVersionSchema,
+    state: z.enum(["ready", "action_required", "unavailable"]),
+    reason: HostGitHubConnectionReasonSchema.nullable(),
+    cli: HostGitHubCliInstallationSchema.nullable(),
+    identity: HostGitHubConnectionIdentitySchema.nullable(),
+    projectAccess: HostGitHubProjectAccessSchema.nullable(),
+    checkedAt: UtcDateTimeSchema,
+  })
+  .superRefine((connection, context) => {
+    const actionReasons = new Set([
+      "account_drift",
+      "authentication_required",
+      "cli_version_unsupported",
+      "project_access_denied",
+      "project_not_supported",
+    ]);
+    const expectedState =
+      connection.reason === null
+        ? "ready"
+        : actionReasons.has(connection.reason)
+          ? "action_required"
+          : "unavailable";
+    if (connection.state !== expectedState) {
+      context.addIssue({
+        code: "custom",
+        message: "Host GitHub overall state must match its live probe facts",
+        path: ["state"],
+      });
+    }
+    if (
+      (connection.identity !== null && connection.cli?.supported !== true) ||
+      (connection.projectAccess?.state === "verified" && connection.identity === null) ||
+      (connection.state === "ready" &&
+        (connection.cli?.supported !== true ||
+          connection.identity === null ||
+          connection.projectAccess?.state === "not_verified"))
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Host GitHub connection facts must come from a completed validated probe",
+      });
+    }
+    if (
+      (connection.reason === "cli_not_installed" && connection.cli !== null) ||
+      (connection.reason === "cli_version_unsupported" && connection.cli?.supported !== false) ||
+      ((connection.reason === "project_access_denied" ||
+        connection.reason === "project_not_supported") &&
+        connection.projectAccess?.state !== "not_verified")
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Host GitHub connection reason must match its probe facts",
+        path: ["reason"],
+      });
+    }
+  });
+
 export const HostGitHubPullRequestSummarySchema = z.strictObject({
   number: z.number().int().positive().max(9_999_999_999),
   title: z.string().min(1).max(512),
@@ -1472,6 +1569,7 @@ export type ModelAccess = z.infer<typeof ModelAccessSchema>;
 export type HostGitHubProjectInbox = z.infer<typeof HostGitHubProjectInboxSchema>;
 export type HostGitHubPullRequestSummary = z.infer<typeof HostGitHubPullRequestSummarySchema>;
 export type HostGitHubStatus = z.infer<typeof HostGitHubStatusSchema>;
+export type HostGitHubConnection = z.infer<typeof HostGitHubConnectionSchema>;
 export type ObserveHostGitHubPullRequestCommand = z.infer<
   typeof ObserveHostGitHubPullRequestCommandSchema
 >;

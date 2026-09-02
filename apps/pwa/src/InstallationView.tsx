@@ -10,6 +10,7 @@ type DiagnosticStatus = NonNullable<InstallationSnapshot["diagnostic"]>["status"
 interface InstallationViewProps {
   commandPending: boolean;
   connection: PwaConnectionState;
+  connectionControls: ReactNode;
   loading: boolean;
   online: boolean;
   operatorControls: ReactNode;
@@ -175,7 +176,9 @@ export function InstallationView(props: InstallationViewProps) {
         <div>
           <p className="eyebrow">LOCAL RUNTIME / SETTINGS</p>
           <h1 id="page-title">Settings</h1>
-          <p className="lede">Installation, repository access, and Operator security.</p>
+          <p className="lede">
+            Installation, host connections, repository access, and Operator security.
+          </p>
         </div>
         <div className="command-panel">
           <button
@@ -223,6 +226,8 @@ export function InstallationView(props: InstallationViewProps) {
       ) : props.showData && props.snapshot ? (
         <InstallationRecord snapshot={props.snapshot} />
       ) : null}
+
+      {props.connectionControls}
 
       {props.repositoryControls}
 

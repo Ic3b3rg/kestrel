@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { mapProjectRows, readProject, type ProjectDatabaseRow } from "./projects.js";
+import {
+  mapProjectRows,
+  readProject,
+  readProjectGitHubCoordinates,
+  type ProjectDatabaseRow,
+} from "./projects.js";
 
 const projectId = "018f0f89-949a-75a8-8f61-6df78a843b1e";
 const proposalId = "018f0f89-9192-755f-aa96-f72094c734dd";
@@ -464,5 +469,30 @@ describe("Project persistence mapping", () => {
       "SELECT COALESCE(requested.canonical_project_id, requested.id)",
     );
     expect(query.mock.calls[0]?.[0]).toContain("ORDER BY intent.version DESC");
+  });
+
+  it("reads attached GitHub coordinates against the Installation schema", async () => {
+    const query = vi.fn((statement: string) => {
+      expect(statement).not.toContain("installation.singleton");
+      return {
+        rowCount: 1,
+        rows: [
+          {
+            github_name_snapshot: "kestrel",
+            github_owner_snapshot: "Ic3b3rg",
+            installation_id: "018f0f89-9a22-7864-aac2-8df71bf60421",
+            repository_id: "018f0f89-9a1e-7d64-a5dd-18cc3e317401",
+          },
+        ],
+      };
+    });
+
+    await expect(readProjectGitHubCoordinates({ query } as never, projectId)).resolves.toEqual({
+      installationId: "018f0f89-9a22-7864-aac2-8df71bf60421",
+      owner: "Ic3b3rg",
+      repository: "kestrel",
+      repositoryId: "018f0f89-9a1e-7d64-a5dd-18cc3e317401",
+    });
+    expect(query).toHaveBeenCalledWith(expect.any(String), [projectId]);
   });
 });

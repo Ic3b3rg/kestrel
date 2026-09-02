@@ -735,6 +735,38 @@ h1 {
   border-bottom: 1px solid var(--line);
 }
 
+.connection-controls {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding: 1.5rem;
+  border: 1px solid var(--ink);
+  background: var(--surface);
+}
+
+.connection-checking,
+.connection-action_required {
+  color: var(--warning);
+}
+
+.connection-unavailable {
+  color: var(--danger);
+}
+
+.connection-note,
+.connection-remediation {
+  margin: 1.5rem 0 0;
+  padding: 1rem;
+  border-left: 0.25rem solid var(--success);
+  background: #edf3e9;
+  line-height: 1.5;
+}
+
+.connection-remediation {
+  border-left-color: var(--warning);
+  background: #fbf0d8;
+}
+
 .projects-section,
 .repository-access,
 .operator-security {
@@ -2139,6 +2171,15 @@ footer {
   .intro {
     grid-template-columns: minmax(0, 1fr) 18rem;
     padding-bottom: 3rem;
+  }
+
+  .connection-controls {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+  }
+
+  .connection-controls .secondary-action {
+    width: auto;
   }
 
   .login-layout {

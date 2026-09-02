@@ -40,6 +40,7 @@ import {
   type PublicGitHubReader,
 } from "../public-github.js";
 import { createHostGitHubCli, HostGitHubError } from "../host-github.js";
+import { withRequestCancellation } from "../request-cancellation.js";
 
 export interface ProjectServiceContext {
   actorId: string;
@@ -280,23 +281,6 @@ function rateLimitRetryAfter(reset: string | null): string {
   }
   const seconds = Number(reset) - Math.floor(Date.now() / 1_000);
   return String(Math.max(1, Math.min(3_600, seconds)));
-}
-
-async function withRequestCancellation<T>(
-  request: FastifyRequest,
-  reply: FastifyReply,
-  task: (signal: AbortSignal) => Promise<T>,
-): Promise<T> {
-  const controller = new AbortController();
-  const abort = () => controller.abort();
-  request.raw.once("aborted", abort);
-  reply.raw.once("close", abort);
-  try {
-    return await task(controller.signal);
-  } finally {
-    request.raw.removeListener("aborted", abort);
-    reply.raw.removeListener("close", abort);
-  }
 }
 
 function sendPublicGitHubError(

@@ -16,10 +16,23 @@ describe.runIf(coordinates !== undefined && coordinates !== null)(
       if (owner === undefined || repository === undefined)
         throw new Error("Live repository is invalid");
 
-      const inbox = await createHostGitHubCli().readProjectInbox(
-        "018f0f89-949a-75a8-8f61-6df78a843b1e",
-        { owner, repository },
-      );
+      const cli = createHostGitHubCli();
+      const connection = await cli.readConnection({
+        projectId: "018f0f89-949a-75a8-8f61-6df78a843b1e",
+        coordinates: { owner, repository },
+      });
+      expect(connection).toMatchObject({
+        state: "ready",
+        reason: null,
+        cli: { supported: true },
+        identity: { host: "github.com" },
+        projectAccess: { state: "verified" },
+      });
+
+      const inbox = await cli.readProjectInbox("018f0f89-949a-75a8-8f61-6df78a843b1e", {
+        owner,
+        repository,
+      });
 
       expect(inbox.status).toMatchObject({
         availability: "available",
@@ -28,6 +41,6 @@ describe.runIf(coordinates !== undefined && coordinates !== null)(
       });
       expect(inbox.status.account).not.toBeNull();
       expect(inbox.pullRequests.length).toBeLessThanOrEqual(300);
-    });
+    }, 30_000);
   },
 );

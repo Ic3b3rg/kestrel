@@ -192,16 +192,21 @@ writeFileSync(process.env.KESTREL_LIFECYCLE_TEST_LOG, JSON.stringify({
     });
 
     const recorder = `
-import { appendFileSync } from "node:fs";
+import { appendFileSync, chmodSync } from "node:fs";
 import { delimiter, dirname } from "node:path";
+const args = process.argv.slice(2);
 appendFileSync(process.env.KESTREL_LIFECYCLE_TEST_LOG, JSON.stringify({
-  args: process.argv.slice(2),
+  args,
   artifactRoot: process.env.KESTREL_ARTIFACT_ROOT,
   dockerDirectoryFirstOnPath: process.env.PATH.split(delimiter)[0] === dirname(process.argv[1]),
   hasSessionSigningKey: Boolean(process.env.SESSION_SIGNING_KEY),
   kind: "docker",
   modelProviderSecretRoot: process.env.KESTREL_MODEL_PROVIDER_SECRET_ROOT
 }) + "\\n");
+if (args.at(-1) === "legacy-state-import") {
+  chmodSync(process.env.KESTREL_ARTIFACT_ROOT, 0o755);
+  chmodSync(process.env.KESTREL_MODEL_PROVIDER_SECRET_ROOT, 0o755);
+}
 `;
     await writeExecutable(join(dockerTools, "docker"), `#!/usr/bin/env node\n${recorder}`);
 
@@ -228,6 +233,7 @@ const record = (phase, signal) => appendFileSync(
     args,
     artifactRoot: process.env.ARTIFACT_ROOT,
     databaseUrl: process.env.DATABASE_URL,
+    ghExecutable: process.env.KESTREL_GH_EXECUTABLE,
     gitExecutable: process.env.LOCAL_GIT_EXECUTABLE,
     hasModelProviderSecretRoot: Boolean(process.env.MODEL_PROVIDER_SECRET_ROOT),
     hasSessionSigningKey: Boolean(process.env.SESSION_SIGNING_KEY),
@@ -296,6 +302,7 @@ setInterval(() => undefined, 1_000);
         DOCKER_BIN: join(dockerTools, "docker"),
         KESTREL_DATABASE_PORT: String(databasePort),
         KESTREL_LIFECYCLE_TEST_LOG: logPath,
+        KESTREL_GH_EXECUTABLE: "/untrusted/inherited-gh",
         KESTREL_PWA_PORT: String(pwaPort),
         KESTREL_STARTUP_TIMEOUT_MS: "5000",
         KESTREL_STATE_ROOT: stateRoot,
@@ -430,6 +437,7 @@ setInterval(() => undefined, 1_000);
     expect(web).toMatchObject({
       artifactRoot: join(stateRoot, "review-artifacts"),
       databaseUrl: `postgres://kestrel_runtime:kestrel_runtime_dev@127.0.0.1:${String(databasePort)}/kestrel`,
+      ghExecutable: join(tools, "gh"),
       gitExecutable: join(tools, "git"),
       hasModelProviderSecretRoot: true,
       hasSessionSigningKey: true,
@@ -463,5 +471,5 @@ setInterval(() => undefined, 1_000);
     expect(output).not.toContain("npm error");
     expect((await stat(join(stateRoot, "review-artifacts"))).mode & 0o777).toBe(0o700);
     expect((await stat(join(stateRoot, "model-provider-secrets"))).mode & 0o777).toBe(0o700);
-  });
+  }, 20_000);
 });

@@ -239,6 +239,7 @@ async function main() {
     "DATABASE_URL",
     "EVENT_RETENTION_LIMIT",
     "HOST",
+    "KESTREL_GH_EXECUTABLE",
     "LOCAL_GIT_EXECUTABLE",
     "LOCAL_REPOSITORY_ROOTS",
     "LOCAL_REPOSITORY_ROOTS_FILE",
@@ -264,6 +265,7 @@ async function main() {
     ...serverEnvironment,
     ARTIFACT_ROOT: artifactRoot,
     HOST: LOOPBACK,
+    ...(gh === null ? {} : { KESTREL_GH_EXECUTABLE: gh }),
     LOCAL_GIT_EXECUTABLE: git,
     ...localRepositoryEnvironment,
     MODEL_PROVIDER_SECRET_ROOT: modelProviderSecretRoot,
@@ -315,6 +317,10 @@ async function main() {
     [...compose, "run", "--rm", "--no-deps", "legacy-state-import"],
     dockerEnvironment,
   );
+  await Promise.all([
+    ensurePrivateDirectory(artifactRoot),
+    ensurePrivateDirectory(modelProviderSecretRoot),
+  ]);
   console.log("[kestrel] Building host applications...");
   await run(npm, ["run", "build"], hostEnvironment);
 
