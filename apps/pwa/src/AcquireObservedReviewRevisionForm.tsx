@@ -8,6 +8,7 @@ import {
 } from "@kestrel/contracts";
 
 import { ApiClientError, retainReviewRevision } from "./api.js";
+import { currentReviewRevision } from "./current-review-revision.js";
 
 type ProviderProposal = Extract<
   ProjectInbox["projects"][number]["changeProposals"][number],
@@ -51,12 +52,12 @@ export function AcquireObservedReviewRevisionForm({
   const normalizedIntent = changeIntent.trim();
   const intentBytes = new TextEncoder().encode(normalizedIntent).byteLength;
   const intentTooLarge = intentBytes > 20_000;
-  const latestRevision = proposal.reviewRevisions[0];
+  const currentRevision = currentReviewRevision(proposal);
 
   useEffect(() => () => active.current?.abort(), []);
 
-  if (latestRevision?.state === "available") return null;
-  if (latestRevision?.state === "acquiring") {
+  if (currentRevision?.state === "available") return null;
+  if (currentRevision?.state === "acquiring") {
     return (
       <p className="observed-acquisition-state" role="status">
         This exact pull request is already acquiring.
@@ -128,7 +129,7 @@ export function AcquireObservedReviewRevisionForm({
       >
         {pending
           ? "Acquiring…"
-          : latestRevision?.state === "unavailable"
+          : currentRevision?.state === "unavailable"
             ? `Retry exact PR #${String(proposal.number)}`
             : `Acquire exact PR #${String(proposal.number)}`}
       </button>

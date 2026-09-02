@@ -17,6 +17,7 @@ import { ChangeOverviewPanel } from "./ChangeOverviewPanel.js";
 import { ShortObjectId } from "./ShortObjectId.js";
 import { ReviewPreparationPanel } from "./ReviewPreparationPanel.js";
 import { DirectApiProfilePanel } from "./DirectApiProfilePanel.js";
+import { currentReviewRevision } from "./current-review-revision.js";
 
 interface ProjectInboxPanelProps {
   error: string | null;
@@ -266,7 +267,7 @@ function ChangeProposalRecord({
   onRefresh: () => void;
   projectId: string;
 }) {
-  const revision = changeProposal.reviewRevisions[0];
+  const revision = currentReviewRevision(changeProposal);
   const changeOverview = changeProposal.changeOverview ?? {
     exactHeadObjectId: changeProposal.head.objectId,
     state: "awaiting_source" as const,

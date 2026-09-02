@@ -480,7 +480,11 @@ describe("ProjectInboxPanel", () => {
               base: { ...proposal.base, objectId: "c".repeat(40) },
               changeIntent: localProposal.changeIntent,
               head: { ...proposal.head, objectId: "d".repeat(40) },
-              reviewRevisions: localProposal.reviewRevisions,
+              reviewRevisions: localProposal.reviewRevisions.map((revision) => ({
+                ...revision,
+                base: { ...revision.base, objectId: "c".repeat(40) },
+                head: { ...revision.head, objectId: "d".repeat(40) },
+              })),
             },
           ],
         },
@@ -495,9 +499,50 @@ describe("ProjectInboxPanel", () => {
     expect(html).toContain("Retained base");
     expect(html).toContain("Change Intent v1");
     expect(html).toContain(">cccccccccccc</code>");
-    expect(html).toContain(">aaaaaaaaaaaa</code>");
+    expect(html).toContain(">dddddddddddd</code>");
     expect(html).toContain("c".repeat(40));
-    expect(html).toContain("a".repeat(40));
+    expect(html).toContain("d".repeat(40));
+  });
+
+  it("requires retention again after the observed pull request head changes", () => {
+    const project = populatedInbox.projects[0];
+    const proposal = project?.changeProposals[0];
+    const localProject = localInbox.projects[0];
+    const localProposal = localProject?.changeProposals[0];
+    if (
+      project === undefined ||
+      proposal === undefined ||
+      !("providerId" in proposal) ||
+      localProject === undefined ||
+      localProposal?.kind !== "local"
+    ) {
+      throw new Error("Moved provider head fixture is unavailable");
+    }
+    const movedHeadObjectId = "e".repeat(40);
+    const html = render({
+      schemaVersion: 1,
+      projects: [
+        {
+          ...project,
+          localRepositorySource: localProject.localRepositorySource,
+          sourceAvailability: "available",
+          changeProposals: [
+            {
+              ...proposal,
+              changeIntent: localProposal.changeIntent,
+              head: { ...proposal.head, objectId: movedHeadObjectId },
+              reviewRevisions: localProposal.reviewRevisions,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(html).toContain("<dt>Revision State</dt><dd>Not acquired</dd>");
+    expect(html).toContain("Acquire exact PR #1234");
+    expect(html).toContain(movedHeadObjectId);
+    expect(html).not.toContain("Retained head");
+    expect(html).not.toContain(localProposal.head.objectId);
   });
 
   it("offers exact observed-PR acquisition only when a local source is attached", () => {
