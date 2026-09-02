@@ -2,11 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   ApiErrorSchema,
+  CodexSubscriptionConnectionSchema,
   HostGitHubConnectionSchema,
+  type CodexSubscriptionConnection,
   type HostGitHubConnection,
 } from "@kestrel/contracts";
 
 import { buildApp } from "../app.js";
+import type { CodexAgentRuntimePort } from "../codex-app-server.js";
 import {
   createCsrfToken,
   createSessionToken,
@@ -49,6 +52,24 @@ const readyConnection: HostGitHubConnection = {
     repository: { owner: "Ic3b3rg", name: "kestrel" },
   },
   checkedAt: "2026-09-02T12:00:00.000Z",
+};
+const readyCodexConnection: CodexSubscriptionConnection = {
+  schemaVersion: 1,
+  state: "ready",
+  reason: null,
+  cli: { version: "0.152.1", supported: true, protocol: "app_server_v2" },
+  account: { authentication: "chatgpt", email: "operator@example.com", plan: "plus" },
+  models: [{ id: "gpt-5.6-sol", displayName: "GPT-5.6 Sol", isDefault: true }],
+  usage: {
+    availability: "available",
+    primary: {
+      usedPercent: 25,
+      windowDurationMinutes: 300,
+      resetsAt: "2026-09-02T22:00:00.000Z",
+    },
+    secondary: null,
+  },
+  checkedAt: "2026-09-02T20:00:00.000Z",
 };
 
 describe("host GitHub Connection service", () => {
@@ -171,5 +192,89 @@ describe("host GitHub Connection route", () => {
 
     expect(response.statusCode).toBe(401);
     expect(read).not.toHaveBeenCalled();
+  });
+});
+
+describe("Codex subscription Connection route", () => {
+  let app: Awaited<ReturnType<typeof buildApp>>;
+  const readConnection = vi.fn<CodexAgentRuntimePort["readConnection"]>();
+
+  beforeEach(async () => {
+    readConnection.mockReset();
+    readConnection.mockResolvedValue(readyCodexConnection);
+    const pool = {
+      query: vi.fn().mockResolvedValue({
+        rowCount: 1,
+        rows: [
+          {
+            credential_version: "1",
+            created_at: new Date("2026-08-24T12:00:00.000Z"),
+            id: operatorId,
+            jwt_signing_generation: "1",
+            password_hash: "invalid-test-hash",
+            username: "operator",
+          },
+        ],
+      }),
+    };
+    app = await buildApp({
+      boss: { send: vi.fn() },
+      codexAgentRuntime: { readConnection },
+      eventRetentionLimit: 1_000,
+      logger: false,
+      pool: pool as never,
+      sessionSigningKey,
+    });
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  it("runs a fresh authenticated and uncached App Server probe", async () => {
+    const first = await app.inject({
+      headers: authenticatedHeaders,
+      method: "GET",
+      url: "/api/v1/connections/codex",
+    });
+    const second = await app.inject({
+      headers: authenticatedHeaders,
+      method: "GET",
+      url: "/api/v1/connections/codex",
+    });
+
+    expect(first.statusCode).toBe(200);
+    expect(CodexSubscriptionConnectionSchema.parse(first.json())).toEqual(readyCodexConnection);
+    expect(second.statusCode).toBe(200);
+    expect(readConnection).toHaveBeenCalledTimes(2);
+    expect(readConnection).toHaveBeenNthCalledWith(1, expect.any(AbortSignal));
+    expect(first.headers["cache-control"]).toBe("no-store");
+  });
+
+  it("returns a generic error without exposing App Server output", async () => {
+    readConnection.mockRejectedValueOnce(new Error("provider_token_should_not_escape"));
+
+    const response = await app.inject({
+      headers: authenticatedHeaders,
+      method: "GET",
+      url: "/api/v1/connections/codex",
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(ApiErrorSchema.parse(response.json())).toMatchObject({
+      code: "SERVICE_UNAVAILABLE",
+      message: "Codex connection verification is unavailable",
+    });
+    expect(response.body).not.toContain("provider_token_should_not_escape");
+  });
+
+  it("requires an Operator session before starting Codex", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/connections/codex",
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(readConnection).not.toHaveBeenCalled();
   });
 });

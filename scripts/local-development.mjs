@@ -239,6 +239,7 @@ async function main() {
     "DATABASE_URL",
     "EVENT_RETENTION_LIMIT",
     "HOST",
+    "KESTREL_CODEX_EXECUTABLE",
     "KESTREL_GH_EXECUTABLE",
     "LOCAL_GIT_EXECUTABLE",
     "LOCAL_REPOSITORY_ROOTS",
@@ -264,6 +265,7 @@ async function main() {
   const webEnvironment = {
     ...serverEnvironment,
     ARTIFACT_ROOT: artifactRoot,
+    ...(codex === null ? {} : { KESTREL_CODEX_EXECUTABLE: codex }),
     HOST: LOOPBACK,
     ...(gh === null ? {} : { KESTREL_GH_EXECUTABLE: gh }),
     LOCAL_GIT_EXECUTABLE: git,
