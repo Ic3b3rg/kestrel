@@ -766,7 +766,8 @@ export const openApiDocument = sortJson({
           },
           "413": {
             content: { "application/json": { schema: schemaReference("ApiError") } },
-            description: "The command payload is too large",
+            description:
+              "The payload or a configured local-source or Project capacity limit was exceeded",
           },
           "415": {
             content: { "application/json": { schema: schemaReference("ApiError") } },

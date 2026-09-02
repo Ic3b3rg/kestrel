@@ -47,7 +47,7 @@ export interface ProjectServiceContext {
 }
 
 export interface ProjectService {
-  openLocalRepository(
+  openLocalProject(
     command: OpenLocalProjectCommand,
     context: ProjectServiceContext,
   ): Promise<ProjectUpserted>;
@@ -63,7 +63,7 @@ export interface ProjectStore {
   upsert(input: UpsertPublicGitHubProjectInput): Promise<ProjectUpserted>;
 }
 
-export type LocalProjectOpener = (
+export type OpenLocalProjectHandler = (
   command: OpenLocalProjectCommand,
   context: ProjectServiceContext,
 ) => Promise<ProjectUpserted>;
@@ -159,11 +159,11 @@ export function createHostGitHubProjectService(
 export function createProjectService(
   reader: PublicGitHubReader,
   store: ProjectStore,
-  openLocalRepository: LocalProjectOpener = () =>
+  openLocalProject: OpenLocalProjectHandler = () =>
     Promise.reject(new Error("Local Project opening is not configured")),
 ): ProjectService {
   return {
-    openLocalRepository,
+    openLocalProject,
     async openPublicGitHubPullRequest(command, context) {
       const observation = await reader.read(command.url);
       return store.upsert({ ...context, observation });
@@ -175,7 +175,7 @@ export function createProjectService(
 export function createDatabaseProjectService(
   pool: DatabasePool,
   renderingCoordinator: ChangeOverviewRenderingJobCoordinator,
-  openLocalRepository?: LocalProjectOpener,
+  openLocalProject?: OpenLocalProjectHandler,
 ): ProjectService {
   return createProjectService(
     createPublicGitHubReader(),
@@ -183,7 +183,7 @@ export function createDatabaseProjectService(
       readInbox: () => readProjectInbox(pool),
       upsert: (input) => upsertPublicGitHubProject(pool, input, renderingCoordinator),
     },
-    openLocalRepository,
+    openLocalProject,
   );
 }
 
@@ -193,6 +193,7 @@ function apiError(
     | "CHANGE_PROPOSAL_MISMATCH"
     | "INVALID_REQUEST"
     | "NOT_FOUND"
+    | "PROJECT_LIMIT_EXCEEDED"
     | "RATE_LIMITED"
     | "REPOSITORY_NOT_AVAILABLE"
     | "REVISION_LIMIT_EXCEEDED"
@@ -264,7 +265,7 @@ function sendLocalProjectError(
       return reply
         .code(413)
         .send(
-          apiError(request, "REVISION_LIMIT_EXCEEDED", "The configured Project limit was exceeded"),
+          apiError(request, "PROJECT_LIMIT_EXCEEDED", "The configured Project limit was exceeded"),
         );
     case "installation_not_available":
       return reply
@@ -390,7 +391,7 @@ export function registerProjectRoutes(
       }
       try {
         return ProjectUpsertedSchema.parse(
-          await service.openLocalRepository(command, {
+          await service.openLocalProject(command, {
             actorId: session.operator.id,
             correlationId: request.id,
           }),

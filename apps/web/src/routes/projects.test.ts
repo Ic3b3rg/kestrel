@@ -108,13 +108,13 @@ describe("Project service", () => {
 describe("Project routes", () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
   const projectService: {
-    openLocalRepository: ReturnType<typeof vi.fn<ProjectService["openLocalRepository"]>>;
+    openLocalProject: ReturnType<typeof vi.fn<ProjectService["openLocalProject"]>>;
     openPublicGitHubPullRequest: ReturnType<
       typeof vi.fn<ProjectService["openPublicGitHubPullRequest"]>
     >;
     readInbox: ReturnType<typeof vi.fn<ProjectService["readInbox"]>>;
   } = {
-    openLocalRepository: vi.fn<ProjectService["openLocalRepository"]>(),
+    openLocalProject: vi.fn<ProjectService["openLocalProject"]>(),
     openPublicGitHubPullRequest: vi.fn<ProjectService["openPublicGitHubPullRequest"]>(),
     readInbox: vi.fn<ProjectService["readInbox"]>(),
   };
@@ -124,12 +124,12 @@ describe("Project routes", () => {
   };
 
   beforeEach(async () => {
-    projectService.openLocalRepository.mockReset();
+    projectService.openLocalProject.mockReset();
     projectService.openPublicGitHubPullRequest.mockReset();
     projectService.readInbox.mockReset();
     projectService.readInbox.mockResolvedValue({ schemaVersion: 1, projects: [project] });
     projectService.openPublicGitHubPullRequest.mockResolvedValue({ schemaVersion: 1, project });
-    projectService.openLocalRepository.mockResolvedValue({ schemaVersion: 1, project });
+    projectService.openLocalProject.mockResolvedValue({ schemaVersion: 1, project });
     hostGitHubProjectService.read.mockReset();
     hostGitHubProjectService.observe.mockReset();
     hostGitHubProjectService.read.mockResolvedValue({
@@ -278,7 +278,7 @@ describe("Project routes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(ProjectUpsertedSchema.parse(response.json())).toEqual({ schemaVersion: 1, project });
-    const invocation = projectService.openLocalRepository.mock.calls[0];
+    const invocation = projectService.openLocalProject.mock.calls[0];
     expect(invocation?.[0]).toEqual({ repositoryId });
     expect(invocation?.[1].actorId).toBe(operatorId);
     expect(invocation?.[1].correlationId).toMatch(/^[a-f0-9-]{36}$/u);
@@ -289,13 +289,14 @@ describe("Project routes", () => {
     [new LocalSourceError("repository_not_available"), 404, "REPOSITORY_NOT_AVAILABLE"],
     [new LocalSourceError("source_containment_violation"), 422, "SOURCE_CONTAINMENT_VIOLATION"],
     [new LocalSourceError("revision_limit_exceeded"), 413, "REVISION_LIMIT_EXCEEDED"],
+    [new ReviewRevisionPersistenceError("revision_limit_exceeded"), 413, "PROJECT_LIMIT_EXCEEDED"],
     [
       new ReviewRevisionPersistenceError("change_proposal_mismatch"),
       409,
       "CHANGE_PROPOSAL_MISMATCH",
     ],
   ] as const)("maps a local Project rejection without exposing it", async (error, status, code) => {
-    projectService.openLocalRepository.mockRejectedValueOnce(error);
+    projectService.openLocalProject.mockRejectedValueOnce(error);
 
     const response = await app.inject({
       headers: { ...authenticatedHeaders, "content-type": "application/json" },

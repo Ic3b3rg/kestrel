@@ -184,6 +184,7 @@ export function App() {
   const commandController = useRef<AbortController | null>(null);
   const loginController = useRef<AbortController | null>(null);
   const projectCommandController = useRef<AbortController | null>(null);
+  const projectInboxController = useRef<AbortController | null>(null);
   const securityController = useRef<AbortController | null>(null);
 
   const navigate = useCallback((nextRoute: Exclude<AppRoute, { kind: "not_found" }>) => {
@@ -199,6 +200,8 @@ export function App() {
   }, []);
 
   const resetProjectState = useCallback(() => {
+    projectInboxController.current?.abort();
+    projectInboxController.current = null;
     setProjectInbox(null);
     setProjectLoading(false);
     setProjectPending(false);
@@ -396,20 +399,25 @@ export function App() {
 
     const controller = new AbortController();
     let active = true;
+    projectInboxController.current?.abort();
+    projectInboxController.current = controller;
     setProjectLoading(true);
     setProjectError(null);
 
     void fetchProjectInbox(controller.signal).then(
       (inbox) => {
-        if (active) {
-          setProjectInbox(inbox);
-          setProjectLoading(false);
-        }
-      },
-      (error: unknown) => {
-        if (!active || controller.signal.aborted) {
+        if (!active || controller.signal.aborted || projectInboxController.current !== controller) {
           return;
         }
+        projectInboxController.current = null;
+        setProjectInbox(inbox);
+        setProjectLoading(false);
+      },
+      (error: unknown) => {
+        if (!active || controller.signal.aborted || projectInboxController.current !== controller) {
+          return;
+        }
+        projectInboxController.current = null;
         setProjectLoading(false);
         if (!handleAuthenticationBoundaryError(error)) {
           setProjectError(errorMessage(error, PROJECT_ERROR_MESSAGE));
@@ -420,6 +428,9 @@ export function App() {
     return () => {
       active = false;
       controller.abort();
+      if (projectInboxController.current === controller) {
+        projectInboxController.current = null;
+      }
     };
   }, [handleAuthenticationBoundaryError, online, projectReloadGeneration, session]);
 
@@ -518,7 +529,10 @@ export function App() {
   };
 
   const handleProjectOpened = (result: ProjectUpserted): void => {
+    projectInboxController.current?.abort();
+    projectInboxController.current = null;
     setProjectInbox((current) => withUpsertedProject(current, result.project));
+    setProjectReloadGeneration((generation) => generation + 1);
     setProjectError(null);
     navigate({ kind: "project", projectId: result.project.id });
     setAnnouncement("Project opened from the authorized local repository.");

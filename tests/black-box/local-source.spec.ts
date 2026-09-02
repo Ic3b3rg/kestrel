@@ -54,6 +54,25 @@ test.describe("local-first Project flow", () => {
   test("the Project rail opens, switches, and reloads durable local context", async ({ page }) => {
     if (stack === undefined) throw new Error("Local-source browser fixture is unavailable");
 
+    let rejectedInitialProjectRead = false;
+    await page.route("**/api/v1/projects", async (route) => {
+      if (route.request().method() !== "GET" || rejectedInitialProjectRead) {
+        await route.continue();
+        return;
+      }
+      rejectedInitialProjectRead = true;
+      await route.fulfill({
+        body: JSON.stringify({
+          code: "SERVICE_UNAVAILABLE",
+          correlationId: "0c14b018-0260-4aa0-a5e9-61d212b948ce",
+          message: "Project storage is temporarily unavailable",
+          schemaVersion: 1,
+        }),
+        contentType: "application/json",
+        status: 503,
+      });
+    });
+
     await page.goto(stack.pwaUrl);
     await page.getByLabel("Username").fill(TEST_OPERATOR_CREDENTIALS.username);
     await page.getByLabel("Password").fill(TEST_OPERATOR_CREDENTIALS.password);
@@ -61,6 +80,35 @@ test.describe("local-first Project flow", () => {
     await expect(
       page.getByRole("heading", { level: 1, name: "Projects", exact: true }),
     ).toBeVisible();
+    await expect(page.getByRole("alert")).toContainText(
+      "Project storage is temporarily unavailable",
+    );
+
+    await page.evaluate(async () => {
+      const inventoryResponse = await fetch("/api/v1/local-repository-sources", {
+        headers: { Accept: "application/json" },
+      });
+      const inventory = (await inventoryResponse.json()) as {
+        repositories?: { displayName?: string; repositoryId?: string }[];
+      };
+      const falcon = inventory.repositories?.find(
+        (repository) => repository.displayName === "falcon",
+      );
+      const csrf = document.cookie
+        .split(";")
+        .map((part) => part.trim())
+        .find((part) => part.startsWith("__Host-kestrel-csrf="))
+        ?.slice("__Host-kestrel-csrf=".length);
+      if (falcon?.repositoryId === undefined || csrf === undefined) {
+        throw new Error("The durable Project seeding prerequisites are unavailable");
+      }
+      const response = await fetch("/api/v1/projects/local", {
+        body: JSON.stringify({ repositoryId: falcon.repositoryId }),
+        headers: { "Content-Type": "application/json", "X-Kestrel-CSRF": csrf },
+        method: "POST",
+      });
+      if (!response.ok) throw new Error(`Project seeding failed with ${String(response.status)}`);
+    });
 
     const openRepository = async (name: "falcon" | "kestrel") => {
       await page.getByRole("button", { name: "Open Project", exact: true }).click();
@@ -80,6 +128,9 @@ test.describe("local-first Project flow", () => {
     };
 
     const kestrelUrl = await openRepository("kestrel");
+    await expect(
+      page.getByRole("navigation", { name: "Projects" }).getByRole("link", { name: /falcon/u }),
+    ).toBeVisible();
     await page.reload();
     await expect(page).toHaveURL(kestrelUrl);
     await expect(
@@ -94,6 +145,8 @@ test.describe("local-first Project flow", () => {
     await expect(kestrelLink).toBeVisible();
     await expect(falconLink).toHaveAttribute("aria-current", "page");
 
+    await page.setViewportSize({ height: 812, width: 375 });
+    await expect(projectNavigation).toBeVisible();
     await kestrelLink.focus();
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(kestrelUrl);
@@ -124,8 +177,6 @@ test.describe("local-first Project flow", () => {
       await page.evaluate(() => ({ local: localStorage.length, session: sessionStorage.length })),
     ).toEqual({ local: 0, session: 0 });
 
-    await page.setViewportSize({ height: 812, width: 375 });
-    await expect(projectNavigation).toBeVisible();
     await expect(settingsLink).toBeVisible();
     expect(
       await page.evaluate(

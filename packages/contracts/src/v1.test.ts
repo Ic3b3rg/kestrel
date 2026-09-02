@@ -1246,6 +1246,7 @@ describe("V1 public contracts", () => {
         "/api/v1/session": {},
         "/api/v1/operator/credentials": {},
         "/api/v1/projects": {},
+        "/api/v1/projects/local": {},
         "/api/v1/projects/{projectId}/model-profiles/direct-api": {},
         "/api/v1/projects/{projectId}/model-profiles/direct-api/test": {},
         "/api/v1/projects/{projectId}/change-proposals/{changeProposalId}/change-intents": {},
@@ -1294,6 +1295,16 @@ describe("V1 public contracts", () => {
               "415": {},
               "429": {},
               "503": {},
+            },
+          },
+        },
+        "/api/v1/projects/local": {
+          post: {
+            responses: {
+              "413": {
+                description:
+                  "The payload or a configured local-source or Project capacity limit was exceeded",
+              },
             },
           },
         },
