@@ -1807,50 +1807,164 @@
       "type": "object"
     },
     "LocalRepositoryInventory": {
-      "additionalProperties": false,
-      "properties": {
-        "repositories": {
-          "items": {
-            "additionalProperties": false,
-            "properties": {
-              "attachmentState": {
-                "enum": [
-                  "unattached",
-                  "attached"
-                ],
-                "type": "string"
-              },
-              "displayName": {
-                "maxLength": 256,
-                "minLength": 1,
-                "type": "string"
-              },
-              "repositoryId": {
-                "format": "uuid",
-                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-                "type": "string"
-              }
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "inventoryState": {
+              "const": "no_configured_roots",
+              "type": "string"
             },
-            "required": [
-              "repositoryId",
-              "displayName",
-              "attachmentState"
-            ],
-            "type": "object"
+            "repositories": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "attachmentState": {
+                    "enum": [
+                      "unattached",
+                      "attached"
+                    ],
+                    "type": "string"
+                  },
+                  "displayName": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "repositoryId": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "repositoryId",
+                  "displayName",
+                  "attachmentState"
+                ],
+                "type": "object"
+              },
+              "maxItems": 0,
+              "minItems": 0,
+              "type": "array"
+            },
+            "schemaVersion": {
+              "const": 1,
+              "type": "number"
+            }
           },
-          "maxItems": 100,
-          "type": "array"
+          "required": [
+            "schemaVersion",
+            "inventoryState",
+            "repositories"
+          ],
+          "type": "object"
         },
-        "schemaVersion": {
-          "const": 1,
-          "type": "number"
+        {
+          "additionalProperties": false,
+          "properties": {
+            "inventoryState": {
+              "const": "no_repositories_found",
+              "type": "string"
+            },
+            "repositories": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "attachmentState": {
+                    "enum": [
+                      "unattached",
+                      "attached"
+                    ],
+                    "type": "string"
+                  },
+                  "displayName": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "repositoryId": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "repositoryId",
+                  "displayName",
+                  "attachmentState"
+                ],
+                "type": "object"
+              },
+              "maxItems": 0,
+              "minItems": 0,
+              "type": "array"
+            },
+            "schemaVersion": {
+              "const": 1,
+              "type": "number"
+            }
+          },
+          "required": [
+            "schemaVersion",
+            "inventoryState",
+            "repositories"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "inventoryState": {
+              "const": "ready",
+              "type": "string"
+            },
+            "repositories": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "attachmentState": {
+                    "enum": [
+                      "unattached",
+                      "attached"
+                    ],
+                    "type": "string"
+                  },
+                  "displayName": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "repositoryId": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "repositoryId",
+                  "displayName",
+                  "attachmentState"
+                ],
+                "type": "object"
+              },
+              "maxItems": 100,
+              "minItems": 1,
+              "type": "array"
+            },
+            "schemaVersion": {
+              "const": 1,
+              "type": "number"
+            }
+          },
+          "required": [
+            "schemaVersion",
+            "inventoryState",
+            "repositories"
+          ],
+          "type": "object"
         }
-      },
-      "required": [
-        "schemaVersion",
-        "repositories"
-      ],
-      "type": "object"
+      ]
     },
     "LocalRepositoryReferences": {
       "additionalProperties": false,

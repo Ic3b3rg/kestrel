@@ -128,10 +128,23 @@ export const LocalRepositoryInventoryItemSchema = z.strictObject({
   attachmentState: z.enum(["unattached", "attached"]),
 });
 
-export const LocalRepositoryInventorySchema = z.strictObject({
-  schemaVersion: SchemaVersionSchema,
-  repositories: z.array(LocalRepositoryInventoryItemSchema).max(100),
-});
+export const LocalRepositoryInventorySchema = z.discriminatedUnion("inventoryState", [
+  z.strictObject({
+    schemaVersion: SchemaVersionSchema,
+    inventoryState: z.literal("no_configured_roots"),
+    repositories: z.array(LocalRepositoryInventoryItemSchema).length(0),
+  }),
+  z.strictObject({
+    schemaVersion: SchemaVersionSchema,
+    inventoryState: z.literal("no_repositories_found"),
+    repositories: z.array(LocalRepositoryInventoryItemSchema).length(0),
+  }),
+  z.strictObject({
+    schemaVersion: SchemaVersionSchema,
+    inventoryState: z.literal("ready"),
+    repositories: z.array(LocalRepositoryInventoryItemSchema).min(1).max(100),
+  }),
+]);
 
 export const LocalRepositoryReferenceSchema = z.strictObject({
   ref: GitReferenceSchema,

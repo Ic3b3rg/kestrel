@@ -312,10 +312,55 @@ main {
   line-height: 1.5;
 }
 
+.repository-setup-state {
+  display: grid;
+  gap: 0.75rem;
+  margin: 1.5rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-left: 0.25rem solid var(--warning);
+  background: #fbf0d8;
+}
+
+.repository-setup-state h4,
+.repository-setup-state p {
+  margin: 0;
+}
+
+.repository-setup-state > p:not(.section-index),
+.repository-setup-action p {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.repository-setup-failed {
+  border-left-color: var(--danger);
+  background: #f9e9e3;
+}
+
+.repository-setup-action {
+  display: grid;
+  gap: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
+}
+
+.repository-setup-action code {
+  display: block;
+  padding: 0.75rem;
+  overflow-wrap: anywhere;
+  color: var(--surface);
+  background: var(--ink);
+}
+
 .local-repository-form {
   display: grid;
   gap: 1rem;
   padding: 1.5rem;
+}
+
+.local-repository-form[hidden] {
+  display: none;
 }
 
 .local-repository-form fieldset {

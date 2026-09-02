@@ -298,10 +298,7 @@ export async function fetchLocalRepositoryReferences(
   repositoryId: string,
   signal?: AbortSignal,
 ): Promise<LocalRepositoryReferences> {
-  const validatedId =
-    LocalRepositoryInventorySchema.shape.repositories.element.shape.repositoryId.parse(
-      repositoryId,
-    );
+  const validatedId = KestrelIdSchema.parse(repositoryId);
   const response = await fetch(
     `/api/v1/local-repository-sources/${encodeURIComponent(validatedId)}/references`,
     {

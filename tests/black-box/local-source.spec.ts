@@ -237,4 +237,104 @@ test.describe("local-first Project flow", () => {
       expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
     }
   });
+
+  test("repository setup explains every inventory state without exposing a path control", async ({
+    page,
+  }) => {
+    if (stack === undefined) {
+      throw new Error("Local-source browser fixture is unavailable");
+    }
+    await page.goto(stack.pwaUrl);
+    await page.getByLabel("Username").fill(TEST_OPERATOR_CREDENTIALS.username);
+    await page.getByLabel("Password").fill(TEST_OPERATOR_CREDENTIALS.password);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page.getByRole("heading", { name: "Kestrel Installation" })).toBeVisible();
+
+    const inventoryUrl = "**/api/v1/local-repository-sources";
+    const trigger = page.getByRole("button", { name: "Open local repository" });
+    await expect(trigger).toBeEnabled();
+    const trustedHostCommand = `LOCAL_REPOSITORY_ROOTS='["/absolute/path/to/authorized-parent"]' npm run dev`;
+    const assertGuidedState = async (title: string) => {
+      const dialog = page.getByRole("dialog", { name: "Retain an exact change" });
+      await expect(dialog.getByRole("heading", { name: title })).toBeVisible();
+      await expect(dialog.getByText(trustedHostCommand, { exact: true })).toBeVisible();
+      await expect(dialog.locator("form")).toBeHidden();
+      await expect(dialog.locator('input[type="text"], input[type="file"]')).toHaveCount(0);
+      const accessibility = await new AxeBuilder({ page })
+        .include(".local-repository-dialog")
+        .analyze();
+      expect(accessibility.violations).toEqual([]);
+    };
+
+    const loading = await holdNextInventoryResponse(page);
+    await trigger.focus();
+    await page.keyboard.press("Enter");
+    await loading.observed;
+    await assertGuidedState("Checking repository setup");
+    await page.keyboard.press("Escape");
+    await expect(trigger).toBeFocused();
+    loading.release();
+    await loading.completed;
+    await page.unroute(inventoryUrl, loading.handler);
+
+    const verifyInventoryState = async (
+      inventoryState: "no_configured_roots" | "no_repositories_found",
+      title: string,
+    ) => {
+      const handler = async (route: Route) => {
+        await route.fulfill({
+          contentType: "application/json",
+          json: { schemaVersion: 1, inventoryState, repositories: [] },
+          status: 200,
+        });
+      };
+      await page.route(inventoryUrl, handler);
+      await trigger.click();
+      await assertGuidedState(title);
+      await page.getByRole("dialog").getByRole("button", { name: "Close" }).click();
+      await page.unroute(inventoryUrl, handler);
+    };
+
+    await verifyInventoryState("no_configured_roots", "No repository roots are configured");
+    await verifyInventoryState("no_repositories_found", "No Git repositories were found");
+
+    const failDiscovery = async (route: Route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        json: {
+          schemaVersion: 1,
+          code: "SERVICE_UNAVAILABLE",
+          message: "Local repository discovery is unavailable",
+          correlationId: "0c14b018-0260-4aa0-a5e9-61d212b948ce",
+        },
+        status: 503,
+      });
+    };
+    await page.route(inventoryUrl, failDiscovery);
+    await trigger.click();
+    await assertGuidedState("Repository discovery failed");
+    await expect(page.getByRole("dialog")).toContainText(
+      "Reference: 0c14b018-0260-4aa0-a5e9-61d212b948ce",
+    );
+    await page.getByRole("dialog").getByRole("button", { name: "Close" }).click();
+    await page.unroute(inventoryUrl, failDiscovery);
+
+    await trigger.click();
+    await expect(page.getByLabel("Repository")).toBeVisible();
+    await expect(
+      page.getByLabel("Repository").getByRole("option", { name: "kestrel" }),
+    ).toHaveCount(1);
+    await expect(
+      page.getByRole("dialog").getByText(trustedHostCommand, { exact: true }),
+    ).toHaveCount(0);
+    await page.getByRole("dialog").getByRole("button", { name: "Close" }).click();
+
+    await page.setViewportSize({ width: 320, height: 800 });
+    await verifyInventoryState("no_configured_roots", "No repository roots are configured");
+    const width = await page.evaluate(() => ({
+      client: document.documentElement.clientWidth,
+      scroll: document.documentElement.scrollWidth,
+    }));
+    expect(width.scroll).toBeLessThanOrEqual(width.client);
+  });
 });

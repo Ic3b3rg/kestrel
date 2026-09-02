@@ -175,7 +175,17 @@ export function createLocalRepositoryService(
           repositoryId: candidate.repositoryId,
         }),
       );
-      return LocalRepositoryInventorySchema.parse({ schemaVersion: 1, repositories });
+      const inventoryState =
+        config.repositoryRoots.length === 0
+          ? "no_configured_roots"
+          : repositories.length === 0
+            ? "no_repositories_found"
+            : "ready";
+      return LocalRepositoryInventorySchema.parse({
+        schemaVersion: 1,
+        inventoryState,
+        repositories,
+      });
     },
     async listReferences(repositoryId) {
       const resolved = await resolveRepository(config, repositoryId);

@@ -697,6 +697,7 @@ describe("V1 public contracts", () => {
     const repositoryId = "018f0f89-9a1d-7484-b224-866ef9d69990";
     const inventory = {
       schemaVersion: 1,
+      inventoryState: "ready",
       repositories: [
         {
           repositoryId,
@@ -721,6 +722,41 @@ describe("V1 public contracts", () => {
     } as const;
 
     expect(LocalRepositoryInventorySchema.parse(inventory)).toEqual(inventory);
+    expect(
+      LocalRepositoryInventorySchema.parse({
+        schemaVersion: 1,
+        inventoryState: "no_configured_roots",
+        repositories: [],
+      }),
+    ).toEqual({
+      schemaVersion: 1,
+      inventoryState: "no_configured_roots",
+      repositories: [],
+    });
+    expect(
+      LocalRepositoryInventorySchema.parse({
+        schemaVersion: 1,
+        inventoryState: "no_repositories_found",
+        repositories: [],
+      }),
+    ).toEqual({
+      schemaVersion: 1,
+      inventoryState: "no_repositories_found",
+      repositories: [],
+    });
+    expect(() =>
+      LocalRepositoryInventorySchema.parse({
+        schemaVersion: 1,
+        inventoryState: "ready",
+        repositories: [],
+      }),
+    ).toThrow();
+    expect(() =>
+      LocalRepositoryInventorySchema.parse({
+        ...inventory,
+        inventoryState: "no_configured_roots",
+      }),
+    ).toThrow();
     expect(LocalRepositoryReferencesSchema.parse(references)).toEqual(references);
     expect(() =>
       LocalRepositoryInventorySchema.parse({

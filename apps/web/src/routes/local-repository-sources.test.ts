@@ -1,3 +1,7 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -5,7 +9,7 @@ import {
   LocalRepositoryInventorySchema,
   LocalRepositoryReferencesSchema,
 } from "@kestrel/contracts";
-import { LocalSourceError } from "@kestrel/local-source";
+import { LocalSourceError, type LocalSourceConfig } from "@kestrel/local-source";
 
 import { buildApp } from "../app.js";
 import {
@@ -15,6 +19,7 @@ import {
   SESSION_COOKIE_NAME,
 } from "../session.js";
 import {
+  createLocalRepositoryService,
   isSkippableRepositoryInspectionError,
   readAttachedLocalSourceKeys,
   type LocalRepositoryService,
@@ -43,6 +48,7 @@ describe("local repository inventory routes", () => {
   beforeEach(async () => {
     service.listRepositories.mockReset().mockResolvedValue({
       schemaVersion: 1,
+      inventoryState: "ready",
       repositories: [{ repositoryId, displayName: "kestrel", attachmentState: "unattached" }],
     });
     service.listReferences.mockReset().mockResolvedValue({
@@ -94,12 +100,42 @@ describe("local repository inventory routes", () => {
       url: "/api/v1/local-repository-sources",
     });
     expect(response.statusCode).toBe(200);
-    expect(LocalRepositoryInventorySchema.parse(response.json()).repositories[0]).toEqual({
+    const inventory = LocalRepositoryInventorySchema.parse(response.json());
+    expect(inventory.inventoryState).toBe("ready");
+    expect(inventory.repositories[0]).toEqual({
       repositoryId,
       displayName: "kestrel",
       attachmentState: "unattached",
     });
     expect(response.body).not.toContain("/private/");
+  });
+
+  it("distinguishes missing roots from configured roots with no repositories", async () => {
+    const configuredRoot = await mkdtemp(join(tmpdir(), "kestrel-empty-repository-root-"));
+    const pool = { query: vi.fn() };
+    const config = (repositoryRoots: LocalSourceConfig["repositoryRoots"]): LocalSourceConfig => ({
+      artifactRoot: join(tmpdir(), "kestrel-artifacts"),
+      gitExecutable: "/usr/bin/git",
+      gitObjectReadTimeoutMs: 1_000,
+      maxBytes: 1_000,
+      maxObjects: 100,
+      repositoryRoots,
+    });
+
+    try {
+      await expect(
+        createLocalRepositoryService(config([]), pool as never).listRepositories(),
+      ).resolves.toMatchObject({ inventoryState: "no_configured_roots", repositories: [] });
+      await expect(
+        createLocalRepositoryService(
+          config([{ id: repositoryId, path: configuredRoot }]),
+          pool as never,
+        ).listRepositories(),
+      ).resolves.toMatchObject({ inventoryState: "no_repositories_found", repositories: [] });
+      expect(pool.query).not.toHaveBeenCalled();
+    } finally {
+      await rm(configuredRoot, { recursive: true });
+    }
   });
 
   it("reads bounded references for one opaque repository ID", async () => {
