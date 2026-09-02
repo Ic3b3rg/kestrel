@@ -4,6 +4,8 @@ import { constants } from "node:fs";
 import { access, lstat, realpath, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
+import { readRepositoryRootConfiguration } from "./repository-root-configuration.js";
+
 const GIT_VERSION_TIMEOUT_MS = 10_000;
 const GIT_OBJECT_READ_TIMEOUT_MS = 60_000;
 const MAX_GIT_VERSION_OUTPUT_BYTES = 4096;
@@ -76,21 +78,54 @@ async function canonicalDirectory(path: string, key: string): Promise<string> {
   if (!isAbsolute(path)) {
     throw configurationError(key, "must be absolute");
   }
-  let canonical: string;
+  let metadata;
   try {
-    const metadata = await lstat(path);
-    if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
-      throw new Error("not a non-symlink directory");
-    }
-    await access(path, constants.R_OK | constants.X_OK);
-    canonical = await realpath(path);
+    metadata = await lstat(path);
   } catch {
     throw configurationError(key, "must identify an existing directory");
   }
-  if (!(await stat(canonical)).isDirectory()) {
+  if (metadata.isSymbolicLink()) {
+    throw configurationError(key, "must identify a non-symlink directory");
+  }
+  if (!metadata.isDirectory()) {
+    throw configurationError(key, "must identify an existing directory");
+  }
+  try {
+    await access(path, constants.R_OK | constants.X_OK);
+  } catch {
+    throw configurationError(key, "must be readable and searchable");
+  }
+  const canonical = await realpath(path).catch(() => {
+    throw configurationError(key, "could not be canonicalized");
+  });
+  const canonicalMetadata = await stat(canonical).catch(() => {
+    throw configurationError(key, "could not be canonicalized");
+  });
+  if (!canonicalMetadata.isDirectory()) {
     throw configurationError(key, "must identify a directory");
   }
   return canonical;
+}
+
+function assertNoRepositoryRootOverlap(
+  path: string,
+  key: string,
+  repositoryRoots: readonly string[],
+): void {
+  for (const repositoryRoot of repositoryRoots) {
+    if (isContained(repositoryRoot, path) || isContained(path, repositoryRoot)) {
+      throw configurationError(key, "must not overlap a repository root");
+    }
+  }
+}
+
+async function validateExcludedDirectory(
+  path: string,
+  key: string,
+  repositoryRoots: readonly string[],
+): Promise<void> {
+  const canonical = await canonicalDirectory(path, key);
+  assertNoRepositoryRootOverlap(canonical, key, repositoryRoots);
 }
 
 async function canonicalArtifactRoot(
@@ -101,11 +136,7 @@ async function canonicalArtifactRoot(
     throw configurationError("ARTIFACT_ROOT", "must be absolute");
   }
   const candidate = resolve(path);
-  for (const repositoryRoot of repositoryRoots) {
-    if (isContained(repositoryRoot, candidate) || isContained(candidate, repositoryRoot)) {
-      throw configurationError("ARTIFACT_ROOT", "must not overlap a repository root");
-    }
-  }
+  assertNoRepositoryRootOverlap(candidate, "ARTIFACT_ROOT", repositoryRoots);
   let metadata;
   try {
     metadata = await lstat(candidate);
@@ -124,11 +155,7 @@ async function canonicalArtifactRoot(
   const canonical = await realpath(candidate).catch(() => {
     throw configurationError("ARTIFACT_ROOT", "could not be canonicalized");
   });
-  for (const repositoryRoot of repositoryRoots) {
-    if (isContained(repositoryRoot, canonical) || isContained(canonical, repositoryRoot)) {
-      throw configurationError("ARTIFACT_ROOT", "must not overlap a repository root");
-    }
-  }
+  assertNoRepositoryRootOverlap(canonical, "ARTIFACT_ROOT", repositoryRoots);
   return canonical;
 }
 
@@ -236,10 +263,16 @@ export async function readLocalSourceConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<LocalSourceConfig> {
   let configuredRoots: unknown;
-  try {
-    configuredRoots = JSON.parse(env.LOCAL_REPOSITORY_ROOTS ?? "[]") as unknown;
-  } catch {
-    throw configurationError("LOCAL_REPOSITORY_ROOTS", "must be a JSON array");
+  if (env.LOCAL_REPOSITORY_ROOTS !== undefined) {
+    try {
+      configuredRoots = JSON.parse(env.LOCAL_REPOSITORY_ROOTS) as unknown;
+    } catch {
+      throw configurationError("LOCAL_REPOSITORY_ROOTS", "must be a JSON array");
+    }
+  } else if (env.LOCAL_REPOSITORY_ROOTS_FILE !== undefined) {
+    configuredRoots = await readRepositoryRootConfiguration(env.LOCAL_REPOSITORY_ROOTS_FILE);
+  } else {
+    configuredRoots = [];
   }
   if (
     !Array.isArray(configuredRoots) ||
@@ -260,6 +293,14 @@ export async function readLocalSourceConfig(
         );
       }
     }
+  }
+
+  if (env.MODEL_PROVIDER_SECRET_ROOT !== undefined) {
+    await validateExcludedDirectory(
+      env.MODEL_PROVIDER_SECRET_ROOT,
+      "MODEL_PROVIDER_SECRET_ROOT",
+      canonicalRoots,
+    );
   }
 
   const [artifactRoot, gitExecutable] = await Promise.all([

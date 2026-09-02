@@ -139,11 +139,14 @@ export async function readAttachedLocalSourceKeys(
 }
 
 export function createLocalRepositoryService(
-  config: LocalSourceConfig,
+  initialConfig: LocalSourceConfig,
   pool: DatabasePool,
+  reloadConfig?: () => Promise<LocalSourceConfig>,
 ): LocalReviewRevisionSourceService {
+  let activeConfig = initialConfig;
   return {
     async listRepositories() {
+      const config = reloadConfig === undefined ? activeConfig : await reloadConfig();
       const inspected: Array<{
         candidate: Awaited<ReturnType<typeof discoverResolvedRepositories>>[number];
         sourceIdentity: string;
@@ -181,18 +184,22 @@ export function createLocalRepositoryService(
           : repositories.length === 0
             ? "no_repositories_found"
             : "ready";
-      return LocalRepositoryInventorySchema.parse({
+      const inventory = LocalRepositoryInventorySchema.parse({
         schemaVersion: 1,
         inventoryState,
         repositories,
       });
+      activeConfig = config;
+      return inventory;
     },
     async listReferences(repositoryId) {
+      const config = activeConfig;
       const resolved = await resolveRepository(config, repositoryId);
       const inventory = await listRepositoryReferences(config, resolved);
       return LocalRepositoryReferencesSchema.parse({ schemaVersion: 1, ...inventory });
     },
     async prepare(command) {
+      const config = activeConfig;
       const repository = await resolveRepository(config, command.repositoryId);
       const inventory = await listRepositoryReferences(config, repository);
       const selected = await resolveSelectedRevision(config, repository, inventory, command);
@@ -205,6 +212,7 @@ export function createLocalRepositoryService(
       };
     },
     async prepareObserved(selection, signal) {
+      const config = activeConfig;
       const repository = await resolveRepository(config, selection.repositoryId);
       const inspection = await inspectRepository(config, repository, signal);
       if (
@@ -232,9 +240,10 @@ export function createLocalRepositoryService(
         source: preparedSource(repository, selected),
       };
     },
-    quarantine: (artifactLocator) => quarantineUnattachedArtifact(config, artifactLocator),
-    readChangeOverviewFacts: (input) => readRetainedChangeOverviewFacts(config, input),
+    quarantine: (artifactLocator) => quarantineUnattachedArtifact(activeConfig, artifactLocator),
+    readChangeOverviewFacts: (input) => readRetainedChangeOverviewFacts(activeConfig, input),
     async retain({ prepared, projectId, revisionId, signal }) {
+      const config = activeConfig;
       const retentionConfig = {
         ...config,
         maxBytes: prepared.maxBytes,

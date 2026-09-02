@@ -235,6 +235,8 @@ const record = (phase, signal) => appendFileSync(
     kind: "npm",
     modelProviderSecretRoot: process.env.MODEL_PROVIDER_SECRET_ROOT,
     phase,
+    repositoryRoots: process.env.LOCAL_REPOSITORY_ROOTS,
+    repositoryRootsFile: process.env.LOCAL_REPOSITORY_ROOTS_FILE,
     resolvedHostTools,
     service,
     signal
@@ -433,6 +435,7 @@ setInterval(() => undefined, 1_000);
       hasSessionSigningKey: true,
       host: "127.0.0.1",
       modelProviderSecretRoot: join(stateRoot, "model-provider-secrets"),
+      repositoryRootsFile: join(stateRoot, "repository-roots.json"),
       resolvedHostTools: true,
     });
     expect(

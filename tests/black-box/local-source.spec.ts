@@ -57,6 +57,16 @@ test.describe("local-first Project flow", () => {
     await page.getByLabel("Password").fill(TEST_OPERATOR_CREDENTIALS.password);
     await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page.getByRole("heading", { name: "Kestrel Installation" })).toBeVisible();
+    const repositorySettings = page.getByRole("region", { name: "Settings" });
+    await expect(
+      repositorySettings.getByRole("heading", { name: "Repository access" }),
+    ).toBeVisible();
+    await expect(repositorySettings.getByText("kestrel", { exact: true })).toBeVisible();
+    await expect(repositorySettings.locator("code").first()).toHaveText(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
+    );
+    await repositorySettings.getByRole("button", { name: "Refresh repositories" }).click();
+    await expect(repositorySettings.getByText("kestrel", { exact: true })).toBeVisible();
 
     const localTrigger = page.getByRole("button", { name: "Open local repository" });
     const publicInput = page.getByLabel("Optional public GitHub pull request URL");
@@ -253,7 +263,8 @@ test.describe("local-first Project flow", () => {
     const inventoryUrl = "**/api/v1/local-repository-sources";
     const trigger = page.getByRole("button", { name: "Open local repository" });
     await expect(trigger).toBeEnabled();
-    const trustedHostCommand = `LOCAL_REPOSITORY_ROOTS='["/absolute/path/to/authorized-parent"]' npm run dev`;
+    const trustedHostCommand =
+      "npm run authorize-repository-root -- /absolute/path/to/authorized-parent";
     const assertGuidedState = async (title: string) => {
       const dialog = page.getByRole("dialog", { name: "Retain an exact change" });
       await expect(dialog.getByRole("heading", { name: title })).toBeVisible();

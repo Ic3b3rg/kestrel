@@ -126,15 +126,25 @@ unavailable; it does not expose or silently replace the key.
 
 ## Authorize local repositories
 
-Local discovery is disabled safely by the default `LOCAL_REPOSITORY_ROOTS=[]`. To enable it for the
-current development Installation, pass a JSON array containing only the absolute parent directories
-the Operator intends to authorize:
+Local discovery is disabled safely until the Operator authorizes an explicit parent directory from
+the trusted host. The supported command validates the complete resulting configuration before it
+changes the current development Installation:
 
 ```sh
-LOCAL_REPOSITORY_ROOTS='["/absolute/path/to/authorized-parent"]' npm run dev
+npm run authorize-repository-root -- /absolute/path/to/authorized-parent
 ```
 
-The path is read by the host-native web process; it is never mounted into an application container.
+Each successful command adds one canonical root to the owner-only
+`.kestrel/development/repository-roots.json` file (or beneath the explicit `KESTREL_STATE_ROOT`). It
+stores local configuration only, never credentials. Missing, unreadable, relative, duplicate,
+nested, symlinked, or Kestrel-storage-overlapping candidates fail without replacing the previous
+valid file and without including the rejected path in the error message.
+
+If Kestrel is already running, choose **Refresh repositories** in Settings or in **Open local
+repository**. A restart reads the same persisted configuration. The path is read only by the
+host-native web process; it is never mounted into an application container or returned to the
+browser. `LOCAL_REPOSITORY_ROOTS` remains an explicit JSON-array override for specialized native
+runs and takes precedence over the persisted development configuration.
 
 The web process validates all five local-source settings before listening:
 
@@ -149,9 +159,10 @@ The launcher discovers an absolute Git executable and creates the artifact direc
 `REVIEW_REVISION_MAX_OBJECTS` remain explicit overrides for a specialized native run. Restart the
 web process after changing authorized roots.
 
-The configured repository root must already exist and be readable by the web service user.
-Duplicate, nested, symlinked, escaped, inaccessible, or source/artifact-overlapping roots fail
-closed before the listener starts.
+Every configured repository root must already exist and be readable by the web service user.
+Duplicate, nested, symlinked, escaped, inaccessible, or source/Kestrel-storage-overlapping roots
+fail closed before the listener starts or an inventory refresh activates them. Kestrel-owned storage
+includes retained artifacts and model-provider secrets.
 
 In the PWA, “Open local repository” lists only bounded display labels and opaque IDs beneath these
 roots. The browser never submits a path. Select two enumerated committed refs and write or

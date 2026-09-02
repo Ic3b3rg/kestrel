@@ -14,7 +14,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { readLocalSourceConfig } from "./index.js";
+import { readLocalSourceConfig, writeRepositoryRootConfiguration } from "./index.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -33,6 +33,45 @@ afterEach(async () => {
 });
 
 describe("local-source configuration", () => {
+  it("keeps the previous configuration when a replacement exceeds the read bound", async () => {
+    const fixture = await temporaryDirectory();
+    const configurationPath = join(fixture, "repository-roots.json");
+    await writeRepositoryRootConfiguration(configurationPath, ["/valid/root"]);
+    const previousConfiguration = await readFile(configurationPath, "utf8");
+
+    await expect(
+      writeRepositoryRootConfiguration(configurationPath, [`/${"a".repeat(64 * 1024)}`]),
+    ).rejects.toThrow("must be at most 65536 bytes");
+    await expect(readFile(configurationPath, "utf8")).resolves.toBe(previousConfiguration);
+  });
+
+  it("loads persisted repository roots when no explicit environment override exists", async () => {
+    const fixture = await temporaryDirectory();
+    const repositoryRoot = join(fixture, "repositories");
+    const artifactRoot = join(fixture, "artifacts");
+    const configurationPath = join(fixture, "repository-roots.json");
+    await mkdir(repositoryRoot);
+    await mkdir(artifactRoot, { mode: 0o700 });
+    await chmod(artifactRoot, 0o700);
+    await writeFile(
+      configurationPath,
+      JSON.stringify({ schemaVersion: 1, repositoryRoots: [repositoryRoot] }),
+      { mode: 0o600 },
+    );
+
+    const config = await readLocalSourceConfig({
+      LOCAL_REPOSITORY_ROOTS_FILE: configurationPath,
+      LOCAL_GIT_EXECUTABLE: "/usr/bin/git",
+      ARTIFACT_ROOT: artifactRoot,
+      REVIEW_REVISION_MAX_BYTES: "1048576",
+      REVIEW_REVISION_MAX_OBJECTS: "1000",
+    });
+
+    expect(config.repositoryRoots.map(({ path }) => path)).toEqual([
+      await realpath(repositoryRoot),
+    ]);
+  });
+
   it.skipIf(process.getuid?.() === 0)(
     "rejects an unreadable configured repository root",
     async () => {
@@ -51,7 +90,7 @@ describe("local-source configuration", () => {
             REVIEW_REVISION_MAX_BYTES: "1048576",
             REVIEW_REVISION_MAX_OBJECTS: "1000",
           }),
-        ).rejects.toThrow("LOCAL_REPOSITORY_ROOTS");
+        ).rejects.toThrow("must be readable");
       } finally {
         await chmod(repositoryRoot, 0o700);
       }
@@ -95,7 +134,7 @@ describe("local-source configuration", () => {
         REVIEW_REVISION_MAX_BYTES: "1048576",
         REVIEW_REVISION_MAX_OBJECTS: "1000",
       }),
-    ).rejects.toThrow("LOCAL_REPOSITORY_ROOTS");
+    ).rejects.toThrow("must identify a non-symlink directory");
   });
 
   it("never creates an artifact directory through a symlink into source", async () => {

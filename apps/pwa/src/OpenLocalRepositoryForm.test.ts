@@ -46,7 +46,8 @@ const repositories: LocalRepositoryInventory = {
   inventoryState: "ready",
   repositories: [{ repositoryId, displayName: "kestrel", attachmentState: "unattached" }],
 };
-const trustedHostCommand = `LOCAL_REPOSITORY_ROOTS='["/absolute/path/to/authorized-parent"]' npm run dev`;
+const trustedHostCommand =
+  "npm run authorize-repository-root -- /absolute/path/to/authorized-parent";
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -370,6 +371,28 @@ describe("Open local repository form", () => {
     expect(container.textContent).toContain("The configured roots were loaded successfully");
     expect(container.textContent).toContain(trustedHostCommand);
     expect(container.querySelector("form")?.hidden).toBe(true);
+  });
+
+  it("refreshes the repository selector after trusted-host authorization", async () => {
+    const loadRepositories = vi
+      .fn<NonNullable<OpenLocalRepositoryFormProps["loadRepositories"]>>()
+      .mockResolvedValueOnce({
+        schemaVersion: 1,
+        inventoryState: "no_configured_roots",
+        repositories: [],
+      })
+      .mockResolvedValueOnce(repositories);
+    await renderForm({ loadRepositories });
+
+    await click(findButton(container, "Open local repository"));
+    expect(container.textContent).toContain("No repository roots are configured");
+
+    await click(findButton(container, "Refresh repositories"));
+
+    expect(loadRepositories).toHaveBeenCalledTimes(2);
+    expect(findControl(container, "Repository")).toBeInstanceOf(HTMLSelectElement);
+    expect(container.textContent).toContain("kestrel");
+    expect(container.querySelector('input[type="text"], input[type="file"]')).toBeNull();
   });
 
   it("turns a discovery failure into actionable trusted-host guidance", async () => {

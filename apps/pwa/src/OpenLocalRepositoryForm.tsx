@@ -168,14 +168,16 @@ export function OpenLocalRepositoryForm({
     }
   }, [disabled, open]);
 
-  const openDialog = async () => {
-    if (disabled) {
-      return;
-    }
+  const loadRepositoryInventory = async () => {
     const controller = new AbortController();
     active.current?.abort();
     active.current = controller;
-    setOpen(true);
+    setRepositories(null);
+    setReferences(null);
+    setRepositoryId("");
+    setBaseRef("");
+    setHeadRef("");
+    setChangeProposalId("");
     setLoading("repositories");
     setError(null);
     try {
@@ -193,6 +195,14 @@ export function OpenLocalRepositoryForm({
         setLoading(null);
       }
     }
+  };
+
+  const openDialog = async () => {
+    if (disabled) {
+      return;
+    }
+    setOpen(true);
+    await loadRepositoryInventory();
   };
 
   const selectRepository = async (selectedRepositoryId: string) => {
@@ -344,6 +354,17 @@ export function OpenLocalRepositoryForm({
           <p id={descriptionId}>
             Kestrel reads only committed Git objects and retains a verified base/head snapshot.
           </p>
+          <div className="local-inventory-actions">
+            <p>Inventory is read from the current trusted-host configuration.</p>
+            <button
+              className="secondary-action"
+              type="button"
+              disabled={disabled || pending || loading === "repositories"}
+              onClick={() => void loadRepositoryInventory()}
+            >
+              {loading === "repositories" ? "Refreshing repositories…" : "Refresh repositories"}
+            </button>
+          </div>
           {repositories?.inventoryState !== "ready" ? (
             <RepositorySetupState
               state={

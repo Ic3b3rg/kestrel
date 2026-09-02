@@ -78,7 +78,7 @@ export function OperatorSecurityPanel(props: OperatorSecurityPanelProps) {
     <section className="operator-security" aria-labelledby="operator-security-title">
       <div className="section-heading">
         <div>
-          <p className="section-index">04 / OPERATOR</p>
+          <p className="section-index">05 / OPERATOR</p>
           <h2 id="operator-security-title">Operator security</h2>
         </div>
         <p className="security-state">Step-up protected</p>
