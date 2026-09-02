@@ -464,6 +464,298 @@
         ],
         "type": "object"
       },
+      "CodexSubscriptionConnection": {
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "authentication": {
+                    "const": "chatgpt",
+                    "type": "string"
+                  },
+                  "email": {
+                    "anyOf": [
+                      {
+                        "format": "email",
+                        "maxLength": 320,
+                        "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "plan": {
+                    "enum": [
+                      "free",
+                      "go",
+                      "plus",
+                      "pro",
+                      "prolite",
+                      "team",
+                      "self_serve_business_prolite",
+                      "self_serve_business_usage_based",
+                      "business",
+                      "ent26",
+                      "enterprise_cbp_automation",
+                      "enterprise_cbp_usage_based",
+                      "enterprise",
+                      "edu",
+                      "edu_plus",
+                      "edu_pro",
+                      "unknown"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "authentication",
+                  "email",
+                  "plan"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "checkedAt": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "cli": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "protocol": {
+                    "const": "app_server_v2",
+                    "type": "string"
+                  },
+                  "supported": {
+                    "type": "boolean"
+                  },
+                  "version": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "pattern": "^\\d+\\.\\d+\\.[0-9A-Za-z.+-]+$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "version",
+                  "supported",
+                  "protocol"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "models": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "displayName": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "id": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+                  "type": "string"
+                },
+                "isDefault": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "displayName",
+                "isDefault"
+              ],
+              "type": "object"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "authentication_required",
+                  "chatgpt_subscription_required",
+                  "cli_not_installed",
+                  "cli_version_unsupported",
+                  "protocol_unsupported",
+                  "timed_out",
+                  "unexpected_response",
+                  "usage_limit_reached",
+                  "waiting_for_usage_reset"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "schemaVersion": {
+            "const": 1,
+            "type": "number"
+          },
+          "state": {
+            "enum": [
+              "ready",
+              "waiting_for_usage_reset",
+              "action_required",
+              "unavailable"
+            ],
+            "type": "string"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "availability": {
+                    "enum": [
+                      "available",
+                      "waiting_for_usage_reset",
+                      "usage_limit_reached_action_required"
+                    ],
+                    "type": "string"
+                  },
+                  "primary": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "resetsAt": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "usedPercent": {
+                            "maximum": 100,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "windowDurationMinutes": {
+                            "anyOf": [
+                              {
+                                "exclusiveMinimum": 0,
+                                "maximum": 525600,
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "usedPercent",
+                          "windowDurationMinutes",
+                          "resetsAt"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "secondary": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "resetsAt": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "usedPercent": {
+                            "maximum": 100,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "windowDurationMinutes": {
+                            "anyOf": [
+                              {
+                                "exclusiveMinimum": 0,
+                                "maximum": 525600,
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "usedPercent",
+                          "windowDurationMinutes",
+                          "resetsAt"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "availability",
+                  "primary",
+                  "secondary"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "state",
+          "reason",
+          "cli",
+          "account",
+          "models",
+          "usage",
+          "checkedAt"
+        ],
+        "type": "object"
+      },
       "ConfigureDirectApiProfileCommand": {
         "additionalProperties": false,
         "properties": {
@@ -20283,6 +20575,44 @@
   "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
   "openapi": "3.1.1",
   "paths": {
+    "/api/v1/connections/codex": {
+      "get": {
+        "description": "Starts one bounded Codex App Server probe and reports normalized ChatGPT subscription, model and usage readiness.",
+        "operationId": "readCodexSubscriptionConnection",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodexSubscriptionConnection"
+                }
+              }
+            },
+            "description": "Fresh Codex subscription connection status"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Operator authentication is required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Codex App Server probe could not complete safely"
+          }
+        }
+      }
+    },
     "/api/v1/connections/github": {
       "get": {
         "description": "Runs a fresh bounded probe of the Operator workstation's GitHub CLI connection and optional selected-Project access.",

@@ -3,6 +3,7 @@ import { z, type ZodType } from "zod";
 import {
   ApiErrorSchema,
   ChangeIntentVersionCreatedSchema,
+  CodexSubscriptionConnectionSchema,
   ConfigureDirectApiProfileCommandSchema,
   CreateChangeIntentVersionCommandSchema,
   CredentialChangeCommandSchema,
@@ -85,6 +86,9 @@ export const sessionJsonSchema = asJsonSchema(SessionSchema);
 export const stepUpCommandJsonSchema = asJsonSchema(StepUpCommandSchema);
 export const stepUpProofJsonSchema = asJsonSchema(StepUpProofSchema);
 export const credentialChangeCommandJsonSchema = asJsonSchema(CredentialChangeCommandSchema);
+export const codexSubscriptionConnectionJsonSchema = asJsonSchema(
+  CodexSubscriptionConnectionSchema,
+);
 export const configureDirectApiProfileCommandJsonSchema = asJsonSchema(
   ConfigureDirectApiProfileCommandSchema,
 );
@@ -123,6 +127,7 @@ export const contractBundle = sortJson({
     InstallationSnapshot: asComponentSchema(installationSnapshotJsonSchema),
     CredentialChangeCommand: asComponentSchema(credentialChangeCommandJsonSchema),
     ConfigureDirectApiProfileCommand: asComponentSchema(configureDirectApiProfileCommandJsonSchema),
+    CodexSubscriptionConnection: asComponentSchema(codexSubscriptionConnectionJsonSchema),
     DirectApiProfileResponse: asComponentSchema(directApiProfileResponseJsonSchema),
     CreateChangeIntentVersionCommand: asComponentSchema(createChangeIntentVersionCommandJsonSchema),
     ChangeIntentVersionCreated: asComponentSchema(changeIntentVersionCreatedJsonSchema),
@@ -205,6 +210,7 @@ export const openApiDocument = sortJson({
       ConfigureDirectApiProfileCommand: asComponentSchema(
         configureDirectApiProfileCommandJsonSchema,
       ),
+      CodexSubscriptionConnection: asComponentSchema(codexSubscriptionConnectionJsonSchema),
       DirectApiProfileResponse: asComponentSchema(directApiProfileResponseJsonSchema),
       CreateChangeIntentVersionCommand: asComponentSchema(
         createChangeIntentVersionCommandJsonSchema,
@@ -242,6 +248,29 @@ export const openApiDocument = sortJson({
   jsonSchemaDialect: "https://json-schema.org/draft/2020-12/schema",
   openapi: "3.1.1",
   paths: {
+    "/api/v1/connections/codex": {
+      get: {
+        description:
+          "Starts one bounded Codex App Server probe and reports normalized ChatGPT subscription, model and usage readiness.",
+        operationId: "readCodexSubscriptionConnection",
+        responses: {
+          "200": {
+            content: {
+              "application/json": { schema: schemaReference("CodexSubscriptionConnection") },
+            },
+            description: "Fresh Codex subscription connection status",
+          },
+          "401": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Operator authentication is required",
+          },
+          "503": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "The Codex App Server probe could not complete safely",
+          },
+        },
+      },
+    },
     "/api/v1/connections/github": {
       get: {
         description:
