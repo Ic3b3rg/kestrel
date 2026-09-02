@@ -597,7 +597,9 @@ test.describe("observable Installation PWA", () => {
     expect(browserErrors).toEqual([]);
   });
 
-  test("the Operator acquires an observed pull request from its Project", async ({ page }) => {
+  test("the Operator selects and retains a pull request at its current exact head", async ({
+    page,
+  }) => {
     if (stack === undefined) throw new Error("Observed pull-request browser stack is unavailable");
     const runningStack = stack;
     await runningStack.executeRuntimeSql(`
@@ -643,6 +645,17 @@ test.describe("observable Installation PWA", () => {
     if (project.localRepositorySource === null) {
       throw new Error("Observed pull-request browser source is unavailable");
     }
+    const selectedProject = {
+      ...project,
+      providerObservation: {
+        account: "operator",
+        authentication: "host_session" as const,
+        host: "github.com",
+        kind: "host_gh" as const,
+        refresh: "manual" as const,
+      },
+    };
+    const unselectedProject = { ...selectedProject, changeProposals: [] };
     const changeIntentText = "Review the exact provider-observed pull request revision";
     const acquisitionChangeIntent = {
       acceptanceOutcomes: [],
@@ -686,11 +699,64 @@ test.describe("observable Installation PWA", () => {
     const availableProposal = {
       ...proposal,
       changeIntent: acquisitionChangeIntent,
+      changeOverview: {
+        state: "ready" as const,
+        createdAt: "2026-08-28T12:05:01.000Z",
+        exactRevision: {
+          id: reviewRevision.id,
+          objectFormat: reviewRevision.objectFormat,
+          base: {
+            ...reviewRevision.base,
+            author: "Base Author",
+            subject: "Establish the source boundary",
+          },
+          head: {
+            ...reviewRevision.head,
+            author: "Head Author",
+            subject: "Keep revision acquisition exact",
+          },
+        },
+        changeIntent: acquisitionChangeIntent,
+        modelRendering: { state: "not_generated" as const },
+        providerObservation: {
+          canonicalUrl: proposal.canonicalUrl,
+          description: proposal.body ?? null,
+          observedAt: proposal.observedAt,
+          title: proposal.title,
+        },
+        sourceFacts: {
+          ruleVersion: 1 as const,
+          commitStatistics: { baseTreeFileCount: 3, headTreeFileCount: 4 },
+          fileStatistics: { added: 0, modified: 1, deleted: 0, total: 1 },
+          changedFiles: [
+            {
+              path: "src/revision.ts",
+              status: "modified" as const,
+              base: { mode: "100644" as const, objectId: "c".repeat(40), type: "blob" as const },
+              head: { mode: "100644" as const, objectId: "d".repeat(40), type: "blob" as const },
+            },
+          ],
+          pathAreas: [
+            {
+              pathPrefix: "src",
+              changedFileCount: 1,
+              samplePaths: ["src/revision.ts"],
+            },
+          ],
+          warnings: [
+            {
+              code: "git_lfs_pointer_not_hydrated" as const,
+              affectedFileCount: 1,
+              samplePaths: ["src/revision.ts"],
+            },
+          ],
+        },
+      },
       reviewRevisions: [reviewRevision],
     };
     const availableProject = {
-      ...project,
-      changeProposals: project.changeProposals.map((candidate) =>
+      ...selectedProject,
+      changeProposals: selectedProject.changeProposals.map((candidate) =>
         candidate.id === proposal.id ? availableProposal : candidate,
       ),
       sourceAvailability: "available" as const,
@@ -704,52 +770,106 @@ test.describe("observable Installation PWA", () => {
       project: availableProject,
       reviewRevision,
     });
+    const movedHeadObjectId = "f".repeat(40);
+    const movedProject = ProjectInboxSchema.parse({
+      schemaVersion: 1,
+      projects: [
+        {
+          ...available.project,
+          changeProposals: available.project.changeProposals.map((candidate) =>
+            candidate.id === proposal.id
+              ? {
+                  ...candidate,
+                  changeOverview: {
+                    state: "awaiting_source" as const,
+                    exactHeadObjectId: movedHeadObjectId,
+                  },
+                  head: { ...candidate.head, objectId: movedHeadObjectId },
+                  observedAt: "2026-08-28T12:06:00.000Z",
+                  version: candidate.version + 1,
+                }
+              : candidate,
+          ),
+          updatedAt: "2026-08-28T12:06:00.000Z",
+        },
+      ],
+    }).projects[0];
+    if (movedProject === undefined) {
+      throw new Error("Moved observed pull-request browser fixture is unavailable");
+    }
 
+    let selected = false;
     let acquired = false;
     await page.route("**/api/v1/projects", async (route: Route) => {
-      if (route.request().method() === "GET" && acquired) {
-        await route.fulfill({ json: { schemaVersion: 1, projects: [available.project] } });
+      if (route.request().method() === "GET") {
+        await route.fulfill({
+          json: {
+            schemaVersion: 1,
+            projects: [
+              acquired ? available.project : selected ? selectedProject : unselectedProject,
+            ],
+          },
+        });
         return;
       }
       await route.continue();
     });
     await page.route("**/api/v1/projects/*/provider/github", async (route: Route) => {
       await route.fulfill({
-        json: {
+        json: HostGitHubProjectInboxSchema.parse({
           schemaVersion: 1,
           projectId: project.id,
           route: "host_gh",
-          limitations: ["The observed-acquisition browser test does not exercise host gh."],
+          limitations: ["Host session, bounded reads, and manual refresh only."],
           status: {
-            executableVersion: null,
-            availability: "unavailable",
+            executableVersion: "2.87.0",
+            availability: "available",
             host: "github.com",
-            authentication: "unknown",
-            account: null,
+            authentication: "authenticated",
+            account: "operator",
           },
           groupStates: [
+            { group: "review_requested", state: "available", failureReason: null },
+            { group: "authored", state: "available", failureReason: null },
+            { group: "other", state: "available", failureReason: null },
+          ],
+          pullRequests: [
             {
+              author: "octocat",
+              body: "",
               group: "review_requested",
-              state: "unavailable",
-              failureReason: "unexpected_response",
-            },
-            {
-              group: "authored",
-              state: "unavailable",
-              failureReason: "unexpected_response",
-            },
-            {
-              group: "other",
-              state: "unavailable",
-              failureReason: "unexpected_response",
+              number: proposal.number,
+              title: proposal.title,
+              updatedAt: "2026-08-28T12:04:00.000Z",
+              url: proposal.canonicalUrl,
             },
           ],
-          pullRequests: [],
           observedAt: "2026-08-28T12:00:00.000Z",
-        },
+        }),
         status: 200,
       });
     });
+    let observationCount = 0;
+    const observationPath = `/api/v1/projects/${project.id}/provider/github/pull-requests/observe`;
+    await page.route(
+      (url) => url.pathname === observationPath,
+      async (route: Route) => {
+        const request = route.request();
+        expect(request.method()).toBe("POST");
+        expect(request.postDataJSON()).toEqual({ number: proposal.number });
+        expect(request.headers()["x-kestrel-csrf"]).toBeTruthy();
+        expect(request.headers().authorization).toBeUndefined();
+        observationCount += 1;
+        if (observationCount === 1) selected = true;
+        await route.fulfill({
+          json: {
+            schemaVersion: 1,
+            project: observationCount === 1 ? selectedProject : movedProject,
+          },
+          status: 200,
+        });
+      },
+    );
     let markRequestObserved: () => void = () => undefined;
     const requestObserved = new Promise<void>((resolve) => {
       markRequestObserved = resolve;
@@ -802,6 +922,14 @@ test.describe("observable Installation PWA", () => {
     await page.getByRole("button", { name: "Sign in" }).click();
     await openProjectWorkspace(page);
     await expect(page.getByText("Credentials stay with host Git", { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: `#${String(proposal.number)} · ${proposal.title}` }),
+    ).toHaveCount(0);
+    await page.getByRole("button", { name: `Select PR #${String(proposal.number)}` }).click();
+    const proposalDetail = page.locator(".change-proposal").filter({ hasText: proposal.title });
+    await expect(proposalDetail).toBeVisible();
+    await expect(proposalDetail).toContainText("Revision State");
+    await expect(proposalDetail).toContainText("Not acquired");
     const intent = page.getByLabel("Confirm Change Intent for PR #1234");
     await expect(intent).toHaveValue("");
     await expect(page.getByRole("button", { name: "Acquire exact PR #1234" })).toBeDisabled();
@@ -814,10 +942,43 @@ test.describe("observable Installation PWA", () => {
     await expect(page.getByRole("button", { name: "Acquiring…" })).toBeDisabled();
     await expect(intent).toBeDisabled();
     releaseResponse();
-    await expect(page.getByRole("status")).toContainText("The exact Review Revision is available.");
+    await expect(page.locator(".activity-line")).toContainText(
+      "The exact Review Revision is available.",
+    );
     await expect(page.getByRole("button", { name: "Acquire exact PR #1234" })).toHaveCount(0);
-    await expect(page.getByRole("definition").filter({ hasText: changeIntentText })).toBeVisible();
+    await expect(
+      proposalDetail
+        .locator(".commit-pointer-list")
+        .getByRole("definition")
+        .filter({ hasText: changeIntentText }),
+    ).toBeVisible();
     await expect(page.getByText("Available", { exact: true })).toHaveCount(2);
+    const overview = proposalDetail.getByRole("region", { name: "Change Overview" });
+    await expect(overview).toContainText("Base snapshot · 3 files");
+    await expect(overview).toContainText("Head snapshot · 4 files");
+    await expect(overview).toContainText("1 changed file · 0 added · 1 modified · 0 deleted");
+    await expect(overview).toContainText("src/revision.ts");
+    await expect(overview).toContainText("Source area");
+    await expect(overview).toContainText("Git LFS pointer content was not hydrated");
+    await expect(
+      overview.getByLabel(`Change Overview exact base object ID ${reviewRevision.base.objectId}`),
+    ).toBeVisible();
+    await expect(
+      overview.getByLabel(`Change Overview exact head object ID ${reviewRevision.head.objectId}`),
+    ).toBeVisible();
+    await proposalDetail
+      .getByRole("button", { name: `Refresh PR #${String(proposal.number)}` })
+      .click();
+    await expect(proposalDetail).toContainText("Not acquired");
+    await expect(overview.locator(".change-overview-status")).toHaveText("Awaiting exact source");
+    await expect(
+      proposalDetail.getByRole("button", { name: `Acquire exact PR #${String(proposal.number)}` }),
+    ).toBeVisible();
+    await expect(
+      proposalDetail.getByLabel(`Observed head object ID ${movedHeadObjectId}`),
+    ).toBeVisible();
+    await expect(overview).not.toContainText("src/revision.ts");
+    expect(observationCount).toBe(2);
     const accessibility = await new AxeBuilder({ page }).include(".projects-section").analyze();
     expect(accessibility.violations).toEqual([]);
     expect(browserErrors).toEqual([]);
