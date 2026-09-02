@@ -306,6 +306,28 @@ describe("Project persistence mapping", () => {
     });
   });
 
+  it("maps a durable local Project before it has any Change Proposals", () => {
+    const row = localProjectRow();
+    Object.assign(row, {
+      proposal_id: null,
+      proposal_kind: null,
+      proposal_optimistic_version: null,
+    });
+
+    expect(mapProjectRows([row])).toMatchObject({
+      projects: [
+        {
+          id: projectId,
+          changeProposals: [],
+          localRepositorySource: {
+            displayName: "kestrel",
+            state: "attached",
+          },
+        },
+      ],
+    });
+  });
+
   it("maps only the rendering fenced to the selected Proposal head", () => {
     const row = localProjectRow();
     Object.assign(row, {

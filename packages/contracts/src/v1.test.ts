@@ -26,6 +26,7 @@ import {
   LoginCommandSchema,
   LocalRepositoryInventorySchema,
   LocalRepositoryReferencesSchema,
+  OpenLocalProjectCommandSchema,
   OpenPublicGitHubPullRequestCommandSchema,
   ProjectInboxSchema,
   RetainReviewRevisionCommandSchema,
@@ -356,6 +357,20 @@ describe("V1 public contracts", () => {
     ]) {
       expect(() => OpenPublicGitHubPullRequestCommandSchema.parse({ url })).toThrow();
     }
+  });
+
+  it("opens a local Project from only an opaque repository identity", () => {
+    const command = {
+      repositoryId: "018f0f89-9a1d-7484-b224-866ef9d69990",
+    };
+
+    expect(OpenLocalProjectCommandSchema.parse(command)).toEqual(command);
+    expect(() =>
+      OpenLocalProjectCommandSchema.parse({
+        ...command,
+        path: "/Users/operator/repository",
+      }),
+    ).toThrow();
   });
 
   it("accepts only opaque local-repository acquisition input", () => {

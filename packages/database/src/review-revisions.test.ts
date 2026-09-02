@@ -6,6 +6,7 @@ import {
   backfillChangeOverviewFacts,
   completeReviewRevision,
   failReviewRevision,
+  openLocalProject,
   readChangeOverviewBackfillReference,
   reconcileAcquiringRevisions,
   reconcileLocalSourceAttachments,
@@ -119,6 +120,46 @@ function acquisitionPool(
     }
     if (normalized.startsWith("UPDATE local_repository_sources")) {
       return { rowCount: 1, rows: [] };
+    }
+    if (normalized.includes("FROM ( SELECT * FROM projects WHERE canonical_project_id IS NULL")) {
+      return {
+        rowCount: 1,
+        rows: [
+          {
+            author_login_snapshot: null,
+            author_provider_id: null,
+            base_object_id: null,
+            base_ref_snapshot: null,
+            created_at: timestamp,
+            head_object_id: null,
+            head_ref_snapshot: null,
+            id: projectId,
+            local_display_name: "kestrel",
+            local_object_format: "sha1",
+            local_repository_id: "018f0f89-9a1e-7d64-a5dd-18cc3e317401",
+            local_source_created_at: timestamp,
+            local_source_id: sourceId,
+            local_source_state: "attached",
+            local_source_updated_at: timestamp,
+            observed_at: null,
+            proposal_canonical_url: null,
+            proposal_id: null,
+            proposal_number: null,
+            proposal_optimistic_version: null,
+            proposal_provider_id: null,
+            proposal_state: null,
+            proposal_title: null,
+            provider: null,
+            provider_observation_kind: null,
+            provider_repository_id: null,
+            repository_canonical_url_snapshot: null,
+            repository_name_snapshot: null,
+            repository_owner_snapshot: null,
+            source_availability: "not_acquired",
+            updated_at: timestamp,
+          },
+        ],
+      };
     }
     if (normalized.includes("FROM review_revisions") && normalized.includes("base_object_id")) {
       if (options.staleAcquiringRevision === true) {
@@ -269,6 +310,44 @@ function acquisitionPool(
 }
 
 describe("Review Revision persistence", () => {
+  it.each([
+    { existingSource: false, expectedProjectInsertions: 1 },
+    { existingSource: true, expectedProjectInsertions: 0 },
+  ])(
+    "opens the same durable local Project when existingSource=$existingSource",
+    async ({ existingSource, expectedProjectInsertions }) => {
+      const database = acquisitionPool({ existingSource });
+
+      await expect(
+        openLocalProject(database.pool, {
+          actorId: operatorId,
+          correlationId: "0c14b018-0260-4aa0-a5e9-61d212b948ce",
+          source: {
+            displayName: "kestrel",
+            githubRepository: null,
+            objectFormat: "sha1",
+            relativePath: "kestrel",
+            repositoryId: "018f0f89-9a1e-7d64-a5dd-18cc3e317401",
+            rootId: "018f0f89-9a1f-72ae-82c4-ef8ee27d6932",
+            sourceIdentity: "c".repeat(64),
+          },
+        }),
+      ).resolves.toMatchObject({
+        schemaVersion: 1,
+        project: {
+          changeProposals: [],
+          id: projectId,
+          localRepositorySource: { id: sourceId, state: "attached" },
+        },
+      });
+      expect(
+        database.statements.filter((statement) => statement.startsWith("INSERT INTO projects")),
+      ).toHaveLength(expectedProjectInsertions);
+      expect(database.statements.at(-1)).toBe("COMMIT");
+      expect(database.release).toHaveBeenCalledOnce();
+    },
+  );
+
   it("rejects an artifact locator for a different Project or revision", async () => {
     const pool = { connect: vi.fn() } as unknown as DatabasePool;
 

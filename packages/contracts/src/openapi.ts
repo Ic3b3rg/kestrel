@@ -18,6 +18,7 @@ import {
   LogoutCommandSchema,
   LocalRepositoryInventorySchema,
   LocalRepositoryReferencesSchema,
+  OpenLocalProjectCommandSchema,
   OpenPublicGitHubPullRequestCommandSchema,
   ObserveHostGitHubPullRequestCommandSchema,
   ProjectInboxSchema,
@@ -91,6 +92,7 @@ export const createChangeIntentVersionCommandJsonSchema = asJsonSchema(
   CreateChangeIntentVersionCommandSchema,
 );
 export const changeIntentVersionCreatedJsonSchema = asJsonSchema(ChangeIntentVersionCreatedSchema);
+export const openLocalProjectCommandJsonSchema = asJsonSchema(OpenLocalProjectCommandSchema);
 export const openPublicGitHubPullRequestCommandJsonSchema = asJsonSchema(
   OpenPublicGitHubPullRequestCommandSchema,
 );
@@ -124,6 +126,7 @@ export const contractBundle = sortJson({
     ChangeIntentVersionCreated: asComponentSchema(changeIntentVersionCreatedJsonSchema),
     LoginCommand: asComponentSchema(loginCommandJsonSchema),
     LogoutCommand: asComponentSchema(logoutCommandJsonSchema),
+    OpenLocalProjectCommand: asComponentSchema(openLocalProjectCommandJsonSchema),
     OpenPublicGitHubPullRequestCommand: asComponentSchema(
       openPublicGitHubPullRequestCommandJsonSchema,
     ),
@@ -206,6 +209,7 @@ export const openApiDocument = sortJson({
       ChangeIntentVersionCreated: asComponentSchema(changeIntentVersionCreatedJsonSchema),
       LoginCommand: asComponentSchema(loginCommandJsonSchema),
       LogoutCommand: asComponentSchema(logoutCommandJsonSchema),
+      OpenLocalProjectCommand: asComponentSchema(openLocalProjectCommandJsonSchema),
       OpenPublicGitHubPullRequestCommand: asComponentSchema(
         openPublicGitHubPullRequestCommandJsonSchema,
       ),
@@ -717,6 +721,64 @@ export const openApiDocument = sortJson({
           "503": {
             content: { "application/json": { schema: schemaReference("ApiError") } },
             description: "Public GitHub or Project storage is unavailable",
+          },
+        },
+      },
+    },
+    "/api/v1/projects/local": {
+      post: {
+        description:
+          "Creates or reuses one durable Project from an authorized Local Repository Source without accepting a filesystem path.",
+        operationId: "openLocalProject",
+        parameters: authenticatedMutationHeaders(false),
+        requestBody: {
+          content: {
+            "application/json": {
+              schema: schemaReference("OpenLocalProjectCommand"),
+            },
+          },
+          required: true,
+        },
+        responses: {
+          "200": {
+            content: { "application/json": { schema: schemaReference("ProjectUpserted") } },
+            description: "Local Project opened idempotently",
+          },
+          "400": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "The opaque repository identity is invalid",
+          },
+          "401": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Operator authentication is required",
+          },
+          "403": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Origin or CSRF validation failed",
+          },
+          "404": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "The authorized repository is unavailable",
+          },
+          "409": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "The repository identity conflicts with an existing Project",
+          },
+          "413": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "The command payload is too large",
+          },
+          "415": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "The command media type is unsupported",
+          },
+          "422": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Repository containment validation failed",
+          },
+          "503": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Local repository inspection or Project storage is unavailable",
           },
         },
       },

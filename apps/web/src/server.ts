@@ -22,6 +22,7 @@ import {
   readReferencedArtifactLocators,
   readDatabaseConfig,
   readEventRetentionLimit,
+  openLocalProject,
   reconcileAcquiringRevisions,
   reconcileLocalSourceAttachments,
   withArtifactLifecycleLock,
@@ -87,7 +88,12 @@ const app = await buildApp({
   localRepositoryService,
   hostGitHubProjectService: createHostGitHubProjectService(pool, boss),
   pool,
-  projectService: createDatabaseProjectService(pool, boss),
+  projectService: createDatabaseProjectService(pool, boss, async (command, context) =>
+    openLocalProject(pool, {
+      ...context,
+      source: await localRepositoryService.inspectProjectSource(command.repositoryId),
+    }),
+  ),
   pwaRoot: process.env.PWA_ROOT ?? resolve(import.meta.dirname, "../../pwa/dist"),
   sessionSigningKey,
   reviewRevisionService: createReviewRevisionService(pool, localRepositoryService, boss),
