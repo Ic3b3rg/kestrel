@@ -1,17 +1,12 @@
 /** A task-owned subprocess provider, never a proxy to a real GitHub repository. */
 export const factoryGitHubFixture = String.raw`#!/usr/local/bin/node
 const fs = require("node:fs");
+const { DatabaseSync } = require("node:sqlite");
 const path = "/tmp/kestrel-factory-github.json";
-const lock = path + ".lock";
-const until = Date.now() + 5000;
-while (true) {
-  try { fs.mkdirSync(lock); break; }
-  catch (error) {
-    if (error.code !== "EEXIST" || Date.now() > until) throw error;
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
-  }
-}
-process.on("exit", () => fs.rmdirSync(lock));
+// The OS releases this lock even when the CLI kills a cancelled child with SIGKILL.
+const lock = new DatabaseSync(path + ".sqlite");
+lock.exec("PRAGMA busy_timeout = 5000; BEGIN EXCLUSIVE");
+process.on("exit", () => lock.close());
 const args = process.argv.slice(2);
 const state = fs.existsSync(path) ? JSON.parse(fs.readFileSync(path, "utf8")) : {
   issues: [12, 13, 14, 15, 16].map(number => ({ id: String(1000 + number), number, title: "Existing issue " + number,
@@ -24,7 +19,10 @@ const method = args[args.indexOf("--method") + 1] ?? "GET";
 const input = args.includes("--input") ? JSON.parse(fs.readFileSync(0, "utf8")) : null;
 const projection = args[args.indexOf("--jq") + 1] ?? "";
 state.calls.push({ args, method, endpoint, input });
-const save = () => fs.writeFileSync(path, JSON.stringify(state));
+const save = () => {
+  fs.writeFileSync(path + ".next", JSON.stringify(state));
+  fs.renameSync(path + ".next", path);
+};
 function output(status, body, headers = {}) {
   save();
   if (status < 400 && projection.includes("issue_url")) {
