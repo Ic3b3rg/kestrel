@@ -15,6 +15,7 @@ export * from "./operator-security.js";
 export * from "./audit.js";
 export * from "./change-intents.js";
 export * from "./change-overview-renderings.js";
+export * from "./codex-review-model-preference.js";
 export * from "./direct-api-profiles.js";
 export * from "./rate-limits.js";
 export * from "./pg-boss.js";
