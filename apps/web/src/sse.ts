@@ -44,6 +44,7 @@ export interface StartEventStreamOptions {
   pool: DatabasePool;
   reply: FastifyReply;
   request: FastifyRequest;
+  shutdownSignal: AbortSignal;
 }
 
 export async function startInstallationEventStream({
@@ -51,7 +52,8 @@ export async function startInstallationEventStream({
   pool,
   reply,
   request,
-}: StartEventStreamOptions): Promise<EventStreamStartResult> {
+  shutdownSignal,
+}: StartEventStreamOptions): Promise<EventStreamStartResult | null> {
   const session = request.operatorSession;
   const sessionGeneration = request.operatorSessionGeneration;
   if (session === null || sessionGeneration === null) {
@@ -59,15 +61,75 @@ export async function startInstallationEventStream({
   }
   const authenticatedSession = session;
   const authenticatedSessionGeneration = sessionGeneration;
-  const client = await pool.connect();
-  let transferred = false;
+  let cursor = initialCursor;
+  let closed = false;
+  let releaseClient: ((error?: Error) => void) | undefined;
+  let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+  let pollTimer: ReturnType<typeof setInterval> | undefined;
+  let sessionExpiryTimer: ReturnType<typeof setTimeout> | undefined;
+  const streamAbort = new AbortController();
+
+  function isClosed(): boolean {
+    return closed;
+  }
+
+  const onRequestClose = () => cleanup(false);
+  const onShutdown = () => {
+    cleanup(false);
+    reply.hijack();
+    reply.raw.destroy();
+  };
+  const onDatabaseError = (error: Error) => {
+    request.log.error({ err: error, event: "events.listener_failed" });
+    cleanup(true, error);
+  };
+
+  function cleanup(endResponse: boolean, databaseError?: Error): void {
+    if (closed) return;
+    closed = true;
+    streamAbort.abort();
+    clearInterval(heartbeatTimer);
+    clearInterval(pollTimer);
+    clearTimeout(sessionExpiryTimer);
+    reply.raw.removeListener("close", onRequestClose);
+    shutdownSignal.removeEventListener("abort", onShutdown);
+    if (endResponse && !reply.raw.destroyed) {
+      reply.hijack();
+      reply.raw.end();
+    }
+    releaseClient?.(databaseError);
+  }
+
+  reply.raw.once("close", onRequestClose);
+  shutdownSignal.addEventListener("abort", onShutdown, { once: true });
+  if (shutdownSignal.aborted || reply.raw.destroyed) {
+    onShutdown();
+    return null;
+  }
 
   try {
+    const client = await pool.connect();
+    const onNotification = (notification: { channel: string }) => {
+      if (notification.channel === "kestrel_events") scheduleDrain();
+    };
+    releaseClient = (error) => {
+      client.removeListener("error", onDatabaseError);
+      client.removeListener("notification", onNotification);
+      // This connection is dedicated to LISTEN. Destroy it so pending queries or
+      // an unavailable database cannot hold stream shutdown behind UNLISTEN.
+      client.release(error ?? true);
+    };
+    if (isClosed()) {
+      releaseClient();
+      return null;
+    }
+    client.on("error", onDatabaseError);
     await client.query("LISTEN kestrel_events");
+    if (isClosed()) return null;
     const validation = await validateCursor(client, initialCursor);
+    if (isClosed()) return null;
     if (!validation.valid) {
-      await client.query("UNLISTEN kestrel_events");
-      client.release();
+      cleanup(false);
       return { ...validation, streaming: false };
     }
 
@@ -80,54 +142,13 @@ export async function startInstallationEventStream({
     });
     reply.raw.flushHeaders();
 
-    let cursor = initialCursor;
-    let closed = false;
-    let cleanupPromise: Promise<void> | undefined;
-    const streamAbort = new AbortController();
-
-    const onRequestClose = () => {
-      void cleanup(false);
-    };
-    const onDatabaseError = (error: Error) => {
-      request.log.error({ err: error, event: "events.listener_failed" });
-      void cleanup(true, error);
-    };
-    const onNotification = (notification: { channel: string }) => {
-      if (notification.channel === "kestrel_events") {
-        scheduleDrain();
-      }
-    };
-
-    async function cleanup(endResponse: boolean, databaseError?: Error): Promise<void> {
-      cleanupPromise ??= (async () => {
-        closed = true;
-        streamAbort.abort();
-        clearInterval(heartbeatTimer);
-        clearInterval(pollTimer);
-        clearTimeout(sessionExpiryTimer);
-        request.raw.removeListener("close", onRequestClose);
-        client.removeListener("error", onDatabaseError);
-        client.removeListener("notification", onNotification);
-        if (endResponse && !reply.raw.writableEnded) {
-          reply.raw.end();
-        }
-        await client.query("UNLISTEN kestrel_events").catch(() => undefined);
-        client.release(databaseError);
-      })();
-      return cleanupPromise;
-    }
-
     async function writeChunk(chunk: string): Promise<void> {
-      if (closed || reply.raw.writableEnded) {
-        return;
-      }
+      if (closed || reply.raw.writableEnded) return;
       if (!reply.raw.write(chunk)) {
         try {
           await once(reply.raw, "drain", { signal: streamAbort.signal });
         } catch (error) {
-          if (error instanceof Error && error.name === "AbortError") {
-            return;
-          }
+          if (error instanceof Error && error.name === "AbortError") return;
           throw error;
         }
       }
@@ -139,6 +160,7 @@ export async function startInstallationEventStream({
           client,
           authenticatedSession.operator.id,
         );
+        if (isClosed()) return;
         if (
           currentOperator === null ||
           currentOperator.username !== authenticatedSession.operator.username ||
@@ -149,13 +171,14 @@ export async function startInstallationEventStream({
             event: "events.session_invalidated",
             operatorId: authenticatedSession.operator.id,
           });
-          await cleanup(true);
+          cleanup(true);
           return;
         }
         const batch = await readEventReplayBatch(client, cursor, EVENT_BATCH_SIZE);
+        if (isClosed()) return;
         if (!batch.valid) {
           await writeChunk(encodeResetRequired(request.id, batch.firstAvailable));
-          await cleanup(true);
+          cleanup(true);
           return;
         }
 
@@ -163,18 +186,17 @@ export async function startInstallationEventStream({
           await writeChunk(encodeSseEvent(event));
           cursor = event.eventId;
         }
-        if (batch.events.length < EVENT_BATCH_SIZE) {
-          return;
-        }
+        if (batch.events.length < EVENT_BATCH_SIZE) return;
       }
     }
 
     let streamWork = Promise.resolve();
     function enqueue(work: () => Promise<void>): void {
-      streamWork = streamWork.then(work).catch(async (error: unknown) => {
+      if (closed) return;
+      streamWork = streamWork.then(work).catch((error: unknown) => {
         if (!closed) {
           request.log.error({ err: error, event: "events.stream_failed" });
-          await cleanup(true, error instanceof Error ? error : undefined);
+          cleanup(true, error instanceof Error ? error : undefined);
         }
       });
     }
@@ -182,35 +204,27 @@ export async function startInstallationEventStream({
       enqueue(drain);
     }
 
-    const pollTimer = setInterval(scheduleDrain, POLL_INTERVAL_MS);
-    const heartbeatTimer = setInterval(() => {
+    pollTimer = setInterval(scheduleDrain, POLL_INTERVAL_MS);
+    heartbeatTimer = setInterval(() => {
       enqueue(async () => writeChunk(": keep-alive\n\n"));
     }, HEARTBEAT_INTERVAL_MS);
-    const sessionExpiryTimer = setTimeout(() => {
+    sessionExpiryTimer = setTimeout(() => {
       request.log.info({
         event: "events.session_expired",
         operatorId: authenticatedSession.operator.id,
       });
-      void cleanup(true);
+      cleanup(true);
     }, millisecondsUntilSessionExpiry(authenticatedSession.expiresAt));
-    request.raw.once("close", onRequestClose);
-    client.on("error", onDatabaseError);
     client.on("notification", onNotification);
     enqueue(async () => {
       await writeChunk(": connected\n\n");
       await drain();
     });
 
-    transferred = true;
     return { streaming: true };
   } catch (error) {
-    if (!transferred) {
-      if (reply.sent && !reply.raw.writableEnded) {
-        reply.raw.end();
-      }
-      await client.query("UNLISTEN kestrel_events").catch(() => undefined);
-      client.release(error instanceof Error ? error : undefined);
-    }
+    if (isClosed()) return null;
+    cleanup(reply.sent, error instanceof Error ? error : undefined);
     throw error;
   }
 }

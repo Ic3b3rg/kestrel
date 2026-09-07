@@ -1,3 +1,5 @@
+import { setMaxListeners } from "node:events";
+
 import type { FastifyInstance } from "fastify";
 
 import { ApiErrorSchema, apiErrorJsonSchema, jsonSchemaForEmbedding } from "@kestrel/contracts";
@@ -34,6 +36,13 @@ function cursorExpiredError(correlationId: string, validation: EventCursorValida
 }
 
 export function registerEventRoutes(app: FastifyInstance, pool: DatabasePool): void {
+  const shutdown = new AbortController();
+  // Each open stream owns a listener until it disconnects or the app shuts down.
+  setMaxListeners(0, shutdown.signal);
+  app.addHook("preClose", (done) => {
+    shutdown.abort();
+    done();
+  });
   app.get<{ Headers: EventHeaders; Querystring: EventQuery }>(
     "/api/v1/events",
     {
@@ -56,35 +65,55 @@ export function registerEventRoutes(app: FastifyInstance, pool: DatabasePool): v
       },
     },
     async (request, reply) => {
-      let cursor: string;
-      let initialValidation: EventCursorValidation;
+      const onShutdown = () => {
+        reply.hijack();
+        reply.raw.destroy();
+      };
+      const onRequestClose = () => shutdown.signal.removeEventListener("abort", onShutdown);
+      reply.raw.once("close", onRequestClose);
+      shutdown.signal.addEventListener("abort", onShutdown, { once: true });
       try {
-        cursor = parseEventCursor(request.headers["last-event-id"] ?? request.query.after ?? "0");
-        initialValidation = await validateCursor(pool, cursor);
-      } catch (error) {
-        if (!(error instanceof InvalidEventCursorError)) {
-          throw error;
+        if (shutdown.signal.aborted) {
+          onShutdown();
+          return;
         }
-        reply.code(400);
-        return ApiErrorSchema.parse({
-          schemaVersion: 1,
-          code: "INVALID_REQUEST",
-          message: error.message,
-          correlationId: request.id,
+        let cursor: string;
+        let initialValidation: EventCursorValidation;
+        try {
+          cursor = parseEventCursor(request.headers["last-event-id"] ?? request.query.after ?? "0");
+          initialValidation = await validateCursor(pool, cursor);
+        } catch (error) {
+          if (!(error instanceof InvalidEventCursorError)) throw error;
+          reply.code(400);
+          return ApiErrorSchema.parse({
+            schemaVersion: 1,
+            code: "INVALID_REQUEST",
+            message: error.message,
+            correlationId: request.id,
+          });
+        }
+        if (reply.raw.destroyed) return;
+
+        if (!initialValidation.valid) {
+          reply.code(409);
+          return cursorExpiredError(request.id, initialValidation);
+        }
+
+        const result = await startInstallationEventStream({
+          cursor,
+          pool,
+          reply,
+          request,
+          shutdownSignal: shutdown.signal,
         });
+        if (result !== null && !result.streaming) {
+          reply.code(409);
+          return cursorExpiredError(request.id, result);
+        }
+      } finally {
+        onRequestClose();
+        reply.raw.removeListener("close", onRequestClose);
       }
-
-      if (!initialValidation.valid) {
-        reply.code(409);
-        return cursorExpiredError(request.id, initialValidation);
-      }
-
-      const result = await startInstallationEventStream({ cursor, pool, reply, request });
-      if (!result.streaming) {
-        reply.code(409);
-        return cursorExpiredError(request.id, result);
-      }
-      return reply;
     },
   );
 }
