@@ -142,4 +142,42 @@ describe("Codex Review model Settings", () => {
     });
     expect(onVerify).toHaveBeenCalledOnce();
   });
+
+  it("shows loading, authentication, and empty-catalog states without enabling the selector", async () => {
+    const savedPreference = {
+      ...emptyPreference,
+      selectedModelId: "gpt-5.6-sol",
+      updatedAt: "2026-09-07T11:00:00.000Z",
+    };
+    await renderPanel({ connectionLoading: true });
+    expect(container.querySelector(".state-marker")?.textContent).toContain("Checking");
+
+    await renderPanel({
+      connection: {
+        ...connection,
+        state: "action_required",
+        reason: "authentication_required",
+        models: [],
+        account: null,
+        usage: null,
+      },
+      connectionLoading: false,
+      loadPreference: vi.fn().mockResolvedValue(savedPreference),
+    });
+    await act(async () => Promise.resolve());
+    expect(container.textContent).toContain("Codex authentication is required");
+
+    await renderPanel({
+      connection: {
+        ...connection,
+        state: "action_required",
+        reason: "model_catalog_empty",
+        models: [],
+      },
+      loadPreference: vi.fn().mockResolvedValue(savedPreference),
+    });
+    await act(async () => Promise.resolve());
+    expect(container.textContent).toContain("No picker-visible models");
+    expect(container.querySelector<HTMLSelectElement>("#codex-review-model")?.disabled).toBe(true);
+  });
 });

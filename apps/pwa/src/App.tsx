@@ -716,7 +716,6 @@ export function App() {
                 <CodexSubscriptionConnectionPanel
                   online={online}
                   onAuthenticationError={handleAuthenticationBoundaryError}
-                  showReviewModel
                 />
               </>
             }

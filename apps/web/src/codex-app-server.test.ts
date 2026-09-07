@@ -24,6 +24,7 @@ type FailureMode =
   | "crashed"
   | "credential_field"
   | "escaped_pipe"
+  | "empty_models"
   | "logged_out"
   | "malformed"
   | "old_version"
@@ -100,7 +101,7 @@ lines.on("line", (line) => {
   } else if (message.method === "model/list") {
     const secondPage = mode === "paginated" && message.params.cursor === "page-2";
     console.log(JSON.stringify({ id: message.id, result: {
-      data: [{
+      data: mode === "empty_models" ? [] : [{
         id: secondPage ? "gpt-5.6-terra" : "gpt-5.6-sol",
         model: secondPage ? "gpt-5.6-terra" : "gpt-5.6-sol",
         displayName: secondPage ? "GPT-5.6 Terra" : "GPT-5.6 Sol",
@@ -359,6 +360,20 @@ lines.on("close", () => {
       ],
     });
     expect((await readFile(fixture.logPath, "utf8")).match(/model\/list/gu)).toHaveLength(2);
+  });
+
+  it("reports an empty validated model catalog as an actionable state", async () => {
+    const fixture = await writeFailureFake("empty_models");
+
+    const connection = await fixture.runtime.readConnection();
+
+    expect(connection).toMatchObject({
+      state: "action_required",
+      reason: "model_catalog_empty",
+      models: [],
+      account: { authentication: "chatgpt" },
+      usage: { availability: "available" },
+    });
   });
 
   it("keeps cleanup bounded when an escaped process retains the stdout pipe", async () => {

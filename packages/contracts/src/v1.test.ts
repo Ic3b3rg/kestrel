@@ -454,6 +454,15 @@ describe("V1 public contracts", () => {
         reason: "authentication_required",
       }),
     ).toThrow("completed validated probe");
+
+    expect(
+      CodexSubscriptionConnectionSchema.parse({
+        ...connection,
+        state: "action_required",
+        reason: "model_catalog_empty",
+        models: [],
+      }),
+    ).toMatchObject({ state: "action_required", reason: "model_catalog_empty", models: [] });
   });
 
   it("accepts only a safe Codex model preference with coherent persistence facts", () => {

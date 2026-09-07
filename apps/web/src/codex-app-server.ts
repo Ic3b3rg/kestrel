@@ -388,7 +388,6 @@ async function readAvailableModels(
       { cursor, includeHidden: false, limit: MODEL_PAGE_SIZE },
       ModelListResultSchema,
     );
-    if (result.data.length === 0) throw new CodexAppServerError("invalid_response");
     models.push(...result.data);
 
     const nextCursor: string | null = result.nextCursor ?? null;
@@ -398,6 +397,7 @@ async function readAvailableModels(
       }
       return { models, nextRequestId: 3 + page };
     }
+    if (result.data.length === 0) throw new CodexAppServerError("invalid_response");
     if (seenCursors.has(nextCursor)) throw new CodexAppServerError("invalid_response");
     seenCursors.add(nextCursor);
     cursor = nextCursor;
@@ -543,11 +543,13 @@ export function createCodexAppServerAgentRuntime(
         }
         const usage = normalizeUsage(rateLimits.rateLimits);
         const reason =
-          usage.availability === "waiting_for_usage_reset"
-            ? ("waiting_for_usage_reset" as const)
-            : usage.availability === "usage_limit_reached_action_required"
-              ? ("usage_limit_reached" as const)
-              : null;
+          modelResult.models.length === 0
+            ? ("model_catalog_empty" as const)
+            : usage.availability === "waiting_for_usage_reset"
+              ? ("waiting_for_usage_reset" as const)
+              : usage.availability === "usage_limit_reached_action_required"
+                ? ("usage_limit_reached" as const)
+                : null;
         return CodexSubscriptionConnectionSchema.parse({
           schemaVersion: 1,
           state:

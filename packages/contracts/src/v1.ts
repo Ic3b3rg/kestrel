@@ -210,6 +210,7 @@ export const CodexSubscriptionConnectionReasonSchema = z.enum([
   "chatgpt_subscription_required",
   "cli_not_installed",
   "cli_version_unsupported",
+  "model_catalog_empty",
   "protocol_unsupported",
   "timed_out",
   "unexpected_response",
@@ -323,19 +324,25 @@ export const CodexSubscriptionConnectionSchema = z
       });
     }
 
-    const usableRuntime =
+    const validatedAccount =
       connection.cli?.supported === true &&
       connection.account !== null &&
-      connection.models.length > 0 &&
       connection.usage !== null;
+    const usableRuntime = validatedAccount && connection.models.length > 0;
+    const validatedEmptyCatalog =
+      validatedAccount &&
+      connection.models.length === 0 &&
+      connection.reason === "model_catalog_empty";
     const incompleteProbe =
       connection.reason !== null &&
+      connection.reason !== "model_catalog_empty" &&
       connection.reason !== "waiting_for_usage_reset" &&
       connection.reason !== "usage_limit_reached";
     if (
       ((connection.state === "ready" || connection.state === "waiting_for_usage_reset") &&
         !usableRuntime) ||
       (connection.reason === "usage_limit_reached" && !usableRuntime) ||
+      (connection.reason === "model_catalog_empty" && !validatedEmptyCatalog) ||
       (incompleteProbe &&
         (connection.account !== null ||
           connection.models.length > 0 ||

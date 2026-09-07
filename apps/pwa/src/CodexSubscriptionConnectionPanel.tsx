@@ -33,6 +33,8 @@ const remediation: Record<CodexSubscriptionConnectionReason, ReactNode> = {
       newer.
     </>
   ),
+  model_catalog_empty:
+    "Codex reported no picker-visible models. Refresh the live catalog or update Codex.",
   protocol_unsupported: (
     <>
       Run <code>npm install -g @openai/codex@latest</code>, then verify the App Server handshake
@@ -55,7 +57,6 @@ export interface CodexSubscriptionConnectionPanelProps {
   loadConnection?: (signal?: AbortSignal) => Promise<CodexSubscriptionConnection>;
   onAuthenticationError?: (error: unknown) => boolean;
   online: boolean;
-  showReviewModel?: boolean;
 }
 
 function titleCase(value: string): string {
@@ -83,7 +84,6 @@ export function CodexSubscriptionConnectionPanel({
   loadConnection = fetchCodexSubscriptionConnection,
   onAuthenticationError,
   online,
-  showReviewModel = false,
 }: CodexSubscriptionConnectionPanelProps) {
   const [connection, setConnection] = useState<CodexSubscriptionConnection | null>(null);
   const [loading, setLoading] = useState(false);
@@ -267,15 +267,13 @@ export function CodexSubscriptionConnectionPanel({
           <p className="connection-remediation">{recovery}</p>
         )}
       </section>
-      {showReviewModel ? (
-        <CodexReviewModelPanel
-          connection={connection}
-          connectionLoading={loading}
-          online={online}
-          onVerify={() => void verify()}
-          {...(onAuthenticationError === undefined ? {} : { onAuthenticationError })}
-        />
-      ) : null}
+      <CodexReviewModelPanel
+        connection={connection}
+        connectionLoading={loading}
+        online={online}
+        onVerify={() => void verify()}
+        {...(onAuthenticationError === undefined ? {} : { onAuthenticationError })}
+      />
     </>
   );
 }

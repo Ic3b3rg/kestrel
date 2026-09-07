@@ -641,6 +641,7 @@
                 "chatgpt_subscription_required",
                 "cli_not_installed",
                 "cli_version_unsupported",
+                "model_catalog_empty",
                 "protocol_unsupported",
                 "timed_out",
                 "unexpected_response",

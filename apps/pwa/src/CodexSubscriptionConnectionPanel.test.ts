@@ -72,6 +72,22 @@ describe("Codex subscription Connection Settings", () => {
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              schemaVersion: 1,
+              route: "codex_subscription",
+              selectedModelId: null,
+              updatedAt: null,
+            }),
+            { headers: { "content-type": "application/json" } },
+          ),
+        ),
+      ),
+    );
   });
 
   afterEach(async () => {
@@ -80,6 +96,7 @@ describe("Codex subscription Connection Settings", () => {
       await Promise.resolve();
     });
     container.remove();
+    vi.unstubAllGlobals();
   });
 
   async function renderPanel(

@@ -29,6 +29,8 @@ const connectionMessages: Partial<
   chatgpt_subscription_required: "A ChatGPT subscription connection is required for this route.",
   cli_not_installed: "Install Codex before loading the model catalog.",
   cli_version_unsupported: "Update Codex before loading the model catalog.",
+  model_catalog_empty:
+    "No picker-visible models are available. Refresh the live catalog or update Codex.",
   protocol_unsupported: "Update Codex to a compatible App Server protocol.",
   timed_out: "The Codex model catalog timed out.",
   unexpected_response: "Codex returned an invalid model catalog.",
@@ -171,7 +173,8 @@ export function CodexReviewModelPanel({
     preference?.selectedModelId !== null &&
     preference?.selectedModelId !== undefined &&
     savedModel === null &&
-    !connectionLoading;
+    !connectionLoading &&
+    models.length > 0;
 
   return (
     <section
