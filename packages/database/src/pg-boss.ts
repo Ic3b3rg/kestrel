@@ -3,6 +3,13 @@ import type { PoolClient } from "pg";
 
 export const DIAGNOSTIC_QUEUE = "installation-diagnostic-v1";
 export const CHANGE_OVERVIEW_RENDER_QUEUE = "change-overview-render-v1";
+export const FACTORY_PLANNING_QUEUE = "factory-planning-v1";
+export const FACTORY_PLANNING_QUEUE_OPTIONS = {
+  deleteAfterSeconds: 86_400,
+  expireInSeconds: 240,
+  retryLimit: 0,
+  notify: true,
+} satisfies Omit<Queue, "name">;
 
 export const CHANGE_OVERVIEW_RENDER_QUEUE_UPDATE_OPTIONS = {
   deleteAfterSeconds: 86_400,

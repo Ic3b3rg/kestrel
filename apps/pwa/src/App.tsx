@@ -1,7 +1,11 @@
 import { Button } from "./components/ui/button.js";
+import { FeatureNavigation } from "./FeatureNavigation.js";
+import { FeatureChatPanel } from "./FeatureChatPanel.js";
+import { readFeatureNavigation, saveFeatureNavigation } from "./feature-navigation.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type {
+  Feature,
   ChangeIntentVersionCreated,
   DirectApiProfile,
   InstallationEvent,
@@ -29,7 +33,7 @@ import {
   type EventConnectionState,
 } from "./api.js";
 import { ProjectSettingsPanel } from "./ProjectSettingsPanel.js";
-import { AuthenticatedShell } from "./AuthenticatedShell.js";
+import { AuthenticatedShell, projectLabel } from "./AuthenticatedShell.js";
 import { appPath, readAppRoute, type AppRoute } from "./app-route.js";
 import { InstallationView, type PwaConnectionState } from "./InstallationView.js";
 import { CodexSubscriptionConnectionPanel } from "./CodexSubscriptionConnectionPanel.js";
@@ -164,6 +168,7 @@ function hasPendingChangeOverviewRendering(inbox: ProjectInbox | null): boolean 
 }
 
 export function App() {
+  const [projectFeatureIds, setProjectFeatureIds] = useState(readFeatureNavigation);
   const [route, setRoute] = useState<AppRoute>(() =>
     readAppRoute(window.location.pathname, window.location.search),
   );
@@ -192,6 +197,46 @@ export function App() {
   const projectCommandController = useRef<AbortController | null>(null);
   const projectInboxController = useRef<AbortController | null>(null);
   const securityController = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    saveFeatureNavigation(projectFeatureIds);
+  }, [projectFeatureIds]);
+  useEffect(() => {
+    if (session === null)
+      setProjectFeatureIds((current) => (Object.keys(current).length === 0 ? current : {}));
+  }, [session]);
+  const rememberFeature = useCallback(
+    (feature: Feature) => {
+      const aliasedProject =
+        route.kind === "feature" &&
+        route.featureId === feature.id &&
+        route.projectId !== feature.projectId;
+      setProjectFeatureIds((current) => {
+        if (!aliasedProject && current[feature.projectId] === feature.id) return current;
+        const retained = aliasedProject
+          ? Object.fromEntries(Object.entries(current).filter(([id]) => id !== route.projectId))
+          : current;
+        return { ...retained, [feature.projectId]: feature.id };
+      });
+      if (aliasedProject) {
+        const canonicalRoute = {
+          kind: "feature" as const,
+          projectId: feature.projectId,
+          featureId: feature.id,
+        };
+        window.history.replaceState(null, "", appPath(canonicalRoute));
+        setRoute(canonicalRoute);
+      }
+    },
+    [route],
+  );
+  const forgetFeature = useCallback((projectId: string, featureId: string) => {
+    setProjectFeatureIds((current) =>
+      current[projectId] !== featureId
+        ? current
+        : Object.fromEntries(Object.entries(current).filter(([id]) => id !== projectId)),
+    );
+  }, []);
 
   const navigate = useCallback((nextRoute: Exclude<AppRoute, { kind: "not_found" }>) => {
     const path = appPath(nextRoute);
@@ -691,9 +736,11 @@ export function App() {
   }
 
   const selectedProject =
-    route.kind === "project"
+    route.kind === "project" || route.kind === "feature"
       ? (projectInbox?.projects.find((project) => project.id === route.projectId) ?? null)
       : null;
+  const navigationProjectId = "projectId" in route ? route.projectId : undefined;
+  const navigationProject = projectInbox?.projects.find(({ id }) => id === navigationProjectId);
   const projectWorkspace =
     selectedProject === null ? null : (
       <ProjectInboxPanel
@@ -827,6 +874,22 @@ export function App() {
             </Button>
           </section>
         );
+      case "feature":
+        return (
+          <FeatureChatPanel
+            key={`${route.projectId}/${route.featureId}`}
+            projectId={route.projectId}
+            projectName={
+              navigationProject === undefined ? "Project" : projectLabel(navigationProject)
+            }
+            featureId={route.featureId}
+            online={online}
+            onNavigate={navigate}
+            onAuthenticationError={handleAuthenticationBoundaryError}
+            onFeatureRead={rememberFeature}
+            onFeatureUnavailable={forgetFeature}
+          />
+        );
       case "not_found":
         return (
           <section className="workspace-state">
@@ -857,6 +920,19 @@ export function App() {
       }
       operatorUsername={session.operator.username}
       route={route}
+      projectFeatureIds={projectFeatureIds}
+      projectNavigation={
+        navigationProject === undefined ? null : (
+          <FeatureNavigation
+            key={navigationProject.id}
+            projectId={navigationProject.id}
+            {...(route.kind === "feature" ? { selectedFeatureId: route.featureId } : {})}
+            online={online}
+            onNavigate={navigate}
+            onAuthenticationError={handleAuthenticationBoundaryError}
+          />
+        )
+      }
       onNavigate={navigate}
       onRetry={() => setProjectReloadGeneration((generation) => generation + 1)}
     >

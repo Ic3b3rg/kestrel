@@ -40,6 +40,7 @@ export interface AuthenticatedShellProps {
   onRetry: () => void;
   /** Project-scoped navigation, such as Planning Sessions, supplied by its owning feature. */
   projectNavigation?: ReactNode;
+  projectFeatureIds?: Readonly<Record<string, string>>;
 }
 
 const connectionLabels: Record<PwaConnectionState, string> = {
@@ -73,10 +74,12 @@ function WorkspaceShell(props: AuthenticatedShellProps) {
   const { openMobile, setOpenMobile } = useSidebar();
   const navigationTrigger = useRef<HTMLButtonElement>(null);
   const workspace = useRef<HTMLElement>(null);
-  const focusWorkspaceAfterClose = useRef(false);
+  const routeWhenOpened = useRef(props.route);
   useEffect(() => setOpenMobile(false), [props.route, setOpenMobile]);
   const currentProjectId =
-    props.route.kind === "project" || props.route.kind === "settings"
+    props.route.kind === "project" ||
+    props.route.kind === "feature" ||
+    props.route.kind === "settings"
       ? props.route.projectId
       : undefined;
   const settingsRoute = {
@@ -86,7 +89,6 @@ function WorkspaceShell(props: AuthenticatedShellProps) {
   const navigate = (route: NavigableRoute) => (event: MouseEvent<HTMLAnchorElement>) => {
     if (!shouldHandleNavigation(event)) return;
     event.preventDefault();
-    if (openMobile) focusWorkspaceAfterClose.current = true;
     setOpenMobile(false);
     props.onNavigate(route);
   };
@@ -97,12 +99,13 @@ function WorkspaceShell(props: AuthenticatedShellProps) {
         className="project-rail"
         aria-label="Workspace navigation"
         role="complementary"
+        onMobileOpenAutoFocus={() => {
+          routeWhenOpened.current = props.route;
+        }}
         onMobileCloseAutoFocus={(event) => {
           event.preventDefault();
-          const target = focusWorkspaceAfterClose.current
-            ? workspace.current
-            : navigationTrigger.current;
-          focusWorkspaceAfterClose.current = false;
+          const target =
+            props.route !== routeWhenOpened.current ? workspace.current : navigationTrigger.current;
           target?.focus();
         }}
       >
@@ -156,6 +159,11 @@ function WorkspaceShell(props: AuthenticatedShellProps) {
                   <SidebarMenu>
                     {props.inbox.projects.map((project) => {
                       const selected = currentProjectId === project.id;
+                      const featureId = props.projectFeatureIds?.[project.id];
+                      const projectRoute: NavigableRoute =
+                        featureId === undefined
+                          ? { kind: "project", projectId: project.id }
+                          : { kind: "feature", projectId: project.id, featureId };
                       return (
                         <SidebarMenuItem key={project.id}>
                           <SidebarMenuButton
@@ -164,11 +172,11 @@ function WorkspaceShell(props: AuthenticatedShellProps) {
                             className="h-auto min-h-11 py-2"
                           >
                             <a
-                              href={appPath({ kind: "project", projectId: project.id })}
+                              href={appPath(projectRoute)}
                               aria-current={
                                 selected && props.route.kind === "project" ? "page" : undefined
                               }
-                              onClick={navigate({ kind: "project", projectId: project.id })}
+                              onClick={navigate(projectRoute)}
                             >
                               <FolderGit2 aria-hidden="true" className="text-muted-foreground" />
                               <span className="min-w-0 flex-1">

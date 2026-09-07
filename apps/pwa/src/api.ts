@@ -2,6 +2,13 @@ import { createParser } from "eventsource-parser";
 
 import {
   ApiErrorSchema,
+  CreateFeatureCommandSchema,
+  FeatureSchema,
+  FeatureListSchema,
+  FeatureChatSchema,
+  PlanningTurnAcceptedSchema,
+  SendPlanningMessageCommandSchema,
+  RetryPlanningTurnCommandSchema,
   ChangeIntentVersionCreatedSchema,
   CodexReviewModelPreferenceSchema,
   CodexSubscriptionConnectionSchema,
@@ -36,6 +43,11 @@ import {
   StepUpProofSchema,
   StartReviewWorkflowCommandSchema,
   type ApiError,
+  type CreateFeatureCommand,
+  type Feature,
+  type FeatureChat,
+  type PlanningTurnAccepted,
+  type SendPlanningMessageCommand,
   type ChangeIntentVersionCreated,
   type CodexReviewModelPreference,
   type CodexSubscriptionConnection,
@@ -188,6 +200,97 @@ export async function fetchProjectInbox(signal?: AbortSignal): Promise<ProjectIn
     signal: signal ?? null,
   });
   return requireJson(response, ProjectInboxSchema, "Project inbox");
+}
+
+function featurePath(projectId: string, featureId?: string): string {
+  const path = `/api/v1/projects/${encodeURIComponent(KestrelIdSchema.parse(projectId))}/features`;
+  return featureId === undefined
+    ? path
+    : `${path}/${encodeURIComponent(KestrelIdSchema.parse(featureId))}`;
+}
+
+export async function fetchFeatures(projectId: string, signal?: AbortSignal) {
+  const response = await fetch(featurePath(projectId), {
+    credentials: "same-origin",
+    headers: { Accept: "application/json" },
+    signal: signal ?? null,
+  });
+  return requireJson(response, FeatureListSchema, "feature list");
+}
+
+export async function createFeature(
+  projectId: string,
+  command: CreateFeatureCommand,
+): Promise<Feature> {
+  const response = await fetch(featurePath(projectId), {
+    method: "POST",
+    credentials: "same-origin",
+    headers: authenticatedMutationHeaders(),
+    body: JSON.stringify(CreateFeatureCommandSchema.parse(command)),
+  });
+  return requireJson(response, FeatureSchema, "feature");
+}
+
+export async function fetchFeatureChat(
+  projectId: string,
+  featureId: string,
+  signal?: AbortSignal,
+): Promise<FeatureChat> {
+  const response = await fetch(featurePath(projectId, featureId), {
+    credentials: "same-origin",
+    headers: { Accept: "application/json" },
+    signal: signal ?? null,
+  });
+  return requireJson(response, FeatureChatSchema, "feature chat");
+}
+
+export async function sendPlanningMessage(
+  projectId: string,
+  featureId: string,
+  command: SendPlanningMessageCommand,
+): Promise<PlanningTurnAccepted> {
+  const response = await fetch(`${featurePath(projectId, featureId)}/messages`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: authenticatedMutationHeaders(),
+    body: JSON.stringify(SendPlanningMessageCommandSchema.parse(command)),
+  });
+  return requireJson(response, PlanningTurnAcceptedSchema, "accepted planning turn");
+}
+
+export async function retryPlanningTurn(
+  projectId: string,
+  featureId: string,
+  turnId: string,
+  command: { requestId: string },
+): Promise<PlanningTurnAccepted> {
+  const response = await fetch(
+    `${featurePath(projectId, featureId)}/turns/${encodeURIComponent(KestrelIdSchema.parse(turnId))}/retry`,
+    {
+      method: "POST",
+      credentials: "same-origin",
+      headers: authenticatedMutationHeaders(),
+      body: JSON.stringify(RetryPlanningTurnCommandSchema.parse(command)),
+    },
+  );
+  return requireJson(response, PlanningTurnAcceptedSchema, "accepted planning retry");
+}
+
+export async function cancelPlanningTurn(
+  projectId: string,
+  featureId: string,
+  turnId: string,
+): Promise<FeatureChat> {
+  const response = await fetch(
+    `${featurePath(projectId, featureId)}/turns/${encodeURIComponent(KestrelIdSchema.parse(turnId))}/cancel`,
+    {
+      method: "POST",
+      credentials: "same-origin",
+      headers: authenticatedMutationHeaders(),
+      body: JSON.stringify({}),
+    },
+  );
+  return requireJson(response, FeatureChatSchema, "stopped planning turn");
 }
 
 export async function fetchHostGitHubConnection(

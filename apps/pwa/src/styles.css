@@ -2639,3 +2639,217 @@
     min-height: 2rem;
   }
 }
+
+@layer components {
+  .feature-planning {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    max-width: 70rem;
+    min-height: calc(100dvh - 6rem);
+    margin: 0 auto;
+  }
+  .feature-planning-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .feature-planning-header > div {
+    min-width: 0;
+  }
+  .feature-planning-header a {
+    color: var(--muted-foreground);
+    font-size: 0.8125rem;
+  }
+  .feature-planning-header h1 {
+    margin: 0.35rem 0;
+    font-size: 1.5rem;
+    line-height: 1.35;
+  }
+  .feature-planning-header p {
+    margin: 0;
+    color: var(--muted-foreground);
+    font-size: 0.8125rem;
+  }
+  .feature-planning-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .planning-empty {
+    max-width: 65ch;
+    padding: 2.5rem 0;
+  }
+  .planning-empty h2 {
+    font-size: 1.25rem;
+    margin-bottom: 0.75rem;
+  }
+  .planning-empty p {
+    color: var(--muted-foreground);
+  }
+  .planning-messages {
+    display: grid;
+    gap: 1.75rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .planning-message {
+    min-width: 0;
+  }
+  .planning-message article {
+    max-width: 75ch;
+  }
+  .planning-message header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+  }
+  .planning-message time {
+    color: var(--muted-foreground);
+    font-size: 0.75rem;
+  }
+  .planning-message-content {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    line-height: 1.7;
+  }
+  .planning-message-user article {
+    padding: 1rem 1.25rem;
+    border-radius: 0.75rem;
+    background: var(--card);
+  }
+  .planning-turn-state {
+    display: grid;
+    gap: 0.5rem;
+    max-width: 75ch;
+    margin-top: 1rem;
+    padding: 0.75rem 0;
+  }
+  .planning-turn-state > p {
+    margin: 0;
+    color: var(--muted-foreground);
+  }
+  .planning-turn-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem;
+  }
+  .planning-turn-actions a {
+    text-decoration: underline;
+  }
+  .planning-question {
+    margin: 0.25rem 0;
+    padding: 1rem;
+    border-radius: 0.75rem;
+    background: var(--muted);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .planning-error {
+    color: var(--danger);
+  }
+  .planning-command-error {
+    display: grid;
+    gap: 0.75rem;
+    justify-items: start;
+    padding: 1rem;
+    background: var(--danger-surface);
+    color: var(--danger);
+    border-radius: 0.75rem;
+  }
+  .planning-command-error p {
+    margin: 0;
+  }
+  .planning-notice {
+    margin: 0;
+    padding: 0.75rem 1rem;
+    background: var(--warning-surface);
+    color: var(--warning);
+    border-radius: 0.5rem;
+  }
+  .planning-composer {
+    display: grid;
+    gap: 0.75rem;
+    margin-top: auto;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+  }
+  .planning-composer textarea {
+    min-height: 6rem;
+    max-height: 18rem;
+  }
+  .planning-composer-footer {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  .planning-composer-footer p {
+    max-width: 50ch;
+    margin: 0;
+    color: var(--muted-foreground);
+    font-size: 0.75rem;
+  }
+  .planning-documents-layout {
+    display: grid;
+    grid-template-columns: minmax(10rem, 0.4fr) minmax(0, 1fr);
+    gap: 1.5rem;
+  }
+  .planning-document-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    align-self: start;
+  }
+  .planning-document {
+    min-width: 0;
+  }
+  .planning-document h3 {
+    margin-bottom: 0.75rem;
+  }
+  .planning-document pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-height: 55dvh;
+    overflow-y: auto;
+    padding: 1rem;
+    background: var(--background);
+    border-radius: 0.5rem;
+    font-size: 0.8125rem;
+  }
+  .planning-source-commit {
+    margin: 0;
+    color: var(--muted-foreground);
+    font-size: 0.75rem;
+  }
+  @media (max-width: 47.99rem) {
+    .feature-planning {
+      min-height: calc(100dvh - 8rem);
+    }
+    .feature-planning-header h1 {
+      font-size: 1.375rem;
+    }
+    .planning-documents-layout {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .planning-document-list {
+      max-height: 10rem;
+      overflow-y: auto;
+    }
+    .planning-message-user article {
+      padding: 0.875rem;
+    }
+    .planning-composer-footer > button {
+      margin-left: auto;
+    }
+  }
+}

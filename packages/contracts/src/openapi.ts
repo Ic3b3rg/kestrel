@@ -1,6 +1,16 @@
 import { z, type ZodType } from "zod";
 
 import {
+  CreateFeatureCommandSchema,
+  FeatureSchema,
+  FeatureListSchema,
+  FeatureChatSchema,
+  SendPlanningMessageCommandSchema,
+  RetryPlanningTurnCommandSchema,
+  PlanningTurnAcceptedSchema,
+} from "./factory.js";
+
+import {
   ApiErrorSchema,
   ChangeIntentVersionCreatedSchema,
   CodexReviewModelPreferenceSchema,
@@ -124,8 +134,19 @@ export const reviewPreparationJsonSchema = asJsonSchema(ReviewPreparationSchema)
 export const reviewWorkflowAcceptedJsonSchema = asJsonSchema(ReviewWorkflowAcceptedSchema);
 export const startReviewWorkflowCommandJsonSchema = asJsonSchema(StartReviewWorkflowCommandSchema);
 
+const factoryComponents = {
+  CreateFeatureCommand: asComponentSchema(asJsonSchema(CreateFeatureCommandSchema)),
+  Feature: asComponentSchema(asJsonSchema(FeatureSchema)),
+  FeatureList: asComponentSchema(asJsonSchema(FeatureListSchema)),
+  FeatureChat: asComponentSchema(asJsonSchema(FeatureChatSchema)),
+  SendPlanningMessageCommand: asComponentSchema(asJsonSchema(SendPlanningMessageCommandSchema)),
+  RetryPlanningTurnCommand: asComponentSchema(asJsonSchema(RetryPlanningTurnCommandSchema)),
+  PlanningTurnAccepted: asComponentSchema(asJsonSchema(PlanningTurnAcceptedSchema)),
+};
+
 export const contractBundle = sortJson({
   $defs: {
+    ...factoryComponents,
     ApiError: asComponentSchema(apiErrorJsonSchema),
     DiagnosticAccepted: asComponentSchema(diagnosticAcceptedJsonSchema),
     DiagnosticCommand: asComponentSchema(diagnosticCommandJsonSchema),
@@ -205,9 +226,56 @@ function authenticatedMutationHeaders(includeStepUp: boolean): JsonValue[] {
   return headers;
 }
 
+const factoryErrors: JsonObject = Object.fromEntries(
+  [400, 401, 403, 404, 409, 413, 415, 500, 503].map((status) => [
+    String(status),
+    {
+      description: "The Factory command was rejected or could not be completed",
+      content: { "application/json": { schema: schemaReference("ApiError") } },
+    },
+  ]),
+);
+
+function factoryTurnMutation(
+  operationId: string,
+  inputSchema?: string,
+  outputSchema = "PlanningTurnAccepted",
+  status = 202,
+): JsonObject {
+  return {
+    operationId,
+    parameters: authenticatedMutationHeaders(false),
+    ...(inputSchema === undefined
+      ? {}
+      : {
+          requestBody: {
+            required: true,
+            content: { "application/json": { schema: schemaReference(inputSchema) } },
+          },
+        }),
+    responses: {
+      ...factoryErrors,
+      [String(status)]: {
+        description: "Durable Factory result",
+        content: { "application/json": { schema: schemaReference(outputSchema) } },
+      },
+    },
+  };
+}
+
+function factoryParameters(withTurn = false): JsonValue[] {
+  return ["projectId", "featureId", ...(withTurn ? ["turnId"] : [])].map((name) => ({
+    in: "path",
+    name,
+    required: true,
+    schema: { type: "string", format: "uuid" },
+  }));
+}
+
 export const openApiDocument = sortJson({
   components: {
     schemas: {
+      ...factoryComponents,
       ApiError: asComponentSchema(apiErrorJsonSchema),
       DiagnosticAccepted: asComponentSchema(diagnosticAcceptedJsonSchema),
       DiagnosticCommand: asComponentSchema(diagnosticCommandJsonSchema),
@@ -791,6 +859,82 @@ export const openApiDocument = sortJson({
           },
         },
       },
+    },
+    "/api/v1/projects/{projectId}/features": {
+      parameters: [
+        {
+          in: "path",
+          name: "projectId",
+          required: true,
+          schema: { type: "string", format: "uuid" },
+        },
+      ],
+      get: {
+        operationId: "listFeatures",
+        summary: "List durable Project feature chats",
+        responses: {
+          ...factoryErrors,
+          "200": {
+            description: "Feature chats",
+            content: { "application/json": { schema: schemaReference("FeatureList") } },
+          },
+        },
+      },
+      post: {
+        operationId: "createFeature",
+        summary: "Create an idempotent feature Planning Session",
+        parameters: authenticatedMutationHeaders(false),
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: schemaReference("CreateFeatureCommand") } },
+        },
+        responses: {
+          ...factoryErrors,
+          "201": {
+            description: "Persisted feature",
+            content: { "application/json": { schema: schemaReference("Feature") } },
+          },
+        },
+      },
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}": {
+      parameters: [
+        {
+          in: "path",
+          name: "projectId",
+          required: true,
+          schema: { type: "string", format: "uuid" },
+        },
+        {
+          in: "path",
+          name: "featureId",
+          required: true,
+          schema: { type: "string", format: "uuid" },
+        },
+      ],
+      get: {
+        operationId: "readFeatureChat",
+        summary: "Reload a durable feature conversation",
+        responses: {
+          ...factoryErrors,
+          "200": {
+            description: "Saved conversation",
+            content: { "application/json": { schema: schemaReference("FeatureChat") } },
+          },
+        },
+      },
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/messages": {
+      parameters: factoryParameters(),
+      post: factoryTurnMutation("sendPlanningMessage", "SendPlanningMessageCommand"),
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/turns/{turnId}/retry": {
+      parameters: factoryParameters(true),
+      post: factoryTurnMutation("retryPlanningTurn", "RetryPlanningTurnCommand"),
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/turns/{turnId}/cancel": {
+      parameters: factoryParameters(true),
+      post: factoryTurnMutation("cancelPlanningTurn", undefined, "FeatureChat", 200),
     },
     "/api/v1/projects": {
       get: {

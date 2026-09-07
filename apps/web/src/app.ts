@@ -6,6 +6,7 @@ import { ApiErrorSchema } from "@kestrel/contracts";
 import type { DatabasePool, DiagnosticJobSender } from "@kestrel/database";
 
 import { registerDiagnosticRoutes } from "./routes/diagnostics.js";
+import { registerFactoryPlanningRoutes } from "./routes/factory-planning.js";
 import {
   createCodexAppServerAgentRuntime,
   type CodexAgentRuntimePort,
@@ -225,6 +226,7 @@ export async function buildApp({
   registerOperatorSecurityRoutes(app, pool, sessionSigningKey);
 
   registerDiagnosticRoutes(app, pool, boss, eventRetentionLimit);
+  registerFactoryPlanningRoutes(app, pool, boss);
   registerEventRoutes(app, eventPool);
   registerHealthRoutes(app, pool);
   registerInstallationRoutes(app, pool);

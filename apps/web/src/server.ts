@@ -10,6 +10,10 @@ import { createDirectApiProfileService } from "./routes/direct-api-profiles.js";
 import { createDatabaseProjectService, createHostGitHubProjectService } from "./routes/projects.js";
 import { readSessionSigningKey } from "./session.js";
 import {
+  createFactoryPlanningProcessor,
+  FACTORY_PLANNING_WORK_OPTIONS,
+} from "./factory-planning.js";
+import {
   CHANGE_OVERVIEW_RENDER_WORK_OPTIONS,
   createChangeOverviewRenderer,
   createDatabaseChangeOverviewRenderingPersistence,
@@ -19,12 +23,14 @@ import {
   createPgBoss,
   createPool,
   CHANGE_OVERVIEW_RENDER_QUEUE,
+  FACTORY_PLANNING_QUEUE,
   readReferencedArtifactLocators,
   readDatabaseConfig,
   readEventRetentionLimit,
   openLocalProject,
   reconcileAcquiringRevisions,
   reconcileLocalSourceAttachments,
+  reconcilePlanningTurns,
   withArtifactLifecycleLock,
 } from "@kestrel/database";
 import { readLocalSourceConfig, reconcileArtifactRoot } from "@kestrel/local-source";
@@ -103,6 +109,10 @@ const changeOverviewRenderer = createChangeOverviewRenderer({
   persistence: createDatabaseChangeOverviewRenderingPersistence(pool),
   transport: openAiTransport,
 });
+const planningProcessor = createFactoryPlanningProcessor({
+  pool,
+  readSourceConfig: () => readLocalSourceConfig(),
+});
 boss.on("error", (error) => {
   app.log.error({ err: error, event: "pgboss.error" });
 });
@@ -131,6 +141,11 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 
 try {
   await boss.start();
+  await reconcilePlanningTurns(pool);
+  await boss.work<unknown>(FACTORY_PLANNING_QUEUE, FACTORY_PLANNING_WORK_OPTIONS, async (jobs) => {
+    const job = jobs[0];
+    if (job !== undefined) await planningProcessor.process(job.data, job.signal);
+  });
   await boss.work<unknown>(
     CHANGE_OVERVIEW_RENDER_QUEUE,
     CHANGE_OVERVIEW_RENDER_WORK_OPTIONS,
