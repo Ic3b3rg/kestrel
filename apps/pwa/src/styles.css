@@ -2698,7 +2698,8 @@ footer {
   letter-spacing: 0;
   font-family: inherit;
 }
-.pr-filters button[aria-pressed="true"] {
+.pr-filters button[aria-pressed="true"],
+.pr-filters button[aria-pressed="true"]:hover:not(:disabled) {
   background: var(--surface-muted);
   border-color: var(--line);
   color: var(--ink);

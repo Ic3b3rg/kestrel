@@ -429,7 +429,22 @@ test.describe("observable Installation PWA", () => {
       author: { login: "reviewer", providerId: "U_host_42" },
       canonicalUrl: "https://github.com/openai/openai-node/pull/42",
       changeIntent: null,
-      changeIntentCandidates: [],
+      changeIntentCandidates: [
+        {
+          id: "provider_description",
+          kind: "provider_field" as const,
+          label: "GitHub description",
+          text: "Long provider description.\n".repeat(80),
+          version: "2026-09-02T12:06:00.000Z",
+          provenance: {
+            canonicalUrl: "https://github.com/openai/openai-node/pull/42",
+            field: "description" as const,
+            kind: "provider_field" as const,
+            observedAt: "2026-09-02T12:06:00.000Z",
+            provider: "github" as const,
+          },
+        },
+      ],
       id: "018f0f89-9192-755f-aa96-f72094c734ab",
       number: 42,
       observedAt: "2026-09-02T12:06:00.000Z",
@@ -554,6 +569,10 @@ test.describe("observable Installation PWA", () => {
     await expect(panel.locator("tbody tr")).toHaveCount(1);
     await expect(panel.locator("tbody")).toContainText("#43");
     await panel.getByRole("button", { name: /^All/u }).click();
+    await panel.getByRole("button", { name: /^All/u }).hover();
+    expect((await new AxeBuilder({ page }).include(".pr-filters").analyze()).violations).toEqual(
+      [],
+    );
     for (const width of [1440, 3440]) {
       await page.setViewportSize({ width, height: 900 });
       const geometry = await page.evaluate(() => {
@@ -607,8 +626,20 @@ test.describe("observable Installation PWA", () => {
     ).toBeVisible();
     expect(inboxReadCount).toBe(inboxReadCountAfterRefresh);
     expect(revisionRequestCount).toBe(0);
+    const description = page
+      .locator(".intent-source-snapshot > span")
+      .filter({ hasText: "Long provider description." });
+    await description.focus();
+    await expect(description).toBeFocused();
+    await page.keyboard.press("End");
+    await expect
+      .poll(() => description.evaluate((element) => element.scrollTop))
+      .toBeGreaterThan(0);
 
-    const accessibility = await new AxeBuilder({ page }).include(".host-github-panel").analyze();
+    const accessibility = await new AxeBuilder({ page })
+      .include(".host-github-panel")
+      .include(".proposal-list")
+      .analyze();
     expect(accessibility.violations).toEqual([]);
     await page.setViewportSize({ height: 900, width: 320 });
     await expect(panel).toBeVisible();

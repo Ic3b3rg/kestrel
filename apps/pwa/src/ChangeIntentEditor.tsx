@@ -68,7 +68,7 @@ function SourceSnapshot({ source }: { source: ChangeIntentSource }) {
   return (
     <span className="intent-source-snapshot">
       <strong>{source.label}</strong>
-      <span>{source.text}</span>
+      <span tabIndex={0}>{source.text}</span>
       <small>
         {source.id} · version {source.version}
       </small>
