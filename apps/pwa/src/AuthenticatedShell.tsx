@@ -1,4 +1,4 @@
-import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useRef, type MouseEvent, type ReactNode } from "react";
 
 import type { ProjectInbox } from "@kestrel/contracts";
 
@@ -59,10 +59,12 @@ export function AuthenticatedShell(props: AuthenticatedShellProps) {
     kind: "settings" as const,
     ...(currentProjectId === undefined ? {} : { projectId: currentProjectId }),
   };
-  const [navigationOpen, setNavigationOpen] = useState(true);
+  const navigation = useRef<HTMLDetailsElement>(null);
   useEffect(() => {
     const desktop = window.matchMedia("(min-width: 64rem)");
-    const resize = () => setNavigationOpen(desktop.matches);
+    const resize = () => {
+      if (navigation.current !== null) navigation.current.open = desktop.matches;
+    };
     resize();
     desktop.addEventListener("change", resize);
     return () => desktop.removeEventListener("change", resize);
@@ -70,7 +72,9 @@ export function AuthenticatedShell(props: AuthenticatedShellProps) {
   const navigate = (route: NavigableRoute) => (event: MouseEvent<HTMLAnchorElement>) => {
     if (!shouldHandleNavigation(event)) return;
     event.preventDefault();
-    if (!window.matchMedia("(min-width: 64rem)").matches) setNavigationOpen(false);
+    if (!window.matchMedia("(min-width: 64rem)").matches && navigation.current !== null) {
+      navigation.current.open = false;
+    }
     props.onNavigate(route);
   };
 
@@ -80,11 +84,7 @@ export function AuthenticatedShell(props: AuthenticatedShellProps) {
         Skip to workspace
       </a>
       <div className="authenticated-shell">
-        <details
-          className="workspace-navigation"
-          open={navigationOpen}
-          onToggle={(event) => setNavigationOpen(event.currentTarget.open)}
-        >
+        <details className="workspace-navigation" ref={navigation}>
           <summary className="navigation-toggle">Kestrel · Projects &amp; Settings</summary>
           <aside className="project-rail" aria-labelledby="project-rail-title">
             <a className="wordmark wordmark-link" href="/" onClick={navigate({ kind: "projects" })}>

@@ -189,11 +189,11 @@ export function ChangeIntentEditor({
       <div className="intent-editor-heading">
         <div>
           <p>CHANGE INTENT · PROPOSAL VERSION {proposal.version}</p>
-          <h5>
+          <h3>
             {current === null
               ? "Curate the first version"
               : `Curate version ${String(current.version + 1)}`}
-          </h5>
+          </h3>
         </div>
         <strong className={draftResolved ? "intent-resolved" : "intent-unresolved"}>
           {draftResolved ? "Ready to resolve" : "Unresolved draft"}

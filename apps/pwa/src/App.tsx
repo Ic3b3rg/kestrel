@@ -556,7 +556,15 @@ export function App() {
     setProjectInbox((current) => withUpsertedProject(current, result.project));
     setProjectReloadGeneration((generation) => generation + 1);
     setProjectError(null);
-    navigate({ kind: "project", projectId: result.project.id });
+    navigate({
+      kind: "project",
+      projectId: result.project.id,
+      ...(route.kind === "project" &&
+      route.projectId === result.project.id &&
+      route.proposalId !== undefined
+        ? { proposalId: route.proposalId }
+        : {}),
+    });
     setAnnouncement("Project opened from the authorized local repository.");
   };
 

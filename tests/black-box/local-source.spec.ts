@@ -146,15 +146,16 @@ test.describe("local-first Project flow", () => {
     await expect(falconLink).toHaveAttribute("aria-current", "page");
 
     await page.setViewportSize({ height: 812, width: 375 });
+    await expect(page.locator(".workspace-navigation")).not.toHaveAttribute("open");
     await page.locator(".navigation-toggle").focus();
     await page.keyboard.press("Enter");
     await expect(projectNavigation).toBeVisible();
     await kestrelLink.focus();
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(kestrelUrl);
-    await expect(kestrelLink).toHaveAttribute("aria-current", "page");
-
+    await expect(page.locator(".workspace-navigation")).not.toHaveAttribute("open");
     await page.locator(".navigation-toggle").click();
+    await expect(kestrelLink).toHaveAttribute("aria-current", "page");
     const settingsLink = page.getByRole("link", { name: "Settings", exact: true });
     await settingsLink.focus();
     await page.keyboard.press("Enter");
@@ -182,7 +183,7 @@ test.describe("local-first Project flow", () => {
       await page.evaluate(() => ({ local: localStorage.length, session: sessionStorage.length })),
     ).toEqual({ local: 0, session: 0 });
 
-    await page.locator(".navigation-toggle").click();
+    if (!(await settingsLink.isVisible())) await page.locator(".navigation-toggle").click();
     await expect(settingsLink).toBeVisible();
     expect(
       await page.evaluate(

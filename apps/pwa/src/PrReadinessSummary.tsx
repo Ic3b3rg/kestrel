@@ -66,7 +66,7 @@ export function PrReadinessSummary({
     <section className="pr-readiness" aria-labelledby={`readiness-${proposal.id}`}>
       <div className="pr-readiness-heading">
         <div>
-          <h5 id={`readiness-${proposal.id}`}>PR readiness</h5>
+          <h3 id={`readiness-${proposal.id}`}>PR readiness</h3>
           <p>Independent prerequisites for a future review.</p>
         </div>
         <button

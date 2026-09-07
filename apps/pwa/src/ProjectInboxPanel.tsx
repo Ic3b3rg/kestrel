@@ -289,7 +289,7 @@ function ChangeProposalRecord({
         <div className="proposal-heading">
           <div>
             <p className="proposal-state">Local change proposal</p>
-            <h4 id={`proposal-${changeProposal.id}`}>{changeProposal.title}</h4>
+            <h2 id={`proposal-${changeProposal.id}`}>{changeProposal.title}</h2>
           </div>
         </div>
         <dl className="commit-pointer-list">
@@ -338,11 +338,11 @@ function ChangeProposalRecord({
       <div className="proposal-heading">
         <div>
           <p className="proposal-state">{proposalStateLabels[changeProposal.proposalState]}</p>
-          <h4 id={`proposal-${changeProposal.id}`}>
+          <h2 id={`proposal-${changeProposal.id}`}>
             <a href={changeProposal.canonicalUrl}>
               #{changeProposal.number} · {changeProposal.title}
             </a>
-          </h4>
+          </h2>
         </div>
         <button
           className="secondary-action proposal-refresh"
@@ -599,7 +599,8 @@ function ProjectRecord({
         className="proposal-list"
         ref={detail}
         tabIndex={-1}
-        aria-label="Selected change details"
+        role={selectedProposal === undefined ? undefined : "region"}
+        aria-label={selectedProposal === undefined ? undefined : "Selected change details"}
       >
         {selectedProposal === undefined ? null : (
           <button type="button" className="secondary-action" onClick={() => selectProposal(null)}>

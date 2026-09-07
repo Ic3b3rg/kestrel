@@ -282,7 +282,7 @@ export function ReviewPreparationPanel({
       <div className="review-preparation-heading">
         <div>
           <p>REVIEW INPUT BINDING</p>
-          <h5>Confirm exact inputs</h5>
+          <h3>Confirm exact inputs</h3>
         </div>
         {preparation === null ? null : (
           <strong className={preparation.readiness === "ready" ? "review-ready" : "review-blocked"}>
@@ -300,7 +300,7 @@ export function ReviewPreparationPanel({
         <>
           <ReviewInputFacts preparation={preparation} />
           <div className="review-blockers" aria-live="polite">
-            <h6>Review blockers</h6>
+            <h4>Review blockers</h4>
             {preparation.blockers.length === 0 ? (
               <p>No blockers. These exact inputs can be frozen.</p>
             ) : (
