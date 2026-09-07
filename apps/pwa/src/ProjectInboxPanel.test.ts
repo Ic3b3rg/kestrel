@@ -148,6 +148,7 @@ it("shows independent PR readiness facts without offering review execution befor
   expect(html).toContain("Project / repository");
   expect(html).toContain("Codex account");
   expect(html).toContain("Selected model");
+  expect(html).toContain("Attach local repository");
   expect(html).toContain("Review execution arrives in 0.2");
   expect(html).not.toContain("Prepare Review");
 });

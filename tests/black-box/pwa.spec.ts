@@ -1121,6 +1121,28 @@ test.describe("observable Installation PWA", () => {
     await page.route("**/api/v1/settings/review-model", (route) =>
       route.fulfill({ json: preference }),
     );
+    let attachedFromCorrection = false;
+    await page.route("**/api/v1/local-repository-sources", (route) =>
+      route.fulfill({
+        json: {
+          schemaVersion: 1,
+          inventoryState: "ready",
+          repositories: [
+            {
+              attachmentState: "unattached",
+              displayName: "openai-node",
+              repositoryId: source.repositoryId,
+            },
+          ],
+        },
+      }),
+    );
+    await page.route("**/api/v1/projects/local", async (route) => {
+      expect(route.request().postDataJSON()).toEqual({ repositoryId: source.repositoryId });
+      attachedFromCorrection = true;
+      currentProject = { ...currentProject, localRepositorySource: source };
+      await route.fulfill({ json: { schemaVersion: 1, project: currentProject } });
+    });
     await page.goto(stack.pwaUrl);
     await page.getByLabel("Username").fill(TEST_OPERATOR_CREDENTIALS.username);
     await page.getByLabel("Password").fill(TEST_OPERATOR_CREDENTIALS.password);
@@ -1149,8 +1171,18 @@ test.describe("observable Installation PWA", () => {
     await page.reload();
     await expect(fact("Local Repository Source")).toContainText("Detached");
     await expect(fact("Revision State")).toHaveText("Revision StateAvailable");
-    await readiness.getByRole("link", { name: "Open local repository", exact: true }).click();
-    await expect(page.locator("#local-source-setup")).toBeFocused();
+    await fact("Local Repository Source")
+      .getByRole("button", { name: "Attach local repository", exact: true })
+      .click();
+    const attachDialog = page.getByRole("dialog", { name: "Open an authorized repository" });
+    await expect(attachDialog.getByLabel("Base reference")).toHaveCount(0);
+    await expect(attachDialog.getByLabel("Change Intent")).toHaveCount(0);
+    await attachDialog.getByLabel("Repository", { exact: true }).selectOption(source.repositoryId);
+    await attachDialog.getByRole("button", { name: "Open selected Project" }).click();
+    await expect(attachDialog).toHaveCount(0);
+    await expect(fact("Local Repository Source")).toContainText("Attached");
+    expect(attachedFromCorrection).toBe(true);
+    await expect(fact("Revision State")).toHaveText("Revision StateAvailable");
 
     currentProject = {
       ...currentProject,

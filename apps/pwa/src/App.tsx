@@ -687,6 +687,7 @@ export function App() {
             );
           }}
           onLocalAvailable={handleLocalRevisionAvailable}
+          onProjectOpened={handleProjectOpened}
           onModelProfileChanged={(projectId, profile) => {
             setProjectInbox((current) => withDirectApiProfile(current, projectId, profile));
             setProjectReloadGeneration((generation) => generation + 1);

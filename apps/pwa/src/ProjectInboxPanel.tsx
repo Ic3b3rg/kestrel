@@ -5,11 +5,13 @@ import {
   type ChangeIntentVersionCreated,
   type DirectApiProfile,
   type ProjectInbox,
+  type ProjectUpserted,
   type PublicGitHubPullRequestUrl,
   type ReviewRevisionAvailable,
 } from "@kestrel/contracts";
 
 import { OpenLocalRepositoryForm } from "./OpenLocalRepositoryForm.js";
+import { OpenProjectForm } from "./OpenProjectForm.js";
 import { HostGitHubProjectPanel } from "./HostGitHubProjectPanel.js";
 import { AcquireObservedReviewRevisionForm } from "./AcquireObservedReviewRevisionForm.js";
 import { ChangeIntentEditor } from "./ChangeIntentEditor.js";
@@ -29,6 +31,7 @@ interface ProjectInboxPanelProps {
   pending: boolean;
   onAuthenticationError?: (error: unknown) => boolean;
   onLocalAvailable?: (result: ReviewRevisionAvailable) => void;
+  onProjectOpened?: (result: ProjectUpserted) => void;
   onModelProfileChanged?: (projectId: string, profile: DirectApiProfile) => void;
   onIntentCreated?: (result: ChangeIntentVersionCreated) => void;
   onOpen: (url: PublicGitHubPullRequestUrl) => void;
@@ -259,6 +262,7 @@ function ChangeProposalRecord({
   onAuthenticationError,
   onAvailable,
   onIntentCreated,
+  onProjectOpened,
   onRefresh,
   projectId,
 }: {
@@ -270,6 +274,7 @@ function ChangeProposalRecord({
   onAuthenticationError?: (error: unknown) => boolean;
   onAvailable: (result: ReviewRevisionAvailable) => void;
   onIntentCreated: (result: ChangeIntentVersionCreated) => void;
+  onProjectOpened: (result: ProjectUpserted) => void;
   onRefresh: () => void;
   projectId: string;
 }) {
@@ -354,6 +359,14 @@ function ChangeProposalRecord({
         disabled={disabled}
         project={project}
         proposal={changeProposal}
+        sourceCorrection={
+          <OpenProjectForm
+            disabled={disabled}
+            triggerLabel="Attach local repository"
+            onOpened={onProjectOpened}
+            {...(onAuthenticationError === undefined ? {} : { onAuthenticationError })}
+          />
+        }
       >
         <div>
           <dt>Observed base</dt>
@@ -462,16 +475,14 @@ export function ProjectInboxPanel(props: ProjectInboxPanelProps) {
         <p className="credential-state">Credentials stay with host Git</p>
       </div>
 
-      <div id="local-source-setup" tabIndex={-1}>
-        <OpenLocalRepositoryForm
-          disabled={unavailable}
-          projects={props.inbox?.projects ?? []}
-          {...(props.onAuthenticationError === undefined
-            ? {}
-            : { onAuthenticationError: props.onAuthenticationError })}
-          onAvailable={(result) => props.onLocalAvailable?.(result)}
-        />
-      </div>
+      <OpenLocalRepositoryForm
+        disabled={unavailable}
+        projects={props.inbox?.projects ?? []}
+        {...(props.onAuthenticationError === undefined
+          ? {}
+          : { onAuthenticationError: props.onAuthenticationError })}
+        onAvailable={(result) => props.onLocalAvailable?.(result)}
+      />
       <form className="project-form" onSubmit={handleSubmit} noValidate>
         <div className="form-field">
           <label htmlFor={fieldId}>Optional public GitHub pull request URL</label>
@@ -630,6 +641,7 @@ function ProjectRecord({
               : { onAuthenticationError: props.onAuthenticationError })}
             onAvailable={(result) => props.onLocalAvailable?.(result)}
             onIntentCreated={(result) => props.onIntentCreated?.(result)}
+            onProjectOpened={(result) => props.onProjectOpened?.(result)}
             onRefresh={() => {
               if (
                 project.providerObservation?.kind === "host_gh" &&

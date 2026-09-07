@@ -22,12 +22,14 @@ export function PrReadinessSummary({
   disabled,
   project,
   proposal,
+  sourceCorrection,
 }: {
   children: ReactNode;
   connections: ProjectConnections;
   disabled: boolean;
   project: Project;
   proposal: Proposal;
+  sourceCorrection: ReactNode;
 }) {
   const { github, codex, model } = connections;
   const source = project.localRepositorySource;
@@ -95,9 +97,7 @@ export function PrReadinessSummary({
                   : "Detached"}
             </strong>
             {source === null ? null : <span>{source.displayName}</span>}
-            {source?.state === "attached" ? null : (
-              <a href="#local-source-setup">Open local repository</a>
-            )}
+            {source?.state === "attached" ? null : sourceCorrection}
             {source?.state !== "attached" && revision?.state === "available" ? (
               <span>The retained revision remains available.</span>
             ) : null}
@@ -123,15 +123,11 @@ export function PrReadinessSummary({
           <div>
             <dt>Revision correction</dt>
             <dd>
-              <a
-                href={
-                  source?.state === "attached" ? `#acquire-${proposal.id}` : "#local-source-setup"
-                }
-              >
-                {source?.state === "attached"
-                  ? "Inspect exact revision acquisition"
-                  : "Attach source to acquire this revision"}
-              </a>
+              {source?.state === "attached" ? (
+                <a href={`#acquire-${proposal.id}`}>Inspect exact revision acquisition</a>
+              ) : (
+                sourceCorrection
+              )}
             </dd>
           </div>
         )}
