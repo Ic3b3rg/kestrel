@@ -205,13 +205,31 @@ export function App() {
     if (session === null)
       setProjectFeatureIds((current) => (Object.keys(current).length === 0 ? current : {}));
   }, [session]);
-  const rememberFeature = useCallback((feature: Feature) => {
-    setProjectFeatureIds((current) =>
-      current[feature.projectId] === feature.id
-        ? current
-        : { ...current, [feature.projectId]: feature.id },
-    );
-  }, []);
+  const rememberFeature = useCallback(
+    (feature: Feature) => {
+      const aliasedProject =
+        route.kind === "feature" &&
+        route.featureId === feature.id &&
+        route.projectId !== feature.projectId;
+      setProjectFeatureIds((current) => {
+        if (!aliasedProject && current[feature.projectId] === feature.id) return current;
+        const retained = aliasedProject
+          ? Object.fromEntries(Object.entries(current).filter(([id]) => id !== route.projectId))
+          : current;
+        return { ...retained, [feature.projectId]: feature.id };
+      });
+      if (aliasedProject) {
+        const canonicalRoute = {
+          kind: "feature" as const,
+          projectId: feature.projectId,
+          featureId: feature.id,
+        };
+        window.history.replaceState(null, "", appPath(canonicalRoute));
+        setRoute(canonicalRoute);
+      }
+    },
+    [route],
+  );
   const forgetFeature = useCallback((projectId: string, featureId: string) => {
     setProjectFeatureIds((current) =>
       current[projectId] !== featureId

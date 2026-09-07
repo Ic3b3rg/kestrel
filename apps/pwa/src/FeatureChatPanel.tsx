@@ -191,8 +191,8 @@ export function FeatureChatPanel({
     try {
       const result = await loadChat(projectId, featureId, controller.signal);
       if (!alive.current || controller.signal.aborted) return;
-      if (result.feature.id !== featureId || result.feature.projectId !== projectId)
-        throw new Error("The feature belongs to another Project");
+      if (result.feature.id !== featureId)
+        throw new Error("The response contains a different feature");
       setChat(result);
       onFeatureRead(result.feature);
     } catch (failure) {

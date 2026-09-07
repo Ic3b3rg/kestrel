@@ -171,4 +171,25 @@ describe("persistent planning conversation", () => {
       `/settings?projectId=${projectId}#repository-settings-title`,
     );
   });
+
+  it("accepts the same feature from its server-resolved canonical Project", async () => {
+    const onFeatureRead = vi.fn();
+    await render({
+      projectId: "018f0f89-949a-75a8-8f61-6df78a843b20",
+      onFeatureRead,
+    });
+    expect(container.textContent).toContain("Help define report search");
+    expect(onFeatureRead).toHaveBeenCalledExactlyOnceWith(initial.feature);
+  });
+
+  it("rejects a response containing a different feature identity", async () => {
+    const onFeatureRead = vi.fn();
+    await render({
+      featureId: "018f0f89-949a-75a8-8f61-6df78a843b20",
+      onFeatureRead,
+    });
+    expect(container.textContent).toContain("Conversation unavailable");
+    expect(container.textContent).not.toContain("Help define report search");
+    expect(onFeatureRead).not.toHaveBeenCalled();
+  });
 });

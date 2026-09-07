@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 import { AxeBuilder } from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
-import { FeatureChatSchema, FeatureListSchema } from "@kestrel/contracts";
+import { FeatureChatSchema, FeatureListSchema, KestrelIdSchema } from "@kestrel/contracts";
 import { startStack, TEST_OPERATOR_CREDENTIALS, type RunningStack } from "./support/compose.js";
 import { createGitFixture, type GitFixture } from "./support/git-fixture.js";
 
@@ -221,5 +221,56 @@ test.describe("Factory planning chat", () => {
     expect(await page.evaluate(() => sessionStorage.getItem("kestrel.feature-navigation"))).toBe(
       null,
     );
+  });
+
+  test("restores an aliased Project bookmark without adding a browser Back loop", async ({
+    page,
+  }) => {
+    if (stack === undefined) throw new Error("Factory browser stack is unavailable");
+    await page.goto(stack.pwaUrl);
+    await page.getByLabel("Username").fill(TEST_OPERATOR_CREDENTIALS.username);
+    await page.getByLabel("Password", { exact: true }).fill(TEST_OPERATOR_CREDENTIALS.password);
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await openProject(page, "kestrel");
+    const title = "Keep saved chat bookmarks";
+    await createFeature(page, title);
+    await expect(page.getByRole("heading", { level: 1, name: title, exact: true })).toBeVisible();
+    const canonicalUrl = page.url();
+    const routeParts = new URL(canonicalUrl).pathname.split("/");
+    const canonicalProjectId = KestrelIdSchema.parse(routeParts[2]);
+    const featureId = KestrelIdSchema.parse(routeParts[4]);
+    const aliasProjectId = "018f0f89-949a-75a8-8f61-6df78a843b20";
+    await stack.executeSql(`
+      INSERT INTO projects (id, installation_id, canonical_project_id)
+      SELECT '${aliasProjectId}', installation_id, id
+      FROM projects WHERE id = '${canonicalProjectId}';
+    `);
+    await page.getByRole("link", { name: "Settings", exact: true }).click();
+    const previousUrl = page.url();
+    await page.evaluate(
+      ({ projectId, featureId }) => {
+        sessionStorage.setItem(
+          "kestrel.feature-navigation",
+          JSON.stringify({ [projectId]: featureId }),
+        );
+      },
+      { projectId: aliasProjectId, featureId },
+    );
+    await page.goto(`${stack.pwaUrl}/projects/${aliasProjectId}/features/${featureId}`);
+    await expect(page.getByRole("heading", { level: 1, name: title, exact: true })).toBeVisible();
+    await expect(page).toHaveURL(canonicalUrl);
+    await expect(
+      page
+        .getByRole("navigation", { name: "Feature chats", exact: true })
+        .getByRole("link", { name: title, exact: true }),
+    ).toHaveAttribute("aria-current", "page");
+    expect(await page.evaluate(() => sessionStorage.getItem("kestrel.feature-navigation"))).toBe(
+      JSON.stringify({ [canonicalProjectId]: featureId }),
+    );
+    await page.goBack();
+    await expect(page).toHaveURL(previousUrl);
+    await page.goForward();
+    await expect(page).toHaveURL(canonicalUrl);
+    await expect(page.getByRole("heading", { level: 1, name: title, exact: true })).toBeVisible();
   });
 });
