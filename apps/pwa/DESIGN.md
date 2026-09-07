@@ -12,8 +12,15 @@ use the same sans-serif family; monospace is reserved for code and object identi
 The desktop sidebar is fixed at the viewport height. Projects scroll independently; Settings and
 account state stay at the bottom. The current page uses aria-current; the selected Project remains
 identified when Settings is open. Mobile uses the shadcn Sheet with labeled open/close controls.
-AuthenticatedShell.projectNavigation is the integration point for Project-scoped Planning Sessions
-when their real data and routes exist. Do not render placeholder chats or inactive feature actions.
+AuthenticatedShell.projectNavigation contains the selected Project's real Planning Sessions and a
+New feature dialog. Each feature has a stable URL, and Project links resume the last server-verified
+feature. Browser storage holds only these navigation identities and clears them on sign out.
+
+Planning keeps the feature name and Project visible above a readable conversation. Queued, running,
+question, stopped, and failed turns show their saved state and an explicit next action. A failed
+request retains its identity for a safe retry; closing the page does not stop accepted workstation
+work. Project documents opens an inspector for the committed Markdown used by the conversation. Do
+not render placeholder chats, Board or Review controls before their real workflows exist.
 
 Use native links for navigation and generated Button, Input, NativeSelect, Label, Textarea, Dialog,
 and Tabs primitives for interactions. Preserve browser modifier clicks and history. Dialogs keep

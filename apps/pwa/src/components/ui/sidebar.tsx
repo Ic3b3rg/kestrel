@@ -146,12 +146,14 @@ function Sidebar({
   className,
   children,
   dir,
+  onMobileOpenAutoFocus,
   onMobileCloseAutoFocus,
   ...props
 }: React.ComponentProps<"div"> & {
   side?: "left" | "right";
   variant?: "sidebar" | "floating" | "inset";
   collapsible?: "offcanvas" | "icon" | "none";
+  onMobileOpenAutoFocus?: React.ComponentProps<typeof SheetContent>["onOpenAutoFocus"];
   onMobileCloseAutoFocus?: React.ComponentProps<typeof SheetContent>["onCloseAutoFocus"];
 }) {
   const { isMobile, state, openMobile, setOpenMobile } = useSidebar();
@@ -186,6 +188,7 @@ function Sidebar({
             } as React.CSSProperties
           }
           side={side}
+          onOpenAutoFocus={onMobileOpenAutoFocus}
           onCloseAutoFocus={onMobileCloseAutoFocus}
         >
           <SheetHeader className="sr-only">

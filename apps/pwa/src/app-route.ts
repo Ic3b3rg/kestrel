@@ -1,6 +1,7 @@
 import { KestrelIdSchema } from "@kestrel/contracts";
 
 export type AppRoute =
+  | { kind: "feature"; projectId: string; featureId: string }
   | { kind: "not_found" }
   | { kind: "project"; projectId: string; proposalId?: string }
   | { kind: "projects" }
@@ -12,10 +13,16 @@ export function readAppRoute(pathname: string, search = ""): AppRoute {
     const projectId = KestrelIdSchema.safeParse(new URLSearchParams(search).get("projectId"));
     return { kind: "settings", ...(projectId.success ? { projectId: projectId.data } : {}) };
   }
-  const match = /^\/projects\/([^/]+)$/u.exec(pathname);
+  const match = /^\/projects\/([^/]+)(?:\/features\/([^/]+))?$/u.exec(pathname);
   if (match === null) return { kind: "not_found" };
   try {
     const projectId = KestrelIdSchema.safeParse(decodeURIComponent(match[1] ?? ""));
+    if (match[2] !== undefined) {
+      const featureId = KestrelIdSchema.safeParse(decodeURIComponent(match[2]));
+      return projectId.success && featureId.success
+        ? { kind: "feature", projectId: projectId.data, featureId: featureId.data }
+        : { kind: "not_found" };
+    }
     const proposalId = KestrelIdSchema.safeParse(new URLSearchParams(search).get("proposalId"));
     return projectId.success
       ? {
@@ -31,6 +38,8 @@ export function readAppRoute(pathname: string, search = ""): AppRoute {
 
 export function appPath(route: Exclude<AppRoute, { kind: "not_found" }>): string {
   switch (route.kind) {
+    case "feature":
+      return `/projects/${encodeURIComponent(route.projectId)}/features/${encodeURIComponent(route.featureId)}`;
     case "projects":
       return "/";
     case "settings":
