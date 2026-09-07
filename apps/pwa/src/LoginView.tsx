@@ -1,3 +1,6 @@
+import { Button } from "./components/ui/button.js";
+import { Input } from "./components/ui/input.js";
+import { Label } from "./components/ui/label.js";
 import { useEffect, useRef, type SyntheticEvent } from "react";
 
 import type { LoginCommand } from "@kestrel/contracts";
@@ -53,7 +56,6 @@ export function LoginView(props: LoginViewProps) {
       <main id="login-main" className="login-main" tabIndex={-1}>
         {props.checking ? (
           <section className="system-state" aria-busy="true" aria-label="Checking Operator session">
-            <p className="section-index">AUTHENTICATION / SESSION</p>
             <h1>Checking Operator session</h1>
             <p>Kestrel is verifying the host-scoped session with the local Installation.</p>
             <div className="loading-lines" aria-hidden="true">
@@ -65,18 +67,17 @@ export function LoginView(props: LoginViewProps) {
         ) : (
           <section className="login-layout" aria-labelledby="login-title">
             <div className="login-intro">
-              <p className="eyebrow">AUTHENTICATION / OPERATOR</p>
               <h1 id="login-title">Sign in to Kestrel</h1>
               <p className="lede">
-                Use the local credentials created from the trusted host. Kestrel keeps one Operator
-                for this Installation.
+                Your Projects, plans, and reviews in one place. Sign in with your local Operator
+                account.
               </p>
             </div>
 
             <form className="login-form" onSubmit={(event) => void handleSubmit(event)}>
               <div className="form-field">
-                <label htmlFor="username">Username</label>
-                <input
+                <Label htmlFor="username">Username</Label>
+                <Input
                   autoComplete="username"
                   id="username"
                   maxLength={64}
@@ -87,8 +88,8 @@ export function LoginView(props: LoginViewProps) {
                 />
               </div>
               <div className="form-field">
-                <label htmlFor="password">Password</label>
-                <input
+                <Label htmlFor="password">Password</Label>
+                <Input
                   autoComplete="current-password"
                   id="password"
                   maxLength={128}
@@ -103,12 +104,12 @@ export function LoginView(props: LoginViewProps) {
                   <span>{props.error}</span>
                 </div>
               ) : null}
-              <button type="submit" disabled={!props.online || props.pending}>
+              <Button type="submit" disabled={!props.online || props.pending}>
                 {props.pending ? "Signing in…" : "Sign in"}
-              </button>
+              </Button>
               <p className="form-help">
                 {props.online
-                  ? "The session expires seven days after sign-in and is never refreshed silently."
+                  ? "Use the account created when you set up Kestrel."
                   : "Reconnect before signing in."}
               </p>
             </form>
@@ -117,7 +118,7 @@ export function LoginView(props: LoginViewProps) {
       </main>
 
       <footer>
-        <span>Kestrel V1</span>
+        <span>Kestrel</span>
         <span>One local Operator</span>
       </footer>
     </>

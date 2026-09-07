@@ -1,3 +1,8 @@
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./components/ui/dialog.js";
+import { Button } from "./components/ui/button.js";
+import { Textarea } from "./components/ui/textarea.js";
+import { NativeSelect } from "./components/ui/native-select.js";
+import { Label } from "./components/ui/label.js";
 import { useEffect, useId, useMemo, useRef, useState, type SyntheticEvent } from "react";
 
 import {
@@ -127,26 +132,13 @@ export function OpenLocalRepositoryForm({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const trigger = useRef<HTMLButtonElement>(null);
-  const dialog = useRef<HTMLDialogElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const active = useRef<AbortController | null>(null);
-  const wasOpen = useRef(false);
+  const completedRevision = useRef<ReviewRevisionAvailable | null>(null);
   const titleId = useId();
   const descriptionId = useId();
 
   useEffect(() => () => active.current?.abort(), []);
-
-  useEffect(() => {
-    if (open) {
-      if (dialog.current !== null && !dialog.current.open) {
-        dialog.current.showModal();
-      }
-      heading.current?.focus();
-    } else if (wasOpen.current) {
-      trigger.current?.focus();
-    }
-    wasOpen.current = open;
-  }, [open]);
 
   const reset = () => {
     active.current?.abort();
@@ -304,7 +296,7 @@ export function OpenLocalRepositoryForm({
     try {
       const result = await retain(command, controller.signal);
       if (active.current === controller && !controller.signal.aborted) {
-        onAvailable(result);
+        completedRevision.current = result;
         reset();
       }
     } catch (requestError) {
@@ -320,231 +312,256 @@ export function OpenLocalRepositoryForm({
   };
 
   return (
-    <div className="project-local-entry">
-      <button ref={trigger} type="button" disabled={disabled} onClick={() => void openDialog()}>
-        Compare committed refs
-      </button>
-      <p className="form-help">
-        Select committed base and head references from an authorized read-only repository.
-      </p>
-      {open ? (
-        <dialog
-          ref={dialog}
-          className="local-repository-dialog"
-          aria-labelledby={titleId}
-          aria-describedby={descriptionId}
-          onCancel={(event) => {
-            event.preventDefault();
-            if (!pending) reset();
-          }}
-        >
-          <div className="local-dialog-heading">
-            <div>
-              <p className="section-index">LOCAL REPOSITORY SOURCE</p>
-              <h3 id={titleId} ref={heading} tabIndex={-1}>
-                Retain an exact change
-              </h3>
-            </div>
-            <button
-              className="secondary-action"
-              type="button"
-              disabled={disabled || pending}
-              onClick={reset}
-            >
-              Close
-            </button>
-          </div>
-          <p id={descriptionId}>
-            Kestrel reads only committed Git objects and retains a verified base/head snapshot.
-          </p>
-          {boundRepository === undefined ? (
-            <div className="local-inventory-actions">
-              <p>Inventory is read from the current trusted-host configuration.</p>
-              <button
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next && !pending) reset();
+      }}
+    >
+      <div className="project-local-entry">
+        <Button ref={trigger} type="button" disabled={disabled} onClick={() => void openDialog()}>
+          Compare committed refs
+        </Button>
+        <p className="form-help">
+          Select committed base and head references from an authorized read-only repository.
+        </p>
+        {open ? (
+          <DialogContent
+            showCloseButton={false}
+            onOpenAutoFocus={(event) => {
+              event.preventDefault();
+              heading.current?.focus();
+            }}
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              trigger.current?.focus();
+              const completed = completedRevision.current;
+              completedRevision.current = null;
+              if (completed !== null) onAvailable(completed);
+            }}
+            className="local-repository-dialog max-h-[85dvh] overflow-y-auto sm:max-w-2xl"
+            aria-labelledby={titleId}
+            aria-describedby={descriptionId}
+            onInteractOutside={(event) => event.preventDefault()}
+            onEscapeKeyDown={(event) => {
+              event.preventDefault();
+              if (!pending) reset();
+            }}
+          >
+            <div className="local-dialog-heading">
+              <div>
+                <DialogTitle id={titleId} ref={heading} tabIndex={-1}>
+                  Retain an exact change
+                </DialogTitle>
+              </div>
+              <Button
+                variant="outline"
                 className="secondary-action"
                 type="button"
-                disabled={disabled || pending || loading === "repositories"}
-                onClick={() => void loadRepositoryInventory()}
-              >
-                {loading === "repositories" ? "Refreshing repositories…" : "Refresh repositories"}
-              </button>
-            </div>
-          ) : null}
-          {boundRepository === undefined && repositories?.inventoryState !== "ready" ? (
-            <RepositorySetupState
-              state={
-                loading === "repositories" || (repositories === null && error === null)
-                  ? "loading"
-                  : (repositories?.inventoryState ?? "discovery_failed")
-              }
-              {...(error === null ? {} : { error })}
-            />
-          ) : null}
-          <form
-            className="local-repository-form"
-            hidden={boundRepository === undefined && repositories?.inventoryState !== "ready"}
-            onSubmit={(event) => void submit(event)}
-            noValidate
-          >
-            {boundRepository === undefined ? (
-              <div className="form-field">
-                <label htmlFor={`${titleId}-repository`}>Repository</label>
-                <select
-                  id={`${titleId}-repository`}
-                  value={repositoryId}
-                  disabled={disabled || pending || loading === "repositories"}
-                  onChange={(event) => void selectRepository(event.currentTarget.value)}
-                >
-                  <option value="">Select an authorized repository</option>
-                  {repositories?.repositories.map((repository) => (
-                    <option key={repository.repositoryId} value={repository.repositoryId}>
-                      {repository.displayName}
-                      {repository.attachmentState === "attached" ? " · attached" : ""}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : (
-              <p>
-                <strong>Repository:</strong> {boundRepository.displayName}
-              </p>
-            )}
-            <fieldset
-              disabled={disabled || pending || loading === "references" || references === null}
-            >
-              <legend>Exact committed revision</legend>
-              <div className="local-ref-grid">
-                <div className="form-field">
-                  <label htmlFor={`${titleId}-base`}>Base reference</label>
-                  <select
-                    id={`${titleId}-base`}
-                    value={baseRef}
-                    required
-                    onChange={(event) => {
-                      setBaseRef(event.currentTarget.value);
-                      setChangeProposalId("");
-                    }}
-                  >
-                    <option value="">Select base</option>
-                    {references?.references.map((reference) => (
-                      <option key={reference.ref} value={reference.ref}>
-                        {reference.displayName}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="form-field">
-                  <label htmlFor={`${titleId}-head`}>Head reference</label>
-                  <select
-                    id={`${titleId}-head`}
-                    value={headRef}
-                    required
-                    onChange={(event) => {
-                      setHeadRef(event.currentTarget.value);
-                      setChangeProposalId("");
-                    }}
-                  >
-                    <option value="">Select head</option>
-                    {references?.references.map((reference) => (
-                      <option key={reference.ref} value={reference.ref}>
-                        {reference.displayName}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            </fieldset>
-            {suggestions.length > 0 ? (
-              <section className="intent-suggestions" aria-labelledby={`${titleId}-suggestions`}>
-                <h4 id={`${titleId}-suggestions`}>Suggestions from commits</h4>
-                <p>
-                  Commit subjects are suggestions only. Choose one explicitly or write your own
-                  intent.
-                </p>
-                {suggestions.map((suggestion) => (
-                  <button
-                    className="secondary-action"
-                    type="button"
-                    key={suggestion}
-                    disabled={disabled || pending}
-                    onClick={() => setChangeIntent(suggestion)}
-                  >
-                    Use suggestion: {suggestion}
-                  </button>
-                ))}
-              </section>
-            ) : null}
-            <div className="form-field">
-              <label htmlFor={`${titleId}-intent`}>Change Intent</label>
-              <textarea
-                id={`${titleId}-intent`}
-                value={changeIntent}
-                maxLength={20_000}
-                required
                 disabled={disabled || pending}
-                aria-describedby={`${intentHelpId}${intentTooLarge ? ` ${intentErrorId}` : ""}`}
-                aria-invalid={intentTooLarge || undefined}
-                onChange={(event) => setChangeIntent(event.currentTarget.value)}
+                onClick={reset}
+              >
+                Close
+              </Button>
+            </div>
+            <DialogDescription id={descriptionId}>
+              Kestrel reads only committed Git objects and retains a verified base/head snapshot.
+            </DialogDescription>
+            {boundRepository === undefined ? (
+              <div className="local-inventory-actions">
+                <p>Inventory is read from the current trusted-host configuration.</p>
+                <Button
+                  variant="outline"
+                  className="secondary-action"
+                  type="button"
+                  disabled={disabled || pending || loading === "repositories"}
+                  onClick={() => void loadRepositoryInventory()}
+                >
+                  {loading === "repositories" ? "Refreshing repositories…" : "Refresh repositories"}
+                </Button>
+              </div>
+            ) : null}
+            {boundRepository === undefined && repositories?.inventoryState !== "ready" ? (
+              <RepositorySetupState
+                headingLevel={3}
+                state={
+                  loading === "repositories" || (repositories === null && error === null)
+                    ? "loading"
+                    : (repositories?.inventoryState ?? "discovery_failed")
+                }
+                {...(error === null ? {} : { error })}
               />
-              <p id={intentHelpId} className="form-help" aria-live="polite">
-                {intentBytes.toLocaleString("en-US")} / 20,000 UTF-8 bytes
-              </p>
-              {intentTooLarge ? (
-                <p id={intentErrorId} className="project-form-error" role="alert">
-                  Change Intent must be 20,000 UTF-8 bytes or fewer.
+            ) : null}
+            <form
+              className="local-repository-form"
+              hidden={boundRepository === undefined && repositories?.inventoryState !== "ready"}
+              onSubmit={(event) => void submit(event)}
+              noValidate
+            >
+              {boundRepository === undefined ? (
+                <div className="form-field">
+                  <Label htmlFor={`${titleId}-repository`}>Repository</Label>
+                  <NativeSelect
+                    id={`${titleId}-repository`}
+                    value={repositoryId}
+                    disabled={disabled || pending || loading === "repositories"}
+                    onChange={(event) => void selectRepository(event.currentTarget.value)}
+                  >
+                    <option value="">Select an authorized repository</option>
+                    {repositories?.repositories.map((repository) => (
+                      <option key={repository.repositoryId} value={repository.repositoryId}>
+                        {repository.displayName}
+                        {repository.attachmentState === "attached" ? " · attached" : ""}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </div>
+              ) : (
+                <p>
+                  <strong>Repository:</strong> {boundRepository.displayName}
+                </p>
+              )}
+              <fieldset
+                disabled={disabled || pending || loading === "references" || references === null}
+              >
+                <legend>Exact committed revision</legend>
+                <div className="local-ref-grid">
+                  <div className="form-field">
+                    <Label htmlFor={`${titleId}-base`}>Base reference</Label>
+                    <NativeSelect
+                      id={`${titleId}-base`}
+                      value={baseRef}
+                      required
+                      onChange={(event) => {
+                        setBaseRef(event.currentTarget.value);
+                        setChangeProposalId("");
+                      }}
+                    >
+                      <option value="">Select base</option>
+                      {references?.references.map((reference) => (
+                        <option key={reference.ref} value={reference.ref}>
+                          {reference.displayName}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  </div>
+                  <div className="form-field">
+                    <Label htmlFor={`${titleId}-head`}>Head reference</Label>
+                    <NativeSelect
+                      id={`${titleId}-head`}
+                      value={headRef}
+                      required
+                      onChange={(event) => {
+                        setHeadRef(event.currentTarget.value);
+                        setChangeProposalId("");
+                      }}
+                    >
+                      <option value="">Select head</option>
+                      {references?.references.map((reference) => (
+                        <option key={reference.ref} value={reference.ref}>
+                          {reference.displayName}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  </div>
+                </div>
+              </fieldset>
+              {suggestions.length > 0 ? (
+                <section className="intent-suggestions" aria-labelledby={`${titleId}-suggestions`}>
+                  <h3 id={`${titleId}-suggestions`}>Suggestions from commits</h3>
+                  <p>
+                    Commit subjects are suggestions only. Choose one explicitly or write your own
+                    intent.
+                  </p>
+                  {suggestions.map((suggestion) => (
+                    <Button
+                      variant="outline"
+                      className="secondary-action"
+                      type="button"
+                      key={suggestion}
+                      disabled={disabled || pending}
+                      onClick={() => setChangeIntent(suggestion)}
+                    >
+                      Use suggestion: {suggestion}
+                    </Button>
+                  ))}
+                </section>
+              ) : null}
+              <div className="form-field">
+                <Label htmlFor={`${titleId}-intent`}>Change Intent</Label>
+                <Textarea
+                  id={`${titleId}-intent`}
+                  value={changeIntent}
+                  maxLength={20_000}
+                  required
+                  disabled={disabled || pending}
+                  aria-describedby={`${intentHelpId}${intentTooLarge ? ` ${intentErrorId}` : ""}`}
+                  aria-invalid={intentTooLarge || undefined}
+                  onChange={(event) => setChangeIntent(event.currentTarget.value)}
+                />
+                <p id={intentHelpId} className="form-help" aria-live="polite">
+                  {intentBytes.toLocaleString("en-US")} / 20,000 UTF-8 bytes
+                </p>
+                {intentTooLarge ? (
+                  <p id={intentErrorId} className="project-form-error" role="alert">
+                    Change Intent must be 20,000 UTF-8 bytes or fewer.
+                  </p>
+                ) : null}
+              </div>
+              {matchingProposals.length > 0 ? (
+                <div className="form-field">
+                  <Label htmlFor={`${titleId}-proposal`}>Matching Change Proposal (optional)</Label>
+                  <NativeSelect
+                    id={`${titleId}-proposal`}
+                    value={changeProposalId}
+                    disabled={disabled || pending}
+                    onChange={(event) => setChangeProposalId(event.currentTarget.value)}
+                  >
+                    <option value="">Match automatically</option>
+                    {matchingProposals.map((proposal) => (
+                      <option key={proposal.id} value={proposal.id}>
+                        {proposal.label}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </div>
+              ) : null}
+              {base !== undefined && head !== undefined ? (
+                <dl className="local-confirmation">
+                  <div>
+                    <dt>Repository</dt>
+                    <dd>{repository?.displayName ?? "Authorized repository"}</dd>
+                  </div>
+                  <div>
+                    <dt>Base commit</dt>
+                    <dd>
+                      <code>{base.commitObjectId}</code>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Head commit</dt>
+                    <dd>
+                      <code>{head.commitObjectId}</code>
+                    </dd>
+                  </div>
+                </dl>
+              ) : null}
+              {loading === "references" ? <p role="status">Reading committed references…</p> : null}
+              {error ? (
+                <p className="project-form-error" role="alert">
+                  {error}
                 </p>
               ) : null}
-            </div>
-            {matchingProposals.length > 0 ? (
-              <div className="form-field">
-                <label htmlFor={`${titleId}-proposal`}>Matching Change Proposal (optional)</label>
-                <select
-                  id={`${titleId}-proposal`}
-                  value={changeProposalId}
-                  disabled={disabled || pending}
-                  onChange={(event) => setChangeProposalId(event.currentTarget.value)}
-                >
-                  <option value="">Match automatically</option>
-                  {matchingProposals.map((proposal) => (
-                    <option key={proposal.id} value={proposal.id}>
-                      {proposal.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : null}
-            {base !== undefined && head !== undefined ? (
-              <dl className="local-confirmation">
-                <div>
-                  <dt>Repository</dt>
-                  <dd>{repository?.displayName ?? "Authorized repository"}</dd>
-                </div>
-                <div>
-                  <dt>Base commit</dt>
-                  <dd>
-                    <code>{base.commitObjectId}</code>
-                  </dd>
-                </div>
-                <div>
-                  <dt>Head commit</dt>
-                  <dd>
-                    <code>{head.commitObjectId}</code>
-                  </dd>
-                </div>
-              </dl>
-            ) : null}
-            {loading === "references" ? <p role="status">Reading committed references…</p> : null}
-            {error ? (
-              <p className="project-form-error" role="alert">
-                {error}
-              </p>
-            ) : null}
-            <button type="submit" disabled={disabled || pending || loading !== null || !canSubmit}>
-              {pending ? "Retaining…" : "Retain Review Revision"}
-            </button>
-          </form>
-        </dialog>
-      ) : null}
-    </div>
+              <Button
+                type="submit"
+                disabled={disabled || pending || loading !== null || !canSubmit}
+              >
+                {pending ? "Retaining…" : "Retain Review Revision"}
+              </Button>
+            </form>
+          </DialogContent>
+        ) : null}
+      </div>
+    </Dialog>
   );
 }

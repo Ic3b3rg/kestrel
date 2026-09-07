@@ -1,7 +1,24 @@
-import { useEffect, useRef, type MouseEvent, type ReactNode } from "react";
+import { useEffect, type MouseEvent, type ReactNode } from "react";
+import { FolderGit2, Layers3, PanelLeft, Settings2, X } from "lucide-react";
 
 import type { ProjectInbox } from "@kestrel/contracts";
 
+import { Button } from "./components/ui/button.js";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  useSidebar,
+} from "./components/ui/sidebar.js";
+import { TooltipProvider } from "./components/ui/tooltip.js";
 import { appPath, type AppRoute } from "./app-route.js";
 import type { PwaConnectionState } from "./InstallationView.js";
 
@@ -21,6 +38,8 @@ export interface AuthenticatedShellProps {
   route: AppRoute;
   onNavigate: (route: NavigableRoute) => void;
   onRetry: () => void;
+  /** Project-scoped navigation, such as Planning Sessions, supplied by its owning feature. */
+  projectNavigation?: ReactNode;
 }
 
 const connectionLabels: Record<PwaConnectionState, string> = {
@@ -50,7 +69,9 @@ function shouldHandleNavigation(event: MouseEvent<HTMLAnchorElement>): boolean {
   );
 }
 
-export function AuthenticatedShell(props: AuthenticatedShellProps) {
+function WorkspaceShell(props: AuthenticatedShellProps) {
+  const { openMobile, setOpenMobile } = useSidebar();
+  useEffect(() => setOpenMobile(false), [props.route, setOpenMobile]);
   const currentProjectId =
     props.route.kind === "project" || props.route.kind === "settings"
       ? props.route.projectId
@@ -59,139 +80,172 @@ export function AuthenticatedShell(props: AuthenticatedShellProps) {
     kind: "settings" as const,
     ...(currentProjectId === undefined ? {} : { projectId: currentProjectId }),
   };
-  const navigation = useRef<HTMLDetailsElement>(null);
-  useEffect(() => {
-    const desktop = window.matchMedia("(min-width: 64rem)");
-    const resize = () => {
-      if (navigation.current !== null) navigation.current.open = desktop.matches;
-    };
-    resize();
-    desktop.addEventListener("change", resize);
-    return () => desktop.removeEventListener("change", resize);
-  }, []);
   const navigate = (route: NavigableRoute) => (event: MouseEvent<HTMLAnchorElement>) => {
     if (!shouldHandleNavigation(event)) return;
     event.preventDefault();
-    if (!window.matchMedia("(min-width: 64rem)").matches && navigation.current !== null) {
-      navigation.current.open = false;
-    }
+    setOpenMobile(false);
     props.onNavigate(route);
   };
 
   return (
     <>
-      <a className="skip-link" href="#workspace">
-        Skip to workspace
-      </a>
-      <div className="authenticated-shell">
-        <details className="workspace-navigation" ref={navigation}>
-          <summary className="navigation-toggle">Kestrel · Projects &amp; Settings</summary>
-          <aside className="project-rail" aria-labelledby="project-rail-title">
+      <Sidebar className="project-rail" aria-label="Workspace navigation" role="complementary">
+        <SidebarHeader className="gap-5 px-4 pt-5 pb-3">
+          <div className="flex items-center justify-between">
             <a className="wordmark wordmark-link" href="/" onClick={navigate({ kind: "projects" })}>
-              <span aria-hidden="true">K</span> KESTREL
+              <Layers3 className="size-5" aria-hidden="true" /> Kestrel
             </a>
-            <div className="project-rail-heading">
-              <div>
-                <h2 id="project-rail-title">Projects</h2>
-              </div>
-              {props.openProjectControl}
-            </div>
-
-            <div className="project-rail-scroll">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="md:hidden"
+              aria-label="Close navigation"
+              onClick={() => setOpenMobile(false)}
+            >
+              <X aria-hidden="true" />
+            </Button>
+          </div>
+          {props.openProjectControl}
+        </SidebarHeader>
+        <SidebarContent className="project-rail-scroll px-2">
+          <SidebarGroup>
+            <SidebarGroupLabel>Projects</SidebarGroupLabel>
+            <SidebarGroupContent>
               {props.error === null ? null : (
                 <div className="project-rail-state project-rail-error" role="alert">
                   <p>{props.error}</p>
-                  <button
-                    className="secondary-action"
-                    type="button"
-                    disabled={!props.online}
-                    onClick={props.onRetry}
-                  >
+                  <Button variant="outline" disabled={!props.online} onClick={props.onRetry}>
                     Retry Projects
-                  </button>
+                  </Button>
                 </div>
               )}
-
               {!props.online ? (
                 <div className="project-rail-state">
                   <strong>Projects hidden offline</strong>
-                  <span>Reconnect to refresh durable Project records.</span>
+                  <span>Reconnect to view your Projects.</span>
                 </div>
               ) : props.loading && props.inbox === null ? (
                 <div className="project-rail-state" aria-busy="true">
                   <strong>Reading Projects</strong>
-                  <span>Waiting for authoritative storage.</span>
+                  <span>Your Projects will appear here.</span>
                 </div>
               ) : props.inbox?.projects.length === 0 ? (
                 <div className="project-rail-state">
                   <strong>No Projects yet</strong>
-                  <span>Open an authorized repository to create one.</span>
+                  <span>Open a repository to get started.</span>
                 </div>
               ) : null}
-
               {props.inbox !== null && props.inbox.projects.length > 0 ? (
-                <nav className="project-navigation" aria-label="Projects">
-                  <ul>
+                <nav aria-label="Projects">
+                  <SidebarMenu>
                     {props.inbox.projects.map((project) => {
-                      const selected =
-                        props.route.kind === "project" && props.route.projectId === project.id;
+                      const selected = currentProjectId === project.id;
                       return (
-                        <li key={project.id}>
-                          <a
-                            href={`/projects/${encodeURIComponent(project.id)}`}
-                            aria-current={selected ? "page" : undefined}
-                            onClick={navigate({ kind: "project", projectId: project.id })}
+                        <SidebarMenuItem key={project.id}>
+                          <SidebarMenuButton
+                            asChild
+                            isActive={selected}
+                            className="h-auto min-h-11 py-2"
                           >
-                            <strong>{projectLabel(project)}</strong>
-                            <span>
-                              {project.localRepositorySource?.state === "attached"
-                                ? "Local source attached"
-                                : project.providerObservation === null
-                                  ? "Source unavailable"
-                                  : "Provider context"}
-                            </span>
-                          </a>
-                        </li>
+                            <a
+                              href={appPath({ kind: "project", projectId: project.id })}
+                              aria-current={
+                                selected && props.route.kind === "project" ? "page" : undefined
+                              }
+                              onClick={navigate({ kind: "project", projectId: project.id })}
+                            >
+                              <FolderGit2 aria-hidden="true" className="text-muted-foreground" />
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate">{projectLabel(project)}</span>
+                                <span className="block text-xs font-normal text-muted-foreground">
+                                  {project.localRepositorySource?.state === "attached"
+                                    ? "Local source attached"
+                                    : "Connect local source"}
+                                </span>
+                              </span>
+                              {selected ? <span className="sr-only">Selected Project</span> : null}
+                            </a>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
                       );
                     })}
-                  </ul>
+                  </SidebarMenu>
                   {props.loading ? (
-                    <p className="project-rail-refresh">Refreshing Projects…</p>
+                    <p className="project-rail-state">Refreshing Projects…</p>
                   ) : null}
                 </nav>
               ) : null}
+            </SidebarGroupContent>
+          </SidebarGroup>
+          {currentProjectId === undefined ? null : props.projectNavigation}
+        </SidebarContent>
+        <SidebarFooter className="gap-4 border-t border-sidebar-border p-4">
+          <nav aria-label="Installation">
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={props.route.kind === "settings"}
+                  className="h-10"
+                >
+                  <a
+                    href={appPath(settingsRoute)}
+                    aria-current={props.route.kind === "settings" ? "page" : undefined}
+                    onClick={navigate(settingsRoute)}
+                  >
+                    <Settings2 aria-hidden="true" /> Settings
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </nav>
+          <div className="rail-account">
+            <span className="truncate">Signed in as {props.operatorUsername}</span>
+            <div
+              className={`connection connection-${props.connection}`}
+              aria-label={`Connection: ${connectionLabels[props.connection]}`}
+            >
+              <span className="connection-dot" aria-hidden="true" />
+              <span>{connectionLabels[props.connection]}</span>
             </div>
-            <nav className="settings-navigation" aria-label="Installation">
-              <a
-                href={appPath(settingsRoute)}
-                aria-current={props.route.kind === "settings" ? "page" : undefined}
-                onClick={navigate(settingsRoute)}
-              >
-                Settings
-              </a>
-            </nav>
-            <div className="rail-account">
-              <span>Signed in as {props.operatorUsername}</span>
-              <div
-                className={`connection connection-${props.connection}`}
-                aria-label={`Event stream: ${connectionLabels[props.connection]}`}
-              >
-                <span className="connection-dot" aria-hidden="true" />
-                <span>Event stream</span>
-                <strong>{connectionLabels[props.connection]}</strong>
-              </div>
-            </div>
-          </aside>
-        </details>
-
+          </div>
+        </SidebarFooter>
+      </Sidebar>
+      <div className="workspace-frame">
+        <header className="mobile-workspace-header md:hidden">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Open navigation"
+            aria-expanded={openMobile}
+            onClick={() => setOpenMobile(true)}
+          >
+            <PanelLeft aria-hidden="true" />
+          </Button>
+          <span>Kestrel</span>
+        </header>
         <main className="shell-workspace" id="workspace" tabIndex={-1}>
           {props.children}
           <p className="activity-line" role="status" aria-live="polite" aria-atomic="true">
-            <span>Activity</span>
             {props.announcement}
           </p>
         </main>
       </div>
+    </>
+  );
+}
+
+export function AuthenticatedShell(props: AuthenticatedShellProps) {
+  return (
+    <>
+      <a className="skip-link" href="#workspace">
+        Skip to workspace
+      </a>
+      <TooltipProvider>
+        <SidebarProvider open className="authenticated-shell">
+          <WorkspaceShell {...props} />
+        </SidebarProvider>
+      </TooltipProvider>
     </>
   );
 }

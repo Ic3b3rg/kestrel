@@ -1,3 +1,5 @@
+import { Button } from "./components/ui/button.js";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs.js";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import type {
@@ -213,14 +215,15 @@ export function HostGitHubProjectPanel({
           </p>
         </div>
         <div className="project-header-actions">
-          <button
+          <Button
+            variant="outline"
             type="button"
             className="secondary-action"
             disabled={interactionDisabled}
             onClick={() => load(true)}
           >
             {loading && inbox !== null ? "Refreshing…" : "Refresh pull requests"}
-          </button>
+          </Button>
           {projectActions}
         </div>
       </header>
@@ -257,75 +260,78 @@ export function HostGitHubProjectPanel({
           {selectionError}
         </p>
       )}
-      <div className="pr-filters" role="group" aria-label="Pull request filters">
-        {(["all", "review_requested", "authored"] as const).map((choice) => {
-          const count = rows(choice).length;
-          const countLabel = loading
-            ? "…"
-            : complete(choice)
-              ? String(count)
-              : count > 0 && online && !loadError
-                ? `${String(count)}+`
-                : "Unavailable";
-          return (
-            <button
-              type="button"
-              className="secondary-action"
-              aria-pressed={filter === choice}
-              key={choice}
-              onClick={() => setFilter(choice)}
-            >
-              {choice === "all" ? "All" : groupLabels[choice]} <span>{countLabel}</span>
-            </button>
-          );
-        })}
-      </div>
-      <div className="pr-table-container" aria-busy={loading}>
-        <table className="pr-table">
-          <caption className="visually-hidden">
-            {filter === "all" ? "All" : groupLabels[filter]} fetched pull requests
-          </caption>
-          <thead>
-            <tr>
-              <th scope="col">Pull request</th>
-              <th scope="col">Author</th>
-              <th scope="col">Updated</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pullRequests.map((pr) => (
-              <tr key={pr.number}>
-                <td>
-                  <button
-                    type="button"
-                    className="pr-selection"
-                    disabled={interactionDisabled}
-                    aria-label={`Select PR #${String(pr.number)}: ${pr.title}`}
-                    onClick={() => select(pr.number)}
-                  >
-                    <span className="pr-number">#{pr.number}</span>
-                    <strong>{pr.title}</strong>
-                    {selectingNumber === pr.number ? <span>Opening…</span> : null}
-                  </button>
-                </td>
-                <td>{pr.author ?? "Unavailable"}</td>
-                <td>
-                  <time dateTime={pr.updatedAt}>{formatUpdatedAt(pr.updatedAt)}</time>
-                </td>
+      <Tabs
+        value={filter}
+        onValueChange={(value) => {
+          if (value === "all" || value === "review_requested" || value === "authored")
+            setFilter(value);
+        }}
+      >
+        <TabsList className="pr-filters" aria-label="Pull request filters">
+          {(["all", "review_requested", "authored"] as const).map((choice) => {
+            const count = rows(choice).length;
+            const countLabel = loading
+              ? "…"
+              : complete(choice)
+                ? String(count)
+                : count > 0 && online && !loadError
+                  ? `${String(count)}+`
+                  : "Unavailable";
+            return (
+              <TabsTrigger value={choice} key={choice} onClick={() => setFilter(choice)}>
+                {choice === "all" ? "All" : groupLabels[choice]} <span>{countLabel}</span>
+              </TabsTrigger>
+            );
+          })}
+        </TabsList>
+        <TabsContent value={filter} className="pr-table-container" aria-busy={loading}>
+          <table className="pr-table">
+            <caption className="visually-hidden">
+              {filter === "all" ? "All" : groupLabels[filter]} fetched pull requests
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Pull request</th>
+                <th scope="col">Author</th>
+                <th scope="col">Updated</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-        {pullRequests.length > 0 ? null : (
-          <p className="pr-table-state" role="status">
-            {loading
-              ? "Loading pull requests…"
-              : complete(filter)
-                ? "No open pull requests in this fetched list."
-                : "Pull requests unavailable for this filter. Refresh to retry."}
-          </p>
-        )}
-      </div>
+            </thead>
+            <tbody>
+              {pullRequests.map((pr) => (
+                <tr key={pr.number}>
+                  <td>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="pr-selection h-auto min-h-14 w-full justify-start whitespace-normal p-3 text-left"
+                      disabled={interactionDisabled}
+                      aria-label={`Select PR #${String(pr.number)}: ${pr.title}`}
+                      onClick={() => select(pr.number)}
+                    >
+                      <span className="pr-number">#{pr.number}</span>
+                      <strong>{pr.title}</strong>
+                      {selectingNumber === pr.number ? <span>Opening…</span> : null}
+                    </Button>
+                  </td>
+                  <td>{pr.author ?? "Unavailable"}</td>
+                  <td>
+                    <time dateTime={pr.updatedAt}>{formatUpdatedAt(pr.updatedAt)}</time>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {pullRequests.length > 0 ? null : (
+            <p className="pr-table-state" role="status">
+              {loading
+                ? "Loading pull requests…"
+                : complete(filter)
+                  ? "No open pull requests in this fetched list."
+                  : "Pull requests unavailable for this filter. Refresh to retry."}
+            </p>
+          )}
+        </TabsContent>
+      </Tabs>
       <details className="inbox-limitations">
         <summary>About this fetched list</summary>
         <p>

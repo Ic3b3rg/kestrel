@@ -145,16 +145,32 @@ test.describe("local-first Project flow", () => {
     await expect(kestrelLink).toBeVisible();
     await expect(falconLink).toHaveAttribute("aria-current", "page");
 
+    await page.goBack();
+    await expect(page).toHaveURL(kestrelUrl);
+    await expect(kestrelLink).toHaveAttribute("aria-current", "page");
+    await page.goForward();
+    await expect(page).toHaveURL(falconUrl);
+    const popupPromise = page.context().waitForEvent("page", { timeout: 10_000 });
+    await kestrelLink.click({ modifiers: ["ControlOrMeta"] });
+    const popup = await popupPromise;
+    await expect(popup).toHaveURL(kestrelUrl);
+    await expect(page).toHaveURL(falconUrl);
+    await popup.close();
+
     await page.setViewportSize({ height: 812, width: 375 });
-    await expect(page.locator(".workspace-navigation")).not.toHaveAttribute("open");
-    await page.locator(".navigation-toggle").focus();
+    await expect(
+      page.getByRole("dialog", { name: "Workspace navigation", exact: true }),
+    ).toHaveCount(0);
+    await page.getByRole("button", { name: "Open navigation", exact: true }).focus();
     await page.keyboard.press("Enter");
     await expect(projectNavigation).toBeVisible();
     await kestrelLink.focus();
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(kestrelUrl);
-    await expect(page.locator(".workspace-navigation")).not.toHaveAttribute("open");
-    await page.locator(".navigation-toggle").click();
+    await expect(
+      page.getByRole("dialog", { name: "Workspace navigation", exact: true }),
+    ).toHaveCount(0);
+    await page.getByRole("button", { name: "Open navigation", exact: true }).click();
     await expect(kestrelLink).toHaveAttribute("aria-current", "page");
     const settingsLink = page.getByRole("link", { name: "Settings", exact: true });
     await settingsLink.focus();
@@ -163,12 +179,14 @@ test.describe("local-first Project flow", () => {
     await expect(
       page.getByRole("heading", { level: 1, name: "Settings", exact: true }),
     ).toBeVisible();
-    await page.locator(".navigation-toggle").click();
+    await page.getByRole("button", { name: "Open navigation", exact: true }).click();
     await expect(settingsLink).toHaveAttribute("aria-current", "page");
+    await expect(kestrelLink).toContainText("Selected Project");
+    await expect(kestrelLink).not.toHaveAttribute("aria-current", "page");
 
     await kestrelLink.focus();
     await page.keyboard.press("Enter");
-    await page.locator(".navigation-toggle").click();
+    await page.getByRole("button", { name: "Open navigation", exact: true }).click();
     await openRepository("kestrel");
     const inbox = ProjectInboxSchema.parse(
       await page.evaluate(async () => {
@@ -183,7 +201,8 @@ test.describe("local-first Project flow", () => {
       await page.evaluate(() => ({ local: localStorage.length, session: sessionStorage.length })),
     ).toEqual({ local: 0, session: 0 });
 
-    if (!(await settingsLink.isVisible())) await page.locator(".navigation-toggle").click();
+    if (!(await settingsLink.isVisible()))
+      await page.getByRole("button", { name: "Open navigation", exact: true }).click();
     await expect(settingsLink).toBeVisible();
     expect(
       await page.evaluate(
@@ -508,7 +527,7 @@ test.describe("local-first Project flow", () => {
     await page.getByRole("dialog").getByRole("button", { name: "Close" }).click();
 
     await page.setViewportSize({ width: 320, height: 800 });
-    await page.locator(".navigation-toggle").click();
+    await page.getByRole("button", { name: "Open navigation", exact: true }).click();
     await verifyInventoryState("no_configured_roots", "No repository roots are configured");
     const width = await page.evaluate(() => ({
       client: document.documentElement.clientWidth,

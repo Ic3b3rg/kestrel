@@ -164,12 +164,15 @@ describe("host GitHub Project pull-request inbox", () => {
 
     expect(container.querySelectorAll("table")).toHaveLength(1);
     expect(container.querySelectorAll("tbody tr")).toHaveLength(2);
+    expect(findButton(container, "All").getAttribute("role")).toBe("tab");
+    expect(findButton(container, "All").getAttribute("aria-selected")).toBe("true");
     expect(findButton(container, "All").textContent).toContain("2");
     await act(async () => {
       findButton(container, "Authored").click();
       await Promise.resolve();
     });
     expect(container.querySelectorAll("tbody tr")).toHaveLength(1);
+    expect(findButton(container, "Authored").getAttribute("aria-selected")).toBe("true");
     expect(container.querySelector("tbody")?.textContent).toContain(
       "Keep host credentials outside Kestrel",
     );

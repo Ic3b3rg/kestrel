@@ -1,7 +1,7 @@
 name: kestrel
 
 x-kestrel-app: &kestrel-app
-  image: kestrel-dev:local
+  image: ${KESTREL_IMAGE:-kestrel-dev:local}
 
 x-kestrel-runtime-database: &runtime-database-environment
   DATABASE_URL: postgres://kestrel_runtime:${KESTREL_RUNTIME_DATABASE_PASSWORD:-kestrel_runtime_dev}@postgres:5432/kestrel

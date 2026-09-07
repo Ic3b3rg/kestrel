@@ -1,3 +1,4 @@
+import { Button } from "./components/ui/button.js";
 import { useEffect, useRef } from "react";
 
 import {
@@ -344,14 +345,15 @@ function ChangeProposalRecord({
             </a>
           </h2>
         </div>
-        <button
+        <Button
+          variant="outline"
           className="secondary-action proposal-refresh"
           type="button"
           disabled={disabled}
           onClick={onRefresh}
         >
           Refresh PR #{changeProposal.number}
-        </button>
+        </Button>
       </div>
       <PrReadinessSummary
         connections={connections}
@@ -450,14 +452,15 @@ export function ProjectInboxPanel(props: ProjectInboxPanelProps) {
       {props.error ? (
         <div className="project-error" role="alert">
           <p>{props.error}</p>
-          <button
+          <Button
+            variant="outline"
             className="secondary-action"
             type="button"
             onClick={props.onRetry}
             disabled={!props.online}
           >
             Retry Project inbox
-          </button>
+          </Button>
         </div>
       ) : null}
 
@@ -521,7 +524,7 @@ function ProjectRecord({
       detail.current
         ?.closest("article")
         ?.querySelector<HTMLElement>(
-          ".pr-filters button[aria-pressed=true], .saved-changes summary",
+          ".pr-filters [role=tab][aria-selected=true], .saved-changes summary",
         )
         ?.focus();
     }
@@ -582,14 +585,15 @@ function ProjectRecord({
           <ul>
             {project.changeProposals.map((proposal) => (
               <li key={proposal.id}>
-                <button
+                <Button
+                  variant="outline"
                   type="button"
                   className="secondary-action"
                   onClick={() => selectProposal(proposal.id)}
                 >
                   {isProviderChangeProposal(proposal) ? `#${String(proposal.number)} · ` : ""}
                   {proposal.title}
-                </button>
+                </Button>
               </li>
             ))}
           </ul>
@@ -603,9 +607,14 @@ function ProjectRecord({
         aria-label={selectedProposal === undefined ? undefined : "Selected change details"}
       >
         {selectedProposal === undefined ? null : (
-          <button type="button" className="secondary-action" onClick={() => selectProposal(null)}>
+          <Button
+            variant="outline"
+            type="button"
+            className="secondary-action"
+            onClick={() => selectProposal(null)}
+          >
             Close change details
-          </button>
+          </Button>
         )}
 
         {(selectedProposal === undefined ? [] : [selectedProposal]).map((changeProposal) => (

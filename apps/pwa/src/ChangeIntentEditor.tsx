@@ -1,3 +1,7 @@
+import { Button } from "./components/ui/button.js";
+import { Input } from "./components/ui/input.js";
+import { Textarea } from "./components/ui/textarea.js";
+import { Label } from "./components/ui/label.js";
 import { useEffect, useId, useMemo, useRef, useState, type SyntheticEvent } from "react";
 
 import {
@@ -223,8 +227,9 @@ export function ChangeIntentEditor({
           <p>No provider or commit suggestions are available. Operator input can stand alone.</p>
         ) : (
           proposal.changeIntentCandidates.map((source) => (
-            <label key={source.id} htmlFor={`${id}-${source.id}`}>
-              <input
+            <Label key={source.id} htmlFor={`${id}-${source.id}`}>
+              <Input
+                className="size-4 shrink-0 accent-primary"
                 checked={selected.has(source.id)}
                 disabled={disabled || pending}
                 id={`${id}-${source.id}`}
@@ -237,57 +242,57 @@ export function ChangeIntentEditor({
                 }}
               />
               <SourceSnapshot source={source} />
-            </label>
+            </Label>
           ))
         )}
       </fieldset>
 
       <div className="intent-fields">
-        <label htmlFor={`${id}-objective`}>Objective</label>
-        <textarea
+        <Label htmlFor={`${id}-objective`}>Objective</Label>
+        <Textarea
           id={`${id}-objective`}
           value={objective}
           disabled={disabled || pending}
           onChange={(event) => setObjective(event.currentTarget.value)}
         />
-        <label htmlFor={`${id}-scope`}>
+        <Label htmlFor={`${id}-scope`}>
           Scope boundaries <span>one per line</span>
-        </label>
-        <textarea
+        </Label>
+        <Textarea
           id={`${id}-scope`}
           value={scope}
           disabled={disabled || pending}
           onChange={(event) => setScope(event.currentTarget.value)}
         />
-        <label htmlFor={`${id}-outcomes`}>
+        <Label htmlFor={`${id}-outcomes`}>
           Ordered acceptance outcomes <span>one per line</span>
-        </label>
-        <textarea
+        </Label>
+        <Textarea
           id={`${id}-outcomes`}
           value={outcomes}
           disabled={disabled || pending}
           onChange={(event) => setOutcomes(event.currentTarget.value)}
         />
-        <label htmlFor={`${id}-operator`}>Operator input</label>
-        <textarea
+        <Label htmlFor={`${id}-operator`}>Operator input</Label>
+        <Textarea
           id={`${id}-operator`}
           value={operatorInput}
           disabled={disabled || pending}
           onChange={(event) => setOperatorInput(event.currentTarget.value)}
         />
-        <label htmlFor={`${id}-ambiguity`}>
+        <Label htmlFor={`${id}-ambiguity`}>
           Unresolved ambiguity <span>optional</span>
-        </label>
-        <textarea
+        </Label>
+        <Textarea
           id={`${id}-ambiguity`}
           value={ambiguity}
           disabled={disabled || pending}
           onChange={(event) => setAmbiguity(event.currentTarget.value)}
         />
-        <label htmlFor={`${id}-contradiction`}>
+        <Label htmlFor={`${id}-contradiction`}>
           Unresolved contradiction <span>optional</span>
-        </label>
-        <textarea
+        </Label>
+        <Textarea
           id={`${id}-contradiction`}
           value={contradiction}
           disabled={disabled || pending}
@@ -305,9 +310,9 @@ export function ChangeIntentEditor({
           {error}
         </p>
       )}
-      <button type="submit" disabled={disabled || pending}>
+      <Button type="submit" disabled={disabled || pending}>
         {pending ? "Creating version…" : "Create Change Intent version"}
-      </button>
+      </Button>
     </form>
   );
 }
