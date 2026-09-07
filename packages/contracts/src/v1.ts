@@ -210,6 +210,7 @@ export const CodexSubscriptionConnectionReasonSchema = z.enum([
   "chatgpt_subscription_required",
   "cli_not_installed",
   "cli_version_unsupported",
+  "model_catalog_empty",
   "protocol_unsupported",
   "timed_out",
   "unexpected_response",
@@ -259,6 +260,26 @@ export const CodexSubscriptionModelSchema = z.strictObject({
   isDefault: z.boolean(),
 });
 
+export const SelectCodexReviewModelCommandSchema = z.strictObject({
+  modelId: CodexSubscriptionModelSchema.shape.id,
+});
+
+export const CodexReviewModelPreferenceSchema = z
+  .strictObject({
+    schemaVersion: SchemaVersionSchema,
+    route: z.literal("codex_subscription"),
+    selectedModelId: CodexSubscriptionModelSchema.shape.id.nullable(),
+    updatedAt: UtcDateTimeSchema.nullable(),
+  })
+  .superRefine((preference, context) => {
+    if ((preference.selectedModelId === null) !== (preference.updatedAt === null)) {
+      context.addIssue({
+        code: "custom",
+        message: "Codex model selection and update timestamp must be present together",
+      });
+    }
+  });
+
 export const CodexUsageWindowSchema = z.strictObject({
   usedPercent: z.number().int().min(0).max(100),
   windowDurationMinutes: z.number().int().positive().max(525_600).nullable(),
@@ -303,19 +324,25 @@ export const CodexSubscriptionConnectionSchema = z
       });
     }
 
-    const usableRuntime =
+    const validatedAccount =
       connection.cli?.supported === true &&
       connection.account !== null &&
-      connection.models.length > 0 &&
       connection.usage !== null;
+    const usableRuntime = validatedAccount && connection.models.length > 0;
+    const validatedEmptyCatalog =
+      validatedAccount &&
+      connection.models.length === 0 &&
+      connection.reason === "model_catalog_empty";
     const incompleteProbe =
       connection.reason !== null &&
+      connection.reason !== "model_catalog_empty" &&
       connection.reason !== "waiting_for_usage_reset" &&
       connection.reason !== "usage_limit_reached";
     if (
       ((connection.state === "ready" || connection.state === "waiting_for_usage_reset") &&
         !usableRuntime) ||
       (connection.reason === "usage_limit_reached" && !usableRuntime) ||
+      (connection.reason === "model_catalog_empty" && !validatedEmptyCatalog) ||
       (incompleteProbe &&
         (connection.account !== null ||
           connection.models.length > 0 ||
@@ -1772,12 +1799,14 @@ export type CreateChangeIntentVersionCommand = z.infer<
 >;
 export type ChangeProposal = z.infer<typeof ChangeProposalSchema>;
 export type CodexChatGptPlan = z.infer<typeof CodexChatGptPlanSchema>;
+export type CodexReviewModelPreference = z.infer<typeof CodexReviewModelPreferenceSchema>;
 export type CodexSubscriptionConnection = z.infer<typeof CodexSubscriptionConnectionSchema>;
 export type CodexSubscriptionConnectionReason = z.infer<
   typeof CodexSubscriptionConnectionReasonSchema
 >;
 export type CodexSubscriptionModel = z.infer<typeof CodexSubscriptionModelSchema>;
 export type CodexSubscriptionUsage = z.infer<typeof CodexSubscriptionUsageSchema>;
+export type SelectCodexReviewModelCommand = z.infer<typeof SelectCodexReviewModelCommandSchema>;
 export type LoginCommand = z.infer<typeof LoginCommandSchema>;
 export type LocalRepositoryInventory = z.infer<typeof LocalRepositoryInventorySchema>;
 export type LocalRepositoryInventoryItem = z.infer<typeof LocalRepositoryInventoryItemSchema>;

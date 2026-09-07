@@ -32,6 +32,11 @@ import { registerInstallationRoutes } from "./routes/installation.js";
 import { registerOpenApiRoute } from "./routes/openapi.js";
 import { registerOperatorSecurityRoutes } from "./routes/operator-security.js";
 import {
+  createDatabaseCodexReviewModelPreferenceService,
+  registerCodexReviewModelPreferenceRoutes,
+  type CodexReviewModelPreferenceService,
+} from "./routes/review-model-settings.js";
+import {
   registerLocalRepositoryRoutes,
   type LocalRepositoryService,
 } from "./routes/local-repository-sources.js";
@@ -67,6 +72,7 @@ export interface BuildAppOptions {
   hostGitHubProjectService?: HostGitHubProjectService;
   hostGitHubConnectionService?: HostGitHubConnectionService;
   codexAgentRuntime?: CodexAgentRuntimePort;
+  codexReviewModelPreferenceService?: CodexReviewModelPreferenceService;
   reviewRevisionService?: ReviewRevisionService;
   reviewWorkflowService?: ReviewWorkflowService;
   pwaRoot?: string;
@@ -160,6 +166,10 @@ export async function buildApp({
   hostGitHubProjectService,
   hostGitHubConnectionService = createHostGitHubConnectionService(pool),
   codexAgentRuntime = createCodexAppServerAgentRuntime(),
+  codexReviewModelPreferenceService = createDatabaseCodexReviewModelPreferenceService(
+    pool,
+    codexAgentRuntime,
+  ),
   reviewRevisionService = {
     retain: () => Promise.reject(new Error("Review Revision acquisition is not configured")),
   },
@@ -220,6 +230,7 @@ export async function buildApp({
   registerInstallationRoutes(app, pool);
   registerOpenApiRoute(app);
   registerCodexSubscriptionConnectionRoutes(app, codexAgentRuntime);
+  registerCodexReviewModelPreferenceRoutes(app, codexReviewModelPreferenceService);
   registerHostGitHubConnectionRoutes(app, hostGitHubConnectionService);
   registerProjectRoutes(app, projectService, hostGitHubProjectService);
   registerDirectApiProfileRoutes(app, directApiProfileService);

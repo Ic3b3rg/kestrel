@@ -6,6 +6,7 @@ import {
   ProjectInboxSchema,
   ReviewRevisionAvailableSchema,
   type ChangeIntentVersionCreated,
+  type CodexReviewModelPreference,
   type CodexSubscriptionConnection,
   type HostGitHubConnection,
   type ProjectUpserted,
@@ -1220,6 +1221,10 @@ test.describe("observable Installation PWA", () => {
 
     let codexProbeCount = 0;
     let codexAuthenticationRequired = false;
+    let codexModels = [
+      { id: "gpt-5.6-sol", displayName: "GPT-5.6 Sol", isDefault: true },
+      { id: "gpt-5.6-terra", displayName: "GPT-5.6 Terra", isDefault: false },
+    ];
     let codexProbeBlocked = true;
     let releaseFirstCodexProbe: () => void = () => undefined;
     const firstCodexProbeGate = new Promise<void>((resolve) => {
@@ -1239,29 +1244,71 @@ test.describe("observable Installation PWA", () => {
             usage: null,
             checkedAt: "2026-09-02T20:01:00.000Z",
           }
-        : {
-            schemaVersion: 1,
-            state: "ready",
-            reason: null,
-            cli: { version: "0.152.1", supported: true, protocol: "app_server_v2" },
-            account: {
-              authentication: "chatgpt",
-              email: "operator@example.com",
-              plan: "plus",
-            },
-            models: [{ id: "gpt-5.6-sol", displayName: "GPT-5.6 Sol", isDefault: true }],
-            usage: {
-              availability: "available",
-              primary: {
-                usedPercent: 25,
-                windowDurationMinutes: 300,
-                resetsAt: "2026-09-02T22:00:00.000Z",
+        : codexModels.length === 0
+          ? {
+              schemaVersion: 1,
+              state: "action_required",
+              reason: "model_catalog_empty",
+              cli: { version: "0.152.1", supported: true, protocol: "app_server_v2" },
+              account: {
+                authentication: "chatgpt",
+                email: "operator@example.com",
+                plan: "plus",
               },
-              secondary: null,
-            },
-            checkedAt: "2026-09-02T20:00:00.000Z",
-          };
+              models: [],
+              usage: {
+                availability: "available",
+                primary: {
+                  usedPercent: 25,
+                  windowDurationMinutes: 300,
+                  resetsAt: "2026-09-02T22:00:00.000Z",
+                },
+                secondary: null,
+              },
+              checkedAt: "2026-09-02T20:00:00.000Z",
+            }
+          : {
+              schemaVersion: 1,
+              state: "ready",
+              reason: null,
+              cli: { version: "0.152.1", supported: true, protocol: "app_server_v2" },
+              account: {
+                authentication: "chatgpt",
+                email: "operator@example.com",
+                plan: "plus",
+              },
+              models: codexModels,
+              usage: {
+                availability: "available",
+                primary: {
+                  usedPercent: 25,
+                  windowDurationMinutes: 300,
+                  resetsAt: "2026-09-02T22:00:00.000Z",
+                },
+                secondary: null,
+              },
+              checkedAt: "2026-09-02T20:00:00.000Z",
+            };
       await route.fulfill({ json: connection, status: 200 });
+    });
+
+    let reviewModelPreference: CodexReviewModelPreference = {
+      schemaVersion: 1,
+      route: "codex_subscription",
+      selectedModelId: null,
+      updatedAt: null,
+    };
+    await page.route("**/api/v1/settings/review-model", async (route) => {
+      if (route.request().method() === "PUT") {
+        const command = route.request().postDataJSON() as { modelId: string };
+        reviewModelPreference = {
+          schemaVersion: 1,
+          route: "codex_subscription",
+          selectedModelId: command.modelId,
+          updatedAt: "2026-09-07T12:01:00.000Z",
+        };
+      }
+      await route.fulfill({ json: reviewModelPreference, status: 200 });
     });
 
     await page.goto(runningStack.pwaUrl);
@@ -1314,8 +1361,10 @@ test.describe("observable Installation PWA", () => {
     await page.getByRole("link", { name: "Settings", exact: true }).click();
     const connectionPanel = page.locator(".github-connection");
     const codexPanel = page.locator(".codex-connection");
+    const reviewModelPanel = page.locator(".review-model-settings");
     await expect(connectionPanel.getByRole("status")).toContainText("Checking");
     await expect(codexPanel.getByRole("status")).toContainText("Checking");
+    await expect(reviewModelPanel.locator(".state-marker")).toContainText("Checking");
     connectionProbeBlocked = false;
     releaseFirstConnectionProbe();
     codexProbeBlocked = false;
@@ -1326,6 +1375,31 @@ test.describe("observable Installation PWA", () => {
     await expect(codexPanel).toContainText("Plus");
     await expect(codexPanel).toContainText("GPT-5.6 Sol");
     await expect(codexPanel).toContainText("25% used");
+    await expect(reviewModelPanel.locator(".state-marker")).toContainText("Choose a model");
+    await reviewModelPanel.getByLabel("Default for future reviews").selectOption("gpt-5.6-sol");
+    await reviewModelPanel.getByRole("button", { name: "Save default" }).click();
+    await expect(reviewModelPanel.locator(".state-marker")).toContainText("Ready");
+    await expect(reviewModelPanel).toContainText("Default saved for future review preparation");
+
+    codexModels = [{ id: "gpt-5.6-terra", displayName: "GPT-5.6 Terra", isDefault: true }];
+    await reviewModelPanel.getByRole("button", { name: "Refresh catalog" }).click();
+    await expect(reviewModelPanel.locator(".state-marker")).toContainText("Action required");
+    await expect(reviewModelPanel).toContainText("gpt-5.6-sol");
+    await expect(reviewModelPanel).toContainText("did not select a fallback");
+    await expect(reviewModelPanel.getByLabel("Default for future reviews")).toHaveValue("");
+
+    codexModels = [];
+    await reviewModelPanel.getByRole("button", { name: "Refresh catalog" }).click();
+    await expect(reviewModelPanel.locator(".state-marker")).toContainText("Action required");
+    await expect(reviewModelPanel).toContainText("No picker-visible models");
+    await expect(reviewModelPanel.getByLabel("Default for future reviews")).toBeDisabled();
+
+    codexModels = [{ id: "gpt-5.6-terra", displayName: "GPT-5.6 Terra", isDefault: true }];
+    await reviewModelPanel.getByRole("button", { name: "Refresh catalog" }).click();
+    await expect(reviewModelPanel.getByLabel("Default for future reviews")).toBeEnabled();
+    await reviewModelPanel.getByLabel("Default for future reviews").selectOption("gpt-5.6-terra");
+    await reviewModelPanel.getByRole("button", { name: "Save default" }).click();
+    await expect(reviewModelPanel.locator(".state-marker")).toContainText("Ready");
     await connectionPanel.getByLabel("Project access").selectOption(openedProject.project.id);
     await expect(connectionPanel).toContainText("Ic3b3rg/kestrel");
     await expect(connectionPanel).toContainText("operator");
@@ -1343,6 +1417,8 @@ test.describe("observable Installation PWA", () => {
     await expect(codexPanel.getByRole("status")).toContainText("Action required");
     await expect(codexPanel).toContainText("codex login");
     await expect(codexPanel).not.toContainText("operator@example.com");
+    await expect(reviewModelPanel.locator(".state-marker")).toContainText("Action required");
+    await expect(reviewModelPanel).toContainText("Codex authentication is required");
     codexAuthenticationRequired = false;
     await codexPanel.getByRole("button", { name: "Verify again" }).click();
     await expect(codexPanel.getByRole("status")).toContainText("Ready");
@@ -1352,11 +1428,18 @@ test.describe("observable Installation PWA", () => {
       page.getByText(`Signed in as ${TEST_OPERATOR_CREDENTIALS.username}`, { exact: true }),
     ).toBeVisible();
     await expect(page.getByRole("heading", { name: "Operator security" })).toBeVisible();
+    const reviewModelSelector = page.getByLabel("Default for future reviews");
+    await reviewModelSelector.focus();
+    await expect(reviewModelSelector).toBeFocused();
+    await page.keyboard.press("Home");
+    await page.keyboard.press("End");
+    await expect(reviewModelSelector).toHaveValue("gpt-5.6-terra");
     await page.reload();
     await expect(
       page.getByRole("heading", { level: 1, name: "Settings", exact: true }),
     ).toBeVisible();
     await expect(page.getByRole("heading", { name: "Sign in to Kestrel" })).toHaveCount(0);
+    await expect(page.getByLabel("Default for future reviews")).toHaveValue("gpt-5.6-terra");
     const diagnosticButton = page.getByRole("button", { name: "Run diagnostic" });
     await expect(diagnosticButton).toBeEnabled();
     await page.keyboard.press("Tab");
@@ -1414,6 +1497,7 @@ test.describe("observable Installation PWA", () => {
       await expect(
         page.getByRole("heading", { level: 1, name: "Settings", exact: true }),
       ).toBeVisible();
+      await expect(page.getByLabel("Default for future reviews")).toBeVisible();
       const layout = await page.evaluate(() => {
         const viewportWidth = document.documentElement.clientWidth;
         const offenders = [...document.querySelectorAll("*")]

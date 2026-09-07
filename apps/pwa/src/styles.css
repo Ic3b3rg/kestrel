@@ -775,6 +775,30 @@ h1 {
   line-height: 1.5;
 }
 
+.review-model-intro {
+  max-width: 48rem;
+  margin: 0 0 1.5rem;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.review-model-controls {
+  display: grid;
+  gap: 1rem;
+  padding: 1.5rem;
+  border: 1px solid var(--ink);
+  background: var(--surface);
+}
+
+.review-model-actions {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.review-model-actions button {
+  width: 100%;
+}
+
 .projects-section,
 .repository-access,
 .operator-security {
@@ -2354,6 +2378,19 @@ footer {
   }
 
   .connection-controls .secondary-action {
+    width: auto;
+  }
+
+  .review-model-controls {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+  }
+
+  .review-model-actions {
+    grid-template-columns: repeat(2, auto);
+  }
+
+  .review-model-actions button {
     width: auto;
   }
 

@@ -3,6 +3,7 @@ import { createParser } from "eventsource-parser";
 import {
   ApiErrorSchema,
   ChangeIntentVersionCreatedSchema,
+  CodexReviewModelPreferenceSchema,
   CodexSubscriptionConnectionSchema,
   ConfigureDirectApiProfileCommandSchema,
   CreateChangeIntentVersionCommandSchema,
@@ -30,11 +31,13 @@ import {
   serializeCredentialChangeCommand,
   serializeConfigureDirectApiProfileCommand,
   SessionSchema,
+  SelectCodexReviewModelCommandSchema,
   StepUpCommandSchema,
   StepUpProofSchema,
   StartReviewWorkflowCommandSchema,
   type ApiError,
   type ChangeIntentVersionCreated,
+  type CodexReviewModelPreference,
   type CodexSubscriptionConnection,
   type ConfigureDirectApiProfileCommand,
   type CreateChangeIntentVersionCommand,
@@ -58,6 +61,7 @@ import {
   type ReviewPreparation,
   type ReviewWorkflowAccepted,
   type Session,
+  type SelectCodexReviewModelCommand,
   type StartReviewWorkflowCommand,
 } from "@kestrel/contracts";
 
@@ -213,6 +217,33 @@ export async function fetchCodexSubscriptionConnection(
     signal: signal ?? null,
   });
   return requireJson(response, CodexSubscriptionConnectionSchema, "Codex subscription Connection");
+}
+
+export async function fetchCodexReviewModelPreference(
+  signal?: AbortSignal,
+): Promise<CodexReviewModelPreference> {
+  const response = await fetch("/api/v1/settings/review-model", {
+    credentials: "same-origin",
+    headers: { Accept: "application/json" },
+    method: "GET",
+    signal: signal ?? null,
+  });
+  return requireJson(response, CodexReviewModelPreferenceSchema, "Codex review model preference");
+}
+
+export async function selectCodexReviewModel(
+  command: SelectCodexReviewModelCommand,
+  signal?: AbortSignal,
+): Promise<CodexReviewModelPreference> {
+  const validated = SelectCodexReviewModelCommandSchema.parse(command);
+  const response = await fetch("/api/v1/settings/review-model", {
+    body: JSON.stringify(validated),
+    credentials: "same-origin",
+    headers: authenticatedMutationHeaders(),
+    method: "PUT",
+    signal: signal ?? null,
+  });
+  return requireJson(response, CodexReviewModelPreferenceSchema, "Codex review model preference");
 }
 
 export async function fetchReviewPreparation(

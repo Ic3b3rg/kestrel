@@ -463,6 +463,51 @@
       ],
       "type": "object"
     },
+    "CodexReviewModelPreference": {
+      "additionalProperties": false,
+      "properties": {
+        "route": {
+          "const": "codex_subscription",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "type": "number"
+        },
+        "selectedModelId": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "route",
+        "selectedModelId",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
     "CodexSubscriptionConnection": {
       "additionalProperties": false,
       "properties": {
@@ -596,6 +641,7 @@
                 "chatgpt_subscription_required",
                 "cli_not_installed",
                 "cli_version_unsupported",
+                "model_catalog_empty",
                 "protocol_unsupported",
                 "timed_out",
                 "unexpected_response",
@@ -20418,6 +20464,21 @@
       "required": [
         "schemaVersion",
         "workflow"
+      ],
+      "type": "object"
+    },
+    "SelectCodexReviewModelCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "modelId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "modelId"
       ],
       "type": "object"
     },

@@ -17,6 +17,7 @@ import {
   ChangeIntentSchema,
   ChangeIntentVersionCreatedSchema,
   ConfigureDirectApiProfileCommandSchema,
+  CodexReviewModelPreferenceSchema,
   CodexSubscriptionConnectionSchema,
   CreateChangeIntentVersionCommandSchema,
   CredentialChangeCommandSchema,
@@ -39,6 +40,7 @@ import {
   ReviewRevisionSchema,
   ReviewWorkflowAcceptedSchema,
   SessionSchema,
+  SelectCodexReviewModelCommandSchema,
   StartReviewWorkflowCommandSchema,
   StepUpCommandSchema,
   StepUpProofSchema,
@@ -452,6 +454,38 @@ describe("V1 public contracts", () => {
         reason: "authentication_required",
       }),
     ).toThrow("completed validated probe");
+
+    expect(
+      CodexSubscriptionConnectionSchema.parse({
+        ...connection,
+        state: "action_required",
+        reason: "model_catalog_empty",
+        models: [],
+      }),
+    ).toMatchObject({ state: "action_required", reason: "model_catalog_empty", models: [] });
+  });
+
+  it("accepts only a safe Codex model preference with coherent persistence facts", () => {
+    const preference = {
+      schemaVersion: 1,
+      route: "codex_subscription",
+      selectedModelId: "gpt-5.6-sol",
+      updatedAt: "2026-09-07T12:00:00.000Z",
+    } as const;
+
+    expect(CodexReviewModelPreferenceSchema.parse(preference)).toEqual(preference);
+    expect(
+      SelectCodexReviewModelCommandSchema.parse({ modelId: preference.selectedModelId }),
+    ).toEqual({ modelId: preference.selectedModelId });
+    expect(() =>
+      SelectCodexReviewModelCommandSchema.parse({ modelId: "gpt-safe; rm -rf /" }),
+    ).toThrow();
+    expect(() =>
+      CodexReviewModelPreferenceSchema.parse({
+        ...preference,
+        selectedModelId: null,
+      }),
+    ).toThrow("timestamp");
   });
 
   it("exposes ordered per-group availability for the host GitHub Project inbox", () => {
