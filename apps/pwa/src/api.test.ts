@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import type {
   ApiError,
   ChangeIntentVersionCreated,
+  CodexReviewModelPreference,
   CodexSubscriptionConnection,
   DiagnosticAccepted,
   DirectApiProfileResponse,
@@ -26,6 +27,7 @@ import {
   fetchDirectApiProfile,
   fetchInstallation,
   fetchCodexSubscriptionConnection,
+  fetchCodexReviewModelPreference,
   fetchHostGitHubConnection,
   fetchHostGitHubProjectInbox,
   fetchProjectInbox,
@@ -40,6 +42,7 @@ import {
   observeHostGitHubPullRequest,
   runDiagnostic,
   retainReviewRevision,
+  selectCodexReviewModel,
   startReviewWorkflow,
   streamInstallationEvents,
   testDirectApiProfile,
@@ -745,6 +748,39 @@ describe("PWA API client", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ ...connection, authToken: "never" }));
     await expect(fetchCodexSubscriptionConnection()).rejects.toThrow(
       "invalid Codex subscription Connection",
+    );
+  });
+
+  it("reads and selects the Codex review model preference with CSRF protection", async () => {
+    const preference: CodexReviewModelPreference = {
+      schemaVersion: 1,
+      route: "codex_subscription",
+      selectedModelId: "gpt-5.6-sol",
+      updatedAt: "2026-09-07T12:00:00.000Z",
+    };
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockImplementation(() => Promise.resolve(jsonResponse(preference)));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("document", {
+      cookie: `__Host-kestrel-csrf=${"a".repeat(43)}.${"b".repeat(43)}`,
+    });
+
+    await expect(fetchCodexReviewModelPreference()).resolves.toEqual(preference);
+    await expect(selectCodexReviewModel({ modelId: "gpt-5.6-sol" })).resolves.toEqual(preference);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/v1/settings/review-model",
+      expect.objectContaining({ credentials: "same-origin", method: "GET" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/v1/settings/review-model",
+      expect.objectContaining({
+        body: JSON.stringify({ modelId: "gpt-5.6-sol" }),
+        credentials: "same-origin",
+        method: "PUT",
+      }),
     );
   });
 

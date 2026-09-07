@@ -6,6 +6,7 @@ import type {
 } from "@kestrel/contracts";
 
 import { fetchCodexSubscriptionConnection } from "./api.js";
+import { CodexReviewModelPanel } from "./CodexReviewModelPanel.js";
 
 const remediation: Record<CodexSubscriptionConnectionReason, ReactNode> = {
   authentication_required: (
@@ -54,6 +55,7 @@ export interface CodexSubscriptionConnectionPanelProps {
   loadConnection?: (signal?: AbortSignal) => Promise<CodexSubscriptionConnection>;
   onAuthenticationError?: (error: unknown) => boolean;
   online: boolean;
+  showReviewModel?: boolean;
 }
 
 function titleCase(value: string): string {
@@ -81,6 +83,7 @@ export function CodexSubscriptionConnectionPanel({
   loadConnection = fetchCodexSubscriptionConnection,
   onAuthenticationError,
   online,
+  showReviewModel = false,
 }: CodexSubscriptionConnectionPanelProps) {
   const [connection, setConnection] = useState<CodexSubscriptionConnection | null>(null);
   const [loading, setLoading] = useState(false);
@@ -167,99 +170,112 @@ export function CodexSubscriptionConnectionPanel({
         : remediation[connection.reason];
 
   return (
-    <section
-      className="record-section codex-connection"
-      aria-busy={loading}
-      aria-labelledby="codex-connection-title"
-    >
-      <div className="section-heading">
-        <div>
-          <p className="section-index">03 / CONNECTIONS</p>
-          <h2 id="codex-connection-title">Codex subscription</h2>
-        </div>
-        <p className={`state-marker connection-${visibleState ?? "checking"}`} role="status">
-          <span aria-hidden="true" />
-          {stateLabel}
-        </p>
-      </div>
-
-      <div className="connection-controls connection-controls-single">
-        <p>
-          Starts a fresh local App Server probe. No review, thread, tool, or provider fallback is
-          started.
-        </p>
-        <button
-          className="secondary-action"
-          type="button"
-          disabled={!online || loading}
-          onClick={() => void verify()}
-        >
-          Verify again
-        </button>
-      </div>
-
-      <dl className="fact-list connection-facts">
-        <div className="fact-wide">
-          <dt>Codex CLI</dt>
-          <dd>{cliLabel}</dd>
-        </div>
-        <div>
-          <dt>Authentication</dt>
-          <dd>{account === null || account === undefined ? "Not authenticated" : "ChatGPT"}</dd>
-        </div>
-        <div>
-          <dt>Plan</dt>
-          <dd>
-            {account === null || account === undefined ? "Not available" : titleCase(account.plan)}
-          </dd>
-        </div>
-        {account?.email === null || account?.email === undefined ? null : (
-          <div className="fact-wide">
-            <dt>Account</dt>
-            <dd>{account.email}</dd>
+    <>
+      <section
+        className="record-section codex-connection"
+        aria-busy={loading}
+        aria-labelledby="codex-connection-title"
+      >
+        <div className="section-heading">
+          <div>
+            <p className="section-index">03 / CONNECTIONS</p>
+            <h2 id="codex-connection-title">Codex subscription</h2>
           </div>
-        )}
-        <div>
-          <dt>Models</dt>
-          <dd>{modelLabel}</dd>
+          <p className={`state-marker connection-${visibleState ?? "checking"}`} role="status">
+            <span aria-hidden="true" />
+            {stateLabel}
+          </p>
         </div>
-        <div>
-          <dt>Usage availability</dt>
-          <dd>{usageAvailability}</dd>
+
+        <div className="connection-controls connection-controls-single">
+          <p>
+            Starts a fresh local App Server probe. No review, thread, tool, or provider fallback is
+            started.
+          </p>
+          <button
+            className="secondary-action"
+            type="button"
+            disabled={!online || loading}
+            onClick={() => void verify()}
+          >
+            Verify again
+          </button>
         </div>
-        {usage === null || usage === undefined ? null : (
-          <>
-            <div>
-              <dt>Primary usage</dt>
-              <dd>{formatUsageWindow(usage.primary)}</dd>
-            </div>
-            {usage.secondary === null ? null : (
-              <div>
-                <dt>Secondary usage</dt>
-                <dd>{formatUsageWindow(usage.secondary)}</dd>
-              </div>
-            )}
-          </>
-        )}
-        {connection === null ? null : (
+
+        <dl className="fact-list connection-facts">
           <div className="fact-wide">
-            <dt>Last verified</dt>
+            <dt>Codex CLI</dt>
+            <dd>{cliLabel}</dd>
+          </div>
+          <div>
+            <dt>Authentication</dt>
+            <dd>{account === null || account === undefined ? "Not authenticated" : "ChatGPT"}</dd>
+          </div>
+          <div>
+            <dt>Plan</dt>
             <dd>
-              <time dateTime={connection.checkedAt}>
-                {new Date(connection.checkedAt).toLocaleString()}
-              </time>
+              {account === null || account === undefined
+                ? "Not available"
+                : titleCase(account.plan)}
             </dd>
           </div>
-        )}
-      </dl>
+          {account?.email === null || account?.email === undefined ? null : (
+            <div className="fact-wide">
+              <dt>Account</dt>
+              <dd>{account.email}</dd>
+            </div>
+          )}
+          <div>
+            <dt>Models</dt>
+            <dd>{modelLabel}</dd>
+          </div>
+          <div>
+            <dt>Usage availability</dt>
+            <dd>{usageAvailability}</dd>
+          </div>
+          {usage === null || usage === undefined ? null : (
+            <>
+              <div>
+                <dt>Primary usage</dt>
+                <dd>{formatUsageWindow(usage.primary)}</dd>
+              </div>
+              {usage.secondary === null ? null : (
+                <div>
+                  <dt>Secondary usage</dt>
+                  <dd>{formatUsageWindow(usage.secondary)}</dd>
+                </div>
+              )}
+            </>
+          )}
+          {connection === null ? null : (
+            <div className="fact-wide">
+              <dt>Last verified</dt>
+              <dd>
+                <time dateTime={connection.checkedAt}>
+                  {new Date(connection.checkedAt).toLocaleString()}
+                </time>
+              </dd>
+            </div>
+          )}
+        </dl>
 
-      {recovery === null ? (
-        <p className="connection-note">
-          Codex owns ChatGPT credential persistence and refresh; Kestrel stores no copied token.
-        </p>
-      ) : (
-        <p className="connection-remediation">{recovery}</p>
-      )}
-    </section>
+        {recovery === null ? (
+          <p className="connection-note">
+            Codex owns ChatGPT credential persistence and refresh; Kestrel stores no copied token.
+          </p>
+        ) : (
+          <p className="connection-remediation">{recovery}</p>
+        )}
+      </section>
+      {showReviewModel ? (
+        <CodexReviewModelPanel
+          connection={connection}
+          connectionLoading={loading}
+          online={online}
+          onVerify={() => void verify()}
+          {...(onAuthenticationError === undefined ? {} : { onAuthenticationError })}
+        />
+      ) : null}
+    </>
   );
 }
