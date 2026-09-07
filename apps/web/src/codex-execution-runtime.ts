@@ -128,7 +128,7 @@ const ENVIRONMENTS = [
 ];
 const OUTPUT_CAP = 64 * 1024;
 const CONTAINER_INSPECT =
-  '{"id":{{json .Id}},"name":{{json .Name}},"running":{{.State.Running}},"exitCode":{{.State.ExitCode}},"image":{{json .Image}},"network":{{json .HostConfig.NetworkMode}},"readonly":{{.HostConfig.ReadonlyRootfs}},"privileged":{{.HostConfig.Privileged}},"pidMode":{{json .HostConfig.PidMode}},"restart":{{json .HostConfig.RestartPolicy.Name}},"capDrop":{{json .HostConfig.CapDrop}},"securityOpt":{{json .HostConfig.SecurityOpt}},"mounts":{{json .Mounts}},"labels":{{json .Config.Labels}}}';
+  '{"id":{{json .Id}},"name":{{json .Name}},"running":{{.State.Running}},"status":{{json .State.Status}},"exitCode":{{.State.ExitCode}},"image":{{json .Image}},"network":{{json .HostConfig.NetworkMode}},"readonly":{{.HostConfig.ReadonlyRootfs}},"privileged":{{.HostConfig.Privileged}},"pidMode":{{json .HostConfig.PidMode}},"restart":{{json .HostConfig.RestartPolicy.Name}},"capDrop":{{json .HostConfig.CapDrop}},"securityOpt":{{json .HostConfig.SecurityOpt}},"mounts":{{json .Mounts}},"labels":{{json .Config.Labels}}}';
 const FORWARD =
   "const n=require('node:net');const s=n.connect(8765,'127.0.0.1',()=>{process.stdin.pipe(s);s.pipe(process.stdout)});s.on('error',()=>process.exit(1));process.stdin.on('end',()=>s.end());";
 // This fixed probe waits for the executor socket. It never runs project code.
@@ -147,8 +147,29 @@ function checkAbort(signal: AbortSignal): void {
       ? signal.reason
       : new CodexExecutionError("cancelled");
 }
+
+async function withCancellation<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) void operation.catch(() => undefined);
+  checkAbort(signal);
+  let abort!: () => void;
+  const cancelled = new Promise<never>((_resolve, reject) => {
+    abort = () => {
+      try {
+        checkAbort(signal);
+      } catch (error) {
+        reject(executionError(error));
+      }
+    };
+    signal.addEventListener("abort", abort, { once: true });
+  });
+  try {
+    return await Promise.race([operation, cancelled]);
+  } finally {
+    signal.removeEventListener("abort", abort);
+  }
+}
 function timeout(value: number): number {
-  if (!Number.isSafeInteger(value) || value < 1 || value > 1_800_000)
+  if (!Number.isSafeInteger(value) || value < 1 || value > 7_200_000)
     throw new CodexExecutionError("invalid_response");
   return value;
 }
@@ -159,7 +180,11 @@ function textPrefix(value: unknown, bytes = 2_048): string {
 async function existingPath(path: string): Promise<string> {
   if (!isAbsolute(path) || path.includes("\0") || path.includes(","))
     throw new CodexExecutionError("invalid_response");
-  return realpath(path);
+  const canonical = await realpath(path).catch(() => {
+    throw new CodexExecutionError("sandbox_unavailable", undefined, "workspace_unavailable");
+  });
+  if (canonical.includes(",")) throw new CodexExecutionError("invalid_response");
+  return canonical;
 }
 
 async function processOutput(
@@ -308,7 +333,7 @@ class ExecutionContainer {
       this.#mounts.push({ source, target: `/workspace/${name}`, readonly: true });
     }
     this.#reserved = true;
-    await this.#lifecycle.beforeContainerCreate(this.name);
+    await withCancellation(this.#lifecycle.beforeContainerCreate(this.name), signal);
     checkAbort(signal);
     const id = await this.cli(
       [
@@ -358,7 +383,7 @@ class ExecutionContainer {
     );
     if (!/^[a-f0-9]{64}$/u.test(id)) throw new CodexExecutionError("invalid_response");
     this.#id = id;
-    await this.#lifecycle.onContainer({ name: this.name, id });
+    await withCancellation(this.#lifecycle.onContainer({ name: this.name, id }), signal);
     const state = await this.inspect();
     const actualMounts = state.mounts;
     if (
@@ -404,9 +429,15 @@ class ExecutionContainer {
   ): Promise<Omit<CodexVerificationResult, "processId" | "durationMs">> {
     const output = await processOutput(this.#docker, ["start", "--attach", this.id], signal);
     const state = await this.inspect();
-    if (state.running !== false || !Number.isSafeInteger(state.exitCode))
+    if (state.status !== "exited")
+      throw new CodexExecutionError("sandbox_unavailable", undefined, "verification_not_started");
+    if (
+      state.running !== false ||
+      !Number.isSafeInteger(state.exitCode) ||
+      state.exitCode !== output.exitCode
+    )
       throw new CodexExecutionError("invalid_response");
-    return { ...output, exitCode: Number(state.exitCode) };
+    return { ...output, exitCode: state.exitCode };
   }
   async forward(signal: AbortSignal): Promise<{ url: string; close(): Promise<void> }> {
     const sockets = new Set<Socket>();
@@ -493,7 +524,10 @@ class ExecutionContainer {
         "{{.ID}}",
       ]);
       if (remaining !== "") throw new Error("Container still present");
-      await this.#lifecycle.onStopped({ name: this.name, id: this.#id });
+      await withCancellation(
+        this.#lifecycle.onStopped({ name: this.name, id: this.#id }),
+        AbortSignal.timeout(10_000),
+      );
     } catch {
       throw new CodexExecutionError("stop_unconfirmed");
     }
@@ -804,6 +838,7 @@ async function isolated<T>(
     );
     return await operation(container, control, signal);
   } catch (error) {
+    checkAbort(signal);
     throw executionError(error);
   } finally {
     clearTimeout(timer);
@@ -815,85 +850,93 @@ async function isolated<T>(
 export function createCodexExecutionRuntime(options: Options): CodexExecutionRuntime {
   return {
     async runTurn(input) {
-      boundedString(input.model, 128);
-      boundedString(input.prompt, 256 * 1024);
-      if (
-        input.outputSchema !== undefined &&
-        Buffer.byteLength(JSON.stringify(input.outputSchema)) > 64 * 1024
-      )
-        throw new CodexExecutionError("invalid_response");
-      const limit = timeout(options.timeoutMs ?? 120_000);
-      return isolated(
-        options,
-        input,
-        input.cwd,
-        input.requestId,
-        limit,
-        async (container, control, signal) => {
-          await container.create(
-            [
-              "/usr/local/bin/codex",
-              "exec-server",
-              "--listen",
-              "ws://127.0.0.1:8765",
-              "--concurrent-requests",
-              "16",
-            ],
-            "/workspace",
-            signal,
-          );
-          await container.startExecutor(signal);
-          const forwarder = await container.forward(signal);
-          const turn = new ExecutionTurn(options, input, control, forwarder.url, signal, limit);
-          try {
-            return await turn.run(control);
-          } finally {
+      try {
+        boundedString(input.model, 128);
+        boundedString(input.prompt, 256 * 1024);
+        if (
+          input.outputSchema !== undefined &&
+          Buffer.byteLength(JSON.stringify(input.outputSchema)) > 64 * 1024
+        )
+          throw new CodexExecutionError("invalid_response");
+        const limit = timeout(options.timeoutMs ?? 120_000);
+        return await isolated(
+          options,
+          input,
+          input.cwd,
+          input.requestId,
+          limit,
+          async (container, control, signal) => {
+            await container.create(
+              [
+                "/usr/local/bin/codex",
+                "exec-server",
+                "--listen",
+                "ws://127.0.0.1:8765",
+                "--concurrent-requests",
+                "16",
+              ],
+              "/workspace",
+              signal,
+            );
+            await container.startExecutor(signal);
+            const forwarder = await container.forward(signal);
+            const turn = new ExecutionTurn(options, input, control, forwarder.url, signal, limit);
             try {
-              await turn.close();
+              return await turn.run(control);
             } finally {
-              await forwarder.close();
+              try {
+                await turn.close();
+              } finally {
+                await forwarder.close();
+              }
             }
-          }
-        },
-      );
+          },
+        );
+      } catch (error) {
+        throw executionError(error);
+      }
     },
     async runVerification(input) {
-      if (
-        input.command.length < 1 ||
-        input.command.length > 128 ||
-        input.command.some((part) => typeof part !== "string" || part.includes("\0")) ||
-        Buffer.byteLength(JSON.stringify(input.command)) > 32 * 1024 ||
-        !input.command[0]?.trim() ||
-        isAbsolute(input.cwd) ||
-        input.cwd.includes("\0")
-      )
-        throw new CodexExecutionError("invalid_response");
-      const workspace = await existingPath(input.workspaceCwd);
-      const commandCwd = await existingPath(join(workspace, input.cwd));
-      const path = relative(workspace, commandCwd);
-      if (path === ".." || path.startsWith(`..${sep}`) || isAbsolute(path))
-        throw new CodexExecutionError("permission_required");
-      return isolated(
-        options,
-        input,
-        workspace,
-        input.processId,
-        input.timeoutMs,
-        async (container, _control, signal) => {
-          await container.create(
-            input.command,
-            path === "" ? "/workspace" : `/workspace/${path.split(sep).join("/")}`,
-            signal,
-          );
-          const started = performance.now();
-          const result = await container.verify(signal);
-          return {
-            ...result,
-            processId: input.processId,
-            durationMs: Math.round(performance.now() - started),
-          };
-        },
-      );
+      try {
+        if (
+          input.command.length < 1 ||
+          input.command.length > 128 ||
+          input.command.some((part) => typeof part !== "string" || part.includes("\0")) ||
+          Buffer.byteLength(JSON.stringify(input.command)) > 32 * 1024 ||
+          !input.command[0]?.trim() ||
+          isAbsolute(input.cwd) ||
+          input.cwd.includes("\0")
+        )
+          throw new CodexExecutionError("invalid_response");
+        const workspace = await existingPath(input.workspaceCwd);
+        const commandCwd = await existingPath(join(workspace, input.cwd));
+        const path = relative(workspace, commandCwd);
+        if (path === ".." || path.startsWith(`..${sep}`) || isAbsolute(path))
+          throw new CodexExecutionError("permission_required");
+        return await isolated(
+          options,
+          input,
+          workspace,
+          input.processId,
+          input.timeoutMs,
+          async (container, _control, signal) => {
+            await container.create(
+              input.command,
+              path === "" ? "/workspace" : `/workspace/${path.split(sep).join("/")}`,
+              signal,
+            );
+            const started = performance.now();
+            const result = await container.verify(signal);
+            return {
+              ...result,
+              processId: input.processId,
+              durationMs: Math.round(performance.now() - started),
+            };
+          },
+        );
+      } catch (error) {
+        throw executionError(error);
+      }
     },
   };
 }

@@ -17,7 +17,7 @@ export class CodexFactoryError extends Error {
     public readonly code: CodexFactoryErrorCode,
     public readonly question?: string,
   ) {
-    super(`Codex planning failed: ${code}`);
+    super(`Codex factory failed: ${code}`);
     this.name = "CodexFactoryError";
   }
 }
@@ -203,7 +203,10 @@ export class CodexFactoryTransport {
   }
 
   async guard<T>(operation: Promise<T>): Promise<T> {
-    if (this.#failure !== null) throw this.#failure;
+    if (this.#failure !== null) {
+      void operation.catch(() => undefined);
+      throw this.#failure;
+    }
     return Promise.race([operation, this.#failed]);
   }
 

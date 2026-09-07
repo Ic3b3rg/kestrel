@@ -23,6 +23,7 @@ if (args[0] === "image") {
     id,
     name: "/" + value("--name"),
     running: false,
+    status: "created",
     exitCode: 0,
     image: "sha256:" + "1".repeat(64),
     network: mode === "unsafe_container" ? "host" : value("--network"),
@@ -53,8 +54,9 @@ if (args[0] === "image") {
 } else if (args[0] === "start") {
   const current = state();
   if (args.includes("--attach")) {
+    if (mode === "verification_start_rejected") process.exit(1);
     const exitCode = mode === "verification_failed" ? 7 : 0;
-    save({ ...current, running: false, exitCode });
+    save({ ...current, running: false, status: "exited", exitCode });
     if (mode === "output_cap") {
       process.stdout.write("x".repeat(70_000));
       process.stderr.write("y".repeat(70_000));
