@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   createFactoryGitHubAdapter,
@@ -25,6 +25,7 @@ async function fixture(mode = "ok", timeoutMs = 1000) {
     mode,
     userReads: 0,
     issuePosts: 0,
+    issueReads: 0,
     commentPosts: 0,
     dependencyPosts: 0,
     issues: [
@@ -68,12 +69,14 @@ if (args[0] !== 'api' || args[1] !== '--hostname' || args[2] !== 'github.com') r
 const url = new URL(args[3], 'https://api.github.com');
 const method = args[args.indexOf('--method') + 1];
 if (url.pathname === '/user') {
+  if (state.mode === 'cli_authentication') { process.stderr.write('To get started with GitHub CLI, please run gh auth login.'); process.exit(4); }
   state.userReads++;
-  reply(200, {login: state.mode === 'account_drift' && state.userReads >= 2 ? 'other' : 'operator'});
+  reply(200, {login: (state.mode === 'account_drift' && state.userReads >= 2) || (state.mode === 'account_after_write' && state.issuePosts > 0) ? 'other' : 'operator'});
 }
-if (url.pathname === '/repos/owner/notes') reply(200, {id: state.mode === 'repository_changed' ? '42' : '41', owner:'owner', name:'notes'});
+if (url.pathname === '/repos/owner/notes') reply(200, {id: state.mode === 'repository_changed' || state.mode === 'repository_after_write' && state.issuePosts > 0 || state.mode === 'repository_after_read' && state.issueReads > 0 ? '42' : '41', owner:'owner', name:'notes'});
 const base = '/repos/owner/notes/issues';
 if (url.pathname === base && method === 'GET') {
+  state.issueReads++;
   const page = Number(url.searchParams.get('page') ?? 1);
   if (state.mode === 'hostile_link') reply(200, [], {Link:'<https://attacker.invalid/issues?page=2>; rel="next"'});
   if (state.mode === 'limited') reply(200, [], {Link:'<https://api.github.com/repositories/41/issues?state=all&per_page=20&page=' + (page + 1) + '>; rel="next"'});
@@ -87,24 +90,31 @@ if (url.pathname === base && method === 'POST') {
   state.issuePosts++;
   if (state.mode === 'rate_limited') reply(403, {message:'API rate limit exceeded'}, {'Retry-After':'120'});
   if (state.mode === 'not_authenticated') reply(401, {message:'Bad credentials ghp_never_expose'});
+  if (state.mode === 'not_authenticated_plain') { writeFileSync(statePath, JSON.stringify(state)); process.stdout.write('HTTP/2.0 401 Unauthorized\\r\\n\\r\\nprivate non-JSON provider error'); process.exit(1); }
   if (state.mode === 'server_error') reply(503, {message:'private provider error'});
   const issue = {...state.issues[0], id:'599', number:99, title:body.title, body:body.body, html_url:'https://github.com/owner/notes/issues/99'};
   state.issues.push(issue);
   if (state.mode === 'create_timeout') hang();
+  else if (state.mode === 'disconnected') { writeFileSync(statePath, JSON.stringify(state)); process.stderr.write('private provider transport failed'); process.exit(1); }
+  else if (state.mode === 'stdout_overflow') { writeFileSync(statePath, JSON.stringify(state)); process.stdout.write('x'.repeat(3 * 1024 * 1024)); }
+  else if (state.mode === 'stderr_overflow') { writeFileSync(statePath, JSON.stringify(state)); process.stderr.write('x'.repeat(64 * 1024)); }
   else if (state.mode === 'invalid_created') reply(201, {id:null});
   else reply(201, issue);
 } else if (/\\/issues\\/\\d+\\/dependencies\\/blocked_by$/.test(url.pathname)) {
-  if (state.mode === 'unsupported') reply(501, {message:'Not implemented'});
+  if (state.mode === 'unsupported' || state.mode === 'unsupported_write' && method === 'POST') reply(501, {message:'Not implemented'});
   if (state.mode === 'masked_notfound') reply(404, {message:'Not Found'});
   if (method === 'GET') reply(200, state.dependencies.map(dependency));
   if (method === 'POST') {
     state.dependencyPosts++;
     if (state.mode !== 'dependency_invalid') state.dependencies.push({...state.issues[0], id:String(body.issue_id)});
     if (state.mode === 'dependency_duplicate' || state.mode === 'dependency_invalid') reply(422, {message:'Validation Failed'});
-    reply(201, dependency(state.dependencies[0]));
+    if (state.mode === 'dependency_timeout') hang(); else reply(201, dependency(state.dependencies[0]));
   }
 } else if (/\\/issues\\/\\d+\\/comments$/.test(url.pathname)) {
-  if (method === 'GET') reply(200, state.comments);
+  if (method === 'GET') {
+    if (state.mode === 'comment_limited') reply(200, [], {Link:'<https://api.github.com/repositories/41/issues/1/comments?per_page=20&page=' + (Number(url.searchParams.get('page')) + 1) + '>; rel="next"'});
+    reply(200, state.comments);
+  }
   if (method === 'POST') {
     state.commentPosts++;
     const number = Number(url.pathname.split('/').at(-2));
@@ -145,6 +155,7 @@ if (url.pathname === base && method === 'POST') {
 }
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await Promise.all(
     directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
   );
@@ -208,6 +219,7 @@ describe("Factory GitHub subprocess boundary", () => {
     ["invalid_created", "uncertain", "invalid_response"],
     ["server_error", "uncertain", "unavailable"],
     ["not_authenticated", "rejected", "needs_authentication"],
+    ["not_authenticated_plain", "rejected", "needs_authentication"],
     ["repository_changed", "not_sent", "repository_changed"],
     ["account_drift", "not_sent", "access_denied"],
   ])("classifies %s without exposing provider error content", async (mode, state, failure) => {
@@ -401,5 +413,110 @@ describe("Factory GitHub subprocess boundary", () => {
     });
     expect(await adapter.findComment(identity, 1, marker)).toEqual({ state: "missing" });
     expect((await calls()).some((call) => call.args.includes("POST"))).toBe(false);
+  });
+
+  it("rejects a repository replacement during an issue page read", async () => {
+    const { adapter } = await fixture("repository_after_read");
+    await expect(adapter.listIssues(identity, 1)).rejects.toMatchObject({
+      failure: "repository_changed",
+    });
+  });
+
+  it.each([
+    ["account_after_write", "access_denied"],
+    ["repository_after_write", "repository_changed"],
+  ])("preserves an uncertain create if %s changes the captured identity", async (mode, failure) => {
+    const { adapter, state } = await fixture(mode);
+    expect(await adapter.createIssue(identity, { title: "Export", body: marker })).toEqual({
+      state: "uncertain",
+      failure,
+    });
+    expect((await state()).issuePosts).toBe(1);
+  });
+
+  it("classifies the CLI authentication-required exit without a provider write", async () => {
+    const { adapter, calls } = await fixture("cli_authentication");
+    expect(await adapter.createIssue(identity, { title: "Export", body: marker })).toEqual({
+      state: "not_sent",
+      failure: "needs_authentication",
+    });
+    expect((await calls()).some((call) => call.args.includes("POST"))).toBe(false);
+  });
+
+  it.each(["disconnected", "stdout_overflow", "stderr_overflow"])(
+    "bounds %s output and preserves write uncertainty",
+    async (mode) => {
+      const { adapter, state } = await fixture(mode);
+      expect(await adapter.createIssue(identity, { title: "Export", body: marker })).toEqual({
+        state: "uncertain",
+        failure: "invalid_response",
+      });
+      expect((await state()).issuePosts).toBe(1);
+    },
+  );
+
+  it("distinguishes cancellation before dispatch from cancellation after the request was persisted remotely", async () => {
+    const { adapter, state } = await fixture("create_timeout", 5000);
+    expect(
+      await adapter.createIssue(identity, { title: "Export", body: marker }, AbortSignal.abort()),
+    ).toEqual({ state: "not_sent", failure: "cancelled" });
+    expect((await state()).issuePosts).toBe(0);
+    const controller = new AbortController();
+    const pending = adapter.createIssue(
+      identity,
+      { title: "Export", body: marker },
+      controller.signal,
+    );
+    try {
+      await expect.poll(async () => (await state()).issuePosts).toBe(1);
+    } finally {
+      controller.abort();
+    }
+    expect(await pending).toEqual({ state: "uncertain", failure: "cancelled" });
+  });
+
+  it("does not inherit token overrides or unrelated secrets into the host CLI", async () => {
+    for (const name of [
+      "GH_TOKEN",
+      "GITHUB_TOKEN",
+      "GH_ENTERPRISE_TOKEN",
+      "GITHUB_ENTERPRISE_TOKEN",
+      "KESTREL_FIXTURE_SECRET",
+    ])
+      vi.stubEnv(name, "fixture-only-do-not-inherit");
+    const { adapter, calls } = await fixture();
+    expect(await adapter.createComment(identity, 1, marker)).toMatchObject({ state: "confirmed" });
+    expect((await calls()).every((call) => !call.tokenPresent)).toBe(true);
+  });
+
+  it("bounds a partial comment scan and refuses ambiguous duplicate comments", async () => {
+    const { adapter, calls, setState } = await fixture("comment_limited");
+    expect(await adapter.findComment(identity, 1, marker)).toEqual({ state: "limited" });
+    expect(
+      (await calls()).filter((call) => call.args.some((arg) => arg.includes("/comments?"))),
+    ).toHaveLength(5);
+    await setState({
+      mode: "ok",
+      comments: ["701", "702"].map((id) => ({
+        id,
+        body: marker,
+        html_url: `https://github.com/owner/notes/issues/1#issuecomment-${id}`,
+        issue_url: "https://api.github.com/repos/owner/notes/issues/1",
+        author: "operator",
+      })),
+    });
+    expect(await adapter.findComment(identity, 1, marker)).toEqual({ state: "ambiguous" });
+    expect((await calls()).some((call) => call.args.includes("POST"))).toBe(false);
+  });
+
+  it("confirms an uncertain native edge by rereading and accepts an explicit POST capability failure", async () => {
+    const { adapter, calls, setState } = await fixture("dependency_timeout");
+    expect(await adapter.addDependency(identity, 1, "500")).toEqual({
+      state: "confirmed",
+      value: null,
+    });
+    expect((await calls()).filter((call) => call.args.includes("POST"))).toHaveLength(1);
+    await setState({ mode: "unsupported_write", dependencies: [] });
+    expect(await adapter.addDependency(identity, 1, "500")).toEqual({ state: "unsupported" });
   });
 });

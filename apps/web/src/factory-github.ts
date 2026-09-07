@@ -208,7 +208,8 @@ function response(stdout: string): HttpResponse {
   try {
     body = JSON.parse(stdout.slice(separator.index + separator[0].length));
   } catch {
-    throw new FactoryGitHubError("invalid_response");
+    if (Number(status) < 400) throw new FactoryGitHubError("invalid_response");
+    body = null;
   }
   return { status: Number(status), headers, body };
 }
@@ -380,6 +381,7 @@ export function createFactoryGitHubAdapter(
   ): Promise<HttpResponse> => {
     const output = await api(endpoint, projection, signal);
     if (output.failure !== undefined) throw new FactoryGitHubError(output.failure);
+    if (output.exitCode === 4) throw new FactoryGitHubError("needs_authentication");
     const result = response(output.stdout);
     if (result.status < 200 || result.status >= 300 || output.exitCode !== 0)
       throw httpFailure(result);
@@ -422,10 +424,6 @@ export function createFactoryGitHubAdapter(
       throw new FactoryGitHubError("repository_changed");
     if (!same(current.account, identity.account)) throw new FactoryGitHubError("access_denied");
   };
-  const confirmAccount = async (identity: FactoryGitHubIdentity, signal?: AbortSignal) => {
-    if (!same(identity.account, await account(signal)))
-      throw new FactoryGitHubError("access_denied");
-  };
   async function write<T>(
     identity: FactoryGitHubIdentity,
     request: WriteRequest<T> & { nativeDependency: true },
@@ -459,6 +457,8 @@ export function createFactoryGitHubAdapter(
           output.started ? "uncertain" : "not_sent",
           new FactoryGitHubError(output.failure),
         );
+      if (output.exitCode === 4)
+        return failedWrite("uncertain", new FactoryGitHubError("needs_authentication"));
       const result = response(output.stdout);
       if (request.nativeDependency === true && result.status === 501)
         return { state: "unsupported" };
@@ -506,6 +506,7 @@ export function createFactoryGitHubAdapter(
       signal,
     );
     if (output.failure !== undefined) throw new FactoryGitHubError(output.failure);
+    if (output.exitCode === 4) throw new FactoryGitHubError("needs_authentication");
     const result = response(output.stdout);
     if (result.status === 501) return { state: "unsupported" };
     if (result.status !== 200 || output.exitCode !== 0) throw httpFailure(result);
@@ -585,7 +586,7 @@ export function createFactoryGitHubAdapter(
       const issues = result.values
         .filter((value) => value.state === "open")
         .map((value) => issue(identity.repository, value));
-      await confirmAccount(identity, signal);
+      await verify(identity, signal);
       return { issues, page, nextPage: result.nextPage, limited: result.limited };
     },
     async readIssue(identity, number, signal) {
