@@ -108,10 +108,7 @@ export function FeatureChatPanel({
   useEffect(() => {
     alive.current = true;
     if (online) void refresh();
-    else {
-      setChat(null);
-      setReading(false);
-    }
+    else setReading(false);
     return () => {
       alive.current = false;
       activeRead.current?.abort();

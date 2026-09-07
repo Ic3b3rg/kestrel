@@ -129,6 +129,17 @@ describe("persistent planning conversation", () => {
     expect(cancelTurn).not.toHaveBeenCalled();
   });
 
+  it("retains the open feature while offline and disables workstation commands", async () => {
+    await render();
+    await render({ online: false });
+    expect(container.textContent).toContain("Help define report search");
+    expect(button("Stop planning").disabled).toBe(true);
+    expect(container.querySelector('[aria-label="Feature plan"]')).not.toBeNull();
+    await render();
+    expect(container.textContent).toContain("Help define report search");
+    expect(button("Stop planning").disabled).toBe(false);
+  });
+
   it("presents the saved question and allows an answer without inventing an assistant reply", async () => {
     await render({
       loadChat: () =>

@@ -152,6 +152,17 @@ function requiresAuthentication(error: unknown): boolean {
   );
 }
 
+function readHistoryPosition(state: unknown): number | null {
+  return typeof state === "object" &&
+    state !== null &&
+    "kestrelPosition" in state &&
+    typeof state.kestrelPosition === "number" &&
+    Number.isSafeInteger(state.kestrelPosition) &&
+    state.kestrelPosition >= 0
+    ? state.kestrelPosition
+    : null;
+}
+
 function hasPendingChangeOverviewRendering(inbox: ProjectInbox | null): boolean {
   return (
     inbox?.projects.some((project) =>
@@ -173,8 +184,12 @@ export function App() {
   const [route, setRoute] = useState<AppRoute>(() =>
     readAppRoute(window.location.pathname, window.location.search),
   );
-  const [online, setOnline] = useState(() => navigator.onLine);
+  const [networkOnline, setNetworkOnline] = useState(() => navigator.onLine);
   const [session, setSession] = useState<Session | null | undefined>(undefined);
+  const [sessionChecking, setSessionChecking] = useState(true);
+  const [sessionCheckError, setSessionCheckError] = useState<string | null>(null);
+  const [sessionCheckGeneration, setSessionCheckGeneration] = useState(0);
+  const online = networkOnline && !sessionChecking && sessionCheckError === null;
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loginPending, setLoginPending] = useState(false);
   const [synchronized, setSynchronized] = useState(false);
@@ -198,6 +213,12 @@ export function App() {
   const projectCommandController = useRef<AbortController | null>(null);
   const projectInboxController = useRef<AbortController | null>(null);
   const securityController = useRef<AbortController | null>(null);
+  const historyPosition = useRef(readHistoryPosition(window.history.state) ?? 0);
+  const restoringHistory = useRef(false);
+
+  useEffect(() => {
+    window.history.replaceState({ kestrelPosition: historyPosition.current }, "");
+  }, []);
 
   useEffect(() => {
     saveFeatureNavigation(projectFeatureIds);
@@ -226,7 +247,7 @@ export function App() {
           featureId: feature.id,
           ...(route.view === undefined ? {} : { view: route.view }),
         };
-        window.history.replaceState(null, "", appPath(canonicalRoute));
+        window.history.replaceState(window.history.state, "", appPath(canonicalRoute));
         setRoute(canonicalRoute);
       }
     },
@@ -254,15 +275,23 @@ export function App() {
       )
         return;
       const path = appPath(nextRoute);
-      if (`${window.location.pathname}${window.location.search}` !== path)
-        window.history.pushState(null, "", path);
+      if (`${window.location.pathname}${window.location.search}` !== path) {
+        historyPosition.current += 1;
+        window.history.pushState({ kestrelPosition: historyPosition.current }, "", path);
+      }
       setRoute(nextRoute);
     },
     [planDirty, route],
   );
 
   useEffect(() => {
-    const handlePopState = () => {
+    const handlePopState = (event: PopStateEvent) => {
+      if (restoringHistory.current) {
+        restoringHistory.current = false;
+        return;
+      }
+      // Native fragment navigation creates an entry without an application position.
+      const nextPosition = readHistoryPosition(event.state) ?? historyPosition.current + 1;
       const nextRoute = readAppRoute(window.location.pathname, window.location.search);
       const sameFeature =
         route.kind === "feature" &&
@@ -275,9 +304,13 @@ export function App() {
         !sameFeature &&
         !window.confirm("Discard unsaved plan edits and leave this feature?")
       ) {
-        window.history.pushState(null, "", appPath(route));
+        restoringHistory.current = true;
+        window.history.go(historyPosition.current - nextPosition);
         return;
       }
+      historyPosition.current = nextPosition;
+      if (readHistoryPosition(event.state) === null)
+        window.history.replaceState({ kestrelPosition: nextPosition }, "");
       setRoute(nextRoute);
     };
     window.addEventListener("popstate", handlePopState);
@@ -325,11 +358,13 @@ export function App() {
   }, []);
 
   const requireAuthentication = useCallback(
-    (message: string) => {
+    (message: string | null) => {
       commandController.current?.abort();
       projectCommandController.current?.abort();
       securityController.current?.abort();
       setSession(null);
+      setSessionChecking(false);
+      setSessionCheckError(null);
       setSnapshot(null);
       resetProjectState();
       setSynchronized(false);
@@ -353,7 +388,8 @@ export function App() {
 
   useEffect(() => {
     const handleOnline = () => {
-      setOnline(true);
+      setSessionChecking(true);
+      setNetworkOnline(true);
       setAnnouncement("Network restored. Refreshing the Installation.");
     };
     const handleOffline = () => {
@@ -361,7 +397,8 @@ export function App() {
       loginController.current?.abort();
       projectCommandController.current?.abort();
       securityController.current?.abort();
-      setOnline(false);
+      setNetworkOnline(false);
+      setSessionChecking(true);
       resetProjectState();
       setSynchronized(false);
       setConnection("offline");
@@ -380,35 +417,36 @@ export function App() {
   }, [resetProjectState]);
 
   useEffect(() => {
-    if (!online) {
+    if (!networkOnline) {
       return;
     }
     const controller = new AbortController();
     let active = true;
-    setSession(undefined);
+    setSessionChecking(true);
+    setSessionCheckError(null);
     setLoginError(null);
 
     void fetchSession(controller.signal).then(
       (currentSession) => {
         if (active) {
           setSession(currentSession);
+          setSessionChecking(false);
         }
       },
       (error: unknown) => {
         if (!active || controller.signal.aborted) {
           return;
         }
-        setSession(null);
-        if (!requiresAuthentication(error)) {
-          setLoginError(errorMessage(error, SESSION_ERROR_MESSAGE));
-        }
+        if (requiresAuthentication(error)) requireAuthentication(null);
+        else setSessionCheckError(errorMessage(error, SESSION_ERROR_MESSAGE));
+        setSessionChecking(false);
       },
     );
     return () => {
       active = false;
       controller.abort();
     };
-  }, [online]);
+  }, [networkOnline, sessionCheckGeneration, requireAuthentication]);
 
   useEffect(() => {
     if (!online || session === null || session === undefined) {
@@ -578,6 +616,8 @@ export function App() {
     try {
       const created = await loginOperator(command, controller.signal);
       setSession(created);
+      setSessionChecking(false);
+      setSessionCheckError(null);
       setAnnouncement("Operator authenticated. Reading the Kestrel Installation.");
     } catch (error) {
       if (!controller.signal.aborted) {
@@ -765,9 +805,9 @@ export function App() {
   if (session === null || session === undefined) {
     return (
       <LoginView
-        checking={session === undefined}
-        error={loginError}
-        online={online}
+        checking={sessionChecking}
+        error={loginError ?? sessionCheckError}
+        online={networkOnline}
         pending={loginPending}
         onSubmit={handleLogin}
       />
@@ -944,40 +984,64 @@ export function App() {
     }
   })();
 
+  const sessionPaused = networkOnline && (sessionChecking || sessionCheckError !== null);
   return (
-    <AuthenticatedShell
-      announcement={announcement}
-      connection={connection}
-      error={projectError}
-      inbox={projectInbox}
-      loading={projectLoading}
-      online={online}
-      openProjectControl={
-        <OpenProjectForm
-          disabled={!online || projectPending}
-          onAuthenticationError={handleAuthenticationBoundaryError}
-          onOpened={handleProjectOpened}
-        />
-      }
-      operatorUsername={session.operator.username}
-      route={route}
-      projectFeatureIds={projectFeatureIds}
-      projectNavigation={
-        navigationProject === undefined ? null : (
-          <FeatureNavigation
-            key={navigationProject.id}
-            projectId={navigationProject.id}
-            {...(route.kind === "feature" ? { selectedFeatureId: route.featureId } : {})}
-            online={online}
-            onNavigate={navigate}
-            onAuthenticationError={handleAuthenticationBoundaryError}
-          />
-        )
-      }
-      onNavigate={navigate}
-      onRetry={() => setProjectReloadGeneration((generation) => generation + 1)}
-    >
-      {workspace}
-    </AuthenticatedShell>
+    <>
+      {sessionPaused ? (
+        <main className="login-main">
+          <section className="system-state" aria-busy={sessionChecking}>
+            <h1>{sessionChecking ? "Checking Operator session" : "Session check unavailable"}</h1>
+            <p>
+              Your unsaved edits are retained. The workspace resumes after session verification.
+            </p>
+            {sessionCheckError === null ? null : (
+              <>
+                <p role="alert">{sessionCheckError}</p>
+                <Button onClick={() => setSessionCheckGeneration((current) => current + 1)}>
+                  Retry session check
+                </Button>
+              </>
+            )}
+          </section>
+        </main>
+      ) : null}
+      <div hidden={sessionPaused}>
+        <AuthenticatedShell
+          key={`${session.operator.id}/${session.credentialVersion}/${session.issuedAt}`}
+          announcement={announcement}
+          connection={connection}
+          error={projectError}
+          inbox={projectInbox}
+          loading={projectLoading}
+          online={online}
+          openProjectControl={
+            <OpenProjectForm
+              disabled={!online || projectPending}
+              onAuthenticationError={handleAuthenticationBoundaryError}
+              onOpened={handleProjectOpened}
+            />
+          }
+          operatorUsername={session.operator.username}
+          route={route}
+          projectFeatureIds={projectFeatureIds}
+          projectNavigation={
+            navigationProject === undefined ? null : (
+              <FeatureNavigation
+                key={navigationProject.id}
+                projectId={navigationProject.id}
+                {...(route.kind === "feature" ? { selectedFeatureId: route.featureId } : {})}
+                online={online}
+                onNavigate={navigate}
+                onAuthenticationError={handleAuthenticationBoundaryError}
+              />
+            )
+          }
+          onNavigate={navigate}
+          onRetry={() => setProjectReloadGeneration((generation) => generation + 1)}
+        >
+          {workspace}
+        </AuthenticatedShell>
+      </div>
+    </>
   );
 }

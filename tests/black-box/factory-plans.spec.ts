@@ -66,6 +66,31 @@ async function openFeature(page: Page, title: string): Promise<void> {
   await expect(page.getByRole("heading", { level: 1, name: title })).toBeVisible();
 }
 
+async function seedPlan(page: Page): Promise<string> {
+  const endpoint = `/api/v1${new URL(page.url()).pathname}/plans`;
+  const saved = await page.evaluate(
+    async ({ endpoint, plan }) => {
+      const csrf = document.cookie
+        .split("; ")
+        .find((cookie) => cookie.startsWith("__Host-kestrel-csrf="))
+        ?.split("=")[1];
+      if (csrf === undefined) throw new Error("The authenticated browser has no CSRF token");
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Kestrel-CSRF": csrf },
+        body: JSON.stringify({ requestId: crypto.randomUUID(), expectedVersion: null, plan }),
+      });
+      if (response.status !== 201) throw new Error(`Plan seed failed: ${await response.text()}`);
+      return response.json() as Promise<unknown>;
+    },
+    { endpoint, plan },
+  );
+  expect(FeaturePlanVersionSchema.parse(saved).version).toBe(1);
+  await page.getByRole("button", { name: "Load latest version", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Plan · version 1", exact: true })).toBeVisible();
+  return endpoint;
+}
+
 test.describe("Feature plan approval", () => {
   let stack: RunningStack | undefined;
   let fixture: GitFixture | undefined;
@@ -89,29 +114,7 @@ test.describe("Feature plan approval", () => {
     await page.getByRole("tab", { name: "Plan", exact: true }).click();
     const planUrl = page.url();
     expect(new URL(planUrl).searchParams.get("view")).toBe("plan");
-    const endpoint = `/api/v1${new URL(planUrl).pathname}/plans`;
-    const saved = await page.evaluate(
-      async ({ endpoint, plan }) => {
-        const csrf = document.cookie
-          .split("; ")
-          .find((cookie) => cookie.startsWith("__Host-kestrel-csrf="))
-          ?.split("=")[1];
-        if (csrf === undefined) throw new Error("The authenticated browser has no CSRF token");
-        const response = await fetch(endpoint, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-Kestrel-CSRF": csrf },
-          body: JSON.stringify({ requestId: crypto.randomUUID(), expectedVersion: null, plan }),
-        });
-        if (response.status !== 201) throw new Error(`Plan seed failed: ${await response.text()}`);
-        return response.json() as Promise<unknown>;
-      },
-      { endpoint, plan },
-    );
-    expect(FeaturePlanVersionSchema.parse(saved).version).toBe(1);
-    await page.getByRole("button", { name: "Load latest version", exact: true }).click();
-    await expect(
-      page.getByRole("heading", { name: "Plan · version 1", exact: true }),
-    ).toBeVisible();
+    await seedPlan(page);
     await page.getByRole("button", { name: "Edit draft", exact: true }).click();
     await page
       .getByLabel("Objective", { exact: true })
@@ -274,5 +277,148 @@ test.describe("Feature plan approval", () => {
     await expect(page.getByText("Codex is unavailable", { exact: true })).toBeVisible();
     expect((await readPlans()).current).toBeNull();
     await expect(page.getByRole("button", { name: /^Approve version/u })).toHaveCount(0);
+  });
+
+  test("preserves unsaved edits and an uncertain save through reconnection, then clears them on sign-out", async ({
+    page,
+  }) => {
+    if (stack === undefined) throw new Error("The planning stack is unavailable");
+    await login(page, stack.pwaUrl);
+    await openFeature(page, "Keep a report search draft");
+    await page.getByRole("tab", { name: "Plan", exact: true }).click();
+    const endpoint = await seedPlan(page);
+    await page.getByRole("button", { name: "Edit draft", exact: true }).click();
+    const objective = page.getByLabel("Objective", { exact: true });
+    const draftObjective = "Keep title search edits while the workstation reconnects.";
+    await objective.fill(draftObjective);
+    await page.context().setOffline(true);
+    await expect(
+      page.getByRole("button", { name: "Save new version", exact: true }),
+    ).toBeDisabled();
+    await page.context().setOffline(false);
+    await expect(objective).toHaveValue(draftObjective);
+    await expect(page.getByRole("button", { name: "Save new version", exact: true })).toBeEnabled();
+
+    const saveRequests: string[] = [];
+    await page.route(`**${endpoint}`, async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      const body = route.request().postData();
+      if (body === null) throw new Error("The plan command has no body");
+      saveRequests.push(body);
+      if (saveRequests.length !== 1) return route.continue();
+      const response = await route.fetch();
+      expect(response.status()).toBe(201);
+      await route.abort("connectionfailed");
+    });
+    await page.getByRole("button", { name: "Save new version", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Retry request", exact: true })).toBeVisible();
+    await page.context().setOffline(true);
+    await expect(page.getByRole("button", { name: "Retry request", exact: true })).toBeDisabled();
+    await page.route("**/api/v1/session", (route) => route.abort("connectionfailed"), { times: 1 });
+    await page.context().setOffline(false);
+    await expect(
+      page.getByRole("button", { name: "Retry session check", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Retry request", exact: true }),
+    ).not.toBeVisible();
+    await page.getByRole("button", { name: "Retry session check", exact: true }).click();
+    await expect(objective).toHaveValue(draftObjective);
+    await page.getByRole("button", { name: "Retry request", exact: true }).click();
+    await expect(
+      page.getByRole("heading", { name: "Plan · version 2", exact: true }),
+    ).toBeVisible();
+    expect(saveRequests).toHaveLength(2);
+    expect(saveRequests[1]).toBe(saveRequests[0]);
+    const saved = FeaturePlansSchema.parse(
+      await page.evaluate(async (path) => {
+        const response = await fetch(path);
+        return response.json() as Promise<unknown>;
+      }, endpoint),
+    );
+    expect(saved.versions).toHaveLength(2);
+
+    await page.getByRole("button", { name: "Edit draft", exact: true }).click();
+    await objective.fill("This private draft must disappear when the session ends.");
+    const signedOut = await page.evaluate(async () => {
+      const csrf = document.cookie
+        .split("; ")
+        .find((cookie) => cookie.startsWith("__Host-kestrel-csrf="))
+        ?.split("=")[1];
+      if (csrf === undefined) throw new Error("The authenticated browser has no CSRF token");
+      return (
+        await fetch("/auth/logout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Kestrel-CSRF": csrf },
+          body: "{}",
+        })
+      ).status;
+    });
+    expect(signedOut).toBe(204);
+    await page.context().setOffline(true);
+    await page.context().setOffline(false);
+    await expect(
+      page.getByRole("heading", { name: "Sign in to Kestrel", exact: true }),
+    ).toBeVisible();
+    await expect(objective).toHaveCount(0);
+    await page.getByLabel("Username").fill(TEST_OPERATOR_CREDENTIALS.username);
+    await page.getByLabel("Password", { exact: true }).fill(TEST_OPERATOR_CREDENTIALS.password);
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(
+      page.getByRole("heading", { name: "Plan · version 2", exact: true }),
+    ).toBeVisible();
+    await expect(objective).toHaveCount(0);
+    await expect(page.getByText(draftObjective, { exact: true })).toBeVisible();
+  });
+
+  test("preserves Forward history when leaving a dirty plan with Back is cancelled", async ({
+    page,
+  }) => {
+    if (stack === undefined) throw new Error("The planning stack is unavailable");
+    await login(page, stack.pwaUrl);
+    const title = "Keep report planning history";
+    await openFeature(page, title);
+    await page.getByRole("tab", { name: "Plan", exact: true }).click();
+    await seedPlan(page);
+    await page.getByRole("link", { name: "Settings", exact: true }).click();
+    const settingsUrl = page.url();
+    await page.getByRole("link", { name: title, exact: true }).click();
+    const chatUrl = page.url();
+    await page.getByRole("tab", { name: "Plan", exact: true }).click();
+    const planUrl = page.url();
+    await page.getByRole("button", { name: "Edit draft", exact: true }).click();
+    await page
+      .getByLabel("Objective", { exact: true })
+      .fill("Retain this draft across browser history.");
+    await page.getByRole("tab", { name: "Chat", exact: true }).click();
+    await page.getByRole("tab", { name: "Board", exact: true }).click();
+    const boardUrl = page.url();
+    await page.goBack();
+    await expect(page).toHaveURL(chatUrl);
+    await page.goBack();
+    await expect(page).toHaveURL(planUrl);
+    const discardPrompt = page.waitForEvent("dialog");
+    await page.evaluate(() => window.history.go(-2));
+    const prompt = await discardPrompt;
+    expect(prompt.message()).toBe("Discard unsaved plan edits and leave this feature?");
+    await prompt.dismiss();
+    await expect(page).toHaveURL(planUrl);
+    await expect(page.getByLabel("Objective", { exact: true })).toHaveValue(
+      "Retain this draft across browser history.",
+    );
+    await page.goForward();
+    await expect(page).toHaveURL(chatUrl);
+    await page.goForward();
+    await expect(page).toHaveURL(boardUrl);
+    const acceptedDiscardPrompt = page.waitForEvent("dialog");
+    await page.evaluate(() => window.history.go(-4));
+    await (await acceptedDiscardPrompt).accept();
+    await expect(page).toHaveURL(settingsUrl);
+    await page.getByRole("link", { name: title, exact: true }).click();
+    await page.getByRole("tab", { name: "Plan", exact: true }).click();
+    await expect(
+      page.getByRole("heading", { name: "Plan · version 1", exact: true }),
+    ).toBeVisible();
+    await expect(page.getByLabel("Objective", { exact: true })).toHaveCount(0);
   });
 });
