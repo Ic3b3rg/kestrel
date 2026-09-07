@@ -553,7 +553,7 @@ it("blocks a committed empty subtree that a Git index cannot preserve", async ()
   const listing = await git(source.repository, ["ls-tree", source.baseTreeId]);
   const tree = await new Promise<string>((resolveTree, rejectTree) => {
     const child = execFile("/usr/bin/git", ["-C", source.repository, "mktree"], (error, stdout) => {
-      if (error !== null) rejectTree(error);
+      if (error !== null) rejectTree(new Error("Fixture tree creation failed", { cause: error }));
       else resolveTree(stdout.trim());
     });
     child.stdin?.end(`${listing}\n040000 tree ${empty}\tempty\n`);
