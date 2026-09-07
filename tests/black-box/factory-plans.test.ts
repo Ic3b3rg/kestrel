@@ -198,7 +198,23 @@ describe("versioned Factory plans", () => {
       ),
     ).rejects.toThrow();
     await stack.restart("web");
-    expect(await (await stack.fetchApi(`${path}/board`)).json()).toEqual(board);
+    const restarted = FactoryBoardSchema.parse(
+      await (await stack.fetchApi(`${path}/board`)).json(),
+    );
+    // The approved cards survive restart; publication can append activity while we reconnect.
+    const containingEvents = (events: typeof board.activity): unknown =>
+      expect.arrayContaining(events);
+    expect(restarted).toEqual({
+      ...board,
+      activity: containingEvents(board.activity),
+      columns: board.columns.map((column) => ({
+        ...column,
+        items: column.items.map((item) => ({
+          ...item,
+          activity: containingEvents(item.activity),
+        })),
+      })),
+    });
     const saved = FeaturePlansSchema.parse(await (await stack.fetchApi(`${path}/plans`)).json());
     expect(saved.approval?.version).toBe(2);
   });
