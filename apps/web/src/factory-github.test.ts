@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -17,7 +18,7 @@ const identity: FactoryGitHubIdentity = {
 const directories: string[] = [];
 const marker = "<!-- kestrel-publication:v1:fixture-operation -->";
 
-async function fixture(mode = "ok", timeoutMs = 1000) {
+async function fixture(mode = "ok") {
   const directory = await mkdtemp(join(tmpdir(), "kestrel-factory-gh-"));
   directories.push(directory);
   const executable = join(directory, "gh.mjs");
@@ -148,8 +149,40 @@ if (url.pathname === base && method === 'POST') {
 } else reply(400, {message:'unexpected endpoint'});
 `;
   await writeFile(executable, source, { mode: 0o700 });
+  const state = async (): Promise<typeof initial> =>
+    JSON.parse(await readFile(join(directory, "state.json"), "utf8")) as typeof initial;
+  const waitForPost = async () => {
+    const deadline = performance.now() + 4_000;
+    while (performance.now() < deadline) {
+      const current = await state().catch(() => undefined);
+      if (
+        current !== undefined &&
+        current.issuePosts + current.commentPosts + current.dependencyPosts === 1
+      )
+        return;
+      await delay(20);
+    }
+    throw new Error("Fixture did not persist its POST before the readiness deadline");
+  };
   return {
-    adapter: createFactoryGitHubAdapter({ executable, timeoutMs }),
+    adapter: createFactoryGitHubAdapter({ executable }),
+    state,
+    waitForPost,
+    expireAfterPost: async <T>(operation: (signal: AbortSignal) => Promise<T>): Promise<T> => {
+      // Freeze only the parent deadline; the fixture remains a real subprocess.
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      const controller = new AbortController();
+      const pending = operation(controller.signal);
+      try {
+        await waitForPost();
+        await vi.runOnlyPendingTimersAsync();
+        return await pending;
+      } finally {
+        controller.abort();
+        await pending.catch(() => undefined);
+        vi.useRealTimers();
+      }
+    },
     calls: async (): Promise<Array<{ args: string[]; body: unknown; tokenPresent: boolean }>> => {
       return (await readFile(join(directory, "calls.jsonl"), "utf8"))
         .trim()
@@ -157,9 +190,6 @@ if (url.pathname === base && method === 'POST') {
         .map(
           (line) => JSON.parse(line) as { args: string[]; body: unknown; tokenPresent: boolean },
         );
-    },
-    state: async (): Promise<typeof initial> => {
-      return JSON.parse(await readFile(join(directory, "state.json"), "utf8")) as typeof initial;
     },
     setState: async (changes: Record<string, unknown>) => {
       const current: unknown = JSON.parse(await readFile(join(directory, "state.json"), "utf8"));
@@ -170,6 +200,7 @@ if (url.pathname === base && method === 'POST') {
 }
 
 afterEach(async () => {
+  vi.useRealTimers();
   vi.unstubAllEnvs();
   await Promise.all(
     directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
@@ -214,10 +245,12 @@ describe("Factory GitHub subprocess boundary", () => {
   });
 
   it("reconciles a timed-out create without issuing another POST, including closed issues", async () => {
-    const { adapter, calls, state, setState } = await fixture("create_timeout");
-    expect(await adapter.createIssue(identity, { title: "Approved export", body: marker })).toEqual(
-      { state: "uncertain", failure: "timeout" },
-    );
+    const { adapter, calls, state, setState, expireAfterPost } = await fixture("create_timeout");
+    expect(
+      await expireAfterPost((signal) =>
+        adapter.createIssue(identity, { title: "Approved export", body: marker }, signal),
+      ),
+    ).toEqual({ state: "uncertain", failure: "timeout" });
     const persisted = await state();
     await setState({ issues: persisted.issues.map((issue) => ({ ...issue, state: "closed" })) });
     expect(await adapter.findIssue(identity, marker)).toMatchObject({
@@ -276,13 +309,14 @@ describe("Factory GitHub subprocess boundary", () => {
   it.each(["issue", "comment"])(
     "reconciles one owned %s marker after a lost create response even when older history exceeds the scan limit",
     async (kind) => {
-      const { adapter, calls, setState } = await fixture(
+      const { adapter, calls, setState, expireAfterPost } = await fixture(
         kind === "issue" ? "create_timeout" : "comment_timeout",
       );
-      const result =
+      const result = await expireAfterPost((signal) =>
         kind === "issue"
-          ? await adapter.createIssue(identity, { title: "Approved export", body: marker })
-          : await adapter.createComment(identity, 1, marker);
+          ? adapter.createIssue(identity, { title: "Approved export", body: marker }, signal)
+          : adapter.createComment(identity, 1, marker, signal),
+      );
       expect(result).toEqual({ state: "uncertain", failure: "timeout" });
       await setState({ mode: kind === "issue" ? "limited" : "comment_limited" });
       const found =
@@ -402,8 +436,10 @@ describe("Factory GitHub subprocess boundary", () => {
   });
 
   it("reconciles one uncertain comment and updates its captured id without changing or closing the issue", async () => {
-    const { adapter, calls, state } = await fixture("comment_timeout");
-    expect(await adapter.createComment(identity, 1, marker)).toEqual({
+    const { adapter, calls, state, expireAfterPost } = await fixture("comment_timeout");
+    expect(
+      await expireAfterPost((signal) => adapter.createComment(identity, 1, marker, signal)),
+    ).toEqual({
       state: "uncertain",
       failure: "timeout",
     });
@@ -523,7 +559,7 @@ describe("Factory GitHub subprocess boundary", () => {
   );
 
   it("distinguishes cancellation before dispatch from cancellation after the request was persisted remotely", async () => {
-    const { adapter, state } = await fixture("create_timeout", 5000);
+    const { adapter, state, waitForPost } = await fixture("create_timeout");
     expect(
       await adapter.createIssue(identity, { title: "Export", body: marker }, AbortSignal.abort()),
     ).toEqual({ state: "not_sent", failure: "cancelled" });
@@ -535,7 +571,7 @@ describe("Factory GitHub subprocess boundary", () => {
       controller.signal,
     );
     try {
-      await expect.poll(async () => (await state()).issuePosts).toBe(1);
+      await waitForPost();
     } finally {
       controller.abort();
     }
@@ -577,8 +613,10 @@ describe("Factory GitHub subprocess boundary", () => {
   });
 
   it("confirms an uncertain native edge by rereading and accepts an explicit POST capability failure", async () => {
-    const { adapter, calls, setState } = await fixture("dependency_timeout");
-    expect(await adapter.addDependency(identity, 1, "500")).toEqual({
+    const { adapter, calls, setState, expireAfterPost } = await fixture("dependency_timeout");
+    expect(
+      await expireAfterPost((signal) => adapter.addDependency(identity, 1, "500", signal)),
+    ).toEqual({
       state: "confirmed",
       value: null,
     });
