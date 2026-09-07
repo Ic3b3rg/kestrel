@@ -8,6 +8,8 @@ import {
   createPgBoss,
   DIAGNOSTIC_QUEUE,
   DIAGNOSTIC_QUEUE_OPTIONS,
+  FACTORY_PLANNING_QUEUE,
+  FACTORY_PLANNING_QUEUE_OPTIONS,
 } from "./pg-boss.js";
 
 const config = readDatabaseConfig();
@@ -36,6 +38,8 @@ try {
   await boss.updateQueue(DIAGNOSTIC_QUEUE, DIAGNOSTIC_QUEUE_OPTIONS);
   await boss.createQueue(CHANGE_OVERVIEW_RENDER_QUEUE, CHANGE_OVERVIEW_RENDER_QUEUE_OPTIONS);
   await boss.updateQueue(CHANGE_OVERVIEW_RENDER_QUEUE, CHANGE_OVERVIEW_RENDER_QUEUE_UPDATE_OPTIONS);
+  await boss.createQueue(FACTORY_PLANNING_QUEUE, FACTORY_PLANNING_QUEUE_OPTIONS);
+  await boss.updateQueue(FACTORY_PLANNING_QUEUE, FACTORY_PLANNING_QUEUE_OPTIONS);
   console.log(
     JSON.stringify({
       event: "database.migrated",
