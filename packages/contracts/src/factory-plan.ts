@@ -214,10 +214,13 @@ export const FactoryBoardSchema = z.strictObject({
   schemaVersion: z.literal(1),
   feature: FeatureSchema,
   approvedVersion: version.nullable(),
-  executionReadiness: z.strictObject({
-    state: z.literal("unavailable"),
-    reason: z.literal("execution_not_available"),
-  }),
+  executionReadiness: z.discriminatedUnion("state", [
+    z.strictObject({
+      state: z.literal("unavailable"),
+      reason: z.literal("execution_not_available"),
+    }),
+    z.strictObject({ state: z.literal("enabled"), reason: z.literal("automatic_execution") }),
+  ]),
   columns: z
     .array(
       z.strictObject({

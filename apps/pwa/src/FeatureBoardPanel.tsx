@@ -7,6 +7,7 @@ import {
   retryFactoryIssuePublication,
 } from "./api.js";
 import { FactoryProviderProblem } from "./FeatureGitHubIssuesPanel.js";
+import { FeatureExecutionPanel } from "./FeatureExecutionPanel.js";
 import { planningRequestError } from "./FeatureNavigation.js";
 import { VerificationSummary } from "./FeaturePlanDocument.js";
 import { Button } from "./components/ui/button.js";
@@ -389,20 +390,16 @@ export function FeatureBoardPanel({
       )}
       {board === null ? null : (
         <>
-          <div className="planning-notice">
-            {board.feature.state === "cancelled" ? (
-              <p>This feature is cancelled.</p>
-            ) : (
-              <>
-                <p>Execution is not available yet.</p>
-                <p>
-                  {board.approvedVersion === null
-                    ? "Approve a saved plan to queue its Work Items."
-                    : "This approved feature is queued. No implementation has started."}
-                </p>
-              </>
-            )}
-          </div>
+          {board.approvedVersion === null ? (
+            <p className="planning-notice">Approve a saved plan to queue its Work Items.</p>
+          ) : (
+            <FeatureExecutionPanel
+              projectId={projectId}
+              featureId={featureId}
+              online={online}
+              onAuthenticationError={onAuthenticationError}
+            />
+          )}
           <div className="factory-board">
             {board.columns.map((column) => (
               <section

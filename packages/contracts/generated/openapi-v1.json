@@ -2150,22 +2150,44 @@
             "type": "array"
           },
           "executionReadiness": {
-            "additionalProperties": false,
-            "properties": {
-              "reason": {
-                "const": "execution_not_available",
-                "type": "string"
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "reason": {
+                    "const": "execution_not_available",
+                    "type": "string"
+                  },
+                  "state": {
+                    "const": "unavailable",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "state",
+                  "reason"
+                ],
+                "type": "object"
               },
-              "state": {
-                "const": "unavailable",
-                "type": "string"
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "reason": {
+                    "const": "automatic_execution",
+                    "type": "string"
+                  },
+                  "state": {
+                    "const": "enabled",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "state",
+                  "reason"
+                ],
+                "type": "object"
               }
-            },
-            "required": [
-              "state",
-              "reason"
-            ],
-            "type": "object"
+            ]
           },
           "feature": {
             "additionalProperties": false,

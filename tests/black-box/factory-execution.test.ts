@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   FeatureSchema,
+  FeaturePlanVersionSchema,
   LocalRepositoryInventorySchema,
   ProjectUpsertedSchema,
   FactoryExecutionSchema,
@@ -27,6 +28,13 @@ describe("Factory execution authority", () => {
     });
     cleanup.push(() => stack.close());
     await stack.authenticateOperator();
+    // Hold only delivery in this DB-authority test. The actual server can dispatch;
+    // this test drives competing worker claims explicitly and inspects them over HTTP.
+    await stack.executeSql(`
+      CREATE FUNCTION hold_execution_delivery() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN IF NEW.name = 'factory-execution-v1' THEN NEW.start_after = clock_timestamp() + interval '1 hour'; END IF; RETURN NEW; END $$;
+      CREATE TRIGGER hold_execution_delivery BEFORE INSERT ON pgboss.job FOR EACH ROW EXECUTE FUNCTION hold_execution_delivery();
+    `);
     const inventory = LocalRepositoryInventorySchema.parse(
       await (await stack.fetchApi("/api/v1/local-repository-sources")).json(),
     );
@@ -115,8 +123,10 @@ describe("Factory execution authority", () => {
       try {
         await boss.start();
         const queued = (await Promise.all([queueFactoryExecutions(pool,boss),queueFactoryExecutions(pool,boss),queueFactoryExecutions(pool,boss)])).flat();
-        if (queued.length !== 1) throw new Error('Duplicate writer reservations');
-        const claims = await Promise.all([claimFactoryExecution(pool,queued[0],randomUUID()),claimFactoryExecution(pool,queued[0],randomUUID())]);
+        if (queued.length > 1) throw new Error('Duplicate writer reservations');
+        const stored = await pool.query('SELECT id FROM factory_execution_runs WHERE feature_id = $1',[${JSON.stringify(featureId)}]);
+        if (stored.rows.length !== 1) throw new Error('Expected one durable reservation');
+        const claims = await Promise.all([claimFactoryExecution(pool,stored.rows[0].id,randomUUID()),claimFactoryExecution(pool,stored.rows[0].id,randomUUID())]);
         const accepted = claims.filter(Boolean); if (accepted.length !== 1) throw new Error('Duplicate writer claims');
         console.log(JSON.stringify(accepted[0]));
       } finally { await boss.stop(); await pool.end(); }
@@ -159,6 +169,18 @@ describe("Factory execution authority", () => {
     expect(
       FactoryExecutionSchema.parse(await (await stack.fetchApi(`${path}/execution`)).json()).state,
     ).toBe("stopping");
+    await stack.executeWebModule(`
+      import { createPool, createPgBoss, reconcileFactoryExecutions } from '@kestrel/database';
+      const pool=createPool(process.env.DATABASE_URL); const boss=createPgBoss({applicationName:'execution-expiry-test',databaseUrl:process.env.DATABASE_URL});
+      try {
+        await boss.start();
+        await pool.query("UPDATE factory_execution_runs SET heartbeat_at = clock_timestamp() - interval '1 minute' WHERE id = $1",[${JSON.stringify(claimed.id)}]);
+        await reconcileFactoryExecutions(pool,boss);
+      } finally { await boss.stop(); await pool.end(); }
+    `);
+    expect(
+      FactoryExecutionSchema.parse(await (await stack.fetchApi(`${path}/execution`)).json()),
+    ).toMatchObject({ state: "stopping", failure: "interrupted" });
     expect(
       JSON.parse(
         await stack.executeWebModule(`
@@ -194,5 +216,55 @@ describe("Factory execution authority", () => {
     expect(
       FactoryExecutionSchema.parse(await (await stack.fetchApi(`${path}/execution`)).json()),
     ).toMatchObject({ state: "cancelled", failure: "cancelled" });
+  });
+
+  it("retains an interrupted unclaimed delivery across restart without silently replaying it", async () => {
+    const plan = FeaturePlanVersionSchema.parse(
+      await (
+        await stack.fetchApi(`/api/v1/projects/${projectId}/features/${featureId}/plans/1`)
+      ).json(),
+    ).document;
+    const created = FeatureSchema.parse(
+      await (
+        await post(`/api/v1/projects/${projectId}/features`, {
+          requestId: randomUUID(),
+          title: "Interrupted delivery",
+        })
+      ).json(),
+    );
+    const path = `/api/v1/projects/${projectId}/features/${created.id}`;
+    expect(
+      (await post(`${path}/plans`, { requestId: randomUUID(), expectedVersion: null, plan }))
+        .status,
+    ).toBe(201);
+    expect((await post(`${path}/plans/1/approve`, { requestId: randomUUID() })).status).toBe(200);
+    await expect
+      .poll(
+        async () =>
+          ((await (await stack.fetchApi(`${path}/publication`)).json()) as { state: string }).state,
+        { timeout: 25_000, interval: 250 },
+      )
+      .toBe("published");
+    await stack.executeWebModule(`
+      import { createPool, createPgBoss, queueFactoryExecutions, reconcileFactoryExecutions } from '@kestrel/database';
+      const pool=createPool(process.env.DATABASE_URL); const boss=createPgBoss({applicationName:'execution-delivery-test',databaseUrl:process.env.DATABASE_URL});
+      try {
+        await boss.start(); await queueFactoryExecutions(pool,boss);
+        await pool.query("UPDATE pgboss.job SET state='failed' WHERE name='factory-execution-v1' AND id IN (SELECT id FROM factory_execution_runs WHERE feature_id=$1)",[${JSON.stringify(created.id)}]);
+        await reconcileFactoryExecutions(pool,boss);
+      } finally { await boss.stop(); await pool.end(); }
+    `);
+    await stack.restart("web");
+    const execution = FactoryExecutionSchema.parse(
+      await (await stack.fetchApi(`${path}/execution`)).json(),
+    );
+    expect(execution).toMatchObject({ state: "blocked", failure: "interrupted" });
+    expect(execution.workItems[0]?.runs).toHaveLength(1);
+    expect(execution.workItems[0]?.runs[0]).toMatchObject({
+      state: "blocked",
+      writerStopped: true,
+      startedAt: null,
+    });
+    expect(execution.workItems[1]?.runs).toEqual([]);
   });
 });

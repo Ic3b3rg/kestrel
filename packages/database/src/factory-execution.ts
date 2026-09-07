@@ -398,7 +398,6 @@ export function finishFactoryExecution(
         workspace.treeId === revision.treeId &&
         workspace.baseCommitId === revision.baseCommitId &&
         workspace.branch === revision.branch &&
-        commands !== undefined &&
         checks.rows.length === commands.length &&
         checks.rows.every(({ result }, index) => {
           const check = FactoryVerificationResultSchema.omit({ id: true, createdAt: true }).parse(
@@ -653,4 +652,61 @@ export function recordFactoryExecutionCheckpoint(
     );
     return revision;
   });
+}
+
+/** Surface interrupted delivery without granting another writer an expired reservation. */
+export async function reconcileFactoryExecutions(
+  pool: DatabasePool,
+  boss: DiagnosticJobSender,
+): Promise<void> {
+  const candidates = await pool.query<{ id: string; feature_id: string; project_id: string }>(
+    `SELECT run.id, run.feature_id, run.project_id FROM factory_execution_runs run
+     WHERE reservation_released_at IS NULL AND state IN ('queued', 'running', 'verifying', 'stopping')
+       AND ((owner_instance_id IS NOT NULL AND heartbeat_at < clock_timestamp() - interval '30 seconds')
+         OR NOT EXISTS (SELECT 1 FROM pgboss.job job WHERE job.name = $1 AND job.id = run.id AND job.state NOT IN ('failed', 'cancelled', 'completed')))
+     ORDER BY run.feature_id, run.id`,
+    [FACTORY_EXECUTION_QUEUE],
+  );
+  for (const candidate of candidates.rows) {
+    await withFactoryFeature(
+      pool,
+      candidate.project_id,
+      candidate.feature_id,
+      async (client, feature) => {
+        const selected = await client.query<OwnedRunRow>(
+          `SELECT run.* FROM factory_execution_runs run WHERE id = $1 AND reservation_released_at IS NULL
+          AND state IN ('queued', 'running', 'verifying', 'stopping')
+          AND ((owner_instance_id IS NOT NULL AND heartbeat_at < clock_timestamp() - interval '30 seconds')
+            OR NOT EXISTS (SELECT 1 FROM pgboss.job job WHERE job.name = $2 AND job.id = run.id AND job.state NOT IN ('failed', 'cancelled', 'completed')))
+         FOR UPDATE`,
+          [candidate.id, FACTORY_EXECUTION_QUEUE],
+        );
+        const row = selected.rows[0];
+        if (row === undefined) return;
+        const neverOwned = row.owner_instance_id === null;
+        const question = neverOwned
+          ? "Execution delivery stopped before work could start. Retry this Work Item after checking the local service."
+          : "Execution was interrupted. Kestrel retains this Project until its execution environment has been stopped.";
+        await client.query(
+          `UPDATE factory_execution_runs SET state = $2, failure = 'interrupted', question = $3,
+           stop_requested_at = clock_timestamp(), completed_at = clock_timestamp(),
+           reservation_released_at = CASE WHEN $4 THEN clock_timestamp() ELSE NULL END WHERE id = $1`,
+          [row.id, neverOwned ? "blocked" : "interrupted", question, neverOwned],
+        );
+        await client.query("UPDATE factory_work_items SET board_column = 'todo' WHERE id = $1", [
+          row.work_item_id,
+        ]);
+        if (feature.state !== "cancelled")
+          await client.query(
+            "UPDATE factory_features SET state = 'gated', updated_at = clock_timestamp() WHERE id = $1",
+            [row.feature_id],
+          );
+        await client.query(
+          "INSERT INTO factory_activity (feature_id, work_item_id, kind, summary) VALUES ($1,$2,'execution_blocked',$3)",
+          [row.feature_id, row.work_item_id, question],
+        );
+      },
+    );
+  }
+  await queueFactoryExecutions(pool, boss);
 }

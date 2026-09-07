@@ -116,24 +116,27 @@ async function boardFor(client: PoolClient, feature: FeatureRow): Promise<Factor
               kind: "cancelled",
               explanation: "This feature was cancelled. Its work is preserved for inspection.",
             }
-          : dependencies.length > 0
-            ? {
-                kind: "dependency",
-                explanation: `Waiting for verified Work Items: ${dependencies.join(", ")}`.slice(
-                  0,
-                  2000,
-                ),
-              }
-            : row.published_at === null
+          : row.board_column !== "todo"
+            ? null
+            : feature.state === "gated"
               ? {
-                  kind: "publication",
+                  kind: "human_gate",
                   explanation:
-                    "GitHub issue publication must be confirmed before this Work Item can run.",
+                    "This feature needs your decision. Inspect its execution attempt for the question and retained evidence.",
                 }
-              : {
-                  kind: "execution_unavailable",
-                  explanation: "The plan is approved. Automatic execution is not available yet.",
-                },
+              : dependencies.length > 0
+                ? {
+                    kind: "dependency",
+                    explanation:
+                      `Waiting for verified Work Items: ${dependencies.join(", ")}`.slice(0, 2000),
+                  }
+                : row.published_at === null
+                  ? {
+                      kind: "publication",
+                      explanation:
+                        "GitHub issue publication must be confirmed before this Work Item can run.",
+                    }
+                  : null,
       providerUrl: row.provider_issue?.url ?? null,
       activity: events
         .filter(({ workItemId }) => workItemId === row.id)
@@ -145,7 +148,10 @@ async function boardFor(client: PoolClient, feature: FeatureRow): Promise<Factor
     schemaVersion: 1,
     feature: mapFactoryFeature(feature),
     approvedVersion: feature.approved_plan_version,
-    executionReadiness: { state: "unavailable", reason: "execution_not_available" },
+    executionReadiness:
+      feature.approved_plan_version === null
+        ? { state: "unavailable", reason: "execution_not_available" }
+        : { state: "enabled", reason: "automatic_execution" },
     columns: ["todo", "in_progress", "in_review", "completed"].map((id) => ({
       id,
       items: items.filter(({ column }) => column === id),

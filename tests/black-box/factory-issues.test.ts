@@ -230,10 +230,12 @@ describe("Factory GitHub issue authority", () => {
       ),
     ).toBe(false);
     const board = FactoryBoardSchema.parse(await (await stack.fetchApi(`${path}/board`)).json());
-    expect(board.columns[0]?.items[0]).toMatchObject({
-      providerUrl: snapshot.issue.url,
-      blocking: { kind: "execution_unavailable" },
-    });
+    // Confirmed provider links remain available as execution advances the card.
+    expect(
+      board.columns
+        .flatMap(({ items }) => items)
+        .find(({ providerUrl }) => providerUrl === snapshot.issue.url),
+    ).toBeDefined();
     expect(board.columns[3]?.items).toEqual([]);
   }, 60_000);
 

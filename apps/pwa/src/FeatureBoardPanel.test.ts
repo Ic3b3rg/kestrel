@@ -5,6 +5,9 @@ import { expect, it, vi } from "vitest";
 import type { FactoryBoard, FactoryIssuePublication } from "@kestrel/contracts";
 import { FeatureBoardPanel } from "./FeatureBoardPanel.js";
 
+// Execution's own request/polling behavior is covered by FeatureExecutionPanel.test.ts.
+vi.mock("./FeatureExecutionPanel.js", () => ({ FeatureExecutionPanel: () => null }));
+
 const projectId = "018f0f89-949a-75a8-8f61-6df78a843b1e";
 const featureId = "018f0f89-9192-755f-aa96-f72094c734df";
 const firstId = "018f0f89-949a-75a8-8f61-6df78a843b1f";
@@ -22,7 +25,7 @@ const board: FactoryBoard = {
     updatedAt: createdAt,
   },
   approvedVersion: 1,
-  executionReadiness: { state: "unavailable", reason: "execution_not_available" },
+  executionReadiness: { state: "enabled", reason: "automatic_execution" },
   activity: [],
   columns: (["todo", "in_progress", "in_review", "completed"] as const).map((id) => ({
     id,
