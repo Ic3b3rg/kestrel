@@ -725,9 +725,7 @@ export function App() {
             connectionControls={
               <>
                 <HostGitHubConnectionPanel
-                  initialProjectId={
-                    new URLSearchParams(window.location.search).get("projectId") ?? ""
-                  }
+                  initialProjectId={route.projectId ?? ""}
                   online={online}
                   projects={projectInbox?.projects ?? []}
                   onAuthenticationError={handleAuthenticationBoundaryError}
@@ -738,8 +736,9 @@ export function App() {
                 />
                 <ProjectSettingsPanel
                   projects={projectInbox?.projects ?? []}
-                  initialProjectId={
-                    new URLSearchParams(window.location.search).get("projectId") ?? ""
+                  projectId={route.projectId ?? ""}
+                  onSelectProject={(projectId) =>
+                    navigate({ kind: "settings", ...(projectId === "" ? {} : { projectId }) })
                   }
                   online={online}
                   onAuthenticationError={handleAuthenticationBoundaryError}

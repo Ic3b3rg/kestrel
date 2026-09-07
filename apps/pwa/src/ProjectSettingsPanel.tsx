@@ -1,22 +1,22 @@
-import { useState } from "react";
 import type { DirectApiProfile, ProjectInbox } from "@kestrel/contracts";
 import { DirectApiProfilePanel } from "./DirectApiProfilePanel.js";
 import { projectLabel } from "./AuthenticatedShell.js";
 
 export function ProjectSettingsPanel({
   projects,
-  initialProjectId,
+  projectId,
+  onSelectProject,
   online,
   onAuthenticationError,
   onChanged,
 }: {
   projects: ProjectInbox["projects"];
-  initialProjectId: string;
+  projectId: string;
+  onSelectProject: (projectId: string) => void;
   online: boolean;
   onAuthenticationError?: (error: unknown) => boolean;
   onChanged: (projectId: string, profile: DirectApiProfile) => void;
 }) {
-  const [projectId, setProjectId] = useState(initialProjectId);
   const project = projects.find((candidate) => candidate.id === projectId);
   return (
     <section className="project-settings" aria-labelledby="project-settings-title">
@@ -30,14 +30,7 @@ export function ProjectSettingsPanel({
         id="settings-project"
         value={project?.id ?? ""}
         disabled={!online}
-        onChange={(event) => {
-          const id = event.currentTarget.value;
-          setProjectId(id);
-          const url = new URL(window.location.href);
-          if (id === "") url.searchParams.delete("projectId");
-          else url.searchParams.set("projectId", id);
-          window.history.replaceState(null, "", url);
-        }}
+        onChange={(event) => onSelectProject(event.currentTarget.value)}
       >
         <option value="">Choose a Project</option>
         {projects.map((candidate) => (

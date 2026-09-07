@@ -165,13 +165,19 @@ describe("host GitHub Project pull-request inbox", () => {
     expect(container.querySelectorAll("table")).toHaveLength(1);
     expect(container.querySelectorAll("tbody tr")).toHaveLength(2);
     expect(findButton(container, "All").textContent).toContain("2");
-    await act(async () => findButton(container, "Authored").click());
+    await act(async () => {
+      findButton(container, "Authored").click();
+      await Promise.resolve();
+    });
     expect(container.querySelectorAll("tbody tr")).toHaveLength(1);
     expect(container.querySelector("tbody")?.textContent).toContain(
       "Keep host credentials outside Kestrel",
     );
     expect(container.querySelector("tbody")?.textContent).not.toContain("Other change");
-    await act(async () => findButton(container, "Review requested").click());
+    await act(async () => {
+      findButton(container, "Review requested").click();
+      await Promise.resolve();
+    });
     expect(container.querySelectorAll("tbody tr")).toHaveLength(1);
     expect(loadInbox).toHaveBeenCalledTimes(1);
   });
@@ -199,7 +205,10 @@ describe("host GitHub Project pull-request inbox", () => {
     expect(findButton(container, "Authored").textContent).toContain("Unavailable");
     expect(container.textContent).toContain("Authored unavailable");
     expect(container.textContent).toContain("GitHub rate limit reached");
-    await act(async () => findButton(container, "Authored").click());
+    await act(async () => {
+      findButton(container, "Authored").click();
+      await Promise.resolve();
+    });
     expect(container.textContent).not.toContain("No open pull requests");
     expect(container.textContent).toContain("Pull requests unavailable for this filter");
   });

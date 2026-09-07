@@ -146,23 +146,28 @@ test.describe("local-first Project flow", () => {
     await expect(falconLink).toHaveAttribute("aria-current", "page");
 
     await page.setViewportSize({ height: 812, width: 375 });
+    await page.locator(".navigation-toggle").focus();
+    await page.keyboard.press("Enter");
     await expect(projectNavigation).toBeVisible();
     await kestrelLink.focus();
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(kestrelUrl);
     await expect(kestrelLink).toHaveAttribute("aria-current", "page");
 
+    await page.locator(".navigation-toggle").click();
     const settingsLink = page.getByRole("link", { name: "Settings", exact: true });
     await settingsLink.focus();
     await page.keyboard.press("Enter");
-    await expect(page).toHaveURL(/\/settings$/u);
+    await expect(page).toHaveURL(/\/settings\?projectId=/u);
     await expect(
       page.getByRole("heading", { level: 1, name: "Settings", exact: true }),
     ).toBeVisible();
+    await page.locator(".navigation-toggle").click();
     await expect(settingsLink).toHaveAttribute("aria-current", "page");
 
     await kestrelLink.focus();
     await page.keyboard.press("Enter");
+    await page.locator(".navigation-toggle").click();
     await openRepository("kestrel");
     const inbox = ProjectInboxSchema.parse(
       await page.evaluate(async () => {
@@ -177,6 +182,7 @@ test.describe("local-first Project flow", () => {
       await page.evaluate(() => ({ local: localStorage.length, session: sessionStorage.length })),
     ).toEqual({ local: 0, session: 0 });
 
+    await page.locator(".navigation-toggle").click();
     await expect(settingsLink).toBeVisible();
     expect(
       await page.evaluate(
@@ -211,7 +217,7 @@ test.describe("local-first Project flow", () => {
     await expect(
       page.getByRole("heading", { level: 1, name: "Settings", exact: true }),
     ).toBeVisible();
-    const repositorySettings = page.getByRole("region", { name: "Settings" });
+    const repositorySettings = page.getByRole("region", { name: "Settings", exact: true });
     await expect(
       repositorySettings.getByRole("heading", { name: "Repository access" }),
     ).toBeVisible();
@@ -291,7 +297,7 @@ test.describe("local-first Project flow", () => {
     await requestObserved;
     await expect(page.getByRole("button", { name: "Retaining…" })).toBeDisabled();
     await expect(dialog.getByRole("button", { name: "Close" })).toBeDisabled();
-    await expect(page.getByLabel("Repository")).toBeDisabled();
+    await expect(dialog.getByLabel("Repository", { exact: true })).toHaveCount(0);
     await expect(page.getByLabel("Base reference")).toBeDisabled();
     await expect(page.getByLabel("Head reference")).toBeDisabled();
     await expect(page.getByLabel("Change Intent")).toBeDisabled();
@@ -310,8 +316,11 @@ test.describe("local-first Project flow", () => {
     await retainButton.click();
 
     await expect(dialog).toHaveCount(0);
-    await expect(localTrigger).toBeFocused();
-    await expect(page.getByRole("status")).toContainText("The exact Review Revision is available.");
+    await expect(page.locator(".proposal-list")).toBeFocused();
+    await page.getByText("Repository details", { exact: true }).click();
+    await expect(
+      page.getByRole("status").filter({ hasText: "The exact Review Revision" }),
+    ).toContainText("The exact Review Revision is available.");
     await expect(page.getByText("Available", { exact: true })).toHaveCount(2);
     await expect(
       page.locator("dl.commit-pointer-list").getByText("Change Intent v1", { exact: true }),
@@ -498,6 +507,7 @@ test.describe("local-first Project flow", () => {
     await page.getByRole("dialog").getByRole("button", { name: "Close" }).click();
 
     await page.setViewportSize({ width: 320, height: 800 });
+    await page.locator(".navigation-toggle").click();
     await verifyInventoryState("no_configured_roots", "No repository roots are configured");
     const width = await page.evaluate(() => ({
       client: document.documentElement.clientWidth,

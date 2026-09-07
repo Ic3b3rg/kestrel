@@ -944,7 +944,7 @@ test.describe("observable Installation PWA", () => {
     await page.getByLabel("Password").fill(TEST_OPERATOR_CREDENTIALS.password);
     await page.getByRole("button", { name: "Sign in" }).click();
     await openProjectWorkspace(page);
-    await expect(page.getByText("Credentials stay with host Git", { exact: true })).toBeVisible();
+    await expect(page.getByText("Credentials stay with host Git", { exact: true })).toHaveCount(0);
     await expect(
       page.getByRole("link", { name: `#${String(proposal.number)} · ${proposal.title}` }),
     ).toHaveCount(0);

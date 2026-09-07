@@ -2905,7 +2905,7 @@ footer {
     display: none;
   }
   .project-rail {
-    height: 100%;
+    height: 100dvh;
     border: 0;
   }
   .authenticated-shell .shell-workspace {
@@ -2951,9 +2951,4 @@ footer {
 .host-github-identity {
   border: 0;
   padding: 0;
-}
-@media (min-width: 64rem) {
-  .project-rail {
-    height: 100dvh;
-  }
 }

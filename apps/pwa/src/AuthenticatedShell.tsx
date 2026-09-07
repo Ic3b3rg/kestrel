@@ -2,7 +2,7 @@ import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 
 import type { ProjectInbox } from "@kestrel/contracts";
 
-import type { AppRoute } from "./app-route.js";
+import { appPath, type AppRoute } from "./app-route.js";
 import type { PwaConnectionState } from "./InstallationView.js";
 
 type NavigableRoute = Exclude<AppRoute, { kind: "not_found" }>;
@@ -51,6 +51,14 @@ function shouldHandleNavigation(event: MouseEvent<HTMLAnchorElement>): boolean {
 }
 
 export function AuthenticatedShell(props: AuthenticatedShellProps) {
+  const currentProjectId =
+    props.route.kind === "project" || props.route.kind === "settings"
+      ? props.route.projectId
+      : undefined;
+  const settingsRoute = {
+    kind: "settings" as const,
+    ...(currentProjectId === undefined ? {} : { projectId: currentProjectId }),
+  };
   const [navigationOpen, setNavigationOpen] = useState(true);
   useEffect(() => {
     const desktop = window.matchMedia("(min-width: 64rem)");
@@ -155,15 +163,9 @@ export function AuthenticatedShell(props: AuthenticatedShellProps) {
             </div>
             <nav className="settings-navigation" aria-label="Installation">
               <a
-                href={
-                  props.route.kind === "project"
-                    ? `/settings?projectId=${props.route.projectId}`
-                    : "/settings"
-                }
+                href={appPath(settingsRoute)}
                 aria-current={props.route.kind === "settings" ? "page" : undefined}
-                onClick={
-                  props.route.kind === "project" ? undefined : navigate({ kind: "settings" })
-                }
+                onClick={navigate(settingsRoute)}
               >
                 Settings
               </a>
