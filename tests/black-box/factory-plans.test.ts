@@ -172,7 +172,7 @@ describe("versioned Factory plans", () => {
       { key: "save", order: 1, dependsOn: [] },
       { key: "restore", order: 2, dependsOn: ["save"] },
     ]);
-    expect(board.columns[0]?.items[0]?.blocking?.kind).toBe("execution_unavailable");
+    expect(board.columns[0]?.items[0]?.blocking?.kind).toBe("publication");
     expect(board.columns[0]?.items[1]?.blocking?.kind).toBe("dependency");
     expect(board.columns[0]?.items[0]?.activity).toHaveLength(1);
     const edit = await post(`${path}/plans`, { requestId: randomUUID(), expectedVersion: 2, plan });

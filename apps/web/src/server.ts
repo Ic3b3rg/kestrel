@@ -10,6 +10,10 @@ import { createDirectApiProfileService } from "./routes/direct-api-profiles.js";
 import { createDatabaseProjectService, createHostGitHubProjectService } from "./routes/projects.js";
 import { readSessionSigningKey } from "./session.js";
 import {
+  createFactoryPublicationProcessor,
+  FACTORY_PUBLICATION_WORK_OPTIONS,
+} from "./factory-publication.js";
+import {
   createFactoryPlanningProcessor,
   FACTORY_PLANNING_WORK_OPTIONS,
 } from "./factory-planning.js";
@@ -24,6 +28,7 @@ import {
   createPool,
   CHANGE_OVERVIEW_RENDER_QUEUE,
   FACTORY_PLANNING_QUEUE,
+  FACTORY_PUBLICATION_QUEUE,
   readReferencedArtifactLocators,
   readDatabaseConfig,
   readEventRetentionLimit,
@@ -31,6 +36,7 @@ import {
   reconcileAcquiringRevisions,
   reconcileLocalSourceAttachments,
   reconcilePlanningTurns,
+  reconcileFactoryPublications,
   withArtifactLifecycleLock,
 } from "@kestrel/database";
 import { readLocalSourceConfig, reconcileArtifactRoot } from "@kestrel/local-source";
@@ -113,6 +119,8 @@ const planningProcessor = createFactoryPlanningProcessor({
   pool,
   readSourceConfig: () => readLocalSourceConfig(),
 });
+const publicationProcessor = createFactoryPublicationProcessor({ pool });
+let publicationReconciliation: NodeJS.Timeout | undefined;
 boss.on("error", (error) => {
   app.log.error({ err: error, event: "pgboss.error" });
 });
@@ -123,6 +131,7 @@ async function shutdown(signal: string): Promise<void> {
     return;
   }
   shuttingDown = true;
+  clearInterval(publicationReconciliation);
   app.log.info({ event: "web.stopping", signal });
   await app.close();
   await boss.stop();
@@ -142,6 +151,28 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 try {
   await boss.start();
   await reconcilePlanningTurns(pool);
+  await reconcileFactoryPublications(pool, boss);
+  let reconcilingPublication = false;
+  publicationReconciliation = setInterval(() => {
+    if (reconcilingPublication || shuttingDown) return;
+    reconcilingPublication = true;
+    void reconcileFactoryPublications(pool, boss)
+      .catch((error: unknown) =>
+        app.log.error({ err: error, event: "factory.publication_reconciliation_failed" }),
+      )
+      .finally(() => {
+        reconcilingPublication = false;
+      });
+  }, 5_000);
+  publicationReconciliation.unref();
+  await boss.work<unknown>(
+    FACTORY_PUBLICATION_QUEUE,
+    FACTORY_PUBLICATION_WORK_OPTIONS,
+    async (jobs) => {
+      const job = jobs[0];
+      if (job !== undefined) await publicationProcessor.process(job.data, job.signal);
+    },
+  );
   await boss.work<unknown>(FACTORY_PLANNING_QUEUE, FACTORY_PLANNING_WORK_OPTIONS, async (jobs) => {
     const job = jobs[0];
     if (job !== undefined) await planningProcessor.process(job.data, job.signal);
@@ -164,6 +195,7 @@ try {
   });
   app.log.info({ event: "web.started" });
 } catch (error) {
+  clearInterval(publicationReconciliation);
   app.log.error({ err: error, event: "web.start_failed" });
   await app.close();
   await boss.stop({ graceful: false });

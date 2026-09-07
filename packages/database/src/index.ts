@@ -3,6 +3,8 @@ export * from "./diagnostics.js";
 export * from "./events.js";
 export * from "./factory-planning.js";
 export * from "./factory-plans.js";
+export * from "./factory-issue-imports.js";
+export * from "./factory-publication.js";
 export {
   mapInstallationRow,
   readInstallationSnapshot,

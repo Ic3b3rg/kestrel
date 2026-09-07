@@ -39,6 +39,7 @@ import {
 
 import { AUTHENTICATED_MUTATION_ROUTE_CONFIG } from "../authentication.js";
 import { renderFeaturePlanArtifacts } from "../factory-plan-artifacts.js";
+import { validateFactoryPublication } from "../factory-issue-content.js";
 
 const projectParams = z.strictObject({ projectId: KestrelIdSchema });
 const featureParams = projectParams.extend({ featureId: KestrelIdSchema });
@@ -57,7 +58,7 @@ const errors = {
   503: jsonSchema(ApiErrorSchema),
 };
 
-function factoryError(request: FastifyRequest, error: unknown) {
+export function factoryError(request: FastifyRequest, error: unknown) {
   if (!(error instanceof FactoryError)) throw error;
   const states = {
     not_found: [404, "NOT_FOUND", "The Project or feature is unavailable"],
@@ -194,6 +195,8 @@ export function registerFactoryPlanningRoutes(
           actorId,
           version,
           ApproveFeaturePlanCommandSchema.parse(request.body).requestId,
+          `${request.protocol}://${request.host}/projects/${projectId}/features/${featureId}?view=board`,
+          validateFactoryPublication,
         );
       } catch (error) {
         const failure = factoryError(request, error);
