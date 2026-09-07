@@ -66,7 +66,7 @@ describe("observable Kestrel Installation", () => {
     expect(shellResponse.status).toBe(200);
     expect(shellResponse.headers.get("cache-control")).toBe("no-cache, no-store");
     const shell = await shellResponse.text();
-    expect(shell).toContain("<title>Kestrel Installation</title>");
+    expect(shell).toContain("<title>Kestrel</title>");
 
     const assetUrls = [...shell.matchAll(/(?:href|src)="(\/assets\/[^"]+)"/gu)]
       .map((match) => match[1])
@@ -82,7 +82,7 @@ describe("observable Kestrel Installation", () => {
     expect(manifestResponse.headers.get("cache-control")).toBe("no-cache, no-store");
     await expect(manifestResponse.json()).resolves.toMatchObject({
       id: "/",
-      name: "Kestrel Installation",
+      name: "Kestrel",
       start_url: "/",
     });
 
