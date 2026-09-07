@@ -142,6 +142,17 @@ function render(inbox: ProjectInbox | null, loading = false): string {
   );
 }
 
+it("shows independent PR readiness facts without offering review execution before 0.2", () => {
+  const html = render(populatedInbox);
+  expect(html).toContain("PR readiness");
+  expect(html).toContain("Project / repository");
+  expect(html).toContain("Codex account");
+  expect(html).toContain("Selected model");
+  expect(html).toContain("Attach local repository");
+  expect(html).toContain("Review execution arrives in 0.2");
+  expect(html).not.toContain("Prepare Review");
+});
+
 describe("ProjectInboxPanel", () => {
   it("keeps the local command enabled while a populated inbox refreshes in the background", () => {
     const html = render(populatedInbox, true);
@@ -171,7 +182,7 @@ describe("ProjectInboxPanel", () => {
     expect(html).toContain("Refresh");
     expect(html).toContain("Manual only");
     expect(html).not.toContain("Synchronization");
-    expect(html).toContain("Model access");
+    expect(html).toContain("Direct API model access");
     expect(html).toContain("Not configured");
     expect(html).toContain("Observed base");
     expect(html).toContain("Observed head");
@@ -209,7 +220,7 @@ describe("ProjectInboxPanel", () => {
     expect(html).toContain("Available");
     expect(html).toContain("Review the authorization boundary.");
     expect(html).toContain("Change Intent v1");
-    expect(html).toContain("Model access");
+    expect(html).toContain("Direct API model access");
     expect(html).not.toContain("/private/");
   });
 

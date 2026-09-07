@@ -70,6 +70,15 @@ trusted-host inventory. Kestrel creates or reuses its durable Project and select
 Settings remains available from the rail for Installation, host connections, repository access, and
 Operator controls.
 
+Each observed PR includes a **PR readiness** summary with its Project and repository, local source
+attachment, provider proposal, observed and retained exact commits, Revision State, current Change
+Intent, live GitHub access, Codex account, and saved review model. Each missing prerequisite links
+to its correction. **Verify connections** refreshes the independent host probes and saved default;
+opening or reloading a Project also reads them afresh. A detached source does not hide a retained
+revision, and a new source head never inherits the old revision's availability. The model is checked
+against the current Codex catalog without choosing a fallback. Review execution arrives in 0.2; this
+summary does not start a review.
+
 In **Settings → Connections**, Kestrel runs fresh, bounded host probes for GitHub CLI and Codex CLI.
 The GitHub card shows the validated `github.com` account and selected-Project access only after its
 probe succeeds. The Codex card starts the official App Server, validates its protocol and version,

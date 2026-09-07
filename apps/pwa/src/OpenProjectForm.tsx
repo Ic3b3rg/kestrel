@@ -12,6 +12,7 @@ import { RepositorySetupState } from "./RepositorySetupState.js";
 
 export interface OpenProjectFormProps {
   disabled: boolean;
+  triggerLabel?: string;
   loadRepositories?: (signal?: AbortSignal) => Promise<LocalRepositoryInventory>;
   onAuthenticationError?: (error: unknown) => boolean;
   onOpened: (result: ProjectUpserted) => void;
@@ -30,6 +31,7 @@ function safeError(error: unknown, fallback: string): string {
 
 export function OpenProjectForm({
   disabled,
+  triggerLabel = "Open Project",
   loadRepositories = fetchLocalRepositories,
   onAuthenticationError,
   onOpened,
@@ -139,7 +141,7 @@ export function OpenProjectForm({
   return (
     <div className="open-project-entry">
       <button ref={trigger} type="button" disabled={disabled} onClick={() => void show()}>
-        Open Project
+        {triggerLabel}
       </button>
       {open ? (
         <dialog

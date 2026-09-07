@@ -331,7 +331,7 @@ export function DirectApiProfilePanel({
       {loading ? <p aria-busy="true">Reading the effective profile…</p> : null}
       {!loading && profile === null ? (
         <p className="direct-api-profile-empty">
-          No model route is configured. Repository source remains local.
+          No Direct API profile is configured. Repository source remains local.
         </p>
       ) : null}
       {profile === null ? null : <DirectApiProfileView profile={profile} />}
