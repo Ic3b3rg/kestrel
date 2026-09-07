@@ -46,6 +46,15 @@ CREATE UNIQUE INDEX factory_execution_project_writer ON factory_execution_runs(p
   WHERE reservation_released_at IS NULL;
 CREATE INDEX factory_execution_feature_runs ON factory_execution_runs(feature_id, work_item_id, attempt);
 
+CREATE TABLE factory_execution_containers (
+  name text PRIMARY KEY CHECK (name ~ '^kestrel-factory-[a-f0-9-]{32,64}$'),
+  run_id uuid NOT NULL REFERENCES factory_execution_runs(id),
+  phase text NOT NULL CHECK (phase IN ('implementation', 'verification')),
+  container_id text CHECK (container_id ~ '^[a-f0-9]{64}$'),
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  stopped_at timestamptz
+);
+
 CREATE TABLE factory_execution_activity (
   id uuid PRIMARY KEY DEFAULT uuidv7(),
   run_id uuid NOT NULL REFERENCES factory_execution_runs(id),
@@ -80,3 +89,6 @@ GRANT UPDATE (head_commit_id, tree_id) ON factory_feature_workspaces TO kestrel_
 GRANT UPDATE (state, owner_instance_id, runtime, revision, failure, question, started_at,
   heartbeat_at, completed_at, stop_requested_at, reservation_released_at) ON factory_execution_runs TO kestrel_runtime;
 GRANT UPDATE (board_column) ON factory_work_items TO kestrel_runtime;
+GRANT SELECT, INSERT ON factory_execution_containers TO kestrel_runtime;
+REVOKE UPDATE, DELETE ON factory_execution_containers FROM kestrel_runtime;
+GRANT UPDATE (container_id, stopped_at) ON factory_execution_containers TO kestrel_runtime;

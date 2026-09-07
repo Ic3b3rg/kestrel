@@ -143,6 +143,17 @@ describe("Factory execution authority", () => {
     expect(detail.acceptedCommands).toEqual(verification);
     expect(detail.verification).toEqual([]);
     expect(detail.writerStopped).toBe(false);
+    const containerName = `kestrel-factory-${randomUUID()}`;
+    const containerId = "a".repeat(64);
+    await stack.executeWebModule(`
+      import { createPool, reserveFactoryExecutionContainer, identifyFactoryExecutionContainer } from '@kestrel/database';
+      const pool=createPool(process.env.DATABASE_URL);
+      const run=${JSON.stringify(claimed)};
+      try {
+        await reserveFactoryExecutionContainer(pool,run,${JSON.stringify(containerName)},'implementation');
+        await identifyFactoryExecutionContainer(pool,run,{name:${JSON.stringify(containerName)},id:${JSON.stringify(containerId)}});
+      } finally { await pool.end(); }
+    `);
     const cancel = await post(`${path}/cancel`, { requestId: randomUUID(), expectedVersion: 1 });
     expect(cancel.status, await cancel.clone().text()).toBe(200);
     expect(
@@ -159,5 +170,29 @@ describe("Factory execution authority", () => {
     `),
       ),
     ).toBeNull();
+    await stack.executeWebModule(`
+      import { createPool, finishFactoryExecution } from '@kestrel/database';
+      const pool=createPool(process.env.DATABASE_URL);
+      try { await finishFactoryExecution(pool,${JSON.stringify(claimed)},{verified:false,writerStopped:true,failure:'cancelled',question:null}); }
+      finally { await pool.end(); }
+    `);
+    const uncertain = FactoryExecutionSchema.parse(
+      await (await stack.fetchApi(`${path}/execution`)).json(),
+    );
+    expect(uncertain).toMatchObject({ state: "stopping", failure: "stop_unconfirmed" });
+    expect(uncertain.workItems[0]?.runs[0]?.writerStopped).toBe(false);
+    await stack.executeWebModule(`
+      import { createPool, stopFactoryExecutionContainer, finishFactoryExecution } from '@kestrel/database';
+      const pool=createPool(process.env.DATABASE_URL); const run=${JSON.stringify(claimed)};
+      try {
+        try { await stopFactoryExecutionContainer(pool,run,{name:${JSON.stringify(containerName)},id:${JSON.stringify("b".repeat(64))}}); throw new Error('Wrong container accepted'); }
+        catch (error) { if(error.code!=='conflict') throw error; }
+        await stopFactoryExecutionContainer(pool,run,{name:${JSON.stringify(containerName)},id:${JSON.stringify(containerId)}});
+        await finishFactoryExecution(pool,run,{verified:false,writerStopped:true,failure:'cancelled',question:null});
+      } finally { await pool.end(); }
+    `);
+    expect(
+      FactoryExecutionSchema.parse(await (await stack.fetchApi(`${path}/execution`)).json()),
+    ).toMatchObject({ state: "cancelled", failure: "cancelled" });
   });
 });

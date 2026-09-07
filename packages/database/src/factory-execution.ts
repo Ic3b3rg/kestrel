@@ -330,20 +330,6 @@ export function saveFactoryExecutionRuntime(
   });
 }
 
-export function saveFactoryExecutionRevision(
-  pool: DatabasePool,
-  run: ClaimedFactoryExecution,
-  revision: FactoryExecutionRevision,
-): Promise<void> {
-  return withRun(pool, run, async (client, feature, row) => {
-    assertRunning(feature, row);
-    await client.query(
-      "UPDATE factory_execution_runs SET state = 'verifying', revision = $2::jsonb WHERE id = $1",
-      [run.id, JSON.stringify(FactoryExecutionRevisionSchema.parse(revision))],
-    );
-  });
-}
-
 export function saveFactoryVerification(
   pool: DatabasePool,
   run: ClaimedFactoryExecution,
@@ -381,9 +367,14 @@ export function finishFactoryExecution(
 ): Promise<void> {
   return withRun(pool, run, async (client, feature, row) => {
     if (row.reservation_released_at !== null) return;
+    const pendingContainers = await client.query(
+      "SELECT name FROM factory_execution_containers WHERE run_id = $1 AND stopped_at IS NULL",
+      [run.id],
+    );
+    const writerStopped = outcome.writerStopped && pendingContainers.rowCount === 0;
     let verified =
       outcome.verified &&
-      outcome.writerStopped &&
+      writerStopped &&
       feature.state === "implementing" &&
       row.stop_requested_at === null &&
       ["running", "verifying"].includes(row.state);
@@ -395,7 +386,13 @@ export function finishFactoryExecution(
       );
       const revision = FactoryExecutionRevisionSchema.parse(row.revision);
       const commands = run.plan.workItems.find((item) => item.key === run.key)?.verification;
+      const workspace = await workspaceFor(client, run.featureId);
       verified =
+        workspace !== null &&
+        workspace.headCommitId === revision.headCommitId &&
+        workspace.treeId === revision.treeId &&
+        workspace.baseCommitId === revision.baseCommitId &&
+        workspace.branch === revision.branch &&
         commands !== undefined &&
         checks.rows.length === commands.length &&
         checks.rows.every(({ result }, index) => {
@@ -415,14 +412,14 @@ export function finishFactoryExecution(
         throw new FactoryError("conflict", "All approved checks must pass on the exact revision");
     }
     const cancelled = feature.state === "cancelled";
-    const state = !outcome.writerStopped
+    const state = !writerStopped
       ? "interrupted"
       : cancelled
         ? "cancelled"
         : verified
           ? "verified"
           : "blocked";
-    const failure = !outcome.writerStopped
+    const failure = !writerStopped
       ? "stop_unconfirmed"
       : cancelled
         ? "cancelled"
@@ -432,7 +429,7 @@ export function finishFactoryExecution(
     await client.query(
       `UPDATE factory_execution_runs SET state = $2, failure = $3, question = $4, completed_at = clock_timestamp(),
         reservation_released_at = CASE WHEN $5 THEN clock_timestamp() ELSE NULL END WHERE id = $1`,
-      [run.id, state, failure, outcome.question?.slice(0, 4000) ?? null, outcome.writerStopped],
+      [run.id, state, failure, outcome.question?.slice(0, 4000) ?? null, writerStopped],
     );
     await client.query("UPDATE factory_work_items SET board_column = $2 WHERE id = $1", [
       row.work_item_id,
@@ -456,5 +453,199 @@ export function finishFactoryExecution(
           : `${run.key} stopped: ${failure ?? "interrupted"}`,
       ],
     );
+  });
+}
+
+export function reserveFactoryExecutionContainer(
+  pool: DatabasePool,
+  run: ClaimedFactoryExecution,
+  name: string,
+  phase: "implementation" | "verification",
+): Promise<void> {
+  return withRun(pool, run, async (client, feature, row) => {
+    assertRunning(feature, row);
+    const count = await client.query<{ count: string }>(
+      "SELECT count(*) FROM factory_execution_containers WHERE run_id = $1",
+      [run.id],
+    );
+    if (Number(count.rows[0]?.count) >= 39)
+      throw new FactoryError("conflict", "The attempt environment limit was reached");
+    await client.query(
+      "INSERT INTO factory_execution_containers (name, run_id, phase) VALUES ($1,$2,$3)",
+      [name, run.id, phase],
+    );
+  });
+}
+
+export async function identifyFactoryExecutionContainer(
+  pool: DatabasePool,
+  run: ClaimedFactoryExecution,
+  container: { name: string; id: string },
+): Promise<void> {
+  const active = await withRun(pool, run, async (client, feature, row) => {
+    if (row.reservation_released_at !== null) throw new FactoryError("conflict");
+    const result = await client.query(
+      "UPDATE factory_execution_containers SET container_id = $3 WHERE name = $1 AND run_id = $2 AND stopped_at IS NULL AND (container_id IS NULL OR container_id = $3)",
+      [container.name, run.id, container.id],
+    );
+    if (result.rowCount !== 1) throw new FactoryError("conflict");
+    return (
+      feature.state === "implementing" &&
+      ["running", "verifying"].includes(row.state) &&
+      row.stop_requested_at === null
+    );
+  });
+  // Preserve the discovered identity even when cancellation arrived during Docker create.
+  if (!active) throw new FactoryError("conflict");
+}
+
+export function stopFactoryExecutionContainer(
+  pool: DatabasePool,
+  run: ClaimedFactoryExecution,
+  container: { name: string; id: string | null },
+): Promise<void> {
+  return withRun(pool, run, async (client) => {
+    const result = await client.query(
+      `UPDATE factory_execution_containers SET container_id = COALESCE(container_id, $3), stopped_at = COALESCE(stopped_at, clock_timestamp())
+       WHERE name = $1 AND run_id = $2 AND (container_id IS NULL OR container_id = $3)`,
+      [container.name, run.id, container.id],
+    );
+    if (result.rowCount !== 1) throw new FactoryError("conflict");
+  });
+}
+
+export interface FactoryFeatureWorkspace {
+  projectId: string;
+  featureId: string;
+  repositoryId: string;
+  sourceIdentity: string;
+  baseCommitId: string;
+  objectFormat: "sha1" | "sha256";
+  branch: string;
+  headCommitId: string;
+  treeId: string;
+}
+
+async function workspaceFor(
+  client: PoolClient,
+  featureId: string,
+): Promise<FactoryFeatureWorkspace | null> {
+  const result = await client.query<{
+    project_id: string;
+    feature_id: string;
+    repository_id: string;
+    source_identity: string;
+    base_commit_id: string;
+    object_format: "sha1" | "sha256";
+    branch: string;
+    head_commit_id: string;
+    tree_id: string;
+  }>("SELECT * FROM factory_feature_workspaces WHERE feature_id = $1", [featureId]);
+  const row = result.rows[0];
+  return row === undefined
+    ? null
+    : {
+        projectId: row.project_id,
+        featureId: row.feature_id,
+        repositoryId: row.repository_id,
+        sourceIdentity: row.source_identity,
+        baseCommitId: row.base_commit_id,
+        objectFormat: row.object_format,
+        branch: row.branch,
+        headCommitId: row.head_commit_id,
+        treeId: row.tree_id,
+      };
+}
+
+export function readFactoryFeatureWorkspace(
+  pool: DatabasePool,
+  run: ClaimedFactoryExecution,
+): Promise<FactoryFeatureWorkspace | null> {
+  return withRun(pool, run, (client) => workspaceFor(client, run.featureId));
+}
+
+/** Freeze the independently inspected source before any runtime receives a writable mount. */
+export function initializeFactoryFeatureWorkspace(
+  pool: DatabasePool,
+  run: ClaimedFactoryExecution,
+  workspace: FactoryFeatureWorkspace,
+): Promise<FactoryFeatureWorkspace> {
+  return withRun(pool, run, async (client, feature, row) => {
+    assertRunning(feature, row);
+    if (
+      workspace.featureId !== row.feature_id ||
+      workspace.projectId !== feature.project_id ||
+      workspace.repositoryId !== row.source?.repositoryId ||
+      workspace.sourceIdentity !== row.source.identity ||
+      workspace.headCommitId !== workspace.baseCommitId ||
+      (run.context?.commitId != null && workspace.baseCommitId !== run.context.commitId)
+    )
+      throw new FactoryError("conflict");
+    FactoryExecutionRevisionSchema.parse({
+      baseCommitId: workspace.baseCommitId,
+      headCommitId: workspace.headCommitId,
+      treeId: workspace.treeId,
+      branch: workspace.branch,
+    });
+    const existing = await workspaceFor(client, row.feature_id);
+    if (existing !== null) {
+      if (
+        Object.entries(existing).some(
+          ([key, value]) => workspace[key as keyof FactoryFeatureWorkspace] !== value,
+        )
+      )
+        throw new FactoryError("conflict");
+      return existing;
+    }
+    await client.query(
+      `INSERT INTO factory_feature_workspaces (feature_id, project_id, repository_id, source_identity, base_commit_id, object_format, branch, head_commit_id, tree_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [
+        workspace.featureId,
+        workspace.projectId,
+        workspace.repositoryId,
+        workspace.sourceIdentity,
+        workspace.baseCommitId,
+        workspace.objectFormat,
+        workspace.branch,
+        workspace.headCommitId,
+        workspace.treeId,
+      ],
+    );
+    return workspace;
+  });
+}
+
+/** Publish the controller's Git CAS checkpoint and its evidence identity in one DB transaction. */
+export function recordFactoryExecutionCheckpoint(
+  pool: DatabasePool,
+  run: ClaimedFactoryExecution,
+  checkpoint: { expectedHead: string; headCommitId: string; treeId: string },
+): Promise<FactoryExecutionRevision> {
+  return withRun(pool, run, async (client, feature, row) => {
+    assertRunning(feature, row);
+    const workspace = await workspaceFor(client, run.featureId);
+    if (
+      workspace === null ||
+      (workspace.headCommitId !== checkpoint.expectedHead &&
+        (workspace.headCommitId !== checkpoint.headCommitId ||
+          workspace.treeId !== checkpoint.treeId))
+    )
+      throw new FactoryError("conflict");
+    const revision = FactoryExecutionRevisionSchema.parse({
+      baseCommitId: workspace.baseCommitId,
+      branch: workspace.branch,
+      headCommitId: checkpoint.headCommitId,
+      treeId: checkpoint.treeId,
+    });
+    await client.query(
+      "UPDATE factory_feature_workspaces SET head_commit_id = $2, tree_id = $3 WHERE feature_id = $1",
+      [run.featureId, checkpoint.headCommitId, checkpoint.treeId],
+    );
+    await client.query(
+      "UPDATE factory_execution_runs SET state = 'verifying', revision = $2::jsonb WHERE id = $1",
+      [run.id, JSON.stringify(revision)],
+    );
+    return revision;
   });
 }
