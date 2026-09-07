@@ -7,8 +7,8 @@ github.com pull request may add optional Provider Observation metadata without G
 PostgreSQL is the durable application authority; verified source objects live in a separate
 Kestrel-owned artifact root.
 
-Feature chats add persistent, source-grounded planning, versioned plans, and an ordered Kanban
-inside each Project. Factory 0.1 follows the
+Feature chats add persistent, source-grounded planning, versioned plans, GitHub issue import and
+publication, and an ordered Kanban inside each Project. Factory 0.1 follows the
 [approved feature workflow](./docs/factory-v01/spec.md); its delivery is tracked in
 [GitHub issue #209](https://github.com/Ic3b3rg/kestrel/issues/209).
 
@@ -123,6 +123,13 @@ source commit under **Project documents**. Dirty files and untracked files are n
 omitted documents are disclosed. The planning runtime has read-only authority and does not create
 issues or implement changes.
 
+Before saving the first plan, open **GitHub issues** to select up to 20 existing open issues from
+the Project's attached GitHub repository. Discovery reads at most five pages of 20 results and
+discloses its limit. Kestrel retains the selected title, original Markdown body, URL,
+repository/issue identity, and import time. These snapshots are untrusted planning context; provider
+edits never authorize work. Assign each imported issue to exactly one Work Item before approval. An
+issue reserved by another active feature cannot be imported or reused.
+
 Use **Stop planning** for a pending turn. An unavailable, interrupted, or failed turn remains
 visible and **Retry planning** starts a new attempt without duplicating its user message. A process
 interruption may take up to four minutes to become an interrupted state; uncertain work is never
@@ -138,11 +145,22 @@ approved; a stale browser tab must load the current version before authorizing i
 
 Approval freezes the displayed version, Markdown plan/spec, source references, and limits. The
 **Board** tab shows its ordered cards in To do, In progress, In review, and Completed columns, with
-dependencies, acceptance criteria, activity, and blocking explanations in card details. This slice
-queues the feature and explicitly reports that automatic execution is not available yet. GitHub
-publication and execution follow in the next Factory tickets. Completed is reserved for a confirmed
+dependencies, acceptance criteria, activity, and blocking explanations in card details. Approval
+also queues GitHub publication through the existing host `gh` session. New Work Items receive
+detailed issues; imported issues keep their original body. Kestrel adds an owned progress comment
+with the Feature link and dependency references, and records native GitHub dependency edges where
+available. The Board reports partial publication, access/rate-limit failures, and **Retry
+publication** without discarding confirmed issue links. This slice explicitly reports that automatic
+execution is not available yet; execution follows in #214. Completed is reserved for a confirmed
 feature merge; no manual card action can imply completion. Cancelling preserves the plan and cards
 for inspection and discards a pending generation result.
+
+Publication continues with the browser closed while the local process is running. Retry reconciles
+an uncertain issue/comment creation using its persisted operation marker; it never blindly repeats
+that POST. If the provider outcome cannot be confirmed, publication stays blocked with the previous
+progress retained. A definite rejection can be retried after access is restored or its rate-limit
+window expires. No GitHub issue is closed during planning or publication. See the
+[provider boundary](./docs/research/factory-github-publication-contract.md) for bounds and recovery.
 
 If the password or every signed-in device is lost, recover the sole Operator from the trusted host:
 
@@ -384,6 +402,9 @@ Useful endpoints on port 3000:
 - `/api/v1/installation` — authoritative snapshot;
 - `/api/v1/projects` — Project inbox read and public GitHub pull request open/refresh;
 - `/api/v1/projects/:projectId/provider/github` — bounded, grouped host-session pull request inbox;
+- `/api/v1/projects/:projectId/github-issues` — bounded open GitHub issue discovery;
+- `/api/v1/projects/:projectId/features/:featureId/imports` — selected, immutable issue snapshots;
+- `/api/v1/projects/:projectId/features/:featureId/publication` — durable publication status/retry;
 - `/api/v1/connections/codex` — fresh bounded Codex App Server subscription-readiness probe;
 - `/api/v1/projects/:projectId/provider/github/pull-requests/observe` — record one selected pull
   request on that Project without acquiring source;
@@ -475,9 +496,9 @@ npm run contracts:check
 
 ## Architecture boundaries
 
-- `apps/web` owns the Fastify HTTP/SSE boundary, the bounded Codex readiness and planning adapters,
-  serves the compiled PWA, and consumes the Factory planning and Change Overview rendering queues.
-  Host CLI credentials remain in their existing custody.
+- `apps/web` owns the Fastify HTTP/SSE boundary, the bounded Codex and GitHub adapters, serves the
+  compiled PWA, and consumes the Factory planning, publication, and Change Overview rendering
+  queues. Host CLI credentials remain in their existing custody.
 - `apps/worker` consumes durable acquisition and diagnostic pg-boss jobs.
 - `apps/pwa` owns the browser experience and retains no product data in browser storage.
 - `packages/contracts` owns versioned Zod, JSON Schema, and OpenAPI contracts.
