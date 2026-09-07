@@ -2224,6 +2224,705 @@
       ],
       "type": "object"
     },
+    "FactoryExecution": {
+      "additionalProperties": false,
+      "properties": {
+        "failure": {
+          "anyOf": [
+            {
+              "enum": [
+                "unavailable",
+                "authentication",
+                "usage_limit",
+                "sandbox_unavailable",
+                "source_unavailable",
+                "source_changed",
+                "permission_required",
+                "input_required",
+                "timeout",
+                "cancelled",
+                "interrupted",
+                "invalid_response",
+                "verification_failed",
+                "revision_changed",
+                "stop_unconfirmed"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "featureId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        },
+        "question": {
+          "anyOf": [
+            {
+              "maxLength": 4000,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "baseCommitId": {
+                  "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                  "type": "string"
+                },
+                "branch": {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "headCommitId": {
+                  "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                  "type": "string"
+                },
+                "treeId": {
+                  "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "baseCommitId",
+                "headCommitId",
+                "treeId",
+                "branch"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "schemaVersion": {
+          "const": 1,
+          "type": "number"
+        },
+        "state": {
+          "enum": [
+            "not_approved",
+            "pending",
+            "running",
+            "stopping",
+            "blocked",
+            "verified",
+            "cancelled"
+          ],
+          "type": "string"
+        },
+        "workItems": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                "type": "string"
+              },
+              "key": {
+                "maxLength": 48,
+                "minLength": 1,
+                "type": "string"
+              },
+              "runs": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "attempt": {
+                      "maximum": 20,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "completedAt": {
+                      "anyOf": [
+                        {
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                      "type": "string"
+                    },
+                    "failure": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "unavailable",
+                            "authentication",
+                            "usage_limit",
+                            "sandbox_unavailable",
+                            "source_unavailable",
+                            "source_changed",
+                            "permission_required",
+                            "input_required",
+                            "timeout",
+                            "cancelled",
+                            "interrupted",
+                            "invalid_response",
+                            "verification_failed",
+                            "revision_changed",
+                            "stop_unconfirmed"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "id": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                      "type": "string"
+                    },
+                    "startedAt": {
+                      "anyOf": [
+                        {
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "state": {
+                      "enum": [
+                        "queued",
+                        "running",
+                        "verifying",
+                        "stopping",
+                        "verified",
+                        "blocked",
+                        "cancelled",
+                        "interrupted"
+                      ],
+                      "type": "string"
+                    },
+                    "workItemId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                      "type": "string"
+                    },
+                    "writerStopped": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "workItemId",
+                    "attempt",
+                    "state",
+                    "failure",
+                    "writerStopped",
+                    "createdAt",
+                    "startedAt",
+                    "completedAt"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 20,
+                "type": "array"
+              }
+            },
+            "required": [
+              "id",
+              "key",
+              "runs"
+            ],
+            "type": "object"
+          },
+          "maxItems": 40,
+          "type": "array"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "featureId",
+        "state",
+        "failure",
+        "question",
+        "revision",
+        "workItems"
+      ],
+      "type": "object"
+    },
+    "FactoryExecutionRun": {
+      "additionalProperties": false,
+      "properties": {
+        "acceptedCommands": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "args": {
+                "items": {
+                  "maxLength": 2048,
+                  "pattern": "^[^\\x00]*$",
+                  "type": "string"
+                },
+                "maxItems": 32,
+                "type": "array"
+              },
+              "cwd": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\x00]*$",
+                "type": "string"
+              },
+              "program": {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._+-]*$",
+                "type": "string"
+              },
+              "timeoutSeconds": {
+                "maximum": 7200,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "program",
+              "args",
+              "cwd",
+              "timeoutSeconds"
+            ],
+            "type": "object"
+          },
+          "maxItems": 12,
+          "minItems": 1,
+          "type": "array"
+        },
+        "activity": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": {
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "runtime",
+                  "command",
+                  "file_change",
+                  "question",
+                  "verification",
+                  "lifecycle"
+                ],
+                "type": "string"
+              },
+              "summary": {
+                "maxLength": 2000,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "summary",
+              "createdAt"
+            ],
+            "type": "object"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "approvedVersion": {
+          "maximum": 200,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "attempt": {
+          "maximum": 20,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "completedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+          "type": "string"
+        },
+        "failure": {
+          "anyOf": [
+            {
+              "enum": [
+                "unavailable",
+                "authentication",
+                "usage_limit",
+                "sandbox_unavailable",
+                "source_unavailable",
+                "source_changed",
+                "permission_required",
+                "input_required",
+                "timeout",
+                "cancelled",
+                "interrupted",
+                "invalid_response",
+                "verification_failed",
+                "revision_changed",
+                "stop_unconfirmed"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "featureId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        },
+        "question": {
+          "anyOf": [
+            {
+              "maxLength": 4000,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "baseCommitId": {
+                  "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                  "type": "string"
+                },
+                "branch": {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "headCommitId": {
+                  "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                  "type": "string"
+                },
+                "treeId": {
+                  "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "baseCommitId",
+                "headCommitId",
+                "treeId",
+                "branch"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runtime": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "containerId": {
+                  "anyOf": [
+                    {
+                      "maxLength": 128,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "kind": {
+                  "const": "codex",
+                  "type": "string"
+                },
+                "model": {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "threadId": {
+                  "anyOf": [
+                    {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "turnId": {
+                  "anyOf": [
+                    {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "model",
+                "threadId",
+                "turnId",
+                "containerId"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "schemaVersion": {
+          "const": 1,
+          "type": "number"
+        },
+        "startedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "enum": [
+            "queued",
+            "running",
+            "verifying",
+            "stopping",
+            "verified",
+            "blocked",
+            "cancelled",
+            "interrupted"
+          ],
+          "type": "string"
+        },
+        "verification": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "additionalProperties": false,
+                "properties": {
+                  "args": {
+                    "items": {
+                      "maxLength": 2048,
+                      "pattern": "^[^\\x00]*$",
+                      "type": "string"
+                    },
+                    "maxItems": 32,
+                    "type": "array"
+                  },
+                  "cwd": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\x00]*$",
+                    "type": "string"
+                  },
+                  "program": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._+-]*$",
+                    "type": "string"
+                  },
+                  "timeoutSeconds": {
+                    "maximum": 7200,
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "program",
+                  "args",
+                  "cwd",
+                  "timeoutSeconds"
+                ],
+                "type": "object"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                "type": "string"
+              },
+              "durationMs": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "exitCode": {
+                "anyOf": [
+                  {
+                    "maximum": 9007199254740991,
+                    "minimum": -9007199254740991,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "headCommitId": {
+                "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                "type": "string"
+              },
+              "outcome": {
+                "enum": [
+                  "passed",
+                  "failed",
+                  "timeout",
+                  "cancelled",
+                  "unavailable"
+                ],
+                "type": "string"
+              },
+              "position": {
+                "maximum": 12,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "round": {
+                "maximum": 3,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "stderr": {
+                "maxLength": 8192,
+                "type": "string"
+              },
+              "stderrTruncated": {
+                "type": "boolean"
+              },
+              "stdout": {
+                "maxLength": 8192,
+                "type": "string"
+              },
+              "stdoutTruncated": {
+                "type": "boolean"
+              },
+              "treeId": {
+                "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "round",
+              "position",
+              "command",
+              "headCommitId",
+              "treeId",
+              "outcome",
+              "exitCode",
+              "stdout",
+              "stderr",
+              "stdoutTruncated",
+              "stderrTruncated",
+              "durationMs",
+              "createdAt"
+            ],
+            "type": "object"
+          },
+          "maxItems": 36,
+          "type": "array"
+        },
+        "workItemId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        },
+        "writerStopped": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "workItemId",
+        "attempt",
+        "state",
+        "failure",
+        "writerStopped",
+        "createdAt",
+        "startedAt",
+        "completedAt",
+        "schemaVersion",
+        "featureId",
+        "approvedVersion",
+        "question",
+        "revision",
+        "runtime",
+        "acceptedCommands",
+        "activity",
+        "verification"
+      ],
+      "type": "object"
+    },
     "FactoryGitHubIssues": {
       "additionalProperties": false,
       "properties": {

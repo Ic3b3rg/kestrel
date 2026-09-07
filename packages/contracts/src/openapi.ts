@@ -1,4 +1,5 @@
 import { z, type ZodType } from "zod";
+import { FactoryExecutionSchema, FactoryExecutionRunSchema } from "./factory-execution.js";
 import {
   FactoryGitHubIssuesSchema,
   FactoryIssueImportsSchema,
@@ -154,6 +155,8 @@ export const reviewWorkflowAcceptedJsonSchema = asJsonSchema(ReviewWorkflowAccep
 export const startReviewWorkflowCommandJsonSchema = asJsonSchema(StartReviewWorkflowCommandSchema);
 
 const factoryComponents = {
+  FactoryExecution: asComponentSchema(asJsonSchema(FactoryExecutionSchema)),
+  FactoryExecutionRun: asComponentSchema(asJsonSchema(FactoryExecutionRunSchema)),
   FactoryGitHubIssues: asComponentSchema(asJsonSchema(FactoryGitHubIssuesSchema)),
   FactoryIssueImports: asComponentSchema(asJsonSchema(FactoryIssueImportsSchema)),
   ImportFactoryIssuesCommand: asComponentSchema(asJsonSchema(ImportFactoryIssuesCommandSchema)),
@@ -979,6 +982,17 @@ export const openApiDocument = sortJson({
     "/api/v1/projects/{projectId}/features/{featureId}/board": {
       parameters: factoryParameters(),
       get: factoryRead("readFactoryBoard", "FactoryBoard"),
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/execution": {
+      parameters: factoryParameters(),
+      get: factoryRead("readFactoryExecution", "FactoryExecution"),
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/execution/runs/{runId}": {
+      parameters: [
+        ...factoryParameters(),
+        { in: "path", name: "runId", required: true, schema: { type: "string", format: "uuid" } },
+      ],
+      get: factoryRead("readFactoryExecutionRun", "FactoryExecutionRun"),
     },
     "/api/v1/projects/{projectId}/features/{featureId}/cancel": {
       parameters: factoryParameters(),
