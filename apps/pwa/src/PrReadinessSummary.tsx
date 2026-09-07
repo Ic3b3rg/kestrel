@@ -186,7 +186,11 @@ export function PrReadinessSummary({
               </span>
             ) : null}
             {codex.state === "checked" && codex.value.state === "ready" ? null : (
-              <a href="/settings#codex-connection-title">Correct Codex connection</a>
+              <a
+                href={`/settings?projectId=${encodeURIComponent(project.id)}#codex-connection-title`}
+              >
+                Correct Codex connection
+              </a>
             )}
           </dd>
         </div>

@@ -164,12 +164,19 @@ test.describe("local-first Project flow", () => {
     await page.getByRole("button", { name: "Open navigation", exact: true }).focus();
     await page.keyboard.press("Enter");
     await expect(projectNavigation).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("button", { name: "Open navigation", exact: true })).toBeFocused();
+    await page.keyboard.press("Enter");
+    await page.getByRole("button", { name: "Close navigation", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Open navigation", exact: true })).toBeFocused();
+    await page.keyboard.press("Enter");
     await kestrelLink.focus();
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(kestrelUrl);
     await expect(
       page.getByRole("dialog", { name: "Workspace navigation", exact: true }),
     ).toHaveCount(0);
+    await expect(page.getByRole("main")).toBeFocused();
     await page.getByRole("button", { name: "Open navigation", exact: true }).click();
     await expect(kestrelLink).toHaveAttribute("aria-current", "page");
     const settingsLink = page.getByRole("link", { name: "Settings", exact: true });

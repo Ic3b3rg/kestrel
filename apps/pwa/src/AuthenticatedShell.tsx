@@ -1,4 +1,4 @@
-import { useEffect, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useRef, type MouseEvent, type ReactNode } from "react";
 import { FolderGit2, Layers3, PanelLeft, Settings2, X } from "lucide-react";
 
 import type { ProjectInbox } from "@kestrel/contracts";
@@ -71,6 +71,9 @@ function shouldHandleNavigation(event: MouseEvent<HTMLAnchorElement>): boolean {
 
 function WorkspaceShell(props: AuthenticatedShellProps) {
   const { openMobile, setOpenMobile } = useSidebar();
+  const navigationTrigger = useRef<HTMLButtonElement>(null);
+  const workspace = useRef<HTMLElement>(null);
+  const focusWorkspaceAfterClose = useRef(false);
   useEffect(() => setOpenMobile(false), [props.route, setOpenMobile]);
   const currentProjectId =
     props.route.kind === "project" || props.route.kind === "settings"
@@ -83,13 +86,26 @@ function WorkspaceShell(props: AuthenticatedShellProps) {
   const navigate = (route: NavigableRoute) => (event: MouseEvent<HTMLAnchorElement>) => {
     if (!shouldHandleNavigation(event)) return;
     event.preventDefault();
+    if (openMobile) focusWorkspaceAfterClose.current = true;
     setOpenMobile(false);
     props.onNavigate(route);
   };
 
   return (
     <>
-      <Sidebar className="project-rail" aria-label="Workspace navigation" role="complementary">
+      <Sidebar
+        className="project-rail"
+        aria-label="Workspace navigation"
+        role="complementary"
+        onMobileCloseAutoFocus={(event) => {
+          event.preventDefault();
+          const target = focusWorkspaceAfterClose.current
+            ? workspace.current
+            : navigationTrigger.current;
+          focusWorkspaceAfterClose.current = false;
+          target?.focus();
+        }}
+      >
         <SidebarHeader className="gap-5 px-4 pt-5 pb-3">
           <div className="flex items-center justify-between">
             <a className="wordmark wordmark-link" href="/" onClick={navigate({ kind: "projects" })}>
@@ -214,6 +230,7 @@ function WorkspaceShell(props: AuthenticatedShellProps) {
       <div className="workspace-frame">
         <header className="mobile-workspace-header md:hidden">
           <Button
+            ref={navigationTrigger}
             variant="ghost"
             size="icon"
             aria-label="Open navigation"
@@ -224,7 +241,7 @@ function WorkspaceShell(props: AuthenticatedShellProps) {
           </Button>
           <span>Kestrel</span>
         </header>
-        <main className="shell-workspace" id="workspace" tabIndex={-1}>
+        <main ref={workspace} className="shell-workspace" id="workspace" tabIndex={-1}>
           {props.children}
           <p className="activity-line" role="status" aria-live="polite" aria-atomic="true">
             {props.announcement}

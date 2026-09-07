@@ -1280,6 +1280,10 @@ test.describe("observable Installation PWA", () => {
     await expect(fact("Codex account")).not.toContainText("readiness@example.com");
     await expect(fact("GitHub access")).toContainText("Verified for this Project");
     await expect(fact("Selected model")).toContainText("Live catalog unavailable");
+    await expect(readiness.getByRole("link", { name: "Correct Codex connection" })).toHaveAttribute(
+      "href",
+      `/settings?projectId=${currentProject.id}#codex-connection-title`,
+    );
     await readiness.getByRole("link", { name: "Correct Codex connection" }).click();
     await expect(
       page.getByRole("heading", { name: "Codex subscription", exact: true }),
