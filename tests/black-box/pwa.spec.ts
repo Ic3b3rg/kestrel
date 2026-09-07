@@ -6,6 +6,7 @@ import {
   ProjectInboxSchema,
   ReviewRevisionAvailableSchema,
   type ChangeIntentVersionCreated,
+  type CodexReviewModelPreference,
   type CodexSubscriptionConnection,
   type HostGitHubConnection,
   type ProjectUpserted,
@@ -1220,6 +1221,10 @@ test.describe("observable Installation PWA", () => {
 
     let codexProbeCount = 0;
     let codexAuthenticationRequired = false;
+    let codexModels = [
+      { id: "gpt-5.6-sol", displayName: "GPT-5.6 Sol", isDefault: true },
+      { id: "gpt-5.6-terra", displayName: "GPT-5.6 Terra", isDefault: false },
+    ];
     let codexProbeBlocked = true;
     let releaseFirstCodexProbe: () => void = () => undefined;
     const firstCodexProbeGate = new Promise<void>((resolve) => {
@@ -1249,7 +1254,7 @@ test.describe("observable Installation PWA", () => {
               email: "operator@example.com",
               plan: "plus",
             },
-            models: [{ id: "gpt-5.6-sol", displayName: "GPT-5.6 Sol", isDefault: true }],
+            models: codexModels,
             usage: {
               availability: "available",
               primary: {
@@ -1262,6 +1267,25 @@ test.describe("observable Installation PWA", () => {
             checkedAt: "2026-09-02T20:00:00.000Z",
           };
       await route.fulfill({ json: connection, status: 200 });
+    });
+
+    let reviewModelPreference: CodexReviewModelPreference = {
+      schemaVersion: 1,
+      route: "codex_subscription",
+      selectedModelId: null,
+      updatedAt: null,
+    };
+    await page.route("**/api/v1/settings/review-model", async (route) => {
+      if (route.request().method() === "PUT") {
+        const command = route.request().postDataJSON() as { modelId: string };
+        reviewModelPreference = {
+          schemaVersion: 1,
+          route: "codex_subscription",
+          selectedModelId: command.modelId,
+          updatedAt: "2026-09-07T12:01:00.000Z",
+        };
+      }
+      await route.fulfill({ json: reviewModelPreference, status: 200 });
     });
 
     await page.goto(runningStack.pwaUrl);
@@ -1314,6 +1338,7 @@ test.describe("observable Installation PWA", () => {
     await page.getByRole("link", { name: "Settings", exact: true }).click();
     const connectionPanel = page.locator(".github-connection");
     const codexPanel = page.locator(".codex-connection");
+    const reviewModelPanel = page.locator(".review-model-settings");
     await expect(connectionPanel.getByRole("status")).toContainText("Checking");
     await expect(codexPanel.getByRole("status")).toContainText("Checking");
     connectionProbeBlocked = false;
@@ -1326,6 +1351,21 @@ test.describe("observable Installation PWA", () => {
     await expect(codexPanel).toContainText("Plus");
     await expect(codexPanel).toContainText("GPT-5.6 Sol");
     await expect(codexPanel).toContainText("25% used");
+    await expect(reviewModelPanel.locator(".state-marker")).toContainText("Choose a model");
+    await reviewModelPanel.getByLabel("Default for future reviews").selectOption("gpt-5.6-sol");
+    await reviewModelPanel.getByRole("button", { name: "Save default" }).click();
+    await expect(reviewModelPanel.locator(".state-marker")).toContainText("Ready");
+    await expect(reviewModelPanel).toContainText("Default saved for future review preparation");
+
+    codexModels = [{ id: "gpt-5.6-terra", displayName: "GPT-5.6 Terra", isDefault: true }];
+    await reviewModelPanel.getByRole("button", { name: "Refresh catalog" }).click();
+    await expect(reviewModelPanel.locator(".state-marker")).toContainText("Action required");
+    await expect(reviewModelPanel).toContainText("gpt-5.6-sol");
+    await expect(reviewModelPanel).toContainText("did not select a fallback");
+    await expect(reviewModelPanel.getByLabel("Default for future reviews")).toHaveValue("");
+    await reviewModelPanel.getByLabel("Default for future reviews").selectOption("gpt-5.6-terra");
+    await reviewModelPanel.getByRole("button", { name: "Save default" }).click();
+    await expect(reviewModelPanel.locator(".state-marker")).toContainText("Ready");
     await connectionPanel.getByLabel("Project access").selectOption(openedProject.project.id);
     await expect(connectionPanel).toContainText("Ic3b3rg/kestrel");
     await expect(connectionPanel).toContainText("operator");
@@ -1357,6 +1397,7 @@ test.describe("observable Installation PWA", () => {
       page.getByRole("heading", { level: 1, name: "Settings", exact: true }),
     ).toBeVisible();
     await expect(page.getByRole("heading", { name: "Sign in to Kestrel" })).toHaveCount(0);
+    await expect(page.getByLabel("Default for future reviews")).toHaveValue("gpt-5.6-terra");
     const diagnosticButton = page.getByRole("button", { name: "Run diagnostic" });
     await expect(diagnosticButton).toBeEnabled();
     await page.keyboard.press("Tab");
