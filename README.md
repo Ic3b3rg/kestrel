@@ -108,24 +108,25 @@ or persist tokens or auth-config material.
 
 ### Plan a feature in Kestrel
 
-Open an authorized Project and create a named feature from its chat navigation. Each conversation
-has a stable `/projects/:projectId/features/:featureId` address. Kestrel saves the user message and
-pending turn before replying to the browser, then processes the turn through the host Codex App
-Server. You can close the page while the local Installation keeps running and reopen the saved chat
-later. Stopping the local process or sleeping the computer also stops progress.
+Open an authorized Project and select **Features → New feature** in the sidebar. Enter a **Feature
+name** and choose **Create feature**. Each conversation has a stable
+`/projects/:projectId/features/:featureId` address. Kestrel saves the user message and pending turn
+before replying to the browser, then processes the turn through the host Codex App Server. You can
+close the page while the local Installation keeps running and reopen the saved chat later. Stopping
+the local process or sleeping the computer also stops progress.
 
 Planning requires the existing ChatGPT-authenticated Codex connection. It uses the saved Codex
 model, or the current catalog default when none has been selected; it does not use a Direct API key.
 Committed Project Markdown, including available repository instructions, is inspectable with its
-source commit. Dirty files and untracked files are not used. Missing or omitted documents are
-disclosed. The planning runtime has read-only authority and does not create issues or implement
-changes.
+source commit under **Project documents**. Dirty files and untracked files are not used. Missing or
+omitted documents are disclosed. The planning runtime has read-only authority and does not create
+issues or implement changes.
 
-Pending turns can be stopped. An unavailable, interrupted, or failed turn remains visible and can be
-retried explicitly without duplicating its user message. A process interruption may take up to four
-minutes to become an interrupted state; uncertain work is never silently replayed. A chat is bounded
-to 200 messages and 400 attempts, and a Project to 200 features. A capacity error leaves the
-existing conversation intact.
+Use **Stop planning** for a pending turn. An unavailable, interrupted, or failed turn remains
+visible and **Retry planning** starts a new attempt without duplicating its user message. A process
+interruption may take up to four minutes to become an interrupted state; uncertain work is never
+silently replayed. A chat is bounded to 200 messages and 400 attempts, and a Project to 200
+features. A capacity error leaves the existing conversation intact.
 
 If the password or every signed-in device is lost, recover the sole Operator from the trusted host:
 
