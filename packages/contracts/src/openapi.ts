@@ -3,6 +3,7 @@ import { z, type ZodType } from "zod";
 import {
   ApiErrorSchema,
   ChangeIntentVersionCreatedSchema,
+  CodexReviewModelPreferenceSchema,
   CodexSubscriptionConnectionSchema,
   ConfigureDirectApiProfileCommandSchema,
   CreateChangeIntentVersionCommandSchema,
@@ -30,6 +31,7 @@ import {
   ReviewRevisionAvailableSchema,
   ReviewWorkflowAcceptedSchema,
   SessionSchema,
+  SelectCodexReviewModelCommandSchema,
   StartReviewWorkflowCommandSchema,
   StepUpCommandSchema,
   StepUpProofSchema,
@@ -89,6 +91,12 @@ export const credentialChangeCommandJsonSchema = asJsonSchema(CredentialChangeCo
 export const codexSubscriptionConnectionJsonSchema = asJsonSchema(
   CodexSubscriptionConnectionSchema,
 );
+export const codexReviewModelPreferenceJsonSchema = asJsonSchema(
+  CodexReviewModelPreferenceSchema,
+);
+export const selectCodexReviewModelCommandJsonSchema = asJsonSchema(
+  SelectCodexReviewModelCommandSchema,
+);
 export const configureDirectApiProfileCommandJsonSchema = asJsonSchema(
   ConfigureDirectApiProfileCommandSchema,
 );
@@ -127,6 +135,7 @@ export const contractBundle = sortJson({
     InstallationSnapshot: asComponentSchema(installationSnapshotJsonSchema),
     CredentialChangeCommand: asComponentSchema(credentialChangeCommandJsonSchema),
     ConfigureDirectApiProfileCommand: asComponentSchema(configureDirectApiProfileCommandJsonSchema),
+    CodexReviewModelPreference: asComponentSchema(codexReviewModelPreferenceJsonSchema),
     CodexSubscriptionConnection: asComponentSchema(codexSubscriptionConnectionJsonSchema),
     DirectApiProfileResponse: asComponentSchema(directApiProfileResponseJsonSchema),
     CreateChangeIntentVersionCommand: asComponentSchema(createChangeIntentVersionCommandJsonSchema),
@@ -152,6 +161,7 @@ export const contractBundle = sortJson({
     ReviewWorkflowAccepted: asComponentSchema(reviewWorkflowAcceptedJsonSchema),
     StartReviewWorkflowCommand: asComponentSchema(startReviewWorkflowCommandJsonSchema),
     Session: asComponentSchema(sessionJsonSchema),
+    SelectCodexReviewModelCommand: asComponentSchema(selectCodexReviewModelCommandJsonSchema),
     StepUpCommand: asComponentSchema(stepUpCommandJsonSchema),
     StepUpProof: asComponentSchema(stepUpProofJsonSchema),
   },
@@ -210,6 +220,7 @@ export const openApiDocument = sortJson({
       ConfigureDirectApiProfileCommand: asComponentSchema(
         configureDirectApiProfileCommandJsonSchema,
       ),
+      CodexReviewModelPreference: asComponentSchema(codexReviewModelPreferenceJsonSchema),
       CodexSubscriptionConnection: asComponentSchema(codexSubscriptionConnectionJsonSchema),
       DirectApiProfileResponse: asComponentSchema(directApiProfileResponseJsonSchema),
       CreateChangeIntentVersionCommand: asComponentSchema(
@@ -237,6 +248,7 @@ export const openApiDocument = sortJson({
       ReviewWorkflowAccepted: asComponentSchema(reviewWorkflowAcceptedJsonSchema),
       StartReviewWorkflowCommand: asComponentSchema(startReviewWorkflowCommandJsonSchema),
       Session: asComponentSchema(sessionJsonSchema),
+      SelectCodexReviewModelCommand: asComponentSchema(selectCodexReviewModelCommandJsonSchema),
       StepUpCommand: asComponentSchema(stepUpCommandJsonSchema),
       StepUpProof: asComponentSchema(stepUpProofJsonSchema),
     },
@@ -300,6 +312,68 @@ export const openApiDocument = sortJson({
           "503": {
             content: { "application/json": { schema: schemaReference("ApiError") } },
             description: "The Project lookup or connection probe is unavailable",
+          },
+        },
+      },
+    },
+    "/api/v1/settings/review-model": {
+      get: {
+        description: "Reads the Installation default model candidate for future Codex reviews.",
+        operationId: "readCodexReviewModelPreference",
+        responses: {
+          "200": {
+            content: {
+              "application/json": { schema: schemaReference("CodexReviewModelPreference") },
+            },
+            description: "Current Codex review model preference",
+          },
+          "401": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Operator authentication is required",
+          },
+          "503": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Review model preference storage is unavailable",
+          },
+        },
+      },
+      put: {
+        description:
+          "Selects a default model for future Codex reviews after validating it against a fresh live catalog.",
+        operationId: "selectCodexReviewModel",
+        parameters: authenticatedMutationHeaders(false),
+        requestBody: {
+          content: {
+            "application/json": { schema: schemaReference("SelectCodexReviewModelCommand") },
+          },
+          required: true,
+        },
+        responses: {
+          "200": {
+            content: {
+              "application/json": { schema: schemaReference("CodexReviewModelPreference") },
+            },
+            description: "Codex review model preference selected",
+          },
+          "400": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Invalid closed model selection command",
+          },
+          "401": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Operator authentication is required",
+          },
+          "403": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Origin or CSRF validation failed",
+          },
+          "409": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "The selected model is absent from the current validated catalog",
+          },
+          "503": {
+            content: { "application/json": { schema: schemaReference("ApiError") } },
+            description: "Codex verification or preference storage is unavailable",
           },
         },
       },

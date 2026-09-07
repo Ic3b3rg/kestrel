@@ -259,6 +259,26 @@ export const CodexSubscriptionModelSchema = z.strictObject({
   isDefault: z.boolean(),
 });
 
+export const SelectCodexReviewModelCommandSchema = z.strictObject({
+  modelId: CodexSubscriptionModelSchema.shape.id,
+});
+
+export const CodexReviewModelPreferenceSchema = z
+  .strictObject({
+    schemaVersion: SchemaVersionSchema,
+    route: z.literal("codex_subscription"),
+    selectedModelId: CodexSubscriptionModelSchema.shape.id.nullable(),
+    updatedAt: UtcDateTimeSchema.nullable(),
+  })
+  .superRefine((preference, context) => {
+    if ((preference.selectedModelId === null) !== (preference.updatedAt === null)) {
+      context.addIssue({
+        code: "custom",
+        message: "Codex model selection and update timestamp must be present together",
+      });
+    }
+  });
+
 export const CodexUsageWindowSchema = z.strictObject({
   usedPercent: z.number().int().min(0).max(100),
   windowDurationMinutes: z.number().int().positive().max(525_600).nullable(),
@@ -1772,12 +1792,14 @@ export type CreateChangeIntentVersionCommand = z.infer<
 >;
 export type ChangeProposal = z.infer<typeof ChangeProposalSchema>;
 export type CodexChatGptPlan = z.infer<typeof CodexChatGptPlanSchema>;
+export type CodexReviewModelPreference = z.infer<typeof CodexReviewModelPreferenceSchema>;
 export type CodexSubscriptionConnection = z.infer<typeof CodexSubscriptionConnectionSchema>;
 export type CodexSubscriptionConnectionReason = z.infer<
   typeof CodexSubscriptionConnectionReasonSchema
 >;
 export type CodexSubscriptionModel = z.infer<typeof CodexSubscriptionModelSchema>;
 export type CodexSubscriptionUsage = z.infer<typeof CodexSubscriptionUsageSchema>;
+export type SelectCodexReviewModelCommand = z.infer<typeof SelectCodexReviewModelCommandSchema>;
 export type LoginCommand = z.infer<typeof LoginCommandSchema>;
 export type LocalRepositoryInventory = z.infer<typeof LocalRepositoryInventorySchema>;
 export type LocalRepositoryInventoryItem = z.infer<typeof LocalRepositoryInventoryItemSchema>;
