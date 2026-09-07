@@ -48,6 +48,12 @@ function factoryError(request: FastifyRequest, error: unknown) {
     not_found: [404, "NOT_FOUND", "The Project or feature is unavailable"],
     conflict: [409, "REQUEST_REJECTED", "The feature changed; refresh before trying again"],
     unavailable: [503, "SERVICE_UNAVAILABLE", "Feature planning is unavailable"],
+    conversation_limit: [
+      409,
+      "REQUEST_REJECTED",
+      "The conversation limit was reached; start a new feature chat",
+    ],
+    feature_limit: [409, "REQUEST_REJECTED", "The Project feature limit was reached"],
   } as const;
   const [status, code, message] = states[error.code];
   return {

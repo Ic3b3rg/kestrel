@@ -18,7 +18,10 @@ import type { DiagnosticJobSender } from "./diagnostics.js";
 import { FACTORY_PLANNING_QUEUE, pgBossDatabase } from "./pg-boss.js";
 
 export class FactoryError extends Error {
-  constructor(public readonly code: "not_found" | "conflict" | "unavailable") {
+  constructor(
+    public readonly code:
+      "not_found" | "conflict" | "unavailable" | "conversation_limit" | "feature_limit",
+  ) {
     super(`Factory operation failed: ${code}`);
     this.name = "FactoryError";
   }
@@ -46,8 +49,25 @@ export interface ClaimedPlanningTurn {
 
 export async function reconcilePlanningTurns(pool: DatabasePool): Promise<void> {
   // Runtime turns are bounded to three minutes. Uncertain work is never silently replayed.
-  await pool.query(`UPDATE factory_planning_turns SET state = 'failed', failure = 'interrupted', completed_at = clock_timestamp()
-    WHERE state = 'running' AND started_at < clock_timestamp() - interval '4 minutes'`);
+  await inTransaction(pool, async (client) => {
+    // Use the same Feature-before-turn lock order as sends, completion, and cancellation.
+    const expired = await client.query<{ id: string }>(`
+      SELECT id FROM factory_features WHERE EXISTS (
+        SELECT 1 FROM factory_planning_turns WHERE feature_id = factory_features.id
+          AND state = 'running' AND started_at < clock_timestamp() - interval '4 minutes'
+      ) ORDER BY id FOR UPDATE`);
+    if (expired.rows.length === 0) return;
+    const interrupted = await client.query<{ feature_id: string }>(
+      `UPDATE factory_planning_turns SET state = 'failed', failure = 'interrupted', completed_at = clock_timestamp()
+       WHERE feature_id = ANY($1::uuid[]) AND state = 'running'
+         AND started_at < clock_timestamp() - interval '4 minutes' RETURNING feature_id`,
+      [expired.rows.map(({ id }) => id)],
+    );
+    await client.query(
+      "UPDATE factory_features SET runtime_thread_id = NULL, updated_at = clock_timestamp() WHERE id = ANY($1::uuid[])",
+      [interrupted.rows.map(({ feature_id }) => feature_id)],
+    );
+  });
 }
 
 export async function claimPlanningTurn(
@@ -196,22 +216,14 @@ interface TurnRow {
   completed_at: Date | null;
 }
 
-async function withFeature<T>(
+async function inTransaction<T>(
   pool: DatabasePool,
-  projectId: string,
-  featureId: string,
-  operation: (client: PoolClient, row: FeatureRow) => Promise<T>,
+  operation: (client: PoolClient) => Promise<T>,
 ): Promise<T> {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const selected = await client.query<FeatureRow>(
-      `SELECT * FROM factory_features WHERE (${FEATURE_FAMILY}) = (${PROJECT_FAMILY}) AND id = $2 FOR UPDATE`,
-      [projectId, featureId],
-    );
-    const row = selected.rows[0];
-    if (row === undefined) throw new FactoryError("not_found");
-    const result = await operation(client, row);
+    const result = await operation(client);
     await client.query("COMMIT");
     return result;
   } catch (error) {
@@ -222,27 +234,60 @@ async function withFeature<T>(
   }
 }
 
+async function withFeature<T>(
+  pool: DatabasePool,
+  projectId: string,
+  featureId: string,
+  operation: (client: PoolClient, row: FeatureRow) => Promise<T>,
+): Promise<T> {
+  return inTransaction(pool, async (client) => {
+    const selected = await client.query<FeatureRow>(
+      `SELECT * FROM factory_features WHERE (${FEATURE_FAMILY}) = (${PROJECT_FAMILY}) AND id = $2 FOR UPDATE`,
+      [projectId, featureId],
+    );
+    const row = selected.rows[0];
+    if (row === undefined) throw new FactoryError("not_found");
+    return operation(client, row);
+  });
+}
+
 export async function createFactoryFeature(
   pool: DatabasePool,
   projectId: string,
   actorId: string,
   command: CreateFeatureCommand,
 ): Promise<Feature> {
-  const result = await pool.query<FeatureRow>(
-    `INSERT INTO factory_features (project_id, created_by, request_id, title)
-     SELECT (${PROJECT_FAMILY}), $2, $3, $4
-     WHERE EXISTS (SELECT 1 FROM projects WHERE id = $1)
-     ON CONFLICT (created_by, request_id) DO UPDATE SET request_id = EXCLUDED.request_id
-     WHERE (${FEATURE_FAMILY}) = EXCLUDED.project_id AND factory_features.title = EXCLUDED.title
-     RETURNING *`,
-    [projectId, actorId, command.requestId, command.title],
-  );
-  const row = result.rows[0];
-  if (row === undefined) {
-    const project = await pool.query("SELECT id FROM projects WHERE id = $1", [projectId]);
-    throw new FactoryError(project.rowCount === 0 ? "not_found" : "conflict");
-  }
-  return feature(row);
+  return inTransaction(pool, async (client) => {
+    const project = await client.query<{ id: string }>(
+      `SELECT id FROM projects WHERE id = (${PROJECT_FAMILY}) FOR UPDATE`,
+      [projectId],
+    );
+    const canonicalProjectId = project.rows[0]?.id;
+    if (canonicalProjectId === undefined) throw new FactoryError("not_found");
+    const existing = await client.query<FeatureRow>(
+      `SELECT *, (${FEATURE_FAMILY}) AS project_id FROM factory_features WHERE created_by = $1 AND request_id = $2`,
+      [actorId, command.requestId],
+    );
+    const duplicate = existing.rows[0];
+    if (duplicate !== undefined) {
+      if (duplicate.project_id !== canonicalProjectId || duplicate.title !== command.title)
+        throw new FactoryError("conflict");
+      return feature(duplicate);
+    }
+    const count = await client.query<{ count: string }>(
+      `SELECT count(*) FROM factory_features WHERE (${FEATURE_FAMILY}) = $1`,
+      [canonicalProjectId],
+    );
+    if (Number(count.rows[0]?.count) >= 200) throw new FactoryError("feature_limit");
+    const result = await client.query<FeatureRow>(
+      `INSERT INTO factory_features (project_id, created_by, request_id, title) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (created_by, request_id) DO NOTHING RETURNING *`,
+      [canonicalProjectId, actorId, command.requestId, command.title],
+    );
+    const row = result.rows[0];
+    if (row === undefined) throw new FactoryError("conflict");
+    return feature(row);
+  });
 }
 
 export async function listFactoryFeatures(
@@ -336,13 +381,13 @@ export async function acceptPlanningMessage(
       "SELECT count(*) FROM factory_planning_messages WHERE feature_id = $1",
       [featureId],
     );
-    if (active.rowCount !== 0 || Number(count.rows[0]?.count) >= 199)
-      throw new FactoryError("conflict");
+    if (active.rowCount !== 0) throw new FactoryError("conflict");
+    if (Number(count.rows[0]?.count) >= 199) throw new FactoryError("conversation_limit");
     const turnCount = await client.query<{ count: string }>(
       "SELECT count(*) FROM factory_planning_turns WHERE feature_id = $1",
       [featureId],
     );
-    if (Number(turnCount.rows[0]?.count) >= 400) throw new FactoryError("conflict");
+    if (Number(turnCount.rows[0]?.count) >= 400) throw new FactoryError("conversation_limit");
     const inserted = await client.query<{ id: string }>(
       "INSERT INTO factory_planning_messages (feature_id, role, content) VALUES ($1, 'user', $2) RETURNING id",
       [featureId, command.text],
@@ -427,11 +472,16 @@ export async function retryPlanningTurn(
       "SELECT count(*) FROM factory_planning_turns WHERE feature_id = $1",
       [featureId],
     );
+    const messages = await client.query<{ count: string }>(
+      "SELECT count(*) FROM factory_planning_messages WHERE feature_id = $1",
+      [featureId],
+    );
+    if (Number(count.rows[0]?.count) >= 400 || Number(messages.rows[0]?.count) >= 200)
+      throw new FactoryError("conversation_limit");
     if (
       feature.state !== "planning" ||
       !["failed", "cancelled"].includes(original.state) ||
-      latest.rows[0]?.id !== turnId ||
-      Number(count.rows[0]?.count) >= 400
+      latest.rows[0]?.id !== turnId
     )
       throw new FactoryError("conflict");
     const inserted = await client.query<{ id: string }>(
