@@ -1842,7 +1842,11 @@
                     "issues_imported",
                     "issue_published",
                     "publication_failed",
-                    "publication_retried"
+                    "publication_retried",
+                    "execution_queued",
+                    "execution_started",
+                    "execution_blocked",
+                    "item_verified"
                   ],
                   "type": "string"
                 },
@@ -1926,7 +1930,11 @@
                                 "issues_imported",
                                 "issue_published",
                                 "publication_failed",
-                                "publication_retried"
+                                "publication_retried",
+                                "execution_queued",
+                                "execution_started",
+                                "execution_blocked",
+                                "item_verified"
                               ],
                               "type": "string"
                             },
@@ -1962,7 +1970,8 @@
                                   "dependency",
                                   "execution_unavailable",
                                   "publication",
-                                  "cancelled"
+                                  "cancelled",
+                                  "human_gate"
                                 ],
                                 "type": "string"
                               }
@@ -2184,6 +2193,9 @@
                 "enum": [
                   "planning",
                   "queued",
+                  "implementing",
+                  "gated",
+                  "in_review",
                   "cancelled"
                 ],
                 "type": "string"
@@ -3182,6 +3194,9 @@
                 "enum": [
                   "planning",
                   "queued",
+                  "implementing",
+                  "gated",
+                  "in_review",
                   "cancelled"
                 ],
                 "type": "string"
@@ -3565,6 +3580,9 @@
             "enum": [
               "planning",
               "queued",
+              "implementing",
+              "gated",
+              "in_review",
               "cancelled"
             ],
             "type": "string"
@@ -3688,6 +3706,9 @@
                 "enum": [
                   "planning",
                   "queued",
+                  "implementing",
+                  "gated",
+                  "in_review",
                   "cancelled"
                 ],
                 "type": "string"
@@ -3898,6 +3919,9 @@
                   "enum": [
                     "planning",
                     "queued",
+                    "implementing",
+                    "gated",
+                    "in_review",
                     "cancelled"
                   ],
                   "type": "string"
@@ -4939,6 +4963,9 @@
                 "enum": [
                   "planning",
                   "queued",
+                  "implementing",
+                  "gated",
+                  "in_review",
                   "cancelled"
                 ],
                 "type": "string"

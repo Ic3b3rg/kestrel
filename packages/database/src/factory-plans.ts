@@ -174,7 +174,17 @@ export function cancelFactoryFeature(
       if (feature.cancel_request_id !== command.requestId) throw new FactoryError("conflict");
       return boardFor(client, feature);
     }
-    if (!["planning", "queued"].includes(feature.state)) throw new FactoryError("conflict");
+    if (!["planning", "queued", "implementing", "gated", "in_review"].includes(feature.state))
+      throw new FactoryError("conflict");
+    // Cancellation withdraws authority immediately, but only confirmed teardown releases a writer.
+    await client.query(
+      `UPDATE factory_execution_runs SET stop_requested_at = clock_timestamp(), state =
+         CASE WHEN owner_instance_id IS NULL THEN 'cancelled' ELSE 'stopping' END,
+       reservation_released_at = CASE WHEN owner_instance_id IS NULL THEN clock_timestamp() ELSE reservation_released_at END,
+       completed_at = CASE WHEN owner_instance_id IS NULL THEN clock_timestamp() ELSE completed_at END,
+       failure = 'cancelled' WHERE feature_id = $1 AND reservation_released_at IS NULL`,
+      [featureId],
+    );
     await client.query(
       `UPDATE factory_planning_turns SET state = 'cancelled', failure = 'cancelled', completed_at = clock_timestamp()
        WHERE feature_id = $1 AND state IN ('queued', 'running')`,

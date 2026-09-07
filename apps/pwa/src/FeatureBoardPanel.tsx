@@ -29,6 +29,7 @@ const blockingLabels = {
   execution_unavailable: "Waiting for execution",
   publication: "Waiting for GitHub publication",
   cancelled: "Cancelled",
+  human_gate: "Needs your decision",
 };
 
 function Activity({ activity }: { activity: FactoryBoard["activity"] }) {

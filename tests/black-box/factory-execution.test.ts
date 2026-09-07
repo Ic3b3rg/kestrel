@@ -4,6 +4,10 @@ import {
   FeatureSchema,
   LocalRepositoryInventorySchema,
   ProjectUpsertedSchema,
+  FactoryExecutionSchema,
+  FactoryExecutionRunSchema,
+  FactoryBoardSchema,
+  type FeaturePlanDocument,
 } from "@kestrel/contracts";
 import { startStack, type RunningStack } from "./support/compose.js";
 import { createGitFixture } from "./support/git-fixture.js";
@@ -61,5 +65,99 @@ describe("Factory execution authority", () => {
       revision: null,
       workItems: [],
     });
+  });
+
+  it("claims published approved work once and retains its reservation through cancellation", async () => {
+    const verification = [
+      { program: "node", args: ["--test", "greeting.test.mjs"], cwd: ".", timeoutSeconds: 60 },
+    ];
+    const plan: FeaturePlanDocument = {
+      objective: "Implement a greeting",
+      scope: { includes: ["A greeting"], excludes: ["Other changes"] },
+      acceptance: [{ key: "greeting", outcome: "The greeting matches its test" }],
+      workItems: ["greeting", "consumer"].map((key, index) => ({
+        key,
+        title: key,
+        description: `Implement ${key}`,
+        requirementKeys: ["greeting"],
+        acceptance: ["Its approved test passes"],
+        importedIssueId: null,
+        dependsOn: index === 0 ? [] : ["greeting"],
+        verification,
+      })),
+      limits: {
+        maxConcurrentProjects: 2,
+        maxActiveFeaturesPerProject: 1,
+        attemptTimeoutSeconds: 120,
+      },
+    };
+    const path = `/api/v1/projects/${projectId}/features/${featureId}`;
+    expect(
+      (await post(`${path}/plans`, { requestId: randomUUID(), expectedVersion: null, plan }))
+        .status,
+    ).toBe(201);
+    expect((await post(`${path}/plans/1/approve`, { requestId: randomUUID() })).status).toBe(200);
+    await expect
+      .poll(
+        async () => {
+          const response = await stack.fetchApi(`${path}/publication`);
+          return ((await response.json()) as { state: string }).state;
+        },
+        { timeout: 25_000, interval: 250 },
+      )
+      .toBe("published");
+    const claimed = JSON.parse(
+      (
+        await stack.executeWebModule(`
+      import { randomUUID } from 'node:crypto';
+      import { createPool, createPgBoss, queueFactoryExecutions, claimFactoryExecution } from '@kestrel/database';
+      const pool = createPool(process.env.DATABASE_URL); const boss = createPgBoss({applicationName:'execution-test',databaseUrl:process.env.DATABASE_URL});
+      try {
+        await boss.start();
+        const queued = (await Promise.all([queueFactoryExecutions(pool,boss),queueFactoryExecutions(pool,boss),queueFactoryExecutions(pool,boss)])).flat();
+        if (queued.length !== 1) throw new Error('Duplicate writer reservations');
+        const claims = await Promise.all([claimFactoryExecution(pool,queued[0],randomUUID()),claimFactoryExecution(pool,queued[0],randomUUID())]);
+        const accepted = claims.filter(Boolean); if (accepted.length !== 1) throw new Error('Duplicate writer claims');
+        console.log(JSON.stringify(accepted[0]));
+      } finally { await boss.stop(); await pool.end(); }
+    `)
+      ).trim(),
+    ) as { id: string; ownerInstanceId: string; key: string };
+    expect(claimed.key).toBe("greeting");
+    const executionResponse = await stack.fetchApi(`${path}/execution`);
+    expect(executionResponse.status, await executionResponse.clone().text()).toBe(200);
+    const execution = FactoryExecutionSchema.parse(await executionResponse.json());
+    expect(execution.state).toBe("running");
+    expect(execution.workItems[0]?.runs).toHaveLength(1);
+    expect(execution.workItems[1]?.runs).toEqual([]);
+    const boardResponse = await stack.fetchApi(`${path}/board`);
+    expect(boardResponse.status, await boardResponse.clone().text()).toBe(200);
+    expect(
+      FactoryBoardSchema.parse(await boardResponse.json()).columns.find(
+        (column) => column.id === "in_progress",
+      )?.items[0]?.key,
+    ).toBe("greeting");
+    const detail = FactoryExecutionRunSchema.parse(
+      await (await stack.fetchApi(`${path}/execution/runs/${claimed.id}`)).json(),
+    );
+    expect(detail.acceptedCommands).toEqual(verification);
+    expect(detail.verification).toEqual([]);
+    expect(detail.writerStopped).toBe(false);
+    const cancel = await post(`${path}/cancel`, { requestId: randomUUID(), expectedVersion: 1 });
+    expect(cancel.status, await cancel.clone().text()).toBe(200);
+    expect(
+      FactoryExecutionSchema.parse(await (await stack.fetchApi(`${path}/execution`)).json()).state,
+    ).toBe("stopping");
+    expect(
+      JSON.parse(
+        await stack.executeWebModule(`
+      import { createPool, claimFactoryExecution } from '@kestrel/database';
+      import { randomUUID } from 'node:crypto';
+      const pool=createPool(process.env.DATABASE_URL);
+      try { console.log(JSON.stringify(await claimFactoryExecution(pool,${JSON.stringify(claimed.id)},randomUUID()))); }
+      finally { await pool.end(); }
+    `),
+      ),
+    ).toBeNull();
   });
 });

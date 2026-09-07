@@ -180,6 +180,10 @@ export const FactoryActivitySchema = z.strictObject({
     "issue_published",
     "publication_failed",
     "publication_retried",
+    "execution_queued",
+    "execution_started",
+    "execution_blocked",
+    "item_verified",
   ]),
   summary: text(2000),
   createdAt: z.iso.datetime(),
@@ -192,7 +196,13 @@ export const FactoryWorkItemSchema = FactoryWorkItemDefinitionSchema.extend({
   column: FactoryBoardColumnSchema,
   blocking: z
     .strictObject({
-      kind: z.enum(["dependency", "execution_unavailable", "publication", "cancelled"]),
+      kind: z.enum([
+        "dependency",
+        "execution_unavailable",
+        "publication",
+        "cancelled",
+        "human_gate",
+      ]),
       explanation: text(2000),
     })
     .nullable(),
