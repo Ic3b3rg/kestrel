@@ -1,16 +1,15 @@
-import { useId, useState, type SyntheticEvent } from "react";
+import { useEffect, useRef } from "react";
 
 import {
-  OpenPublicGitHubPullRequestCommandSchema,
   type ChangeIntentVersionCreated,
-  type DirectApiProfile,
   type ProjectInbox,
   type ProjectUpserted,
   type PublicGitHubPullRequestUrl,
   type ReviewRevisionAvailable,
 } from "@kestrel/contracts";
 
-import { OpenLocalRepositoryForm } from "./OpenLocalRepositoryForm.js";
+import { ProjectActions } from "./ProjectActions.js";
+import { projectLabel } from "./AuthenticatedShell.js";
 import { OpenProjectForm } from "./OpenProjectForm.js";
 import { HostGitHubProjectPanel } from "./HostGitHubProjectPanel.js";
 import { AcquireObservedReviewRevisionForm } from "./AcquireObservedReviewRevisionForm.js";
@@ -18,12 +17,13 @@ import { ChangeIntentEditor } from "./ChangeIntentEditor.js";
 import { ChangeOverviewPanel } from "./ChangeOverviewPanel.js";
 import { ShortObjectId } from "./ShortObjectId.js";
 import { ReviewPreparationPanel } from "./ReviewPreparationPanel.js";
-import { DirectApiProfilePanel } from "./DirectApiProfilePanel.js";
 import { currentReviewRevision } from "./current-review-revision.js";
 import { PrReadinessSummary } from "./PrReadinessSummary.js";
 import { useProjectConnections, type ProjectConnections } from "./use-project-connections.js";
 
 interface ProjectInboxPanelProps {
+  selectedProposalId?: string;
+  onSelectProposal?: (proposalId: string | null) => void;
   error: string | null;
   inbox: ProjectInbox | null;
   loading: boolean;
@@ -32,7 +32,6 @@ interface ProjectInboxPanelProps {
   onAuthenticationError?: (error: unknown) => boolean;
   onLocalAvailable?: (result: ReviewRevisionAvailable) => void;
   onProjectOpened?: (result: ProjectUpserted) => void;
-  onModelProfileChanged?: (projectId: string, profile: DirectApiProfile) => void;
   onIntentCreated?: (result: ChangeIntentVersionCreated) => void;
   onOpen: (url: PublicGitHubPullRequestUrl) => void;
   onHostObserved?: (project: Project) => void;
@@ -445,85 +444,9 @@ function ChangeProposalRecord({
 }
 
 export function ProjectInboxPanel(props: ProjectInboxPanelProps) {
-  const [url, setUrl] = useState("");
-  const [validationError, setValidationError] = useState<string | null>(null);
-  const fieldId = useId();
-  const helpId = `${fieldId}-help`;
-  const errorId = `${fieldId}-error`;
   const unavailable = !props.online || props.pending || (props.loading && props.inbox === null);
-
-  const handleSubmit = (event: SyntheticEvent<HTMLFormElement, SubmitEvent>) => {
-    event.preventDefault();
-    const parsed = OpenPublicGitHubPullRequestCommandSchema.safeParse({ url });
-    if (!parsed.success) {
-      setValidationError(
-        "Enter a canonical public pull request URL such as https://github.com/owner/repository/pull/123.",
-      );
-      return;
-    }
-    setValidationError(null);
-    props.onOpen(parsed.data.url);
-  };
-
   return (
-    <section className="projects-section" aria-labelledby="projects-title">
-      <div className="section-heading projects-heading">
-        <div>
-          <p className="section-index">03 / PROJECTS</p>
-          <h2 id="projects-title">Projects</h2>
-        </div>
-        <p className="credential-state">Credentials stay with host Git</p>
-      </div>
-
-      <OpenLocalRepositoryForm
-        disabled={unavailable}
-        projects={props.inbox?.projects ?? []}
-        {...(props.onAuthenticationError === undefined
-          ? {}
-          : { onAuthenticationError: props.onAuthenticationError })}
-        onAvailable={(result) => props.onLocalAvailable?.(result)}
-      />
-      <form className="project-form" onSubmit={handleSubmit} noValidate>
-        <div className="form-field">
-          <label htmlFor={fieldId}>Optional public GitHub pull request URL</label>
-          <input
-            id={fieldId}
-            type="url"
-            inputMode="url"
-            autoComplete="url"
-            spellCheck={false}
-            required
-            value={url}
-            disabled={!props.online}
-            aria-describedby={`${helpId}${validationError ? ` ${errorId}` : ""}`}
-            aria-invalid={validationError !== null}
-            onChange={(event) => {
-              setUrl(event.currentTarget.value);
-              setValidationError(null);
-            }}
-            placeholder="https://github.com/owner/repository/pull/123"
-          />
-        </div>
-        <button type="submit" disabled={unavailable}>
-          {props.pending ? "Adding context…" : "Add provider context"}
-        </button>
-        <p id={helpId} className="form-help">
-          GitHub metadata does not by itself authorize or acquire review source. No GitHub
-          credentials are sent or stored, and only canonical github.com pull request URLs are
-          accepted.
-        </p>
-        {validationError ? (
-          <p id={errorId} className="project-form-error" role="alert">
-            {validationError}
-          </p>
-        ) : null}
-      </form>
-
-      <p className="rate-limit-note">
-        Public access shares GitHub’s limit of 60 unauthenticated GitHub API requests per hour per
-        Installation IP. Kestrel does not fall back to credentials.
-      </p>
-
+    <section className="projects-section" aria-label="Selected Project">
       {props.error ? (
         <div className="project-error" role="alert">
           <p>{props.error}</p>
@@ -543,7 +466,7 @@ export function ProjectInboxPanel(props: ProjectInboxPanelProps) {
           <h3>Projects hidden while offline</h3>
           <p>Kestrel will refetch the authoritative Project inbox after reconnection.</p>
         </div>
-      ) : props.loading ? (
+      ) : props.loading && props.inbox === null ? (
         <div className="project-empty" aria-busy="true">
           <h3>Reading Projects</h3>
           <p>Waiting for the authoritative Project inbox.</p>
@@ -578,56 +501,113 @@ function ProjectRecord({
   props: ProjectInboxPanelProps;
   unavailable: boolean;
 }) {
+  const selectedId = props.selectedProposalId;
+  const previousSelection = useRef<string | undefined>(undefined);
+  const detail = useRef<HTMLDivElement>(null);
   const connections = useProjectConnections(project, props.online, props.onAuthenticationError);
+  const repository =
+    project.repository ??
+    (connections.github.state === "checked" &&
+    connections.github.value.projectAccess?.state === "verified"
+      ? connections.github.value.projectAccess.repository
+      : null);
+  const label =
+    repository === null ? projectLabel(project) : `${repository.owner}/${repository.name}`;
+  const selectedProposal = project.changeProposals.find((proposal) => proposal.id === selectedId);
+  const selectProposal = (id: string | null) => props.onSelectProposal?.(id);
+  useEffect(() => {
+    if (selectedProposal !== undefined) detail.current?.focus();
+    else if (previousSelection.current !== undefined) {
+      detail.current
+        ?.closest("article")
+        ?.querySelector<HTMLElement>(
+          ".pr-filters button[aria-pressed=true], .saved-changes summary",
+        )
+        ?.focus();
+    }
+    previousSelection.current = selectedProposal?.id;
+  }, [selectedProposal?.id]);
+  const actions = (
+    <ProjectActions
+      project={project}
+      repository={repository}
+      disabled={unavailable}
+      onOpen={props.onOpen}
+      onAvailable={(result) => {
+        selectProposal(result.changeProposal.id);
+        props.onLocalAvailable?.(result);
+      }}
+      {...(props.onAuthenticationError === undefined
+        ? {}
+        : { onAuthenticationError: props.onAuthenticationError })}
+    />
+  );
   return (
-    <article className="project-card" key={project.id}>
-      <div className="project-identity">
-        <div>
-          {project.repository === null ? (
-            <>
-              <p>LOCAL REPOSITORY SOURCE</p>
-              <h3>{project.localRepositorySource?.displayName ?? "Local Project"}</h3>
-            </>
-          ) : (
-            <>
-              <p>
-                {project.providerObservation?.kind === "host_gh"
-                  ? "GITHUB / HOST SESSION"
-                  : "PUBLIC GITHUB / NO AUTHENTICATION"}
-              </p>
-              <h3>
-                <a href={project.repository.canonicalUrl}>
-                  {project.repository.owner}/{project.repository.name}
-                </a>
-              </h3>
-            </>
-          )}
-        </div>
-        <code>{project.id}</code>
-      </div>
-      <ProjectFacts project={project} />
-      <DirectApiProfilePanel
-        disabled={unavailable}
-        projectId={project.id}
-        {...(props.onAuthenticationError === undefined
-          ? {}
-          : { onAuthenticationError: props.onAuthenticationError })}
-        onChanged={(profile) => props.onModelProfileChanged?.(project.id, profile)}
-      />
+    <article className="project-workspace">
       {project.localRepositorySource?.state === "attached" ? (
         <HostGitHubProjectPanel
           key={project.id}
           projectId={project.id}
+          projectLabel={label}
+          projectActions={actions}
           disabled={unavailable}
           online={props.online}
           {...(props.onAuthenticationError === undefined
             ? {}
             : { onAuthenticationError: props.onAuthenticationError })}
-          onObserved={(observed) => props.onHostObserved?.(observed)}
+          onObserved={(observed, number) => {
+            const proposal = observed.changeProposals.find(
+              (candidate) => isProviderChangeProposal(candidate) && candidate.number === number,
+            );
+            if (proposal !== undefined) selectProposal(proposal.id);
+            props.onHostObserved?.(observed);
+          }}
         />
-      ) : null}
-      <div className="proposal-list">
-        {project.changeProposals.map((changeProposal) => (
+      ) : (
+        <header className="project-workspace-header">
+          <div>
+            <h1>{label}</h1>
+            <p>Attach a local repository to load the GitHub inbox.</p>
+          </div>
+          {actions}
+        </header>
+      )}
+      <details className="project-details">
+        <summary>Repository details</summary>
+        <ProjectFacts project={project} />
+      </details>
+      {project.changeProposals.length === 0 ? null : (
+        <details className="saved-changes">
+          <summary>Saved changes ({project.changeProposals.length})</summary>
+          <ul>
+            {project.changeProposals.map((proposal) => (
+              <li key={proposal.id}>
+                <button
+                  type="button"
+                  className="secondary-action"
+                  onClick={() => selectProposal(proposal.id)}
+                >
+                  {isProviderChangeProposal(proposal) ? `#${String(proposal.number)} · ` : ""}
+                  {proposal.title}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      <div
+        className="proposal-list"
+        ref={detail}
+        tabIndex={-1}
+        aria-label="Selected change details"
+      >
+        {selectedProposal === undefined ? null : (
+          <button type="button" className="secondary-action" onClick={() => selectProposal(null)}>
+            Close change details
+          </button>
+        )}
+
+        {(selectedProposal === undefined ? [] : [selectedProposal]).map((changeProposal) => (
           <ChangeProposalRecord
             connections={connections}
             project={project}

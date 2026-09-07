@@ -27,7 +27,8 @@ import {
   updateOperatorCredentials,
   type EventConnectionState,
 } from "./api.js";
-import { AuthenticatedShell, projectLabel } from "./AuthenticatedShell.js";
+import { ProjectSettingsPanel } from "./ProjectSettingsPanel.js";
+import { AuthenticatedShell } from "./AuthenticatedShell.js";
 import { appPath, readAppRoute, type AppRoute } from "./app-route.js";
 import { InstallationView, type PwaConnectionState } from "./InstallationView.js";
 import { CodexSubscriptionConnectionPanel } from "./CodexSubscriptionConnectionPanel.js";
@@ -162,7 +163,9 @@ function hasPendingChangeOverviewRendering(inbox: ProjectInbox | null): boolean 
 }
 
 export function App() {
-  const [route, setRoute] = useState<AppRoute>(() => readAppRoute(window.location.pathname));
+  const [route, setRoute] = useState<AppRoute>(() =>
+    readAppRoute(window.location.pathname, window.location.search),
+  );
   const [online, setOnline] = useState(() => navigator.onLine);
   const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -191,12 +194,14 @@ export function App() {
 
   const navigate = useCallback((nextRoute: Exclude<AppRoute, { kind: "not_found" }>) => {
     const path = appPath(nextRoute);
-    if (window.location.pathname !== path) window.history.pushState(null, "", path);
+    if (`${window.location.pathname}${window.location.search}` !== path)
+      window.history.pushState(null, "", path);
     setRoute(nextRoute);
   }, []);
 
   useEffect(() => {
-    const handlePopState = () => setRoute(readAppRoute(window.location.pathname));
+    const handlePopState = () =>
+      setRoute(readAppRoute(window.location.pathname, window.location.search));
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
@@ -520,7 +525,15 @@ export function App() {
     try {
       const result = await openPublicGitHubPullRequest({ url }, controller.signal);
       setProjectInbox((current) => withUpsertedProject(current, result.project));
-      navigate({ kind: "project", projectId: result.project.id });
+      const number = Number(new URL(url).pathname.split("/").at(-1));
+      const proposal = result.project.changeProposals.find(
+        (candidate) => candidate.kind === "provider_observed" && candidate.number === number,
+      );
+      navigate({
+        kind: "project",
+        projectId: result.project.id,
+        ...(proposal === undefined ? {} : { proposalId: proposal.id }),
+      });
       setAnnouncement("Project refreshed from the public GitHub pull request.");
     } catch (error) {
       if (!controller.signal.aborted) {
@@ -657,45 +670,40 @@ export function App() {
       : null;
   const projectWorkspace =
     selectedProject === null ? null : (
-      <div className="project-workspace">
-        <header className="project-workspace-header">
-          <p className="eyebrow">PROJECT / LOCAL WORKSPACE</p>
-          <h1>{projectLabel(selectedProject)}</h1>
-          <p className="lede">Repository context from one durable Project record.</p>
-        </header>
-        <ProjectInboxPanel
-          error={null}
-          inbox={{ schemaVersion: 1, projects: [selectedProject] }}
-          loading={false}
-          online={online}
-          pending={projectPending}
-          onAuthenticationError={handleAuthenticationBoundaryError}
-          onOpen={(url) => void handleOpenPublicPullRequest(url)}
-          onHostObserved={(project) => {
-            setProjectInbox((current) => withUpsertedProject(current, project));
-            setAnnouncement("Project refreshed through the host GitHub session.");
-          }}
-          onHostRefresh={(projectId, number) =>
-            void handleHostPullRequestRefresh(projectId, number)
-          }
-          onIntentCreated={(result) => {
-            setProjectInbox((current) => withCreatedIntent(current, result));
-            setProjectReloadGeneration((generation) => generation + 1);
-            setProjectError(null);
-            setAnnouncement(
-              `Change Intent version ${String(result.changeIntent.version)} created as ${result.changeIntent.resolution.state}.`,
-            );
-          }}
-          onLocalAvailable={handleLocalRevisionAvailable}
-          onProjectOpened={handleProjectOpened}
-          onModelProfileChanged={(projectId, profile) => {
-            setProjectInbox((current) => withDirectApiProfile(current, projectId, profile));
-            setProjectReloadGeneration((generation) => generation + 1);
-            setAnnouncement(`Direct API profile ${profile.availability}.`);
-          }}
-          onRetry={() => setProjectReloadGeneration((generation) => generation + 1)}
-        />
-      </div>
+      <ProjectInboxPanel
+        key={selectedProject.id}
+        selectedProposalId={route.kind === "project" ? (route.proposalId ?? "") : ""}
+        onSelectProposal={(proposalId) =>
+          navigate({
+            kind: "project",
+            projectId: selectedProject.id,
+            ...(proposalId === null ? {} : { proposalId }),
+          })
+        }
+        error={null}
+        inbox={{ schemaVersion: 1, projects: [selectedProject] }}
+        loading={false}
+        online={online}
+        pending={projectPending}
+        onAuthenticationError={handleAuthenticationBoundaryError}
+        onOpen={(url) => void handleOpenPublicPullRequest(url)}
+        onHostObserved={(project) => {
+          setProjectInbox((current) => withUpsertedProject(current, project));
+          setAnnouncement("Project refreshed through the host GitHub session.");
+        }}
+        onHostRefresh={(projectId, number) => void handleHostPullRequestRefresh(projectId, number)}
+        onIntentCreated={(result) => {
+          setProjectInbox((current) => withCreatedIntent(current, result));
+          setProjectReloadGeneration((generation) => generation + 1);
+          setProjectError(null);
+          setAnnouncement(
+            `Change Intent version ${String(result.changeIntent.version)} created as ${result.changeIntent.resolution.state}.`,
+          );
+        }}
+        onLocalAvailable={handleLocalRevisionAvailable}
+        onProjectOpened={handleProjectOpened}
+        onRetry={() => setProjectReloadGeneration((generation) => generation + 1)}
+      />
     );
   const workspace = (() => {
     switch (route.kind) {
@@ -727,6 +735,19 @@ export function App() {
                 <CodexSubscriptionConnectionPanel
                   online={online}
                   onAuthenticationError={handleAuthenticationBoundaryError}
+                />
+                <ProjectSettingsPanel
+                  projects={projectInbox?.projects ?? []}
+                  initialProjectId={
+                    new URLSearchParams(window.location.search).get("projectId") ?? ""
+                  }
+                  online={online}
+                  onAuthenticationError={handleAuthenticationBoundaryError}
+                  onChanged={(projectId, profile) => {
+                    setProjectInbox((current) => withDirectApiProfile(current, projectId, profile));
+                    setProjectReloadGeneration((generation) => generation + 1);
+                    setAnnouncement(`Direct API profile ${profile.availability}.`);
+                  }}
                 />
               </>
             }

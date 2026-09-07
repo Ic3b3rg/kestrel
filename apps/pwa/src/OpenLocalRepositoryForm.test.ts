@@ -116,7 +116,7 @@ async function changeValue(
   });
 }
 
-describe("Open local repository command", () => {
+describe("Compare committed refs command", () => {
   it("accepts only two enumerated refs and explicit Operator-authored intent", () => {
     expect(
       buildRetainCommand(references, {
@@ -249,7 +249,7 @@ describe("Open local repository command", () => {
   });
 });
 
-describe("Open local repository form", () => {
+describe("Compare committed refs form", () => {
   let container: HTMLDivElement;
   let root: Root;
 
@@ -300,7 +300,7 @@ describe("Open local repository form", () => {
       loadReferences: () => refs.promise,
       ...overrides,
     });
-    await click(findButton(container, "Open local repository"));
+    await click(findButton(container, "Compare committed refs"));
     await act(async () => {
       inventory.resolve(repositories);
       await inventory.promise;
@@ -314,6 +314,26 @@ describe("Open local repository form", () => {
     await changeValue(findControl(container, "Head reference"), "refs/heads/topic");
   }
 
+  it("loads only the selected Project repository's committed refs without a repository chooser", async () => {
+    const loadRepositories = vi.fn<NonNullable<OpenLocalRepositoryFormProps["loadRepositories"]>>();
+    const loadReferences = vi
+      .fn<NonNullable<OpenLocalRepositoryFormProps["loadReferences"]>>()
+      .mockResolvedValue(references);
+    await renderForm({
+      boundRepository: { repositoryId, displayName: "selected repository" },
+      loadRepositories,
+      loadReferences,
+    });
+    await click(findButton(container, "Compare committed refs"));
+    expect(loadRepositories).not.toHaveBeenCalled();
+    expect(loadReferences).toHaveBeenCalledWith(repositoryId, expect.any(AbortSignal));
+    expect(container.textContent).toContain("selected repository");
+    expect(container.querySelector('select[id$="-repository"]')).toBeNull();
+    expect(findControl(container, "Base reference")).toBeDefined();
+    await click(findButton(container, "Close"));
+    expect(document.activeElement).toBe(findButton(container, "Compare committed refs"));
+  });
+
   it("shows loading without an empty select, ignores a stale response, then explains missing roots", async () => {
     const first = deferred<LocalRepositoryInventory>();
     const second = deferred<LocalRepositoryInventory>();
@@ -323,12 +343,12 @@ describe("Open local repository form", () => {
       .mockImplementationOnce(() => second.promise);
     await renderForm({ loadRepositories });
 
-    await click(findButton(container, "Open local repository"));
+    await click(findButton(container, "Compare committed refs"));
     expect(container.textContent).toContain("Reading repositories…");
     expect(container.querySelector("form")?.hidden).toBe(true);
     expect(container.textContent).toContain(trustedHostCommand);
     await click(findButton(container, "Close"));
-    await click(findButton(container, "Open local repository"));
+    await click(findButton(container, "Compare committed refs"));
     await act(async () => {
       first.resolve({
         schemaVersion: 1,
@@ -365,7 +385,7 @@ describe("Open local repository form", () => {
         }),
     });
 
-    await click(findButton(container, "Open local repository"));
+    await click(findButton(container, "Compare committed refs"));
 
     expect(container.textContent).toContain("No Git repositories were found");
     expect(container.textContent).toContain("The configured roots were loaded successfully");
@@ -384,7 +404,7 @@ describe("Open local repository form", () => {
       .mockResolvedValueOnce(repositories);
     await renderForm({ loadRepositories });
 
-    await click(findButton(container, "Open local repository"));
+    await click(findButton(container, "Compare committed refs"));
     expect(container.textContent).toContain("No repository roots are configured");
 
     await click(findButton(container, "Refresh repositories"));
@@ -408,7 +428,7 @@ describe("Open local repository form", () => {
         ),
     });
 
-    await click(findButton(container, "Open local repository"));
+    await click(findButton(container, "Compare committed refs"));
 
     expect(container.textContent).toContain("Repository discovery failed");
     expect(container.textContent).toContain("Local repository discovery is unavailable");
@@ -471,7 +491,7 @@ describe("Open local repository form", () => {
       retained.resolve(available);
       await retained.promise;
     });
-    const trigger = findButton(container, "Open local repository");
+    const trigger = findButton(container, "Compare committed refs");
     expect(retain).toHaveBeenCalledWith(
       {
         repositoryId,
@@ -525,7 +545,7 @@ describe("Open local repository form", () => {
       loadRepositories: () => inventory.promise,
       onAuthenticationError,
     });
-    await click(findButton(container, "Open local repository"));
+    await click(findButton(container, "Compare committed refs"));
     await act(async () => {
       inventory.reject(authenticationError);
       await inventory.promise.catch(() => undefined);

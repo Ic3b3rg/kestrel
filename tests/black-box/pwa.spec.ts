@@ -64,6 +64,12 @@ async function openProjectWorkspace(page: Page, label = "openai/openai-node"): P
   await expect(link).toBeVisible();
   await link.click();
   await expect(page.getByRole("heading", { level: 1, name: label, exact: true })).toBeVisible();
+  await page.getByText("Repository details", { exact: true }).click();
+  const saved = page.locator(".saved-changes");
+  if (await saved.count()) {
+    await saved.locator("summary").click();
+    await saved.getByRole("button").first().click();
+  }
 }
 
 test.describe("observable Installation PWA", () => {
@@ -210,6 +216,8 @@ test.describe("observable Installation PWA", () => {
       await page.getByRole("button", { name: "Sign in" }).click();
       await openProjectWorkspace(page);
 
+      await page.getByRole("link", { name: "Settings", exact: true }).click();
+      await expect(page.getByLabel("Project to configure")).not.toHaveValue("");
       const panel = page.locator(".direct-api-profile");
       await expect(panel.getByRole("heading", { name: "Direct API profile" })).toBeVisible();
       await expect(panel.getByRole("status")).toContainText("Available");
@@ -538,23 +546,32 @@ test.describe("observable Installation PWA", () => {
     await initialRead;
 
     const panel = page.getByRole("region", { name: "Pull request inbox" });
-    const requested = panel.getByRole("region", { name: "Review requested" });
-    const authored = panel.getByRole("region", { name: "Authored" });
-    const others = panel.getByRole("region", { name: "Others" });
-    await expect(requested.getByRole("status")).toContainText("Loading Review requested");
-    await expect(authored.getByRole("status")).toContainText("Loading Authored");
-    await expect(others.getByRole("status")).toContainText("Loading Others");
+    await expect(panel).toContainText("Loading pull requests");
     releaseInitialRead();
-
-    await expect(requested).toContainText("#42");
-    await expect(requested).toContainText("Review the bounded provider read");
-    await expect(authored).toContainText("#43");
-    await expect(others).toContainText("#44");
-    expect(await panel.locator(".host-github-group h5").allTextContents()).toEqual([
-      "Review requested",
-      "Authored",
-      "Others",
-    ]);
+    await expect(panel.locator("tbody tr")).toHaveCount(3);
+    await expect(panel).toContainText("Review the bounded provider read");
+    await panel.getByRole("button", { name: /^Authored/u }).click();
+    await expect(panel.locator("tbody tr")).toHaveCount(1);
+    await expect(panel.locator("tbody")).toContainText("#43");
+    await panel.getByRole("button", { name: /^All/u }).click();
+    for (const width of [1440, 3440]) {
+      await page.setViewportSize({ width, height: 900 });
+      const geometry = await page.evaluate(() => {
+        const rail = document.querySelector(".project-rail")?.getBoundingClientRect();
+        const table = document.querySelector(".pr-table")?.getBoundingClientRect();
+        if (rail === undefined || table === undefined)
+          throw new Error("Workspace geometry is missing");
+        return {
+          rail: { height: rail.height, y: rail.y },
+          table: { y: table.y, right: table.right },
+          viewport: innerWidth,
+        };
+      });
+      expect(geometry.rail.height).toBe(900);
+      expect(geometry.rail.y).toBe(0);
+      expect(geometry.table.y).toBeLessThan(300);
+      expect(geometry.viewport - geometry.table.right).toBeLessThan(40);
+    }
     await openProjectWorkspace(page, "example/switch-repo");
     await expect(panel).toContainText("#77");
     await expect(panel).toContainText("Keep the switched Project isolated");
@@ -566,15 +583,19 @@ test.describe("observable Installation PWA", () => {
     const automaticReadCount = inboxReadCount;
     expect(automaticReadCount).toBeGreaterThanOrEqual(1);
     await panel.getByRole("button", { name: "Refresh pull requests" }).click();
-    await expect(authored.getByRole("alert")).toContainText("GitHub rate limit reached");
-    await expect(others.getByRole("alert")).toContainText("GitHub rate limit reached");
-    await expect(requested).toContainText("#42");
+    await expect(
+      panel.getByRole("alert").filter({ hasText: "Authored unavailable" }),
+    ).toContainText("GitHub rate limit reached");
+    await expect(panel.getByRole("alert").filter({ hasText: "Others unavailable" })).toContainText(
+      "GitHub rate limit reached",
+    );
+    await expect(panel.locator("tbody")).toContainText("#42");
     expect(inboxReadCount).toBe(automaticReadCount + 1);
     expect(refreshReadCount).toBe(1);
     expect(refreshUrl).toContain("refresh=true");
     const inboxReadCountAfterRefresh = inboxReadCount;
 
-    const select = requested.getByRole("button", { name: "Select PR #42" });
+    const select = panel.getByRole("button", { name: /^Select PR #42:/u });
     await select.focus();
     await page.keyboard.press("Enter");
     await selectionObserved;
@@ -1461,7 +1482,12 @@ test.describe("observable Installation PWA", () => {
     await page.route("**/api/v1/projects", async (route) => {
       const request = route.request();
       if (request.method() !== "POST") {
-        await route.continue();
+        const response = await route.fetch();
+        const inbox = ProjectInboxSchema.parse(await response.json());
+        await route.fulfill({
+          response,
+          json: { ...inbox, projects: [...inbox.projects, openedProject.project] },
+        });
         return;
       }
       projectPostCount += 1;
@@ -1636,16 +1662,25 @@ test.describe("observable Installation PWA", () => {
     await expect(page.getByText(/Refresh is Manual only/u)).toBeVisible();
     await expect(page.getByText("Not configured", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Refresh PR #1234" })).toBeVisible();
+    await page.getByText("Project menu", { exact: true }).click();
     await page
-      .getByLabel("Optional public GitHub pull request URL")
+      .getByLabel("Public GitHub pull request URL")
       .fill("https://github.com/openai/openai-node");
-    await page.getByRole("button", { name: "Add provider context" }).click();
+    await page.getByRole("button", { name: "Open PR by URL" }).click();
     await expect(page.getByRole("alert")).toContainText(
       "Enter a canonical public pull request URL",
     );
     expect(projectPostCount).toBe(0);
-    await page.getByLabel("Optional public GitHub pull request URL").fill(publicPullRequestUrl);
-    await page.getByRole("button", { name: "Add provider context" }).click();
+    await page.getByLabel("Public GitHub pull request URL").fill(publicPullRequestUrl);
+    await page.getByRole("button", { name: "Open PR by URL" }).click();
+    await expect(page.getByRole("alert")).toContainText(
+      "This URL belongs to a different repository",
+    );
+    expect(projectPostCount).toBe(0);
+    await openProjectWorkspace(page, "Ic3b3rg/kestrel");
+    await page.getByText("Project menu", { exact: true }).click();
+    await page.getByLabel("Public GitHub pull request URL").fill(publicPullRequestUrl);
+    await page.getByRole("button", { name: "Open PR by URL" }).click();
     await expect(
       page
         .getByRole("navigation", { name: "Projects" })
@@ -1653,7 +1688,7 @@ test.describe("observable Installation PWA", () => {
     ).toBeVisible();
     await expect(page.getByText("Observed base", { exact: true })).toHaveCount(1);
     await expect(page.getByText("Observed head", { exact: true })).toHaveCount(1);
-    await expect(page.getByRole("status")).toContainText(
+    await expect(page.getByRole("status").filter({ hasText: "Project refreshed" })).toContainText(
       "Project refreshed from the public GitHub pull request.",
     );
     expect(projectPostCount).toBe(1);
