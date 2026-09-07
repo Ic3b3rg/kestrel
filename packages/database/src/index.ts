@@ -2,6 +2,7 @@ export { readDatabaseConfig, readEventRetentionLimit, type DatabaseConfig } from
 export * from "./diagnostics.js";
 export * from "./events.js";
 export * from "./factory-planning.js";
+export * from "./factory-plans.js";
 export {
   mapInstallationRow,
   readInstallationSnapshot,

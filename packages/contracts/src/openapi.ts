@@ -1,6 +1,17 @@
 import { z, type ZodType } from "zod";
 
 import {
+  FeaturePlanDocumentSchema,
+  FeaturePlanVersionSchema,
+  FeaturePlansSchema,
+  FactoryBoardSchema,
+  GenerateFeaturePlanCommandSchema,
+  SaveFeaturePlanCommandSchema,
+  ApproveFeaturePlanCommandSchema,
+  CancelFeatureCommandSchema,
+} from "./factory-plan.js";
+
+import {
   CreateFeatureCommandSchema,
   FeatureSchema,
   FeatureListSchema,
@@ -135,6 +146,14 @@ export const reviewWorkflowAcceptedJsonSchema = asJsonSchema(ReviewWorkflowAccep
 export const startReviewWorkflowCommandJsonSchema = asJsonSchema(StartReviewWorkflowCommandSchema);
 
 const factoryComponents = {
+  FeaturePlanDocument: asComponentSchema(asJsonSchema(FeaturePlanDocumentSchema)),
+  FeaturePlanVersion: asComponentSchema(asJsonSchema(FeaturePlanVersionSchema)),
+  FeaturePlans: asComponentSchema(asJsonSchema(FeaturePlansSchema)),
+  FactoryBoard: asComponentSchema(asJsonSchema(FactoryBoardSchema)),
+  GenerateFeaturePlanCommand: asComponentSchema(asJsonSchema(GenerateFeaturePlanCommandSchema)),
+  SaveFeaturePlanCommand: asComponentSchema(asJsonSchema(SaveFeaturePlanCommandSchema)),
+  ApproveFeaturePlanCommand: asComponentSchema(asJsonSchema(ApproveFeaturePlanCommandSchema)),
+  CancelFeatureCommand: asComponentSchema(asJsonSchema(CancelFeatureCommandSchema)),
   CreateFeatureCommand: asComponentSchema(asJsonSchema(CreateFeatureCommandSchema)),
   Feature: asComponentSchema(asJsonSchema(FeatureSchema)),
   FeatureList: asComponentSchema(asJsonSchema(FeatureListSchema)),
@@ -271,6 +290,29 @@ function factoryParameters(withTurn = false): JsonValue[] {
     schema: { type: "string", format: "uuid" },
   }));
 }
+
+function factoryRead(operationId: string, outputSchema: string): JsonObject {
+  return {
+    operationId,
+    responses: {
+      ...factoryErrors,
+      "200": {
+        description: "Current durable Factory state",
+        content: { "application/json": { schema: schemaReference(outputSchema) } },
+      },
+    },
+  };
+}
+
+const factoryPlanParameters: JsonValue[] = [
+  ...factoryParameters(),
+  {
+    in: "path",
+    name: "version",
+    required: true,
+    schema: { type: "integer", minimum: 1, maximum: 200 },
+  },
+];
 
 export const openApiDocument = sortJson({
   components: {
@@ -859,6 +901,46 @@ export const openApiDocument = sortJson({
           },
         },
       },
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/plans": {
+      parameters: factoryParameters(),
+      get: factoryRead("readFeaturePlans", "FeaturePlans"),
+      post: factoryTurnMutation(
+        "saveFeaturePlan",
+        "SaveFeaturePlanCommand",
+        "FeaturePlanVersion",
+        201,
+      ),
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/plans/generate": {
+      parameters: factoryParameters(),
+      post: factoryTurnMutation("generateFeaturePlan", "GenerateFeaturePlanCommand"),
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/plans/{version}": {
+      parameters: factoryPlanParameters,
+      get: factoryRead("readFeaturePlanVersion", "FeaturePlanVersion"),
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/plans/{version}/approve": {
+      parameters: factoryPlanParameters,
+      post: factoryTurnMutation(
+        "approveFeaturePlan",
+        "ApproveFeaturePlanCommand",
+        "FactoryBoard",
+        200,
+      ),
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/board": {
+      parameters: factoryParameters(),
+      get: factoryRead("readFactoryBoard", "FactoryBoard"),
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/cancel": {
+      parameters: factoryParameters(),
+      post: factoryTurnMutation(
+        "cancelFactoryFeature",
+        "CancelFeatureCommand",
+        "FactoryBoard",
+        200,
+      ),
     },
     "/api/v1/projects/{projectId}/features": {
       parameters: [

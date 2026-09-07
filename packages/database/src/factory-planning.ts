@@ -20,20 +20,30 @@ import { FACTORY_PLANNING_QUEUE, pgBossDatabase } from "./pg-boss.js";
 export class FactoryError extends Error {
   constructor(
     public readonly code:
-      "not_found" | "conflict" | "unavailable" | "conversation_limit" | "feature_limit",
+      | "not_found"
+      | "conflict"
+      | "unavailable"
+      | "conversation_limit"
+      | "feature_limit"
+      | "invalid_plan"
+      | "plan_limit",
+    public readonly detail?: string,
   ) {
     super(`Factory operation failed: ${code}`);
     this.name = "FactoryError";
   }
 }
 
-interface FeatureRow {
+export interface FeatureRow {
   id: string;
   project_id: string;
   title: string;
   state: string;
   planning_context: unknown;
   runtime_thread_id: string | null;
+  latest_plan_version: number | null;
+  approved_plan_version: number | null;
+  cancel_request_id: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -146,7 +156,7 @@ export async function completePlanningTurn(
   turn: ClaimedPlanningTurn,
   outcome: { text: string } | { failure: PlanningFailure; question?: string },
 ): Promise<void> {
-  await withFeature(pool, turn.projectId, turn.featureId, async (client) => {
+  await withFactoryFeature(pool, turn.projectId, turn.featureId, async (client) => {
     const completed = await client.query(
       `UPDATE factory_planning_turns
       SET state = $2, failure = $3, question = $4, completed_at = clock_timestamp()
@@ -184,7 +194,7 @@ export async function completePlanningTurn(
   });
 }
 
-function feature(row: FeatureRow): Feature {
+export function mapFactoryFeature(row: FeatureRow): Feature {
   return FeatureSchema.parse({
     schemaVersion: 1,
     id: row.id,
@@ -234,7 +244,7 @@ async function inTransaction<T>(
   }
 }
 
-async function withFeature<T>(
+export async function withFactoryFeature<T>(
   pool: DatabasePool,
   projectId: string,
   featureId: string,
@@ -242,7 +252,7 @@ async function withFeature<T>(
 ): Promise<T> {
   return inTransaction(pool, async (client) => {
     const selected = await client.query<FeatureRow>(
-      `SELECT * FROM factory_features WHERE (${FEATURE_FAMILY}) = (${PROJECT_FAMILY}) AND id = $2 FOR UPDATE`,
+      `SELECT *, (${FEATURE_FAMILY}) AS project_id FROM factory_features WHERE (${FEATURE_FAMILY}) = (${PROJECT_FAMILY}) AND id = $2 FOR UPDATE`,
       [projectId, featureId],
     );
     const row = selected.rows[0];
@@ -272,7 +282,7 @@ export async function createFactoryFeature(
     if (duplicate !== undefined) {
       if (duplicate.project_id !== canonicalProjectId || duplicate.title !== command.title)
         throw new FactoryError("conflict");
-      return feature(duplicate);
+      return mapFactoryFeature(duplicate);
     }
     const count = await client.query<{ count: string }>(
       `SELECT count(*) FROM factory_features WHERE (${FEATURE_FAMILY}) = $1`,
@@ -286,7 +296,7 @@ export async function createFactoryFeature(
     );
     const row = result.rows[0];
     if (row === undefined) throw new FactoryError("conflict");
-    return feature(row);
+    return mapFactoryFeature(row);
   });
 }
 
@@ -300,7 +310,7 @@ export async function listFactoryFeatures(
     `SELECT *, (${FEATURE_FAMILY}) AS project_id FROM factory_features WHERE (${FEATURE_FAMILY}) = (${PROJECT_FAMILY}) ORDER BY created_at, id LIMIT 200`,
     [projectId],
   );
-  return result.rows.map(feature);
+  return result.rows.map(mapFactoryFeature);
 }
 
 export async function readFactoryChat(
@@ -327,7 +337,7 @@ export async function readFactoryChat(
   ]);
   return {
     schemaVersion: 1,
-    feature: feature(row),
+    feature: mapFactoryFeature(row),
     messages: messages.rows.map((message) =>
       PlanningMessageSchema.parse({
         id: message.id,
@@ -360,7 +370,7 @@ export async function acceptPlanningMessage(
   featureId: string,
   command: SendPlanningMessageCommand,
 ): Promise<PlanningTurnAccepted> {
-  return withFeature(pool, projectId, featureId, async (client, row) => {
+  return withFactoryFeature(pool, projectId, featureId, async (client, row) => {
     const duplicate = await client.query<{ id: string; message_id: string; content: string }>(
       `SELECT turn.id, turn.message_id, message.content FROM factory_planning_turns AS turn
        JOIN factory_planning_messages AS message ON message.id = turn.message_id
@@ -419,7 +429,7 @@ export async function cancelPlanningTurn(
   featureId: string,
   turnId: string,
 ): Promise<FeatureChat> {
-  await withFeature(pool, projectId, featureId, async (client) => {
+  await withFactoryFeature(pool, projectId, featureId, async (client) => {
     const selected = await client.query(
       "SELECT id FROM factory_planning_turns WHERE id = $1 AND feature_id = $2",
       [turnId, featureId],
@@ -447,7 +457,7 @@ export async function retryPlanningTurn(
   turnId: string,
   requestId: string,
 ): Promise<PlanningTurnAccepted> {
-  return withFeature(pool, projectId, featureId, async (client, feature) => {
+  return withFactoryFeature(pool, projectId, featureId, async (client, feature) => {
     const selected = await client.query<TurnRow>(
       "SELECT * FROM factory_planning_turns WHERE id = $1 AND feature_id = $2",
       [turnId, featureId],

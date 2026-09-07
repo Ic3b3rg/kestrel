@@ -11,6 +11,12 @@ import {
   PlanningTurnAcceptedSchema,
   SendPlanningMessageCommandSchema,
   RetryPlanningTurnCommandSchema,
+  FeaturePlansSchema,
+  FeaturePlanVersionSchema,
+  SaveFeaturePlanCommandSchema,
+  FactoryBoardSchema,
+  ApproveFeaturePlanCommandSchema,
+  CancelFeatureCommandSchema,
 } from "@kestrel/contracts";
 import {
   createFactoryFeature,
@@ -20,15 +26,23 @@ import {
   FactoryError,
   listFactoryFeatures,
   readFactoryChat,
+  readFactoryPlans,
+  readFactoryPlanVersion,
+  saveFactoryPlan,
+  readFactoryBoard,
+  approveFactoryPlan,
+  cancelFactoryFeature,
   type DatabasePool,
   type DiagnosticJobSender,
 } from "@kestrel/database";
 
 import { AUTHENTICATED_MUTATION_ROUTE_CONFIG } from "../authentication.js";
+import { renderFeaturePlanArtifacts } from "../factory-plan-artifacts.js";
 
 const projectParams = z.strictObject({ projectId: KestrelIdSchema });
 const featureParams = projectParams.extend({ featureId: KestrelIdSchema });
 const turnParams = featureParams.extend({ turnId: KestrelIdSchema });
+const planParams = featureParams.extend({ version: z.coerce.number().int().min(1).max(200) });
 const jsonSchema = (schema: z.ZodType) => z.toJSONSchema(schema, { target: "draft-7" });
 const errors = {
   400: jsonSchema(ApiErrorSchema),
@@ -54,11 +68,22 @@ function factoryError(request: FastifyRequest, error: unknown) {
       "The conversation limit was reached; start a new feature chat",
     ],
     feature_limit: [409, "REQUEST_REJECTED", "The Project feature limit was reached"],
+    invalid_plan: [400, "INVALID_REQUEST", "The plan is not valid"],
+    plan_limit: [
+      409,
+      "REQUEST_REJECTED",
+      "The plan version limit was reached; start a new feature",
+    ],
   } as const;
   const [status, code, message] = states[error.code];
   return {
     status,
-    body: ApiErrorSchema.parse({ schemaVersion: 1, code, message, correlationId: request.id }),
+    body: ApiErrorSchema.parse({
+      schemaVersion: 1,
+      code,
+      message: error.detail ?? message,
+      correlationId: request.id,
+    }),
   };
 }
 
@@ -67,6 +92,150 @@ export function registerFactoryPlanningRoutes(
   pool: DatabasePool,
   boss: DiagnosticJobSender,
 ): void {
+  app.post(
+    "/api/v1/projects/:projectId/features/:featureId/cancel",
+    {
+      bodyLimit: 256,
+      config: AUTHENTICATED_MUTATION_ROUTE_CONFIG,
+      schema: {
+        params: jsonSchema(featureParams),
+        body: jsonSchema(CancelFeatureCommandSchema),
+        response: { ...errors, 200: jsonSchema(FactoryBoardSchema) },
+      },
+    },
+    async (request, reply) => {
+      const { projectId, featureId } = featureParams.parse(request.params);
+      try {
+        return await cancelFactoryFeature(
+          pool,
+          projectId,
+          featureId,
+          CancelFeatureCommandSchema.parse(request.body),
+        );
+      } catch (error) {
+        const failure = factoryError(request, error);
+        return reply.code(failure.status).send(failure.body);
+      }
+    },
+  );
+  app.get(
+    "/api/v1/projects/:projectId/features/:featureId/board",
+    {
+      schema: {
+        params: jsonSchema(featureParams),
+        response: { ...errors, 200: jsonSchema(FactoryBoardSchema) },
+      },
+    },
+    async (request, reply) => {
+      const { projectId, featureId } = featureParams.parse(request.params);
+      try {
+        return await readFactoryBoard(pool, projectId, featureId);
+      } catch (error) {
+        const failure = factoryError(request, error);
+        return reply.code(failure.status).send(failure.body);
+      }
+    },
+  );
+  app.post(
+    "/api/v1/projects/:projectId/features/:featureId/plans/:version/approve",
+    {
+      bodyLimit: 256,
+      config: AUTHENTICATED_MUTATION_ROUTE_CONFIG,
+      schema: {
+        params: jsonSchema(planParams),
+        body: jsonSchema(ApproveFeaturePlanCommandSchema),
+        response: { ...errors, 200: jsonSchema(FactoryBoardSchema) },
+      },
+    },
+    async (request, reply) => {
+      const { projectId, featureId, version } = planParams.parse(request.params);
+      const actorId = request.operatorSession?.operator.id;
+      if (actorId === undefined) throw new Error("Authenticated approval has no Operator");
+      try {
+        return await approveFactoryPlan(
+          pool,
+          projectId,
+          featureId,
+          actorId,
+          version,
+          ApproveFeaturePlanCommandSchema.parse(request.body).requestId,
+        );
+      } catch (error) {
+        const failure = factoryError(request, error);
+        return reply.code(failure.status).send(failure.body);
+      }
+    },
+  );
+  app.get(
+    "/api/v1/projects/:projectId/features/:featureId/plans",
+    {
+      schema: {
+        params: jsonSchema(featureParams),
+        response: { ...errors, 200: jsonSchema(FeaturePlansSchema) },
+      },
+    },
+    async (request, reply) => {
+      const { projectId, featureId } = featureParams.parse(request.params);
+      try {
+        return await readFactoryPlans(pool, projectId, featureId);
+      } catch (error) {
+        const failure = factoryError(request, error);
+        return reply.code(failure.status).send(failure.body);
+      }
+    },
+  );
+  app.get(
+    "/api/v1/projects/:projectId/features/:featureId/plans/:version",
+    {
+      schema: {
+        params: jsonSchema(planParams),
+        response: { ...errors, 200: jsonSchema(FeaturePlanVersionSchema) },
+      },
+    },
+    async (request, reply) => {
+      const { projectId, featureId, version } = planParams.parse(request.params);
+      try {
+        return await readFactoryPlanVersion(pool, projectId, featureId, version);
+      } catch (error) {
+        const failure = factoryError(request, error);
+        return reply.code(failure.status).send(failure.body);
+      }
+    },
+  );
+  app.post(
+    "/api/v1/projects/:projectId/features/:featureId/plans",
+    {
+      bodyLimit: 1_000_000,
+      config: AUTHENTICATED_MUTATION_ROUTE_CONFIG,
+      schema: {
+        params: jsonSchema(featureParams),
+        body: jsonSchema(SaveFeaturePlanCommandSchema),
+        response: { ...errors, 201: jsonSchema(FeaturePlanVersionSchema) },
+      },
+    },
+    async (request, reply) => {
+      const { projectId, featureId } = featureParams.parse(request.params);
+      const actorId = request.operatorSession?.operator.id;
+      if (actorId === undefined) throw new Error("Authenticated plan request has no Operator");
+      try {
+        return await reply
+          .code(201)
+          .send(
+            await saveFactoryPlan(
+              pool,
+              projectId,
+              featureId,
+              actorId,
+              SaveFeaturePlanCommandSchema.parse(request.body),
+              renderFeaturePlanArtifacts,
+            ),
+          );
+      } catch (error) {
+        const failure = factoryError(request, error);
+        return reply.code(failure.status).send(failure.body);
+      }
+    },
+  );
   app.post(
     "/api/v1/projects/:projectId/features",
     {
