@@ -12,6 +12,9 @@ import {
   FeatureChatSchema,
   FeatureListSchema,
   FeatureSchema,
+  FeaturePlanVersionSchema,
+  FeaturePlansSchema,
+  FactoryBoardSchema,
   LocalRepositoryInventorySchema,
   PlanningTurnAcceptedSchema,
   ProjectUpsertedSchema,
@@ -62,7 +65,7 @@ async function executable(name: string): Promise<string> {
 describe.runIf(process.env.KESTREL_LIVE_CODEX === "1")(
   "Factory planning live HTTP conformance",
   () => {
-    it("saves and resumes authenticated planning through PostgreSQL, pg-boss and real Codex", async () => {
+    it("saves and resumes chat, generates a versioned plan and approves its board through real Codex", async () => {
       const [docker, git, codex] = await Promise.all([
         executable("docker"),
         executable("git"),
@@ -340,6 +343,86 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX === "1")(
             ({ id }) => id,
           ),
         ).toEqual([feature.id]);
+        // The Operator makes the remaining acceptance and verification decisions in an editable draft.
+        const draft = await request(`${path}/plans`, {
+          requestId: randomUUID(),
+          expectedVersion: null,
+          plan: {
+            objective: "Export all notes to Markdown",
+            scope: {
+              includes: ["Export every note title and Markdown body to one Markdown document"],
+              excludes: ["Other formats", "Selected-note export", "Changes to notes"],
+            },
+            acceptance: [
+              {
+                key: "export",
+                outcome:
+                  "The export contains every note title and unchanged body, in the existing note order",
+              },
+            ],
+            workItems: [
+              {
+                key: "export",
+                title: "Implement and verify the Markdown export",
+                description:
+                  "Add one export operation without changing stored notes. Include all note titles and unchanged bodies in current order. Add the Node regression file tests/export.test.mjs as part of the work.",
+                requirementKeys: ["export"],
+                acceptance: [
+                  "All notes appear in existing order with unchanged content",
+                  "Stored notes remain unchanged after export",
+                ],
+                dependsOn: [],
+                verification: [
+                  {
+                    program: "node",
+                    args: ["--test", "tests/export.test.mjs"],
+                    cwd: ".",
+                    timeoutSeconds: 60,
+                  },
+                ],
+              },
+            ],
+            limits: {
+              maxConcurrentProjects: 2,
+              maxActiveFeaturesPerProject: 1,
+              attemptTimeoutSeconds: 1800,
+            },
+          },
+        });
+        expect(draft.status).toBe(201);
+        expect(FeaturePlanVersionSchema.parse(await draft.json()).version).toBe(1);
+        const generation = await request(`${path}/plans/generate`, {
+          requestId: randomUUID(),
+          expectedVersion: 1,
+        });
+        expect(generation.status).toBe(202);
+        const generatedTurn = PlanningTurnAcceptedSchema.parse(await generation.json());
+        await expect
+          .poll(
+            async () => {
+              const plans = FeaturePlansSchema.parse(await (await request(`${path}/plans`)).json());
+              return (
+                plans.generation !== null && !["queued", "running"].includes(plans.generation.state)
+              );
+            },
+            { timeout: 55_000, interval: 500 },
+          )
+          .toBe(true);
+        const plans = FeaturePlansSchema.parse(await (await request(`${path}/plans`)).json());
+        expect(plans.generation).toMatchObject({ state: "completed", failure: null });
+        expect(plans.generation?.id).toBe(generatedTurn.turnId);
+        expect(plans.current?.version).toBe(2);
+        expect(plans.current?.author).toBe("assistant");
+        expect(plans.current?.sourceContext?.commitId).toBe(commitOutput.trim());
+        expect(plans.current?.planMarkdown).toContain(commitOutput.trim());
+        expect(plans.current?.document.workItems.length).toBeGreaterThan(0);
+        expect(plans.current?.document.limits.attemptTimeoutSeconds).toBe(1800);
+        const approval = await request(`${path}/plans/2/approve`, { requestId: randomUUID() });
+        expect(approval.status).toBe(200);
+        const board = FactoryBoardSchema.parse(await approval.json());
+        expect(board.feature.state).toBe("queued");
+        expect(board.columns[0]?.items).toHaveLength(plans.current?.document.workItems.length ?? 0);
+        expect(board.columns.slice(1).every(({ items }) => items.length === 0)).toBe(true);
         expect(await readFile(join(repository, "CONTEXT.md"), "utf8")).toBe(dirty);
         expect(await readFile(join(repository, "untracked.md"), "utf8")).toBe(untracked);
         expect((await runGit(["status", "--porcelain=v1"])).stdout).toBe(before.stdout);
@@ -355,6 +438,6 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX === "1")(
         await runDocker(["rm", "--force", container]).catch(() => undefined);
         await rm(directory, { recursive: true, force: true });
       }
-    }, 150_000);
+    }, 210_000);
   },
 );

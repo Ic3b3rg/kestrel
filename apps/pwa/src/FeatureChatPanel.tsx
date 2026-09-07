@@ -1,12 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type SyntheticEvent } from "react";
-import { FileText, RefreshCw, Send, Square } from "lucide-react";
-import type {
-  Feature,
-  FeatureChat,
-  PlanningFailure,
-  PlanningTurn,
-  SendPlanningMessageCommand,
-} from "@kestrel/contracts";
+import { RefreshCw, Send, Square } from "lucide-react";
+import type { Feature, FeatureChat, SendPlanningMessageCommand } from "@kestrel/contracts";
 
 import {
   ApiClientError,
@@ -18,122 +12,14 @@ import {
 import { appPath, type AppRoute } from "./app-route.js";
 import { handleFeatureLink, planningRequestError } from "./FeatureNavigation.js";
 import { Button } from "./components/ui/button.js";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-  DialogTrigger,
-} from "./components/ui/dialog.js";
+import { DocumentInspector, failures, pendingTurn } from "./PlanningDetails.js";
+import { FeaturePlanPanel } from "./FeaturePlanPanel.js";
+import { FeatureBoardPanel } from "./FeatureBoardPanel.js";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs.js";
 import { Label } from "./components/ui/label.js";
 import { Textarea } from "./components/ui/textarea.js";
 
-const failures: Record<PlanningFailure, { title: string; detail: string }> = {
-  unavailable: {
-    title: "Codex is unavailable",
-    detail: "Your message is saved. Check the workstation connection, then retry planning.",
-  },
-  authentication: {
-    title: "Sign in to Codex",
-    detail: "Your message is saved. Restore the Codex connection in Settings, then retry planning.",
-  },
-  usage_limit: {
-    title: "Codex usage limit reached",
-    detail: "Your message is saved. Retry when usage is available again.",
-  },
-  permission_required: {
-    title: "A permission decision is required",
-    detail: "Planning stopped at a permission request. Review the question before continuing.",
-  },
-  input_required: {
-    title: "Kestrel needs your answer",
-    detail: "Answer the question in the chat to continue planning.",
-  },
-  timeout: {
-    title: "Planning timed out",
-    detail: "Your message is saved. Retry this turn when you are ready.",
-  },
-  cancelled: {
-    title: "Planning stopped",
-    detail: "Your saved message remains in this conversation.",
-  },
-  interrupted: {
-    title: "Planning was interrupted",
-    detail: "Your message is saved. Retry explicitly to continue.",
-  },
-  invalid_response: {
-    title: "The reply could not be read",
-    detail: "Kestrel could not save a valid answer. Retry this turn.",
-  },
-  source_unavailable: {
-    title: "Project documents are unavailable",
-    detail: "Check the Project source in Settings before retrying.",
-  },
-};
-
-function pendingTurn(turn: PlanningTurn | undefined): boolean {
-  return turn?.state === "queued" || turn?.state === "running";
-}
-
-function DocumentInspector({ context }: { context: FeatureChat["context"] }) {
-  const [selectedPath, setSelectedPath] = useState("");
-  const selected =
-    context?.documents.find(({ path }) => path === selectedPath) ?? context?.documents[0];
-  return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <Button variant="outline">
-          <FileText aria-hidden="true" />
-          Project documents
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="planning-documents-dialog max-h-[85dvh] overflow-y-auto sm:max-w-4xl">
-        <DialogTitle>Project documents</DialogTitle>
-        <DialogDescription>
-          Committed Markdown read for this conversation. These documents remain unchanged by
-          planning.
-        </DialogDescription>
-        {context?.notice === null || context?.notice === undefined ? null : (
-          <p className="planning-notice">{context.notice}</p>
-        )}
-        {context?.commitId === null || context?.commitId === undefined ? null : (
-          <p className="planning-source-commit">
-            Source commit <code>{context.commitId}</code>
-          </p>
-        )}
-        {context === null ? (
-          <p>Documents will be read when you send the first message.</p>
-        ) : context.documents.length === 0 ? (
-          <p>No committed Markdown documents were available for this turn.</p>
-        ) : (
-          <div className="planning-documents-layout">
-            <div className="planning-document-list" role="group" aria-label="Choose a document">
-              {context.documents.map((document) => (
-                <Button
-                  key={document.path}
-                  variant={document.path === selected?.path ? "secondary" : "ghost"}
-                  className="justify-start whitespace-normal text-left"
-                  aria-pressed={document.path === selected?.path}
-                  onClick={() => setSelectedPath(document.path)}
-                >
-                  {document.path}
-                </Button>
-              ))}
-            </div>
-            {selected === undefined ? null : (
-              <section className="planning-document" aria-label={selected.path}>
-                <h3>{selected.path}</h3>
-                <pre tabIndex={0} aria-label={`Contents of ${selected.path}`}>
-                  {selected.content}
-                </pre>
-              </section>
-            )}
-          </div>
-        )}
-      </DialogContent>
-    </Dialog>
-  );
-}
+const ignoreDirtyChange = () => undefined;
 
 type Attempt =
   | { kind: "send"; command: SendPlanningMessageCommand }
@@ -145,6 +31,8 @@ export interface FeatureChatPanelProps {
   projectName: string;
   featureId: string;
   online: boolean;
+  view?: "chat" | "plan" | "board";
+  onPlanDirtyChange?: (dirty: boolean) => void;
   onNavigate: (route: Exclude<AppRoute, { kind: "not_found" }>) => void;
   onAuthenticationError: (error: unknown) => boolean;
   onFeatureRead: (feature: Feature) => void;
@@ -160,6 +48,8 @@ export function FeatureChatPanel({
   projectName,
   featureId,
   online,
+  view = "chat",
+  onPlanDirtyChange = ignoreDirtyChange,
   onNavigate,
   onAuthenticationError,
   onFeatureRead,
@@ -218,10 +108,7 @@ export function FeatureChatPanel({
   useEffect(() => {
     alive.current = true;
     if (online) void refresh();
-    else {
-      setChat(null);
-      setReading(false);
-    }
+    else setReading(false);
     return () => {
       alive.current = false;
       activeRead.current?.abort();
@@ -272,10 +159,26 @@ export function FeatureChatPanel({
   };
   const submit = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (draft.trim() === "" || commandError !== null || activeTurn !== undefined) return;
+    if (
+      chat?.feature.state !== "planning" ||
+      draft.trim() === "" ||
+      commandError !== null ||
+      activeTurn !== undefined
+    )
+      return;
     void runAttempt({
       kind: "send",
       command: { requestId: crypto.randomUUID(), text: draft.trim() },
+    });
+  };
+  const editable = chat?.feature.state === "planning";
+  const selectView = (value: string) => {
+    if (value !== "chat" && value !== "plan" && value !== "board") return;
+    onNavigate({
+      kind: "feature",
+      projectId,
+      featureId,
+      ...(value === "chat" ? {} : { view: value }),
     });
   };
   const projectRoute = { kind: "project" as const, projectId };
@@ -313,7 +216,11 @@ export function FeatureChatPanel({
           </a>
           <h1 id="feature-title">{chat.feature.title}</h1>
           <p>
-            Planning <span aria-hidden="true">·</span> Define the outcome before implementation.
+            {editable
+              ? "Planning · Define the outcome before implementation."
+              : chat.feature.state === "queued"
+                ? "Queued · Approved work is waiting to run."
+                : "Cancelled · Saved work remains available."}
           </p>
         </div>
         <div className="feature-planning-actions">
@@ -329,158 +236,240 @@ export function FeatureChatPanel({
           </Button>
         </div>
       </header>
-      {readError === null ? null : (
-        <p className="planning-error" role="alert">
-          {readError}
-        </p>
-      )}
-      {chat.context?.notice === null || chat.context?.notice === undefined ? null : (
-        <p className="planning-notice">{chat.context.notice}</p>
-      )}
-      {chat.messages.length === 0 ? (
-        <div className="planning-empty">
-          <h2>What do you want to build?</h2>
-          <p>
-            Describe what you want to change, who it helps, and what a good result looks like.
-            Kestrel will help you resolve the important questions.
-          </p>
-        </div>
-      ) : null}
-      <ol
-        className="planning-messages"
-        aria-label="Conversation"
-        aria-live="polite"
-        aria-relevant="additions text"
-      >
-        {chat.messages.map((message) => {
-          const turn = chat.turns.filter(({ messageId }) => messageId === message.id).at(-1);
-          const failure =
-            turn?.failure === null || turn?.failure === undefined ? null : failures[turn.failure];
-          return (
-            <li key={message.id} className={`planning-message planning-message-${message.role}`}>
-              <article aria-label={message.role === "user" ? "Your message" : "Kestrel reply"}>
-                <header>
-                  <strong>{message.role === "user" ? "You" : "Kestrel"}</strong>
-                  <time dateTime={message.createdAt}>
-                    {new Date(message.createdAt).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </time>
-                </header>
-                <div className="planning-message-content">{message.content}</div>
-              </article>
-              {message.role !== "user" ||
-              turn === undefined ||
-              turn.state === "completed" ? null : (
-                <div className="planning-turn-state" role="status">
-                  <strong>
-                    {pendingTurn(turn)
-                      ? turn.state === "queued"
-                        ? "Waiting to start"
-                        : "Kestrel is thinking"
-                      : (failure?.title ?? "Planning stopped")}
-                  </strong>
-                  <p>
-                    {pendingTurn(turn)
-                      ? "You can leave this page. Planning continues while the workstation is running."
-                      : failure?.detail}
-                  </p>
-                  {turn.question === null ? null : (
-                    <blockquote className="planning-question">{turn.question}</blockquote>
-                  )}
-                  {turn.id !== latestTurn?.id ? null : (
-                    <div className="planning-turn-actions">
-                      {pendingTurn(turn) ? (
-                        <Button
-                          variant="outline"
-                          disabled={!online || commandPending || commandError !== null}
-                          onClick={() => void runAttempt({ kind: "cancel", turnId: turn.id })}
-                        >
-                          <Square aria-hidden="true" />
-                          Stop planning
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="outline"
-                          disabled={!online || commandPending || commandError !== null}
-                          onClick={() =>
-                            void runAttempt({
-                              kind: "retry",
-                              turnId: turn.id,
-                              requestId: crypto.randomUUID(),
-                            })
-                          }
-                        >
-                          Retry planning
-                        </Button>
+      <Tabs value={view} onValueChange={selectView} className="feature-tabs">
+        <TabsList aria-label="Feature views" className="feature-tab-list">
+          {(["chat", "plan", "board"] as const).map((value) => {
+            const route = {
+              kind: "feature" as const,
+              projectId,
+              featureId,
+              ...(value === "chat" ? {} : { view: value }),
+            };
+            return (
+              <TabsTrigger
+                asChild
+                value={value}
+                key={value}
+                onMouseDown={(event) => {
+                  if (
+                    event.button !== 0 ||
+                    event.altKey ||
+                    event.ctrlKey ||
+                    event.metaKey ||
+                    event.shiftKey
+                  )
+                    event.preventDefault();
+                }}
+              >
+                <a
+                  href={appPath(route)}
+                  onClick={(event) =>
+                    handleFeatureLink(event, route, (next) => {
+                      if (view !== value) onNavigate(next);
+                    })
+                  }
+                >
+                  {value === "chat" ? "Chat" : value === "plan" ? "Plan" : "Board"}
+                </a>
+              </TabsTrigger>
+            );
+          })}
+        </TabsList>
+        <TabsContent value="chat" className="feature-chat-content">
+          {readError === null ? null : (
+            <p className="planning-error" role="alert">
+              {readError}
+            </p>
+          )}
+          {chat.context?.notice === null || chat.context?.notice === undefined ? null : (
+            <p className="planning-notice">{chat.context.notice}</p>
+          )}
+          {chat.messages.length === 0 && editable ? (
+            <div className="planning-empty">
+              <h2>What do you want to build?</h2>
+              <p>
+                Describe what you want to change, who it helps, and what a good result looks like.
+                Kestrel will help you resolve the important questions.
+              </p>
+            </div>
+          ) : null}
+          <ol
+            className="planning-messages"
+            aria-label="Conversation"
+            aria-live="polite"
+            aria-relevant="additions text"
+          >
+            {chat.messages.map((message) => {
+              const turn = chat.turns.filter(({ messageId }) => messageId === message.id).at(-1);
+              const failure =
+                turn?.failure === null || turn?.failure === undefined
+                  ? null
+                  : failures[turn.failure];
+              return (
+                <li
+                  key={message.id}
+                  className={`planning-message planning-message-${message.role}`}
+                >
+                  <article aria-label={message.role === "user" ? "Your message" : "Kestrel reply"}>
+                    <header>
+                      <strong>{message.role === "user" ? "You" : "Kestrel"}</strong>
+                      <time dateTime={message.createdAt}>
+                        {new Date(message.createdAt).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </time>
+                    </header>
+                    <div className="planning-message-content">{message.content}</div>
+                  </article>
+                  {message.role !== "user" ||
+                  turn === undefined ||
+                  turn.state === "completed" ? null : (
+                    <div className="planning-turn-state" role="status">
+                      <strong>
+                        {pendingTurn(turn)
+                          ? turn.state === "queued"
+                            ? "Waiting to start"
+                            : "Kestrel is thinking"
+                          : (failure?.title ?? "Planning stopped")}
+                      </strong>
+                      <p>
+                        {pendingTurn(turn)
+                          ? "You can leave this page. Planning continues while the workstation is running."
+                          : failure?.detail}
+                      </p>
+                      {turn.question === null ? null : (
+                        <blockquote className="planning-question">{turn.question}</blockquote>
                       )}
-                      {turn.failure === "authentication" ||
-                      turn.failure === "unavailable" ||
-                      turn.failure === "source_unavailable" ? (
-                        <a
-                          href={`/settings?projectId=${projectId}#${turn.failure === "source_unavailable" ? "repository-settings-title" : "codex-connection-title"}`}
-                        >
-                          {turn.failure === "source_unavailable"
-                            ? "Check Project source"
-                            : "Check connection"}
-                        </a>
-                      ) : null}
+                      {turn.id !== latestTurn?.id ? null : (
+                        <div className="planning-turn-actions">
+                          {pendingTurn(turn) ? (
+                            <Button
+                              variant="outline"
+                              disabled={
+                                !online || !editable || commandPending || commandError !== null
+                              }
+                              onClick={() => void runAttempt({ kind: "cancel", turnId: turn.id })}
+                            >
+                              <Square aria-hidden="true" />
+                              Stop planning
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="outline"
+                              disabled={
+                                !online || !editable || commandPending || commandError !== null
+                              }
+                              onClick={() =>
+                                void runAttempt({
+                                  kind: "retry",
+                                  turnId: turn.id,
+                                  requestId: crypto.randomUUID(),
+                                })
+                              }
+                            >
+                              Retry planning
+                            </Button>
+                          )}
+                          {turn.failure === "authentication" ||
+                          turn.failure === "unavailable" ||
+                          turn.failure === "source_unavailable" ? (
+                            <a
+                              href={`/settings?projectId=${projectId}#${turn.failure === "source_unavailable" ? "repository-settings-title" : "codex-connection-title"}`}
+                            >
+                              {turn.failure === "source_unavailable"
+                                ? "Check Project source"
+                                : "Check connection"}
+                            </a>
+                          ) : null}
+                        </div>
+                      )}
                     </div>
                   )}
-                </div>
-              )}
-            </li>
-          );
-        })}
-      </ol>
-      {commandError === null ? null : (
-        <div className="planning-command-error" role="alert">
-          <p>{commandError}</p>
-          <Button
-            variant="outline"
-            disabled={!online || commandPending}
-            onClick={() => void runAttempt()}
-          >
-            {attemptKind === "send"
-              ? "Retry send"
-              : attemptKind === "cancel"
-                ? "Retry stop"
-                : "Retry request"}
-          </Button>
-        </div>
-      )}
-      <form className="planning-composer" onSubmit={submit}>
-        <Label htmlFor="planning-message">Message</Label>
-        <Textarea
-          id="planning-message"
-          rows={3}
-          maxLength={16_000}
-          value={draft}
-          disabled={!online || commandPending || activeTurn !== undefined || commandError !== null}
-          onChange={(event) => setDraft(event.currentTarget.value)}
-          placeholder="Describe the change or answer Kestrel’s question…"
-          aria-describedby="planning-message-help"
-        />
-        <div className="planning-composer-footer">
-          <p id="planning-message-help">
-            Planning only. Implementation starts after you approve a plan.
-          </p>
-          <Button
-            type="submit"
-            disabled={
-              !online ||
-              commandPending ||
-              activeTurn !== undefined ||
-              commandError !== null ||
-              draft.trim() === ""
-            }
-          >
-            <Send aria-hidden="true" />
-            {commandPending && attemptKind === "send" ? "Sending…" : "Send message"}
-          </Button>
-        </div>
-      </form>
+                </li>
+              );
+            })}
+          </ol>
+          {commandError === null ? null : (
+            <div className="planning-command-error" role="alert">
+              <p>{commandError}</p>
+              <Button
+                variant="outline"
+                disabled={!online || commandPending}
+                onClick={() => void runAttempt()}
+              >
+                {attemptKind === "send"
+                  ? "Retry send"
+                  : attemptKind === "cancel"
+                    ? "Retry stop"
+                    : "Retry request"}
+              </Button>
+            </div>
+          )}
+          <form className="planning-composer" onSubmit={submit}>
+            <Label htmlFor="planning-message">Message</Label>
+            <Textarea
+              id="planning-message"
+              rows={3}
+              maxLength={16_000}
+              value={draft}
+              disabled={
+                !online ||
+                !editable ||
+                commandPending ||
+                activeTurn !== undefined ||
+                commandError !== null
+              }
+              onChange={(event) => setDraft(event.currentTarget.value)}
+              placeholder="Describe the change or answer Kestrel’s question…"
+              aria-describedby="planning-message-help"
+            />
+            <div className="planning-composer-footer">
+              <p id="planning-message-help">
+                {editable
+                  ? "Planning only. Implementation starts after you approve a plan."
+                  : "This conversation is read-only. Its saved messages remain available."}
+              </p>
+              <Button
+                type="submit"
+                disabled={
+                  !online ||
+                  !editable ||
+                  commandPending ||
+                  activeTurn !== undefined ||
+                  commandError !== null ||
+                  draft.trim() === ""
+                }
+              >
+                <Send aria-hidden="true" />
+                {commandPending && attemptKind === "send" ? "Sending…" : "Send message"}
+              </Button>
+            </div>
+          </form>
+        </TabsContent>
+        <TabsContent value="plan" forceMount className="data-[state=inactive]:hidden">
+          <FeaturePlanPanel
+            projectId={projectId}
+            featureId={featureId}
+            online={online}
+            visible={view === "plan"}
+            conversationPending={activeTurn !== undefined}
+            onAuthenticationError={onAuthenticationError}
+            onChanged={() => void refresh()}
+            onApproved={() => selectView("board")}
+            onDirtyChange={onPlanDirtyChange}
+          />
+        </TabsContent>
+        <TabsContent value="board">
+          <FeatureBoardPanel
+            projectId={projectId}
+            featureId={featureId}
+            online={online}
+            onAuthenticationError={onAuthenticationError}
+            onViewPlan={() => selectView("plan")}
+          />
+        </TabsContent>
+      </Tabs>
     </section>
   );
 }

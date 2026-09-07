@@ -7,7 +7,8 @@ github.com pull request may add optional Provider Observation metadata without G
 PostgreSQL is the durable application authority; verified source objects live in a separate
 Kestrel-owned artifact root.
 
-Feature chats add persistent, source-grounded planning inside each Project. Factory 0.1 follows the
+Feature chats add persistent, source-grounded planning, versioned plans, and an ordered Kanban
+inside each Project. Factory 0.1 follows the
 [approved feature workflow](./docs/factory-v01/spec.md); its delivery is tracked in
 [GitHub issue #209](https://github.com/Ic3b3rg/kestrel/issues/209).
 
@@ -127,6 +128,21 @@ visible and **Retry planning** starts a new attempt without duplicating its user
 interruption may take up to four minutes to become an interrupted state; uncertain work is never
 silently replayed. A chat is bounded to 200 messages and 400 attempts, and a Project to 200
 features. A capacity error leaves the existing conversation intact.
+
+Open the feature's **Plan** tab to generate a structured draft from the conversation and committed
+documents. Inspect and edit the objective, scope, acceptance outcomes, ordered Work Items,
+dependencies, and exact verification arguments before saving another version. The default bounds are
+two concurrent Projects, one active feature per Project, and 30 minutes per attempt. Limits and
+verification timeouts are visible before approval. Invalid graphs or incomplete criteria cannot be
+approved; a stale browser tab must load the current version before authorizing it.
+
+Approval freezes the displayed version, Markdown plan/spec, source references, and limits. The
+**Board** tab shows its ordered cards in To do, In progress, In review, and Completed columns, with
+dependencies, acceptance criteria, activity, and blocking explanations in card details. This slice
+queues the feature and explicitly reports that automatic execution is not available yet. GitHub
+publication and execution follow in the next Factory tickets. Completed is reserved for a confirmed
+feature merge; no manual card action can imply completion. Cancelling preserves the plan and cards
+for inspection and discards a pending generation result.
 
 If the password or every signed-in device is lost, recover the sole Operator from the trusted host:
 
@@ -439,11 +455,12 @@ KESTREL_LIVE_CODEX=1 npx vitest run apps/web/src/codex-app-server.live.test.ts
 
 The planning conformance checks make real model requests using the existing host subscription. The
 first exercises the bounded transport; the second logs in through HTTP, creates a disposable
-Project, and verifies two persistent turns through PostgreSQL and pg-boss. The HTTP check requires
-the cached `postgres:18.6-alpine` Docker image and removes its own test resources afterward.
+Project, and verifies two persistent chat turns, structured plan regeneration, frozen sources, and
+explicit approval into an ordered board through PostgreSQL and pg-boss. The HTTP check requires the
+cached `postgres:18.6-alpine` Docker image and removes its own test resources afterward.
 
 ```sh
-KESTREL_LIVE_CODEX=1 npx vitest run apps/web/src/codex-planning-runtime.live.test.ts apps/web/src/factory-planning.live.test.ts
+KESTREL_LIVE_CODEX=1 KESTREL_LIVE_CODEX_PLANNING=1 npx vitest run apps/web/src/codex-planning-runtime.live.test.ts apps/web/src/factory-planning.live.test.ts
 ```
 
 The authored Zod schemas live in `packages/contracts/src`. Regenerate committed JSON Schema and

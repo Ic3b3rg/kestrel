@@ -1,5 +1,6 @@
 import {
   FeatureSchema,
+  FeaturePlanDocumentSchema,
   PlanningContextSchema,
   PlanningMessageSchema,
   PlanningTurnSchema,
@@ -10,6 +11,7 @@ import {
   type PlanningContext,
   type PlanningFailure,
   type SendPlanningMessageCommand,
+  type FeaturePlanDocument,
 } from "@kestrel/contracts";
 import type { PoolClient } from "pg";
 
@@ -20,20 +22,30 @@ import { FACTORY_PLANNING_QUEUE, pgBossDatabase } from "./pg-boss.js";
 export class FactoryError extends Error {
   constructor(
     public readonly code:
-      "not_found" | "conflict" | "unavailable" | "conversation_limit" | "feature_limit",
+      | "not_found"
+      | "conflict"
+      | "unavailable"
+      | "conversation_limit"
+      | "feature_limit"
+      | "invalid_plan"
+      | "plan_limit",
+    public readonly detail?: string,
   ) {
     super(`Factory operation failed: ${code}`);
     this.name = "FactoryError";
   }
 }
 
-interface FeatureRow {
+export interface FeatureRow {
   id: string;
   project_id: string;
   title: string;
   state: string;
   planning_context: unknown;
   runtime_thread_id: string | null;
+  latest_plan_version: number | null;
+  approved_plan_version: number | null;
+  cancel_request_id: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -43,6 +55,9 @@ export interface ClaimedPlanningTurn {
   featureId: string;
   projectId: string;
   threadId: string | null;
+  purpose: "conversation" | "plan";
+  expectedPlanVersion: number | null;
+  previousPlan: FeaturePlanDocument | null;
   messages: FeatureChat["messages"];
   source: { repositoryId: string; identity: string } | null;
 }
@@ -74,13 +89,18 @@ export async function claimPlanningTurn(
   pool: DatabasePool,
   turnId: string,
 ): Promise<ClaimedPlanningTurn | null> {
-  const result = await pool.query<{ feature_id: string }>(
+  const result = await pool.query<{
+    feature_id: string;
+    purpose: "conversation" | "plan";
+    expected_plan_version: number | null;
+  }>(
     `UPDATE factory_planning_turns SET state = 'running', started_at = clock_timestamp()
-     WHERE id = $1 AND state = 'queued' RETURNING feature_id`,
+     WHERE id = $1 AND state = 'queued' RETURNING feature_id, purpose, expected_plan_version`,
     [turnId],
   );
-  const featureId = result.rows[0]?.feature_id;
-  if (featureId === undefined) return null;
+  const claimed = result.rows[0];
+  if (claimed === undefined) return null;
+  const featureId = claimed.feature_id;
   const features = await pool.query<FeatureRow>("SELECT * FROM factory_features WHERE id = $1", [
     featureId,
   ]);
@@ -95,11 +115,24 @@ export async function claimPlanningTurn(
     [row.project_id],
   );
   const attached = source.rows[0];
+  const previous =
+    claimed.purpose === "plan" && claimed.expected_plan_version !== null
+      ? await pool.query<{ document: unknown }>(
+          "SELECT document FROM factory_plan_versions WHERE feature_id = $1 AND version = $2",
+          [featureId, claimed.expected_plan_version],
+        )
+      : null;
   return {
     id: turnId,
     featureId,
     projectId: chat.feature.projectId,
-    threadId: row.runtime_thread_id,
+    threadId: claimed.purpose === "plan" ? null : row.runtime_thread_id,
+    purpose: claimed.purpose,
+    expectedPlanVersion: claimed.expected_plan_version,
+    previousPlan:
+      previous?.rows[0] === undefined
+        ? null
+        : FeaturePlanDocumentSchema.parse(previous.rows[0].document),
     messages: chat.messages,
     source:
       attached === undefined
@@ -146,7 +179,7 @@ export async function completePlanningTurn(
   turn: ClaimedPlanningTurn,
   outcome: { text: string } | { failure: PlanningFailure; question?: string },
 ): Promise<void> {
-  await withFeature(pool, turn.projectId, turn.featureId, async (client) => {
+  await withFactoryFeature(pool, turn.projectId, turn.featureId, async (client) => {
     const completed = await client.query(
       `UPDATE factory_planning_turns
       SET state = $2, failure = $3, question = $4, completed_at = clock_timestamp()
@@ -184,7 +217,7 @@ export async function completePlanningTurn(
   });
 }
 
-function feature(row: FeatureRow): Feature {
+export function mapFactoryFeature(row: FeatureRow): Feature {
   return FeatureSchema.parse({
     schemaVersion: 1,
     id: row.id,
@@ -214,6 +247,8 @@ interface TurnRow {
   created_at: Date;
   started_at: Date | null;
   completed_at: Date | null;
+  purpose: "conversation" | "plan";
+  expected_plan_version: number | null;
 }
 
 async function inTransaction<T>(
@@ -234,7 +269,7 @@ async function inTransaction<T>(
   }
 }
 
-async function withFeature<T>(
+export async function withFactoryFeature<T>(
   pool: DatabasePool,
   projectId: string,
   featureId: string,
@@ -242,7 +277,7 @@ async function withFeature<T>(
 ): Promise<T> {
   return inTransaction(pool, async (client) => {
     const selected = await client.query<FeatureRow>(
-      `SELECT * FROM factory_features WHERE (${FEATURE_FAMILY}) = (${PROJECT_FAMILY}) AND id = $2 FOR UPDATE`,
+      `SELECT *, (${FEATURE_FAMILY}) AS project_id FROM factory_features WHERE (${FEATURE_FAMILY}) = (${PROJECT_FAMILY}) AND id = $2 FOR UPDATE`,
       [projectId, featureId],
     );
     const row = selected.rows[0];
@@ -272,7 +307,7 @@ export async function createFactoryFeature(
     if (duplicate !== undefined) {
       if (duplicate.project_id !== canonicalProjectId || duplicate.title !== command.title)
         throw new FactoryError("conflict");
-      return feature(duplicate);
+      return mapFactoryFeature(duplicate);
     }
     const count = await client.query<{ count: string }>(
       `SELECT count(*) FROM factory_features WHERE (${FEATURE_FAMILY}) = $1`,
@@ -286,7 +321,7 @@ export async function createFactoryFeature(
     );
     const row = result.rows[0];
     if (row === undefined) throw new FactoryError("conflict");
-    return feature(row);
+    return mapFactoryFeature(row);
   });
 }
 
@@ -300,7 +335,7 @@ export async function listFactoryFeatures(
     `SELECT *, (${FEATURE_FAMILY}) AS project_id FROM factory_features WHERE (${FEATURE_FAMILY}) = (${PROJECT_FAMILY}) ORDER BY created_at, id LIMIT 200`,
     [projectId],
   );
-  return result.rows.map(feature);
+  return result.rows.map(mapFactoryFeature);
 }
 
 export async function readFactoryChat(
@@ -327,7 +362,7 @@ export async function readFactoryChat(
   ]);
   return {
     schemaVersion: 1,
-    feature: feature(row),
+    feature: mapFactoryFeature(row),
     messages: messages.rows.map((message) =>
       PlanningMessageSchema.parse({
         id: message.id,
@@ -359,20 +394,38 @@ export async function acceptPlanningMessage(
   projectId: string,
   featureId: string,
   command: SendPlanningMessageCommand,
+  planIntent?: { expectedVersion: number | null },
 ): Promise<PlanningTurnAccepted> {
-  return withFeature(pool, projectId, featureId, async (client, row) => {
-    const duplicate = await client.query<{ id: string; message_id: string; content: string }>(
-      `SELECT turn.id, turn.message_id, message.content FROM factory_planning_turns AS turn
+  return withFactoryFeature(pool, projectId, featureId, async (client, row) => {
+    const purpose = planIntent === undefined ? "conversation" : "plan";
+    const expectedVersion = planIntent?.expectedVersion ?? null;
+    const duplicate = await client.query<{
+      id: string;
+      message_id: string;
+      content: string;
+      purpose: string;
+      expected_plan_version: number | null;
+    }>(
+      `SELECT turn.id, turn.message_id, message.content, turn.purpose, turn.expected_plan_version FROM factory_planning_turns AS turn
        JOIN factory_planning_messages AS message ON message.id = turn.message_id
        WHERE turn.feature_id = $1 AND turn.request_id = $2`,
       [featureId, command.requestId],
     );
     const existing = duplicate.rows[0];
     if (existing !== undefined) {
-      if (existing.content !== command.text) throw new FactoryError("conflict");
+      if (
+        existing.content !== command.text ||
+        existing.purpose !== purpose ||
+        existing.expected_plan_version !== expectedVersion
+      )
+        throw new FactoryError("conflict");
       return { schemaVersion: 1, turnId: existing.id, messageId: existing.message_id };
     }
     if (row.state !== "planning") throw new FactoryError("conflict");
+    if (planIntent !== undefined) {
+      if (row.latest_plan_version !== expectedVersion) throw new FactoryError("conflict");
+      if ((row.latest_plan_version ?? 0) >= 200) throw new FactoryError("plan_limit");
+    }
     const active = await client.query(
       "SELECT id FROM factory_planning_turns WHERE feature_id = $1 AND state IN ('queued', 'running')",
       [featureId],
@@ -395,8 +448,8 @@ export async function acceptPlanningMessage(
     const messageId = inserted.rows[0]?.id;
     if (messageId === undefined) throw new Error("Planning message was not persisted");
     const turn = await client.query<{ id: string }>(
-      "INSERT INTO factory_planning_turns (feature_id, message_id, request_id) VALUES ($1, $2, $3) RETURNING id",
-      [featureId, messageId, command.requestId],
+      "INSERT INTO factory_planning_turns (feature_id, message_id, request_id, purpose, expected_plan_version) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+      [featureId, messageId, command.requestId, purpose, expectedVersion],
     );
     const turnId = turn.rows[0]?.id;
     if (turnId === undefined) throw new Error("Planning turn was not persisted");
@@ -419,7 +472,7 @@ export async function cancelPlanningTurn(
   featureId: string,
   turnId: string,
 ): Promise<FeatureChat> {
-  await withFeature(pool, projectId, featureId, async (client) => {
+  await withFactoryFeature(pool, projectId, featureId, async (client) => {
     const selected = await client.query(
       "SELECT id FROM factory_planning_turns WHERE id = $1 AND feature_id = $2",
       [turnId, featureId],
@@ -447,7 +500,7 @@ export async function retryPlanningTurn(
   turnId: string,
   requestId: string,
 ): Promise<PlanningTurnAccepted> {
-  return withFeature(pool, projectId, featureId, async (client, feature) => {
+  return withFactoryFeature(pool, projectId, featureId, async (client, feature) => {
     const selected = await client.query<TurnRow>(
       "SELECT * FROM factory_planning_turns WHERE id = $1 AND feature_id = $2",
       [turnId, featureId],
@@ -480,13 +533,15 @@ export async function retryPlanningTurn(
       throw new FactoryError("conversation_limit");
     if (
       feature.state !== "planning" ||
+      (original.purpose === "plan" &&
+        feature.latest_plan_version !== original.expected_plan_version) ||
       !["failed", "cancelled"].includes(original.state) ||
       latest.rows[0]?.id !== turnId
     )
       throw new FactoryError("conflict");
     const inserted = await client.query<{ id: string }>(
-      "INSERT INTO factory_planning_turns (feature_id, message_id, request_id) VALUES ($1, $2, $3) RETURNING id",
-      [featureId, original.message_id, requestId],
+      "INSERT INTO factory_planning_turns (feature_id, message_id, request_id, purpose, expected_plan_version) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+      [featureId, original.message_id, requestId, original.purpose, original.expected_plan_version],
     );
     const newTurnId = inserted.rows[0]?.id;
     if (newTurnId === undefined) throw new Error("Retry was not persisted");

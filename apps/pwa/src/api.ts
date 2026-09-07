@@ -9,6 +9,13 @@ import {
   PlanningTurnAcceptedSchema,
   SendPlanningMessageCommandSchema,
   RetryPlanningTurnCommandSchema,
+  FeaturePlansSchema,
+  FeaturePlanVersionSchema,
+  FactoryBoardSchema,
+  SaveFeaturePlanCommandSchema,
+  GenerateFeaturePlanCommandSchema,
+  ApproveFeaturePlanCommandSchema,
+  CancelFeatureCommandSchema,
   ChangeIntentVersionCreatedSchema,
   CodexReviewModelPreferenceSchema,
   CodexSubscriptionConnectionSchema,
@@ -48,6 +55,10 @@ import {
   type FeatureChat,
   type PlanningTurnAccepted,
   type SendPlanningMessageCommand,
+  type FeaturePlans,
+  type FeaturePlanVersion,
+  type FactoryBoard,
+  type SaveFeaturePlanCommand,
   type ChangeIntentVersionCreated,
   type CodexReviewModelPreference,
   type CodexSubscriptionConnection,
@@ -216,6 +227,109 @@ export async function fetchFeatures(projectId: string, signal?: AbortSignal) {
     signal: signal ?? null,
   });
   return requireJson(response, FeatureListSchema, "feature list");
+}
+
+export async function fetchFeaturePlans(
+  projectId: string,
+  featureId: string,
+  signal?: AbortSignal,
+): Promise<FeaturePlans> {
+  const response = await fetch(`${featurePath(projectId, featureId)}/plans`, {
+    credentials: "same-origin",
+    headers: { Accept: "application/json" },
+    signal: signal ?? null,
+  });
+  return requireJson(response, FeaturePlansSchema, "feature plans");
+}
+
+function planVersionPath(projectId: string, featureId: string, version: number): string {
+  return `${featurePath(projectId, featureId)}/plans/${String(FeaturePlanVersionSchema.shape.version.parse(version))}`;
+}
+
+export async function fetchFeaturePlanVersion(
+  projectId: string,
+  featureId: string,
+  version: number,
+  signal?: AbortSignal,
+): Promise<FeaturePlanVersion> {
+  const response = await fetch(planVersionPath(projectId, featureId, version), {
+    credentials: "same-origin",
+    headers: { Accept: "application/json" },
+    signal: signal ?? null,
+  });
+  return requireJson(response, FeaturePlanVersionSchema, "feature plan version");
+}
+
+export async function saveFeaturePlan(
+  projectId: string,
+  featureId: string,
+  command: SaveFeaturePlanCommand,
+): Promise<FeaturePlanVersion> {
+  const response = await fetch(`${featurePath(projectId, featureId)}/plans`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: authenticatedMutationHeaders(),
+    body: JSON.stringify(SaveFeaturePlanCommandSchema.parse(command)),
+  });
+  return requireJson(response, FeaturePlanVersionSchema, "saved feature plan");
+}
+
+type PlanVersionCommand = { requestId: string; expectedVersion: number | null };
+
+export async function generateFeaturePlan(
+  projectId: string,
+  featureId: string,
+  command: PlanVersionCommand,
+): Promise<PlanningTurnAccepted> {
+  const response = await fetch(`${featurePath(projectId, featureId)}/plans/generate`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: authenticatedMutationHeaders(),
+    body: JSON.stringify(GenerateFeaturePlanCommandSchema.parse(command)),
+  });
+  return requireJson(response, PlanningTurnAcceptedSchema, "accepted plan generation");
+}
+
+export async function approveFeaturePlan(
+  projectId: string,
+  featureId: string,
+  version: number,
+  command: { requestId: string },
+): Promise<FactoryBoard> {
+  const response = await fetch(`${planVersionPath(projectId, featureId, version)}/approve`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: authenticatedMutationHeaders(),
+    body: JSON.stringify(ApproveFeaturePlanCommandSchema.parse(command)),
+  });
+  return requireJson(response, FactoryBoardSchema, "approved feature board");
+}
+
+export async function fetchFactoryBoard(
+  projectId: string,
+  featureId: string,
+  signal?: AbortSignal,
+): Promise<FactoryBoard> {
+  const response = await fetch(`${featurePath(projectId, featureId)}/board`, {
+    credentials: "same-origin",
+    headers: { Accept: "application/json" },
+    signal: signal ?? null,
+  });
+  return requireJson(response, FactoryBoardSchema, "factory board");
+}
+
+export async function cancelFeature(
+  projectId: string,
+  featureId: string,
+  command: PlanVersionCommand,
+): Promise<FactoryBoard> {
+  const response = await fetch(`${featurePath(projectId, featureId)}/cancel`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: authenticatedMutationHeaders(),
+    body: JSON.stringify(CancelFeatureCommandSchema.parse(command)),
+  });
+  return requireJson(response, FactoryBoardSchema, "cancelled feature board");
 }
 
 export async function createFeature(
