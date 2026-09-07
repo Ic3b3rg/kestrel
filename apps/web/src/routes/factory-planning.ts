@@ -17,6 +17,7 @@ import {
   FactoryBoardSchema,
   ApproveFeaturePlanCommandSchema,
   CancelFeatureCommandSchema,
+  GenerateFeaturePlanCommandSchema,
 } from "@kestrel/contracts";
 import {
   createFactoryFeature,
@@ -92,6 +93,40 @@ export function registerFactoryPlanningRoutes(
   pool: DatabasePool,
   boss: DiagnosticJobSender,
 ): void {
+  app.post(
+    "/api/v1/projects/:projectId/features/:featureId/plans/generate",
+    {
+      bodyLimit: 256,
+      config: AUTHENTICATED_MUTATION_ROUTE_CONFIG,
+      schema: {
+        params: jsonSchema(featureParams),
+        body: jsonSchema(GenerateFeaturePlanCommandSchema),
+        response: { ...errors, 202: jsonSchema(PlanningTurnAcceptedSchema) },
+      },
+    },
+    async (request, reply) => {
+      const { projectId, featureId } = featureParams.parse(request.params);
+      const command = GenerateFeaturePlanCommandSchema.parse(request.body);
+      try {
+        return await reply.code(202).send(
+          await acceptPlanningMessage(
+            pool,
+            boss,
+            projectId,
+            featureId,
+            {
+              requestId: command.requestId,
+              text: "Generate a detailed plan from our discussion and the current draft for me to inspect before approval.",
+            },
+            { expectedVersion: command.expectedVersion },
+          ),
+        );
+      } catch (error) {
+        const failure = factoryError(request, error);
+        return reply.code(failure.status).send(failure.body);
+      }
+    },
+  );
   app.post(
     "/api/v1/projects/:projectId/features/:featureId/cancel",
     {

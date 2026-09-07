@@ -23,6 +23,7 @@ import {
   reconcilePlanningTurns,
   withFactoryFeature,
   type FeatureRow,
+  type ClaimedPlanningTurn,
 } from "./factory-planning.js";
 
 export type FactoryPlanArtifactRenderer = (input: {
@@ -428,5 +429,80 @@ export function saveFactoryPlan(
       [featureId, `Draft version ${String(version)} saved`],
     );
     return planVersion(saved, feature.project_id);
+  });
+}
+
+/** Publish one model result and its chat acknowledgement atomically, unless the turn was stopped. */
+export async function completeGeneratedFactoryPlan(
+  pool: DatabasePool,
+  turn: ClaimedPlanningTurn,
+  plan: FeaturePlanDocument,
+  sourceContext: PlanningContext,
+  render: FactoryPlanArtifactRenderer,
+): Promise<void> {
+  const document = FeaturePlanDocumentSchema.parse(plan);
+  const context = PlanningContextSchema.parse(sourceContext);
+  const errors = validateFeaturePlan(document);
+  if (errors.length > 0) throw new FactoryError("invalid_plan", errors.slice(0, 8).join("; "));
+  await withFactoryFeature(pool, turn.projectId, turn.featureId, async (client, feature) => {
+    const selected = await client.query<{
+      state: string;
+      purpose: string;
+      expected_plan_version: number | null;
+      request_id: string;
+    }>(
+      "SELECT state, purpose, expected_plan_version, request_id FROM factory_planning_turns WHERE id = $1 AND feature_id = $2 FOR UPDATE",
+      [turn.id, turn.featureId],
+    );
+    const current = selected.rows[0];
+    if (current === undefined) throw new FactoryError("not_found");
+    if (current.state !== "running") return;
+    if (
+      current.purpose !== "plan" ||
+      turn.purpose !== "plan" ||
+      feature.state !== "planning" ||
+      current.expected_plan_version !== turn.expectedPlanVersion ||
+      feature.latest_plan_version !== current.expected_plan_version
+    )
+      throw new FactoryError("conflict");
+    if ((feature.latest_plan_version ?? 0) >= 200) throw new FactoryError("plan_limit");
+    const version = (feature.latest_plan_version ?? 0) + 1;
+    const artifacts = render({ title: feature.title, version, plan: document, context });
+    await client.query(
+      `INSERT INTO factory_plan_versions (feature_id, version, based_on_version, request_id, document, source_context, plan_markdown, spec_markdown, author, source_turn_id)
+       VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7,$8,'assistant',$9)`,
+      [
+        turn.featureId,
+        version,
+        feature.latest_plan_version,
+        current.request_id,
+        JSON.stringify(document),
+        JSON.stringify(context),
+        artifacts.planMarkdown,
+        artifacts.specMarkdown,
+        turn.id,
+      ],
+    );
+    await client.query(
+      `UPDATE factory_features SET latest_plan_version = $2, planning_context = $3::jsonb,
+       runtime_thread_id = NULL, updated_at = clock_timestamp() WHERE id = $1`,
+      [turn.featureId, version, JSON.stringify(context)],
+    );
+    await client.query(
+      "INSERT INTO factory_planning_messages (feature_id, role, content, reply_to_turn_id) VALUES ($1,'assistant',$2,$3)",
+      [
+        turn.featureId,
+        `Plan version ${String(version)} is ready. Open Plan to inspect its scope, Work Items and verification before approval.`,
+        turn.id,
+      ],
+    );
+    await client.query(
+      "UPDATE factory_planning_turns SET state = 'completed', failure = NULL, question = NULL, completed_at = clock_timestamp() WHERE id = $1",
+      [turn.id],
+    );
+    await client.query(
+      "INSERT INTO factory_activity (feature_id, kind, summary) VALUES ($1, 'plan_generated', $2)",
+      [turn.featureId, `Plan version ${String(version)} generated for inspection`],
+    );
   });
 }

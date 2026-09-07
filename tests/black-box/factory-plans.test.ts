@@ -7,6 +7,8 @@ import {
   FeaturePlansSchema,
   FeatureSchema,
   FactoryBoardSchema,
+  FeatureChatSchema,
+  PlanningTurnAcceptedSchema,
   LocalRepositoryInventorySchema,
   ProjectUpsertedSchema,
   type FeaturePlanDocument,
@@ -261,5 +263,110 @@ describe("versioned Factory plans", () => {
       );
     }
     expect((await post(`${path}/plans/1/approve`, { requestId: randomUUID() })).status).toBe(200);
+  });
+
+  it("queues generation once for an exact draft, reports runtime failure, and rejects a stale retry", async () => {
+    const path = await featurePath("Generate from the discussion");
+    await post(`${path}/plans`, { requestId: randomUUID(), expectedVersion: null, plan });
+    expect(
+      (await post(`${path}/plans/generate`, { requestId: randomUUID(), expectedVersion: null }))
+        .status,
+    ).toBe(409);
+    const command = { requestId: randomUUID(), expectedVersion: 1 };
+    const [first, duplicate] = await Promise.all([
+      post(`${path}/plans/generate`, command),
+      post(`${path}/plans/generate`, command),
+    ]);
+    expect(first.status, await first.clone().text()).toBe(202);
+    const accepted = PlanningTurnAcceptedSchema.parse(await first.json());
+    expect(await duplicate.json()).toEqual(accepted);
+    expect(
+      (await post(`${path}/plans/generate`, { ...command, expectedVersion: null })).status,
+    ).toBe(409);
+    await expect
+      .poll(
+        async () => {
+          const plans = FeaturePlansSchema.parse(
+            await (await stack.fetchApi(`${path}/plans`)).json(),
+          );
+          return plans.generation;
+        },
+        { timeout: 10_000, interval: 200 },
+      )
+      .toMatchObject({ id: accepted.turnId, state: "failed", failure: "unavailable" });
+    const chat = FeatureChatSchema.parse(await (await stack.fetchApi(path)).json());
+    expect(chat.messages.map(({ role }) => role)).toEqual(["user"]);
+    expect(
+      (await post(`${path}/plans`, { requestId: randomUUID(), expectedVersion: 1, plan })).status,
+    ).toBe(201);
+    expect(
+      (await post(`${path}/turns/${accepted.turnId}/retry`, { requestId: randomUUID() })).status,
+    ).toBe(409);
+    expect(
+      FeaturePlansSchema.parse(await (await stack.fetchApi(`${path}/plans`)).json()).current
+        ?.version,
+    ).toBe(2);
+  });
+
+  it("commits generated artifacts and turn completion together and discards a cancelled result", async () => {
+    for (const cancel of [false, true]) {
+      const path = await featurePath(cancel ? "Cancel generation" : "Freeze generated sources");
+      await post(`${path}/plans`, { requestId: randomUUID(), expectedVersion: null, plan });
+      const before = FeaturePlansSchema.parse(await (await stack.fetchApi(`${path}/plans`)).json());
+      const featureId = before.feature.id;
+      const context = {
+        commitId: "a".repeat(40),
+        documents: [{ path: "CONTEXT.md", objectId: "b".repeat(40), content: "# Saved searches" }],
+        notice: null,
+      };
+      // Drive the durable completion seam with a controlled model result; no runtime or queue is faked in production.
+      const turnJson = await stack.executeWebModule(`
+        import { createPool, claimPlanningTurn } from "@kestrel/database";
+        const pool = createPool(process.env.DATABASE_URL);
+        try {
+          const message = await pool.query("INSERT INTO factory_planning_messages (feature_id, role, content) VALUES ($1,'user','Generate the plan') RETURNING id", ["${featureId}"]);
+          const turn = await pool.query("INSERT INTO factory_planning_turns (feature_id, message_id, request_id, purpose, expected_plan_version) VALUES ($1,$2,uuidv7(),'plan',1) RETURNING id", ["${featureId}", message.rows[0].id]);
+          process.stdout.write(JSON.stringify(await claimPlanningTurn(pool, turn.rows[0].id)));
+        } finally { await pool.end(); }
+      `);
+      expect((await post(`${path}/plans/1/approve`, { requestId: randomUUID() })).status).toBe(409);
+      expect(
+        (await post(`${path}/plans`, { requestId: randomUUID(), expectedVersion: 1, plan })).status,
+      ).toBe(409);
+      if (cancel)
+        expect(
+          (await post(`${path}/cancel`, { requestId: randomUUID(), expectedVersion: 1 })).status,
+        ).toBe(200);
+      await stack.executeWebModule(`
+        import { createPool, completeGeneratedFactoryPlan } from "@kestrel/database";
+        import { renderFeaturePlanArtifacts } from "./apps/web/dist/factory-plan-artifacts.js";
+        const pool = createPool(process.env.DATABASE_URL);
+        try {
+          await completeGeneratedFactoryPlan(pool, ${turnJson}, ${JSON.stringify(plan)}, ${JSON.stringify(context)}, renderFeaturePlanArtifacts);
+          await completeGeneratedFactoryPlan(pool, ${turnJson}, ${JSON.stringify(plan)}, ${JSON.stringify(context)}, renderFeaturePlanArtifacts);
+        } finally { await pool.end(); }
+      `);
+      const saved = FeaturePlansSchema.parse(await (await stack.fetchApi(`${path}/plans`)).json());
+      const chat = FeatureChatSchema.parse(await (await stack.fetchApi(path)).json());
+      expect(saved.current?.version).toBe(cancel ? 1 : 2);
+      expect(saved.versions).toHaveLength(cancel ? 1 : 2);
+      expect(saved.generation?.state).toBe(cancel ? "cancelled" : "completed");
+      expect(chat.messages.map(({ role }) => role)).toEqual(
+        cancel ? ["user"] : ["user", "assistant"],
+      );
+      if (!cancel) {
+        expect(saved.current?.sourceContext).toEqual(context);
+        expect(saved.current?.planMarkdown).toContain(context.commitId);
+        expect(saved.current?.author).toBe("assistant");
+        const version = saved.current;
+        expect((await post(`${path}/plans/2/approve`, { requestId: randomUUID() })).status).toBe(
+          200,
+        );
+        await stack.executeSql(
+          `UPDATE factory_features SET planning_context = NULL WHERE id = '${featureId}';`,
+        );
+        expect(await (await stack.fetchApi(`${path}/plans/2`)).json()).toEqual(version);
+      }
+    }
   });
 });
