@@ -9,6 +9,44 @@ import { createHostGitHubCli, type HostGitHubError } from "./host-github.js";
 const projectId = "018f0f89-949a-75a8-8f61-6df78a843b1e";
 const temporaryDirectories: string[] = [];
 
+const searchPullRequest = {
+  author: {
+    id: "U_test",
+    is_bot: false,
+    login: "operator",
+    type: "User",
+    url: "https://github.com/operator",
+  },
+  body: "authored body",
+  number: 1,
+  title: "Mine",
+  updatedAt: "2026-08-27T11:00:00Z",
+  url: "https://github.com/Ic3b3rg/kestrel/pull/1",
+};
+const requestedPullRequest = {
+  ...searchPullRequest,
+  author: { ...searchPullRequest.author, login: "reviewer" },
+  body: "review body",
+  number: 2,
+  title: "Review me",
+  updatedAt: "2026-08-27T10:00:00Z",
+  url: "https://github.com/Ic3b3rg/kestrel/pull/2",
+};
+const observedPullRequest = {
+  author: { id: "U_test", is_bot: false, login: "operator", name: "Operator display name" },
+  baseRefName: "master",
+  baseRefOid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  body: "body",
+  headRefName: "feature",
+  headRefOid: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  id: "PR_test",
+  mergedAt: null,
+  number: 1,
+  state: "OPEN",
+  title: "Mine",
+  url: "https://github.com/Ic3b3rg/kestrel/pull/1",
+};
+
 async function fakeGh(
   mode:
     | "ok"
@@ -23,11 +61,21 @@ async function fakeGh(
     | "review_requested_rate_limited_overlap"
     | "inbox_account_drift"
     | "sso_denied" = "ok",
+  responses: Partial<Record<"all" | "authored" | "reviewRequested" | "pullRequest", unknown>> = {},
 ) {
   const directory = await mkdtemp(join(tmpdir(), "kestrel-fake-gh-"));
   temporaryDirectories.push(directory);
   const executable = join(directory, "gh");
   const log = join(directory, "args.log");
+  for (const [name, response] of Object.entries({
+    all: [searchPullRequest],
+    authored: [searchPullRequest],
+    reviewRequested: [requestedPullRequest],
+    pullRequest: observedPullRequest,
+    ...responses,
+  })) {
+    await writeFile(join(directory, `${name}.json`), JSON.stringify(response));
+  }
   const source = `#!/bin/sh
 printf '%s\\n' "$*" >> '${log}'
 ${mode === "slow" ? "sleep 5" : ""}
@@ -41,11 +89,11 @@ case "$1 $2" in
   "search prs")
     ${mode === "inbox_account_drift" ? `touch '${join(directory, "search-read")}'` : ""}
     case "$*" in
-      *"--review-requested @me"*) ${mode === "review_requested_rate_limited_overlap" ? "printf 'API rate limit exceeded' >&2; exit 1" : 'printf \'[{"author":{"login":"reviewer"},"body":"review body","number":2,"title":"Review me","updatedAt":"2026-08-27T10:00:00Z","url":"https://github.com/Ic3b3rg/kestrel/pull/2"}]\''} ;;
-      *"--author @me"*) ${mode === "authored_rate_limited" ? "printf 'API rate limit exceeded' >&2; exit 1" : 'printf \'[{"author":{"login":"operator"},"body":"authored body","number":1,"title":"Mine","updatedAt":"2026-08-27T11:00:00Z","url":"https://github.com/Ic3b3rg/kestrel/pull/1"}]\''} ;;
-      *) printf '[{"author":{"login":"operator"},"body":"authored body","number":1,"title":"Mine","updatedAt":"2026-08-27T11:00:00Z","url":"https://github.com/Ic3b3rg/kestrel/pull/1"}]' ;;
+      *"--review-requested @me"*) ${mode === "review_requested_rate_limited_overlap" ? "printf 'API rate limit exceeded' >&2; exit 1" : `cat '${join(directory, "reviewRequested.json")}'`} ;;
+      *"--author @me"*) ${mode === "authored_rate_limited" ? "printf 'API rate limit exceeded' >&2; exit 1" : `cat '${join(directory, "authored.json")}'`} ;;
+      *) cat '${join(directory, "all.json")}' ;;
     esac ;;
-  "pr view") printf '{"author":{"id":"U_test","login":"operator"},"baseRefName":"master","baseRefOid":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","body":"body","headRefName":"feature","headRefOid":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","id":"PR_test","mergedAt":null,"number":1,"state":"OPEN","title":"Mine","url":"https://github.com/Ic3b3rg/kestrel/pull/1"}' ;;
+  "pr view") cat '${join(directory, "pullRequest.json")}' ;;
 esac
 `;
   await writeFile(executable, source, { mode: 0o700 });
@@ -311,6 +359,105 @@ describe("host GitHub CLI", () => {
     ]);
   });
 
+  it("deduplicates real author payloads with Review requested, Authored, then Others precedence", async () => {
+    const requestedAuthored = { ...requestedPullRequest, author: searchPullRequest.author };
+    const other = {
+      ...searchPullRequest,
+      author: null,
+      number: 3,
+      url: "https://github.com/Ic3b3rg/kestrel/pull/3",
+    };
+    const fake = await fakeGh("ok", {
+      all: [searchPullRequest, requestedAuthored, other, other],
+      authored: [searchPullRequest, requestedAuthored, searchPullRequest],
+      reviewRequested: [requestedAuthored, requestedAuthored],
+    });
+    const inbox = await createHostGitHubCli({ executable: fake.executable }).readProjectInbox(
+      projectId,
+      { owner: "Ic3b3rg", repository: "kestrel" },
+    );
+
+    expect(inbox.groupStates).toEqual([
+      { group: "review_requested", state: "available", failureReason: null },
+      { group: "authored", state: "available", failureReason: null },
+      { group: "other", state: "available", failureReason: null },
+    ]);
+    expect(inbox.pullRequests).toEqual([
+      {
+        author: "operator",
+        body: "review body",
+        number: 2,
+        title: "Review me",
+        updatedAt: "2026-08-27T10:00:00Z",
+        url: "https://github.com/Ic3b3rg/kestrel/pull/2",
+        group: "review_requested",
+      },
+      {
+        author: "operator",
+        body: "authored body",
+        number: 1,
+        title: "Mine",
+        updatedAt: "2026-08-27T11:00:00Z",
+        url: "https://github.com/Ic3b3rg/kestrel/pull/1",
+        group: "authored",
+      },
+      {
+        author: null,
+        body: "authored body",
+        number: 3,
+        title: "Mine",
+        updatedAt: "2026-08-27T11:00:00Z",
+        url: "https://github.com/Ic3b3rg/kestrel/pull/3",
+        group: "other",
+      },
+    ]);
+  });
+
+  it.each([
+    { name: "missing login", author: { ...searchPullRequest.author, login: undefined } },
+    { name: "null login", author: { ...searchPullRequest.author, login: null } },
+    { name: "empty login", author: { ...searchPullRequest.author, login: "" } },
+    { name: "non-string login", author: { ...searchPullRequest.author, login: 42 } },
+    { name: "oversized login", author: { ...searchPullRequest.author, login: "x".repeat(101) } },
+    { name: "array author", author: [] },
+    { name: "scalar author", author: "operator" },
+  ])("keeps malformed $name visible as an authored-group failure", async ({ author }) => {
+    const fake = await fakeGh("ok", { authored: [{ ...searchPullRequest, author }] });
+    const inbox = await createHostGitHubCli({ executable: fake.executable }).readProjectInbox(
+      projectId,
+      { owner: "Ic3b3rg", repository: "kestrel" },
+    );
+
+    expect(inbox.groupStates).toEqual([
+      { group: "review_requested", state: "available", failureReason: null },
+      { group: "authored", state: "unavailable", failureReason: "unexpected_response" },
+      { group: "other", state: "unavailable", failureReason: "unexpected_response" },
+    ]);
+    expect(inbox.pullRequests.map(({ number }) => number)).toEqual([2]);
+  });
+
+  it.each([
+    {
+      name: "wrong repository",
+      item: { ...searchPullRequest, url: "https://github.com/other/repo/pull/1" },
+    },
+    { name: "wrong PR identity", item: { ...searchPullRequest, number: 9 } },
+    { name: "unexpected top-level metadata", item: { ...searchPullRequest, providerExtra: true } },
+  ])("rejects $name without misclassifying lower-priority groups", async ({ item }) => {
+    const fake = await fakeGh("ok", { reviewRequested: [item] });
+    const inbox = await createHostGitHubCli({ executable: fake.executable }).readProjectInbox(
+      projectId,
+      { owner: "Ic3b3rg", repository: "kestrel" },
+    );
+
+    expect(inbox.groupStates).toEqual([
+      { group: "review_requested", state: "unavailable", failureReason: "unexpected_response" },
+      { group: "authored", state: "unavailable", failureReason: "unexpected_response" },
+      { group: "other", state: "unavailable", failureReason: "unexpected_response" },
+    ]);
+    expect(inbox.pullRequests).toEqual([]);
+  });
+
   it("does not misclassify authored pull requests when the higher-priority search fails", async () => {
     const fake = await fakeGh("review_requested_rate_limited_overlap");
     const inbox = await createHostGitHubCli({ executable: fake.executable }).readProjectInbox(
@@ -417,11 +564,96 @@ describe("host GitHub CLI", () => {
     const observation = await createHostGitHubCli({
       executable: fake.executable,
     }).observePullRequest({ owner: "Ic3b3rg", repository: "kestrel" }, 1, "operator");
-    expect(observation.proposal).toMatchObject({ number: 1, body: "body" });
+    expect(observation).toEqual({
+      repository: {
+        canonicalUrl: "https://github.com/Ic3b3rg/kestrel",
+        name: "kestrel",
+        owner: "Ic3b3rg",
+        providerId: "R_test",
+      },
+      proposal: {
+        author: { login: "operator", providerId: "U_test" },
+        base: { objectId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", ref: "master" },
+        body: "body",
+        canonicalUrl: "https://github.com/Ic3b3rg/kestrel/pull/1",
+        head: { objectId: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", ref: "feature" },
+        number: 1,
+        proposalState: "open",
+        providerId: "PR_test",
+        title: "Mine",
+      },
+    });
     const commands = await readFile(fake.log, "utf8");
     expect(commands).toContain("pr view 1 --repo Ic3b3rg/kestrel");
     expect(commands).not.toMatch(
       /(?:--method|-X)\s+(?:POST|PATCH|PUT|DELETE)|\bpr\s+(?:merge|close|comment|review)\b/iu,
     );
+  });
+
+  it("preserves a null author when selecting a pull request", async () => {
+    const fake = await fakeGh("ok", { pullRequest: { ...observedPullRequest, author: null } });
+    const observation = await createHostGitHubCli({
+      executable: fake.executable,
+    }).observePullRequest({ owner: "Ic3b3rg", repository: "kestrel" }, 1, "operator");
+
+    expect(observation.proposal.author).toBeNull();
+  });
+
+  it.each([
+    { name: "missing login", author: { ...observedPullRequest.author, login: undefined } },
+    { name: "null login", author: { ...observedPullRequest.author, login: null } },
+    { name: "empty login", author: { ...observedPullRequest.author, login: "" } },
+    { name: "non-string login", author: { ...observedPullRequest.author, login: 42 } },
+    { name: "oversized login", author: { ...observedPullRequest.author, login: "x".repeat(101) } },
+    { name: "missing id", author: { ...observedPullRequest.author, id: undefined } },
+    { name: "null id", author: { ...observedPullRequest.author, id: null } },
+    { name: "empty id", author: { ...observedPullRequest.author, id: "" } },
+    { name: "non-string id", author: { ...observedPullRequest.author, id: 42 } },
+    { name: "oversized id", author: { ...observedPullRequest.author, id: "x".repeat(257) } },
+    { name: "array author", author: [] },
+    { name: "scalar author", author: "operator" },
+  ])("rejects selection with $name despite benign author metadata", async ({ author }) => {
+    const fake = await fakeGh("ok", { pullRequest: { ...observedPullRequest, author } });
+
+    await expect(
+      createHostGitHubCli({ executable: fake.executable }).observePullRequest(
+        { owner: "Ic3b3rg", repository: "kestrel" },
+        1,
+        "operator",
+      ),
+    ).rejects.toEqual(expect.objectContaining({ kind: "invalid_response" }));
+  });
+
+  it.each([
+    {
+      name: "wrong repository",
+      pullRequest: { ...observedPullRequest, url: "https://github.com/other/repo/pull/1" },
+    },
+    { name: "wrong PR number", pullRequest: { ...observedPullRequest, number: 9 } },
+    {
+      name: "invalid exact commit",
+      pullRequest: { ...observedPullRequest, headRefOid: "feature" },
+    },
+    {
+      name: "unexpected top-level metadata",
+      pullRequest: { ...observedPullRequest, providerExtra: true },
+    },
+    {
+      name: "oversized provider output",
+      pullRequest: {
+        ...observedPullRequest,
+        author: { ...observedPullRequest.author, name: "x".repeat(2 * 1024 * 1024) },
+      },
+    },
+  ])("rejects selection with $name", async ({ pullRequest }) => {
+    const fake = await fakeGh("ok", { pullRequest });
+
+    await expect(
+      createHostGitHubCli({ executable: fake.executable }).observePullRequest(
+        { owner: "Ic3b3rg", repository: "kestrel" },
+        1,
+        "operator",
+      ),
+    ).rejects.toEqual(expect.objectContaining({ kind: "invalid_response" }));
   });
 });

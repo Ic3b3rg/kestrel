@@ -27,7 +27,8 @@ const RepositorySchema = z.strictObject({
   owner: z.strictObject({ login: z.string().min(1).max(100) }),
 });
 const SearchItemSchema = z.strictObject({
-  author: z.strictObject({ login: z.string().min(1).max(100) }).nullable(),
+  // gh owns the author shape; strip unneeded metadata while validating the required fields.
+  author: z.object({ login: z.string().min(1).max(100) }).nullable(),
   body: z.string().max(65_536),
   number: z.number().int().positive(),
   title: z.string().min(1).max(512),
@@ -37,7 +38,7 @@ const SearchItemSchema = z.strictObject({
 const SearchSchema = z.array(SearchItemSchema).max(100);
 const PullRequestSchema = z.strictObject({
   author: z
-    .strictObject({ id: z.string().min(1).max(256), login: z.string().min(1).max(100) })
+    .object({ id: z.string().min(1).max(256), login: z.string().min(1).max(100) })
     .nullable(),
   baseRefName: z.string().min(1).max(255),
   baseRefOid: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u),
