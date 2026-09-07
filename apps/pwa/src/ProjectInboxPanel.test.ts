@@ -1,3 +1,5 @@
+// @vitest-environment happy-dom
+
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -158,7 +160,12 @@ describe("ProjectInboxPanel", () => {
   it("keeps Project actions enabled while a populated inbox refreshes in the background", () => {
     const html = render(populatedInbox, true);
 
-    expect(html).toContain('<button type="submit">Open PR by URL</button>');
+    const document = new DOMParser().parseFromString(html, "text/html");
+    const action = [...document.querySelectorAll("button")].find(
+      (button) => button.textContent === "Open PR by URL",
+    );
+    expect(action).toBeDefined();
+    expect(action?.hasAttribute("disabled")).toBe(false);
   });
 
   it("keeps public URL entry scoped to an existing Project", () => {

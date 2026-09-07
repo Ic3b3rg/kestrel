@@ -1,3 +1,7 @@
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./components/ui/dialog.js";
+import { Button } from "./components/ui/button.js";
+import { NativeSelect } from "./components/ui/native-select.js";
+import { Label } from "./components/ui/label.js";
 import { useEffect, useId, useRef, useState, type SyntheticEvent } from "react";
 
 import {
@@ -44,10 +48,8 @@ export function OpenProjectForm({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const active = useRef<AbortController | null>(null);
-  const dialog = useRef<HTMLDialogElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
-  const wasOpen = useRef(false);
   const titleId = useId();
   const descriptionId = useId();
   const repositoryIdField = useId();
@@ -64,16 +66,6 @@ export function OpenProjectForm({
   };
 
   useEffect(() => () => active.current?.abort(), []);
-
-  useEffect(() => {
-    if (open) {
-      if (dialog.current !== null && !dialog.current.open) dialog.current.showModal();
-      heading.current?.focus();
-    } else if (wasOpen.current) {
-      trigger.current?.focus();
-    }
-    wasOpen.current = open;
-  }, [open]);
 
   useEffect(() => {
     if (disabled && open) reset();
@@ -139,91 +131,113 @@ export function OpenProjectForm({
   };
 
   return (
-    <div className="open-project-entry">
-      <button ref={trigger} type="button" disabled={disabled} onClick={() => void show()}>
-        {triggerLabel}
-      </button>
-      {open ? (
-        <dialog
-          ref={dialog}
-          className="local-repository-dialog open-project-dialog"
-          aria-labelledby={titleId}
-          aria-describedby={descriptionId}
-          onCancel={(event) => {
-            event.preventDefault();
-            if (!pending) reset();
-          }}
-        >
-          <div className="local-dialog-heading">
-            <div>
-              <p className="section-index">PROJECT / LOCAL SOURCE</p>
-              <h3 ref={heading} id={titleId} tabIndex={-1}>
-                Open an authorized repository
-              </h3>
-            </div>
-            <button className="secondary-action" type="button" disabled={pending} onClick={reset}>
-              Close
-            </button>
-          </div>
-          <p id={descriptionId}>
-            Choose a repository discovered from trusted-host configuration. Browser state never
-            stores or submits its filesystem path.
-          </p>
-          <div className="local-inventory-actions">
-            <p>The durable Project will reuse an existing match when one is already open.</p>
-            <button
-              className="secondary-action"
-              type="button"
-              disabled={pending || loading}
-              onClick={() => void readInventory()}
-            >
-              {loading ? "Refreshing repositories…" : "Refresh repositories"}
-            </button>
-          </div>
-          {inventory?.inventoryState !== "ready" ? (
-            <RepositorySetupState
-              state={
-                loading || (inventory === null && error === null)
-                  ? "loading"
-                  : (inventory?.inventoryState ?? "discovery_failed")
-              }
-              {...(error === null ? {} : { error })}
-            />
-          ) : (
-            <form className="open-project-form" onSubmit={(event) => void submit(event)}>
-              <div className="form-field">
-                <label htmlFor={repositoryIdField}>Repository</label>
-                <select
-                  id={repositoryIdField}
-                  value={repositoryId}
-                  disabled={pending}
-                  required
-                  onChange={(event) => {
-                    setRepositoryId(event.currentTarget.value);
-                    setError(null);
-                  }}
-                >
-                  <option value="">Select a repository</option>
-                  {inventory.repositories.map((repository) => (
-                    <option key={repository.repositoryId} value={repository.repositoryId}>
-                      {repository.displayName}
-                      {repository.attachmentState === "attached" ? " · already open" : ""}
-                    </option>
-                  ))}
-                </select>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next && !pending) reset();
+      }}
+    >
+      <div className="open-project-entry">
+        <Button ref={trigger} type="button" disabled={disabled} onClick={() => void show()}>
+          {triggerLabel}
+        </Button>
+        {open ? (
+          <DialogContent
+            showCloseButton={false}
+            onOpenAutoFocus={(event) => {
+              event.preventDefault();
+              heading.current?.focus();
+            }}
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              trigger.current?.focus();
+            }}
+            className="local-repository-dialog open-project-dialog max-h-[85dvh] overflow-y-auto sm:max-w-xl"
+            aria-labelledby={titleId}
+            aria-describedby={descriptionId}
+            onInteractOutside={(event) => event.preventDefault()}
+            onEscapeKeyDown={(event) => {
+              event.preventDefault();
+              if (!pending) reset();
+            }}
+          >
+            <div className="local-dialog-heading">
+              <div>
+                <DialogTitle ref={heading} id={titleId} tabIndex={-1}>
+                  Open an authorized repository
+                </DialogTitle>
               </div>
-              <button type="submit" disabled={pending || repositoryId === ""}>
-                {pending ? "Opening Project…" : "Open selected Project"}
-              </button>
-              {error === null ? null : (
-                <p className="project-form-error" role="alert">
-                  {error}
-                </p>
-              )}
-            </form>
-          )}
-        </dialog>
-      ) : null}
-    </div>
+              <Button
+                variant="outline"
+                className="secondary-action"
+                type="button"
+                disabled={pending}
+                onClick={reset}
+              >
+                Close
+              </Button>
+            </div>
+            <DialogDescription id={descriptionId}>
+              Choose a local repository to open its Project.
+            </DialogDescription>
+            <div className="local-inventory-actions">
+              <p>Repositories you have already opened keep their Project history.</p>
+              <Button
+                variant="outline"
+                className="secondary-action"
+                type="button"
+                disabled={pending || loading}
+                onClick={() => void readInventory()}
+              >
+                {loading ? "Refreshing repositories…" : "Refresh repositories"}
+              </Button>
+            </div>
+            {inventory?.inventoryState !== "ready" ? (
+              <RepositorySetupState
+                headingLevel={3}
+                state={
+                  loading || (inventory === null && error === null)
+                    ? "loading"
+                    : (inventory?.inventoryState ?? "discovery_failed")
+                }
+                {...(error === null ? {} : { error })}
+              />
+            ) : (
+              <form className="open-project-form" onSubmit={(event) => void submit(event)}>
+                <div className="form-field">
+                  <Label htmlFor={repositoryIdField}>Repository</Label>
+                  <NativeSelect
+                    id={repositoryIdField}
+                    value={repositoryId}
+                    disabled={pending}
+                    required
+                    onChange={(event) => {
+                      setRepositoryId(event.currentTarget.value);
+                      setError(null);
+                    }}
+                  >
+                    <option value="">Select a repository</option>
+                    {inventory.repositories.map((repository) => (
+                      <option key={repository.repositoryId} value={repository.repositoryId}>
+                        {repository.displayName}
+                        {repository.attachmentState === "attached" ? " · already open" : ""}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </div>
+                <Button type="submit" disabled={pending || repositoryId === ""}>
+                  {pending ? "Opening Project…" : "Open selected Project"}
+                </Button>
+                {error === null ? null : (
+                  <p className="project-form-error" role="alert">
+                    {error}
+                  </p>
+                )}
+              </form>
+            )}
+          </DialogContent>
+        ) : null}
+      </div>
+    </Dialog>
   );
 }

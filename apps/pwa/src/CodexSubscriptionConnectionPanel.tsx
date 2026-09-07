@@ -1,3 +1,4 @@
+import { Button } from "./components/ui/button.js";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import type {
@@ -178,7 +179,6 @@ export function CodexSubscriptionConnectionPanel({
       >
         <div className="section-heading">
           <div>
-            <p className="section-index">03 / CONNECTIONS</p>
             <h2 id="codex-connection-title" tabIndex={-1}>
               Codex subscription
             </h2>
@@ -194,14 +194,15 @@ export function CodexSubscriptionConnectionPanel({
             Starts a fresh local App Server probe. No review, thread, tool, or provider fallback is
             started.
           </p>
-          <button
+          <Button
+            variant="outline"
             className="secondary-action"
             type="button"
             disabled={!online || loading}
             onClick={() => void verify()}
           >
             Verify again
-          </button>
+          </Button>
         </div>
 
         <dl className="fact-list connection-facts">

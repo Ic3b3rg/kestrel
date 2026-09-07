@@ -1,3 +1,6 @@
+import { Button } from "./components/ui/button.js";
+import { NativeSelect } from "./components/ui/native-select.js";
+import { Label } from "./components/ui/label.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type {
@@ -184,7 +187,6 @@ export function CodexReviewModelPanel({
     >
       <div className="section-heading">
         <div>
-          <p className="section-index">04 / REVIEW MODEL</p>
           <h2 id="review-model-title" tabIndex={-1}>
             Review model
           </h2>
@@ -201,9 +203,9 @@ export function CodexReviewModelPanel({
       </p>
 
       <div className="review-model-controls">
-        <label className="form-field" htmlFor="codex-review-model">
+        <Label className="form-field grid gap-2" htmlFor="codex-review-model">
           <span>Default for future reviews</span>
-          <select
+          <NativeSelect
             id="codex-review-model"
             disabled={!online || connectionLoading || loading || models.length === 0 || saving}
             value={draftAvailable ? draftModelId : ""}
@@ -219,24 +221,25 @@ export function CodexReviewModelPanel({
                 {model.displayName}
               </option>
             ))}
-          </select>
-        </label>
+          </NativeSelect>
+        </Label>
         <div className="review-model-actions">
-          <button
+          <Button
+            variant="outline"
             className="secondary-action"
             type="button"
             disabled={!online || connectionLoading}
             onClick={onVerify}
           >
             Refresh catalog
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
             disabled={!draftAvailable || saving || draftModelId === preference?.selectedModelId}
             onClick={() => void save()}
           >
             {saving ? "Saving…" : "Save default"}
-          </button>
+          </Button>
         </div>
       </div>
 

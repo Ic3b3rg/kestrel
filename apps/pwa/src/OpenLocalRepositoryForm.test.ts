@@ -66,7 +66,7 @@ function deferred<T>(): Deferred<T> {
 }
 
 function findButton(container: HTMLElement, text: string): HTMLButtonElement {
-  const button = [...container.querySelectorAll("button")].find((candidate) =>
+  const button = [...document.body.querySelectorAll("button")].find((candidate) =>
     candidate.textContent.includes(text),
   );
   if (button === undefined) throw new Error(`Button not found: ${text}`);
@@ -77,7 +77,7 @@ function findControl(
   container: HTMLElement,
   labelText: string,
 ): HTMLSelectElement | HTMLTextAreaElement {
-  const label = [...container.querySelectorAll("label")].find((candidate) =>
+  const label = [...document.body.querySelectorAll("label")].find((candidate) =>
     candidate.textContent.includes(labelText),
   );
   const control = label?.htmlFor === undefined ? null : document.getElementById(label.htmlFor);
@@ -257,12 +257,6 @@ describe("Compare committed refs form", () => {
     (
       globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
     ).IS_REACT_ACT_ENVIRONMENT = true;
-    Object.defineProperty(HTMLDialogElement.prototype, "showModal", {
-      configurable: true,
-      value(this: HTMLDialogElement) {
-        this.open = true;
-      },
-    });
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -300,18 +294,18 @@ describe("Compare committed refs form", () => {
       loadReferences: () => refs.promise,
       ...overrides,
     });
-    await click(findButton(container, "Compare committed refs"));
+    await click(findButton(document.body, "Compare committed refs"));
     await act(async () => {
       inventory.resolve(repositories);
       await inventory.promise;
     });
-    await changeValue(findControl(container, "Repository"), repositoryId);
+    await changeValue(findControl(document.body, "Repository"), repositoryId);
     await act(async () => {
       refs.resolve(references);
       await refs.promise;
     });
-    await changeValue(findControl(container, "Base reference"), "refs/heads/main");
-    await changeValue(findControl(container, "Head reference"), "refs/heads/topic");
+    await changeValue(findControl(document.body, "Base reference"), "refs/heads/main");
+    await changeValue(findControl(document.body, "Head reference"), "refs/heads/topic");
   }
 
   it("loads only the selected Project repository's committed refs without a repository chooser", async () => {
@@ -324,14 +318,16 @@ describe("Compare committed refs form", () => {
       loadRepositories,
       loadReferences,
     });
-    await click(findButton(container, "Compare committed refs"));
+    await click(findButton(document.body, "Compare committed refs"));
     expect(loadRepositories).not.toHaveBeenCalled();
     expect(loadReferences).toHaveBeenCalledWith(repositoryId, expect.any(AbortSignal));
-    expect(container.textContent).toContain("selected repository");
-    expect(container.querySelector('select[id$="-repository"]')).toBeNull();
-    expect(findControl(container, "Base reference")).toBeDefined();
-    await click(findButton(container, "Close"));
-    expect(document.activeElement).toBe(findButton(container, "Compare committed refs"));
+    expect(document.body.textContent).toContain("selected repository");
+    expect(document.body.querySelector('select[id$="-repository"]')).toBeNull();
+    expect(findControl(document.body, "Base reference")).toBeDefined();
+    await click(findButton(document.body, "Close"));
+    await vi.waitFor(() =>
+      expect(document.activeElement).toBe(findButton(document.body, "Compare committed refs")),
+    );
   });
 
   it("shows loading without an empty select, ignores a stale response, then explains missing roots", async () => {
@@ -343,12 +339,12 @@ describe("Compare committed refs form", () => {
       .mockImplementationOnce(() => second.promise);
     await renderForm({ loadRepositories });
 
-    await click(findButton(container, "Compare committed refs"));
-    expect(container.textContent).toContain("Reading repositories…");
-    expect(container.querySelector("form")?.hidden).toBe(true);
-    expect(container.textContent).toContain(trustedHostCommand);
-    await click(findButton(container, "Close"));
-    await click(findButton(container, "Compare committed refs"));
+    await click(findButton(document.body, "Compare committed refs"));
+    expect(document.body.textContent).toContain("Reading repositories…");
+    expect(document.body.querySelector("form")?.hidden).toBe(true);
+    expect(document.body.textContent).toContain(trustedHostCommand);
+    await click(findButton(document.body, "Close"));
+    await click(findButton(document.body, "Compare committed refs"));
     await act(async () => {
       first.resolve({
         schemaVersion: 1,
@@ -359,7 +355,7 @@ describe("Compare committed refs form", () => {
       });
       await first.promise;
     });
-    expect(container.textContent).not.toContain("stale repository");
+    expect(document.body.textContent).not.toContain("stale repository");
     await act(async () => {
       second.resolve({
         schemaVersion: 1,
@@ -370,9 +366,9 @@ describe("Compare committed refs form", () => {
     });
 
     expect(loadRepositories).toHaveBeenCalledTimes(2);
-    expect(container.textContent).toContain("No repository roots are configured");
-    expect(container.textContent).toContain(trustedHostCommand);
-    expect(container.querySelector("form")?.hidden).toBe(true);
+    expect(document.body.textContent).toContain("No repository roots are configured");
+    expect(document.body.textContent).toContain(trustedHostCommand);
+    expect(document.body.querySelector("form")?.hidden).toBe(true);
   });
 
   it("explains when configured roots contain no repositories", async () => {
@@ -385,12 +381,12 @@ describe("Compare committed refs form", () => {
         }),
     });
 
-    await click(findButton(container, "Compare committed refs"));
+    await click(findButton(document.body, "Compare committed refs"));
 
-    expect(container.textContent).toContain("No Git repositories were found");
-    expect(container.textContent).toContain("The configured roots were loaded successfully");
-    expect(container.textContent).toContain(trustedHostCommand);
-    expect(container.querySelector("form")?.hidden).toBe(true);
+    expect(document.body.textContent).toContain("No Git repositories were found");
+    expect(document.body.textContent).toContain("The configured roots were loaded successfully");
+    expect(document.body.textContent).toContain(trustedHostCommand);
+    expect(document.body.querySelector("form")?.hidden).toBe(true);
   });
 
   it("refreshes the repository selector after trusted-host authorization", async () => {
@@ -404,15 +400,15 @@ describe("Compare committed refs form", () => {
       .mockResolvedValueOnce(repositories);
     await renderForm({ loadRepositories });
 
-    await click(findButton(container, "Compare committed refs"));
-    expect(container.textContent).toContain("No repository roots are configured");
+    await click(findButton(document.body, "Compare committed refs"));
+    expect(document.body.textContent).toContain("No repository roots are configured");
 
-    await click(findButton(container, "Refresh repositories"));
+    await click(findButton(document.body, "Refresh repositories"));
 
     expect(loadRepositories).toHaveBeenCalledTimes(2);
-    expect(findControl(container, "Repository")).toBeInstanceOf(HTMLSelectElement);
-    expect(container.textContent).toContain("kestrel");
-    expect(container.querySelector('input[type="text"], input[type="file"]')).toBeNull();
+    expect(findControl(document.body, "Repository")).toBeInstanceOf(HTMLSelectElement);
+    expect(document.body.textContent).toContain("kestrel");
+    expect(document.body.querySelector('input[type="text"], input[type="file"]')).toBeNull();
   });
 
   it("turns a discovery failure into actionable trusted-host guidance", async () => {
@@ -428,37 +424,37 @@ describe("Compare committed refs form", () => {
         ),
     });
 
-    await click(findButton(container, "Compare committed refs"));
+    await click(findButton(document.body, "Compare committed refs"));
 
-    expect(container.textContent).toContain("Repository discovery failed");
-    expect(container.textContent).toContain("Local repository discovery is unavailable");
-    expect(container.textContent).toContain("0c14b018-0260-4aa0-a5e9-61d212b948ce");
-    expect(container.textContent).toContain(trustedHostCommand);
-    expect(container.querySelector("form")?.hidden).toBe(true);
+    expect(document.body.textContent).toContain("Repository discovery failed");
+    expect(document.body.textContent).toContain("Local repository discovery is unavailable");
+    expect(document.body.textContent).toContain("0c14b018-0260-4aa0-a5e9-61d212b948ce");
+    expect(document.body.textContent).toContain(trustedHostCommand);
+    expect(document.body.querySelector("form")?.hidden).toBe(true);
   });
 
   it("copies commit suggestions only explicitly and explains the UTF-8 byte boundary", async () => {
     await openReadyForm();
-    const intent = findControl(container, "Change Intent");
-    const submit = findButton(container, "Retain Review Revision");
+    const intent = findControl(document.body, "Change Intent");
+    const submit = findButton(document.body, "Retain Review Revision");
 
     expect(intent.value).toBe("");
     expect(submit.disabled).toBe(true);
-    await click(findButton(container, "Use suggestion: Head source"));
+    await click(findButton(document.body, "Use suggestion: Head source"));
     expect(intent.value).toBe("Head source");
 
     await changeValue(intent, "😀".repeat(5_001));
     expect(intent.getAttribute("aria-invalid")).toBe("true");
     expect(intent.getAttribute("aria-describedby")).toContain("intent-error");
-    expect(container.textContent).toContain("20,004 / 20,000 UTF-8 bytes");
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    expect(document.body.textContent).toContain("20,004 / 20,000 UTF-8 bytes");
+    expect(document.body.querySelector('[role="alert"]')?.textContent).toContain(
       "20,000 UTF-8 bytes or fewer",
     );
     expect(submit.disabled).toBe(true);
 
     await changeValue(intent, "😀".repeat(5_000));
     expect(intent.getAttribute("aria-invalid")).toBeNull();
-    expect(container.textContent).toContain("20,000 / 20,000 UTF-8 bytes");
+    expect(document.body.textContent).toContain("20,000 / 20,000 UTF-8 bytes");
     expect(submit.disabled).toBe(false);
   });
 
@@ -467,22 +463,27 @@ describe("Compare committed refs form", () => {
     const retain = vi.fn(() => retained.promise);
     const onAvailable = vi.fn();
     await openReadyForm({ onAvailable, retain });
-    await changeValue(findControl(container, "Change Intent"), "Review authorization boundaries");
+    await changeValue(
+      findControl(document.body, "Change Intent"),
+      "Review authorization boundaries",
+    );
 
-    const form = container.querySelector("form");
+    const form = document.body.querySelector("form");
     if (form === null) throw new Error("Retention form is unavailable");
     await act(async () => {
       form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
       await Promise.resolve();
     });
-    expect(findButton(container, "Retaining…").disabled).toBe(true);
-    expect(container.querySelector("fieldset")?.hasAttribute("disabled")).toBe(true);
-    for (const control of container.querySelectorAll<HTMLButtonElement | HTMLTextAreaElement>(
-      "dialog button, dialog textarea",
+    expect(findButton(document.body, "Retaining…").disabled).toBe(true);
+    expect(document.body.querySelector("fieldset")?.hasAttribute("disabled")).toBe(true);
+    for (const control of document.body.querySelectorAll<HTMLButtonElement | HTMLTextAreaElement>(
+      '[role="dialog"] button, [role="dialog"] textarea',
     )) {
       expect(control.disabled).toBe(true);
     }
-    for (const control of container.querySelectorAll<HTMLSelectElement>("dialog select")) {
+    for (const control of document.body.querySelectorAll<HTMLSelectElement>(
+      '[role="dialog"] select',
+    )) {
       if (control.closest("fieldset") === null) expect(control.disabled).toBe(true);
     }
 
@@ -491,7 +492,7 @@ describe("Compare committed refs form", () => {
       retained.resolve(available);
       await retained.promise;
     });
-    const trigger = findButton(container, "Compare committed refs");
+    const trigger = findButton(document.body, "Compare committed refs");
     expect(retain).toHaveBeenCalledWith(
       {
         repositoryId,
@@ -501,9 +502,9 @@ describe("Compare committed refs form", () => {
       },
       expect.any(AbortSignal),
     );
-    expect(onAvailable).toHaveBeenCalledWith(available);
-    expect(container.querySelector("dialog")).toBeNull();
-    expect(document.activeElement).toBe(trigger);
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+    await vi.waitFor(() => expect(onAvailable).toHaveBeenCalledWith(available));
+    await vi.waitFor(() => expect(document.activeElement).toBe(trigger));
   });
 
   it("keeps the dialog retryable after a bounded retention failure", async () => {
@@ -518,8 +519,8 @@ describe("Compare committed refs form", () => {
       ),
     );
     await openReadyForm({ retain });
-    await changeValue(findControl(container, "Change Intent"), "Review bounded retention");
-    const form = container.querySelector("form");
+    await changeValue(findControl(document.body, "Change Intent"), "Review bounded retention");
+    const form = document.body.querySelector("form");
     if (form === null) throw new Error("Retention form is unavailable");
     await act(async () => {
       form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
@@ -527,14 +528,14 @@ describe("Compare committed refs form", () => {
       await Promise.resolve();
     });
 
-    expect(container.querySelector("dialog")).not.toBeNull();
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    expect(document.body.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(document.body.querySelector('[role="alert"]')?.textContent).toContain(
       "The exact revision exceeds the configured limit.",
     );
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    expect(document.body.querySelector('[role="alert"]')?.textContent).toContain(
       "0c14b018-0260-4aa0-a5e9-61d212b948ce",
     );
-    expect(findButton(container, "Retain Review Revision").disabled).toBe(false);
+    expect(findButton(document.body, "Retain Review Revision").disabled).toBe(false);
   });
 
   it("delegates authentication failures without showing a misleading repository error", async () => {
@@ -545,13 +546,13 @@ describe("Compare committed refs form", () => {
       loadRepositories: () => inventory.promise,
       onAuthenticationError,
     });
-    await click(findButton(container, "Compare committed refs"));
+    await click(findButton(document.body, "Compare committed refs"));
     await act(async () => {
       inventory.reject(authenticationError);
       await inventory.promise.catch(() => undefined);
     });
 
     expect(onAuthenticationError).toHaveBeenCalledWith(authenticationError);
-    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(document.body.querySelector('[role="alert"]')).toBeNull();
   });
 });

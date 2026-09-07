@@ -1,3 +1,6 @@
+import { Button } from "./components/ui/button.js";
+import { NativeSelect } from "./components/ui/native-select.js";
+import { Label } from "./components/ui/label.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { HostGitHubConnection, ProjectInbox } from "@kestrel/contracts";
@@ -141,7 +144,6 @@ export function HostGitHubConnectionPanel({
     >
       <div className="section-heading">
         <div>
-          <p className="section-index">03 / CONNECTIONS</p>
           <h2 id="github-connection-title" tabIndex={-1}>
             GitHub CLI
           </h2>
@@ -154,8 +156,8 @@ export function HostGitHubConnectionPanel({
 
       <div className="connection-controls">
         <div className="form-field">
-          <label htmlFor="github-connection-project">Project access</label>
-          <select
+          <Label htmlFor="github-connection-project">Project access</Label>
+          <NativeSelect
             id="github-connection-project"
             value={selectedProjectId}
             disabled={!online || loading}
@@ -169,16 +171,17 @@ export function HostGitHubConnectionPanel({
                 {projectLabel(project)}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
-        <button
+        <Button
+          variant="outline"
           className="secondary-action"
           type="button"
           disabled={!online || loading}
           onClick={() => void verify()}
         >
           Verify again
-        </button>
+        </Button>
       </div>
 
       <dl className="fact-list connection-facts">

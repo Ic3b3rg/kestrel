@@ -1,3 +1,4 @@
+import { Button } from "./components/ui/button.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type {
@@ -209,8 +210,25 @@ export function App() {
   useEffect(() => {
     if (route.kind !== "settings" || session == null) return;
     const target = document.getElementById(window.location.hash.slice(1));
-    target?.focus();
-    target?.scrollIntoView({ block: "start" });
+    if (target === null) return;
+    target.focus();
+    const revealTarget = () => {
+      if (document.activeElement === target) target.scrollIntoView({ block: "start" });
+    };
+    revealTarget();
+    // Connection facts arrive asynchronously above the linked section. Keep the requested
+    // heading visible until the Operator takes over navigation.
+    const observer = new ResizeObserver(revealTarget);
+    observer.observe(target.closest(".settings-view") ?? target);
+    const stopFollowing = () => observer.disconnect();
+    const navigationEvents = ["wheel", "touchstart", "pointerdown", "keydown"] as const;
+    for (const event of navigationEvents) {
+      window.addEventListener(event, stopFollowing, { once: true, passive: true });
+    }
+    return () => {
+      observer.disconnect();
+      for (const event of navigationEvents) window.removeEventListener(event, stopFollowing);
+    };
   }, [route, session]);
 
   const resetProjectState = useCallback(() => {
@@ -718,10 +736,9 @@ export function App() {
       case "projects":
         return (
           <section className="workspace-landing" aria-labelledby="workspace-title">
-            <p className="eyebrow">LOCAL RUNTIME / PROJECTS</p>
             <h1 id="workspace-title">Projects</h1>
             <p className="lede">
-              Open an authorized repository, then use the persistent rail to switch Project context.
+              Select a Project in the sidebar, or open a repository to get started.
             </p>
           </section>
         );
@@ -788,40 +805,36 @@ export function App() {
         if (projectInbox === null && projectLoading) {
           return (
             <section className="workspace-state" aria-busy="true">
-              <p className="section-index">PROJECT / SYNC</p>
               <h1>Reading selected Project</h1>
-              <p>Waiting for the authoritative Project record.</p>
+              <p>Loading your Project…</p>
             </section>
           );
         }
         if (projectInbox === null) {
           return (
             <section className="workspace-state">
-              <p className="section-index">PROJECT / UNAVAILABLE</p>
               <h1>Project unavailable</h1>
-              <p>Retry the Project inventory from the navigation rail.</p>
+              <p>Reconnect or retry Projects in the sidebar.</p>
             </section>
           );
         }
         return (
           <section className="workspace-state">
-            <p className="section-index">PROJECT / NOT FOUND</p>
             <h1>Project not found</h1>
-            <p>The URL does not identify a durable Project in this Installation.</p>
-            <button type="button" onClick={() => navigate({ kind: "projects" })}>
+            <p>This Project could not be found. Choose another Project in the sidebar.</p>
+            <Button type="button" onClick={() => navigate({ kind: "projects" })}>
               Back to Projects
-            </button>
+            </Button>
           </section>
         );
       case "not_found":
         return (
           <section className="workspace-state">
-            <p className="section-index">ROUTE / NOT FOUND</p>
             <h1>Page not found</h1>
-            <p>Use Projects or Settings to return to an authoritative workspace.</p>
-            <button type="button" onClick={() => navigate({ kind: "projects" })}>
+            <p>Choose Projects or Settings in the sidebar to continue.</p>
+            <Button type="button" onClick={() => navigate({ kind: "projects" })}>
               Back to Projects
-            </button>
+            </Button>
           </section>
         );
     }

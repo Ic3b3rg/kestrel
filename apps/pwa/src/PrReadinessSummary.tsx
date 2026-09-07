@@ -1,3 +1,4 @@
+import { Button } from "./components/ui/button.js";
 import type { ReactNode } from "react";
 
 import type { ProjectInbox } from "@kestrel/contracts";
@@ -69,14 +70,15 @@ export function PrReadinessSummary({
           <h3 id={`readiness-${proposal.id}`}>PR readiness</h3>
           <p>Independent prerequisites for a future review.</p>
         </div>
-        <button
+        <Button
+          variant="outline"
           className="secondary-action"
           type="button"
           disabled={disabled || checking}
           onClick={connections.refresh}
         >
           {checking ? "Checking connections…" : "Verify connections"}
-        </button>
+        </Button>
       </div>
       <dl className="commit-pointer-list readiness-facts">
         <div>
@@ -184,7 +186,11 @@ export function PrReadinessSummary({
               </span>
             ) : null}
             {codex.state === "checked" && codex.value.state === "ready" ? null : (
-              <a href="/settings#codex-connection-title">Correct Codex connection</a>
+              <a
+                href={`/settings?projectId=${encodeURIComponent(project.id)}#codex-connection-title`}
+              >
+                Correct Codex connection
+              </a>
             )}
           </dd>
         </div>
@@ -198,7 +204,7 @@ export function PrReadinessSummary({
               </span>
             )}
             <span>Codex subscription · default for future reviews.</span>
-            <a href="/settings#review-model-title">
+            <a href={`/settings?projectId=${encodeURIComponent(project.id)}#review-model-title`}>
               {selectedModel === undefined ? "Choose review model" : "Change review model"}
             </a>
           </dd>
