@@ -1,3 +1,6 @@
+import { Button } from "./components/ui/button.js";
+import { Input } from "./components/ui/input.js";
+import { Label } from "./components/ui/label.js";
 import { useId, useState, type SyntheticEvent } from "react";
 import {
   OpenPublicGitHubPullRequestCommandSchema,
@@ -70,8 +73,8 @@ export function ProjectActions({
           <p>Attach a local repository to compare committed refs.</p>
         )}
         <form className="project-url-form" onSubmit={submit} noValidate>
-          <label htmlFor={id}>Public GitHub pull request URL</label>
-          <input
+          <Label htmlFor={id}>Public GitHub pull request URL</Label>
+          <Input
             id={id}
             type="url"
             value={url}
@@ -85,9 +88,9 @@ export function ProjectActions({
               setError(null);
             }}
           />
-          <button type="submit" disabled={disabled}>
+          <Button type="submit" disabled={disabled}>
             Open PR by URL
-          </button>
+          </Button>
           <p id={`${id}-help`} className="form-help">
             Public PRs in this repository only. No GitHub credentials are sent or stored. Public
             access shares GitHub’s limit of 60 unauthenticated GitHub API requests per hour per

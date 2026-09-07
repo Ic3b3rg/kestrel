@@ -1,3 +1,5 @@
+// @vitest-environment happy-dom
+
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -87,5 +89,18 @@ describe("AuthenticatedShell", () => {
   it("marks Settings as the current native link", () => {
     const html = render({ route: { kind: "settings" } });
     expect(html).toContain('href="/settings" aria-current="page"');
+  });
+
+  it("keeps the selected Project identifiable while Settings is the current page", () => {
+    const document = new DOMParser().parseFromString(
+      render({ route: { kind: "settings", projectId: localProject.id } }),
+      "text/html",
+    );
+    const projectLink = document.querySelector(`a[href="/projects/${localProject.id}"]`);
+    const settingsLink = document.querySelector(`a[href="/settings?projectId=${localProject.id}"]`);
+
+    expect(projectLink?.textContent).toContain("Selected Project");
+    expect(projectLink?.getAttribute("aria-current")).toBeNull();
+    expect(settingsLink?.getAttribute("aria-current")).toBe("page");
   });
 });

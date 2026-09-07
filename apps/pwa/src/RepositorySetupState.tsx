@@ -8,6 +8,7 @@ type RepositorySetupState =
 
 interface RepositorySetupStateProps {
   error?: string;
+  headingLevel?: 3 | 4;
   state: RepositorySetupState;
 }
 
@@ -42,7 +43,12 @@ const stateContent: Record<
   },
 };
 
-export function RepositorySetupState({ error, state }: RepositorySetupStateProps) {
+export function RepositorySetupState({
+  error,
+  headingLevel = 4,
+  state,
+}: RepositorySetupStateProps) {
+  const Heading = headingLevel === 3 ? "h3" : "h4";
   const failed = state === "discovery_failed";
   const content = failed
     ? {
@@ -59,8 +65,7 @@ export function RepositorySetupState({ error, state }: RepositorySetupStateProps
       role={failed ? "alert" : "status"}
       aria-busy={state === "loading" || undefined}
     >
-      <p className="section-index">REPOSITORY SETUP</p>
-      <h4>{content.title}</h4>
+      <Heading>{content.title}</Heading>
       <p>{content.description}</p>
       <TrustedHostRepositoryAction />
     </section>

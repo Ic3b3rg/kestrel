@@ -1,3 +1,7 @@
+import { Button } from "./components/ui/button.js";
+import { Input } from "./components/ui/input.js";
+import { NativeSelect } from "./components/ui/native-select.js";
+import { Label } from "./components/ui/label.js";
 import { useEffect, useState, type ReactNode, type SyntheticEvent } from "react";
 
 import { ConfigureDirectApiProfileCommandSchema, type DirectApiProfile } from "@kestrel/contracts";
@@ -140,12 +144,12 @@ function FormField({
   type?: string;
 }) {
   return (
-    <label className="form-field">
+    <Label className="form-field grid gap-2">
       <span>{label}</span>
       {children ?? (
-        <input name={name} type={type} defaultValue={defaultValue} required spellCheck={false} />
+        <Input name={name} type={type} defaultValue={defaultValue} required spellCheck={false} />
       )}
-    </label>
+    </Label>
   );
 }
 
@@ -304,28 +308,29 @@ export function DirectApiProfilePanel({
     <section className="direct-api-profile" aria-labelledby={`direct-api-profile-${projectId}`}>
       <div className="direct-api-profile-heading">
         <div>
-          <p className="section-index">MODEL PROVIDER</p>
           <h4 id={`direct-api-profile-${projectId}`}>Direct API profile</h4>
         </div>
         <div className="direct-api-profile-actions">
           {profile === null ? null : (
-            <button
+            <Button
+              variant="outline"
               className="secondary-action"
               type="button"
               disabled={disabled || pending}
               onClick={() => void handleTest()}
             >
               {pending ? "Testing…" : "Run profile test"}
-            </button>
+            </Button>
           )}
-          <button
+          <Button
+            variant="outline"
             className="secondary-action"
             type="button"
             disabled={disabled || pending}
             onClick={() => setShowForm((current) => !current)}
           >
             {showForm ? "Cancel" : profile === null ? "Configure profile" : "Replace profile"}
-          </button>
+          </Button>
         </div>
       </div>
       {loading ? <p aria-busy="true">Reading the effective profile…</p> : null}
@@ -350,7 +355,7 @@ export function DirectApiProfilePanel({
             <legend>Credential and effective identity</legend>
             <div className="direct-api-form-grid">
               <FormField label="Current Operator password" name="currentPassword" type="password">
-                <input
+                <Input
                   name="currentPassword"
                   type="password"
                   autoComplete="current-password"
@@ -358,7 +363,7 @@ export function DirectApiProfilePanel({
                 />
               </FormField>
               <FormField label="Project-exclusive OpenAI key" name="apiKey" type="password">
-                <input name="apiKey" type="password" autoComplete="off" required />
+                <Input name="apiKey" type="password" autoComplete="off" required />
               </FormField>
               <FormField
                 label="Profile name"
@@ -374,24 +379,24 @@ export function DirectApiProfilePanel({
             <legend>Data-policy attestation</legend>
             <div className="direct-api-form-grid">
               <FormField label="Training use" name="trainingUse">
-                <select name="trainingUse" defaultValue="not_used_without_opt_in" required>
+                <NativeSelect name="trainingUse" defaultValue="not_used_without_opt_in" required>
                   <option value="not_used_without_opt_in">Not used without opt-in</option>
                   <option value="provider_may_train">Provider may train</option>
-                </select>
+                </NativeSelect>
               </FormField>
               <FormField label="Abuse monitoring" name="abuseMonitoring">
-                <select name="abuseMonitoring" defaultValue="standard" required>
+                <NativeSelect name="abuseMonitoring" defaultValue="standard" required>
                   <option value="standard">Standard</option>
                   <option value="modified">Modified</option>
                   <option value="zero_data_retention">Zero data retention</option>
-                </select>
+                </NativeSelect>
               </FormField>
               <FormField label="Human review" name="humanReview">
-                <select name="humanReview" defaultValue="possible" required>
+                <NativeSelect name="humanReview" defaultValue="possible" required>
                   <option value="possible">Possible</option>
                   <option value="restricted">Restricted</option>
                   <option value="none_attested">None attested</option>
-                </select>
+                </NativeSelect>
               </FormField>
               <FormField label="Attested at (UTC ISO 8601)" name="attestedAt" />
               <FormField label="Expires at (UTC ISO 8601)" name="expiresAt" />
@@ -449,7 +454,7 @@ export function DirectApiProfilePanel({
             <div className="direct-api-form-grid">
               <FormField label="Input price" name="inputPrice" />
               <FormField label="Cached input price (optional)" name="cachedInputPrice">
-                <input name="cachedInputPrice" type="text" inputMode="decimal" />
+                <Input name="cachedInputPrice" type="text" inputMode="decimal" />
               </FormField>
               <FormField label="Output price" name="outputPrice" />
               <FormField label="Effective at (UTC ISO 8601)" name="priceEffectiveAt" />
@@ -457,9 +462,9 @@ export function DirectApiProfilePanel({
               <FormField label="Price source URL" name="priceSourceUrl" type="url" />
             </div>
           </fieldset>
-          <button type="submit" disabled={disabled || pending}>
+          <Button type="submit" disabled={disabled || pending}>
             {pending ? "Certifying exact profile…" : "Certify and save profile"}
-          </button>
+          </Button>
         </form>
       ) : null}
     </section>

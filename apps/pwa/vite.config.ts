@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
@@ -8,11 +10,12 @@ export default defineConfig({
   cacheDir: "/tmp/kestrel-vite",
   plugins: [
     react(),
+    tailwindcss(),
     VitePWA({
       includeAssets: ["favicon.svg"],
       manifest: {
-        background_color: "#f2efe7",
-        description: "Observe the durable Kestrel Installation and its latest diagnostic.",
+        background_color: "#171717",
+        description: "Plan and govern software change across your Projects.",
         display: "standalone",
         icons: [
           { src: "/icon-192.svg", sizes: "192x192", type: "image/svg+xml" },
@@ -25,10 +28,10 @@ export default defineConfig({
           },
         ],
         id: "/",
-        name: "Kestrel Installation",
+        name: "Kestrel",
         short_name: "Kestrel",
         start_url: "/",
-        theme_color: "#17201c",
+        theme_color: "#171717",
       },
       registerType: "autoUpdate",
       workbox: {
@@ -39,6 +42,7 @@ export default defineConfig({
       },
     }),
   ],
+  resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
   server: {
     host: "0.0.0.0",
     port: 5173,

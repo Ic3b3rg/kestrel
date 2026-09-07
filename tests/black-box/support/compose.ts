@@ -191,6 +191,7 @@ process.exit(result.status ?? 1);
   const composeArgs = ["compose", "-p", project, "-f", "compose.yaml", "-f", "compose.test.yaml"];
   const environment = {
     ...dockerEnvironment(docker),
+    KESTREL_IMAGE: `${project}:test`,
     KESTREL_MIGRATOR_DATABASE_PASSWORD: randomBytes(32).toString("base64url"),
     KESTREL_RUNTIME_DATABASE_PASSWORD: randomBytes(32).toString("base64url"),
     KESTREL_TEST_REPOSITORY_ROOT: repositoryRoot,

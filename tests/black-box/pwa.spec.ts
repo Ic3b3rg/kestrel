@@ -565,11 +565,11 @@ test.describe("observable Installation PWA", () => {
     releaseInitialRead();
     await expect(panel.locator("tbody tr")).toHaveCount(3);
     await expect(panel).toContainText("Review the bounded provider read");
-    await panel.getByRole("button", { name: /^Authored/u }).click();
+    await panel.getByRole("tab", { name: /^Authored/u }).click();
     await expect(panel.locator("tbody tr")).toHaveCount(1);
     await expect(panel.locator("tbody")).toContainText("#43");
-    await panel.getByRole("button", { name: /^All/u }).click();
-    await panel.getByRole("button", { name: /^All/u }).hover();
+    await panel.getByRole("tab", { name: /^All/u }).click();
+    await panel.getByRole("tab", { name: /^All/u }).hover();
     expect((await new AxeBuilder({ page }).include(".pr-filters").analyze()).violations).toEqual(
       [],
     );
@@ -590,7 +590,18 @@ test.describe("observable Installation PWA", () => {
       expect(geometry.rail.y).toBe(0);
       expect(geometry.table.y).toBeLessThan(300);
       expect(geometry.viewport - geometry.table.right).toBeLessThan(40);
+      if (width === 1440) {
+        await page.screenshot({ path: test.info().outputPath("factory-desktop.png") });
+      }
     }
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+    await page.screenshot({
+      animations: "disabled",
+      path: test.info().outputPath("factory-narrow.png"),
+    });
+    await page.keyboard.press("Escape");
+    await page.setViewportSize({ width: 1440, height: 900 });
     await openProjectWorkspace(page, "example/switch-repo");
     await expect(panel).toContainText("#77");
     await expect(panel).toContainText("Keep the switched Project isolated");
@@ -1269,6 +1280,10 @@ test.describe("observable Installation PWA", () => {
     await expect(fact("Codex account")).not.toContainText("readiness@example.com");
     await expect(fact("GitHub access")).toContainText("Verified for this Project");
     await expect(fact("Selected model")).toContainText("Live catalog unavailable");
+    await expect(readiness.getByRole("link", { name: "Correct Codex connection" })).toHaveAttribute(
+      "href",
+      `/settings?projectId=${currentProject.id}#codex-connection-title`,
+    );
     await readiness.getByRole("link", { name: "Correct Codex connection" }).click();
     await expect(
       page.getByRole("heading", { name: "Codex subscription", exact: true }),
@@ -1788,7 +1803,7 @@ test.describe("observable Installation PWA", () => {
     await codexPanel.getByRole("button", { name: "Verify again" }).click();
     await expect(codexPanel.getByRole("status")).toContainText("Ready");
     expect(codexProbeCount).toBeGreaterThanOrEqual(3);
-    await expect(page.getByText("05 / OPERATOR", { exact: true })).toBeVisible();
+
     await expect(
       page.getByText(`Signed in as ${TEST_OPERATOR_CREDENTIALS.username}`, { exact: true }),
     ).toBeVisible();
@@ -1839,8 +1854,8 @@ test.describe("observable Installation PWA", () => {
     await expect(
       page.getByText(installationId ?? "missing Installation ID", { exact: true }),
     ).toHaveCount(0);
-    await expect(page.getByRole("link", { name: "openai/openai-node" })).toHaveCount(0);
-    await expect(page.getByRole("link", { name: "Ic3b3rg/kestrel" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: /openai\/openai-node/u })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: /Ic3b3rg\/kestrel/u })).toHaveCount(0);
 
     await context.setOffline(false);
     await expect(page.getByText("Connected", { exact: true })).toBeVisible();

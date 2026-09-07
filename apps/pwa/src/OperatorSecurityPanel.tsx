@@ -1,3 +1,6 @@
+import { Button } from "./components/ui/button.js";
+import { Input } from "./components/ui/input.js";
+import { Label } from "./components/ui/label.js";
 import { useEffect, useRef, useState, type SyntheticEvent } from "react";
 
 import type { Session } from "@kestrel/contracts";
@@ -78,7 +81,6 @@ export function OperatorSecurityPanel(props: OperatorSecurityPanelProps) {
     <section className="operator-security" aria-labelledby="operator-security-title">
       <div className="section-heading">
         <div>
-          <p className="section-index">05 / OPERATOR</p>
           <h2 id="operator-security-title">Operator security</h2>
         </div>
         <p className="security-state">Step-up protected</p>
@@ -101,14 +103,15 @@ export function OperatorSecurityPanel(props: OperatorSecurityPanelProps) {
               </dd>
             </div>
           </dl>
-          <button
+          <Button
+            variant="outline"
             className="secondary-action"
             type="button"
             disabled={controlsDisabled}
             onClick={() => void props.onLogout()}
           >
             {props.pending === "logout" ? "Signing out…" : "Sign out"}
-          </button>
+          </Button>
           <p className="form-help">Clears only this browser’s authentication cookies.</p>
         </div>
 
@@ -122,8 +125,8 @@ export function OperatorSecurityPanel(props: OperatorSecurityPanelProps) {
             <p className="required-note">All fields are required.</p>
           </div>
           <div className="form-field">
-            <label htmlFor="operator-current-password">Current password</label>
-            <input
+            <Label htmlFor="operator-current-password">Current password</Label>
+            <Input
               autoComplete="current-password"
               id="operator-current-password"
               maxLength={128}
@@ -133,8 +136,8 @@ export function OperatorSecurityPanel(props: OperatorSecurityPanelProps) {
             />
           </div>
           <div className="form-field">
-            <label htmlFor="operator-username">Operator username</label>
-            <input
+            <Label htmlFor="operator-username">Operator username</Label>
+            <Input
               autoComplete="username"
               defaultValue={props.session.operator.username}
               id="operator-username"
@@ -146,8 +149,8 @@ export function OperatorSecurityPanel(props: OperatorSecurityPanelProps) {
             />
           </div>
           <div className="form-field">
-            <label htmlFor="operator-new-password">New password</label>
-            <input
+            <Label htmlFor="operator-new-password">New password</Label>
+            <Input
               autoComplete="new-password"
               id="operator-new-password"
               maxLength={128}
@@ -158,8 +161,8 @@ export function OperatorSecurityPanel(props: OperatorSecurityPanelProps) {
             />
           </div>
           <div className="form-field">
-            <label htmlFor="operator-new-password-confirmation">Confirm new password</label>
-            <input
+            <Label htmlFor="operator-new-password-confirmation">Confirm new password</Label>
+            <Input
               aria-describedby={validationError ? "operator-security-error" : undefined}
               aria-invalid={validationError !== null}
               autoComplete="new-password"
@@ -183,11 +186,11 @@ export function OperatorSecurityPanel(props: OperatorSecurityPanelProps) {
               <span>{visibleError}</span>
             </div>
           ) : null}
-          <button type="submit" disabled={controlsDisabled}>
+          <Button type="submit" disabled={controlsDisabled}>
             {props.pending === "credentials"
               ? "Changing credentials…"
               : "Change credentials and sign out"}
-          </button>
+          </Button>
           <p className="form-help">
             Verifies the current password, then invalidates every signed-in device.
           </p>

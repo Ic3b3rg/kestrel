@@ -1,3 +1,4 @@
+import { Button } from "./components/ui/button.js";
 import type { ReactNode } from "react";
 
 import type { InstallationSnapshot } from "@kestrel/contracts";
@@ -56,9 +57,8 @@ function TimeValue({ value }: { value: string | null }) {
 function LoadingState({ historyRefresh }: { historyRefresh: boolean }) {
   return (
     <section className="system-state" aria-busy="true" aria-label="Loading Installation data">
-      <p className="section-index">SYSTEM / SYNC</p>
       <h2>{historyRefresh ? "Refreshing retained history" : "Reading Installation"}</h2>
-      <p>Waiting for an authoritative snapshot from PostgreSQL.</p>
+      <p>Loading your installation status…</p>
       <div className="loading-lines" aria-hidden="true">
         <span />
         <span />
@@ -75,7 +75,6 @@ function InstallationRecord({ snapshot }: { snapshot: InstallationSnapshot }) {
       <section className="record-section" aria-labelledby="installation-record-title">
         <div className="section-heading">
           <div>
-            <p className="section-index">01 / INSTALLATION</p>
             <h2 id="installation-record-title">Durable identity</h2>
           </div>
           <p className={`state-marker state-${installation.state}`}>
@@ -116,7 +115,6 @@ function InstallationRecord({ snapshot }: { snapshot: InstallationSnapshot }) {
       <section className="record-section diagnostic-section" aria-labelledby="diagnostic-title">
         <div className="section-heading">
           <div>
-            <p className="section-index">02 / DIAGNOSTIC</p>
             <h2 id="diagnostic-title">Latest operation</h2>
           </div>
           {diagnostic ? (
@@ -155,7 +153,7 @@ function InstallationRecord({ snapshot }: { snapshot: InstallationSnapshot }) {
         ) : (
           <div className="empty-operation">
             <p>No diagnostic has been requested.</p>
-            <p>Run one to verify the durable web-to-worker path.</p>
+            <p>Run a diagnostic to check that background work is available.</p>
           </div>
         )}
       </section>
@@ -174,27 +172,26 @@ export function InstallationView(props: InstallationViewProps) {
     <div className="settings-view">
       <section className="intro">
         <div>
-          <p className="eyebrow">LOCAL RUNTIME / SETTINGS</p>
           <h1 id="page-title">Settings</h1>
           <p className="lede">
             Installation, host connections, repository access, and Operator security.
           </p>
         </div>
         <div className="command-panel">
-          <button
+          <Button
             type="button"
             disabled={commandDisabled}
             aria-describedby="command-help"
             onClick={props.onRunDiagnostic}
           >
             {props.commandPending ? "Requesting…" : "Run diagnostic"}
-          </button>
+          </Button>
           <p id="command-help">
             {!props.online
               ? "Unavailable while offline."
               : diagnosticActive
                 ? "A diagnostic is already in progress."
-                : "Creates one durable background operation."}
+                : "Check that background work is available."}
           </p>
         </div>
       </section>
@@ -202,24 +199,19 @@ export function InstallationView(props: InstallationViewProps) {
       {props.requestError ? (
         <section className="error-state" role="alert">
           <div>
-            <p className="section-index">REQUEST FAILED</p>
             <h2>Installation data is unavailable</h2>
             <p>{props.requestError}</p>
           </div>
-          <button type="button" onClick={props.onRetry} disabled={!props.online}>
+          <Button type="button" onClick={props.onRetry} disabled={!props.online}>
             Try again
-          </button>
+          </Button>
         </section>
       ) : null}
 
       {!props.online ? (
         <section className="system-state offline-state">
-          <p className="section-index">SYSTEM / OFFLINE</p>
           <h2>Reconnect to view product data</h2>
-          <p>
-            The cached application shell contains no Installation state. A full refetch will run
-            when the network returns.
-          </p>
+          <p>Your data will return when the connection is restored.</p>
         </section>
       ) : props.loading ? (
         <LoadingState historyRefresh={props.connection === "cursor-expired"} />

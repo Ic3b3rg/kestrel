@@ -39,7 +39,7 @@ const readyInventory: LocalRepositoryInventory = {
 };
 
 function findButton(container: HTMLElement, label: string): HTMLButtonElement {
-  const button = [...container.querySelectorAll("button")].find((candidate) =>
+  const button = [...document.body.querySelectorAll("button")].find((candidate) =>
     candidate.textContent.includes(label),
   );
   if (button === undefined) throw new Error(`Button not found: ${label}`);
@@ -53,8 +53,8 @@ async function click(element: HTMLElement): Promise<void> {
   });
 }
 
-async function selectRepository(container: HTMLElement): Promise<void> {
-  const select = container.querySelector("select");
+async function selectRepository(): Promise<void> {
+  const select = document.body.querySelector("select");
   if (!(select instanceof HTMLSelectElement)) throw new Error("Repository select not found");
   // eslint-disable-next-line @typescript-eslint/unbound-method -- called below with the select as its receiver.
   const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
@@ -74,12 +74,6 @@ describe("Open Project form", () => {
     (
       globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
     ).IS_REACT_ACT_ENVIRONMENT = true;
-    Object.defineProperty(HTMLDialogElement.prototype, "showModal", {
-      configurable: true,
-      value(this: HTMLDialogElement) {
-        this.setAttribute("open", "");
-      },
-    });
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -106,14 +100,14 @@ describe("Open Project form", () => {
     const onOpened = vi.fn();
     render({ onOpened, openProject });
 
-    await click(findButton(container, "Open Project"));
-    await selectRepository(container);
-    await click(findButton(container, "Open selected Project"));
+    await click(findButton(document.body, "Open Project"));
+    await selectRepository();
+    await click(findButton(document.body, "Open selected Project"));
 
     expect(openProject).toHaveBeenCalledWith({ repositoryId }, expect.any(AbortSignal));
     expect(JSON.stringify(openProject.mock.calls[0])).not.toContain("/Users/");
     expect(onOpened).toHaveBeenCalledWith(opened);
-    expect(container.querySelector("dialog")).toBeNull();
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
   });
 
   it("shows the honest empty trusted-host state", async () => {
@@ -125,19 +119,19 @@ describe("Open Project form", () => {
       }),
     });
 
-    await click(findButton(container, "Open Project"));
+    await click(findButton(document.body, "Open Project"));
 
-    expect(container.textContent).toContain("No repository roots are configured");
-    expect(container.textContent).toContain("authorize-repository-root");
+    expect(document.body.textContent).toContain("No repository roots are configured");
+    expect(document.body.textContent).toContain("authorize-repository-root");
   });
 
   it("keeps repository discovery failures inside the dialog", async () => {
     render({ loadRepositories: vi.fn().mockRejectedValue(new Error("private path detail")) });
 
-    await click(findButton(container, "Open Project"));
+    await click(findButton(document.body, "Open Project"));
 
-    expect(container.textContent).toContain("Repository discovery failed");
-    expect(container.textContent).toContain("Kestrel could not list authorized repositories");
-    expect(container.textContent).not.toContain("private path detail");
+    expect(document.body.textContent).toContain("Repository discovery failed");
+    expect(document.body.textContent).toContain("Kestrel could not list authorized repositories");
+    expect(document.body.textContent).not.toContain("private path detail");
   });
 });

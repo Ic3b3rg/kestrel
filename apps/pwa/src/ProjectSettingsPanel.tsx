@@ -1,3 +1,5 @@
+import { NativeSelect } from "./components/ui/native-select.js";
+import { Label } from "./components/ui/label.js";
 import type { DirectApiProfile, ProjectInbox } from "@kestrel/contracts";
 import { DirectApiProfilePanel } from "./DirectApiProfilePanel.js";
 import { projectLabel } from "./AuthenticatedShell.js";
@@ -25,8 +27,8 @@ export function ProjectSettingsPanel({
         Direct API configuration belongs to the selected Project. Global host connections and Codex
         model defaults are managed separately above.
       </p>
-      <label htmlFor="settings-project">Project to configure</label>
-      <select
+      <Label htmlFor="settings-project">Project to configure</Label>
+      <NativeSelect
         id="settings-project"
         value={project?.id ?? ""}
         disabled={!online}
@@ -38,7 +40,7 @@ export function ProjectSettingsPanel({
             {projectLabel(candidate)}
           </option>
         ))}
-      </select>
+      </NativeSelect>
       {project === undefined ? (
         <p>Select a Project to inspect its existing Direct API profile.</p>
       ) : (

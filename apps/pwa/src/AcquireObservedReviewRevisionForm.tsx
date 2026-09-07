@@ -1,3 +1,6 @@
+import { Button } from "./components/ui/button.js";
+import { Textarea } from "./components/ui/textarea.js";
+import { Label } from "./components/ui/label.js";
 import { useEffect, useId, useRef, useState, type SyntheticEvent } from "react";
 
 import {
@@ -109,8 +112,8 @@ export function AcquireObservedReviewRevisionForm({
   return (
     <form className="observed-acquisition-form" onSubmit={(event) => void submit(event)} noValidate>
       <div className="form-field">
-        <label htmlFor={fieldId}>Confirm Change Intent for PR #{proposal.number}</label>
-        <textarea
+        <Label htmlFor={fieldId}>Confirm Change Intent for PR #{proposal.number}</Label>
+        <Textarea
           id={fieldId}
           rows={3}
           value={changeIntent}
@@ -123,7 +126,7 @@ export function AcquireObservedReviewRevisionForm({
           }}
         />
       </div>
-      <button
+      <Button
         type="submit"
         disabled={disabled || pending || normalizedIntent.length === 0 || intentTooLarge}
       >
@@ -132,7 +135,7 @@ export function AcquireObservedReviewRevisionForm({
           : currentRevision?.state === "unavailable"
             ? `Retry exact PR #${String(proposal.number)}`
             : `Acquire exact PR #${String(proposal.number)}`}
-      </button>
+      </Button>
       <p id={helpId} className="form-help">
         Kestrel reads the attached repository first. Git may use a host credential helper only to
         fetch missing GitHub objects into temporary Kestrel-owned storage; Kestrel never receives or

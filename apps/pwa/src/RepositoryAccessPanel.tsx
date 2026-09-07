@@ -1,3 +1,4 @@
+import { Button } from "./components/ui/button.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { LocalRepositoryInventory } from "@kestrel/contracts";
@@ -81,7 +82,6 @@ export function RepositoryAccessPanel({
     <section className="repository-access" aria-labelledby="repository-settings-title">
       <div className="section-heading repository-access-heading">
         <div>
-          <p className="section-index">04 / SETTINGS</p>
           <h2 id="repository-settings-title">Settings</h2>
         </div>
         <p className="credential-state">Paths stay on the trusted host</p>
@@ -94,14 +94,15 @@ export function RepositoryAccessPanel({
             bounded labels and opaque identities.
           </p>
         </div>
-        <button
+        <Button
+          variant="outline"
           className="secondary-action"
           type="button"
           disabled={!online || loading}
           onClick={() => void refresh()}
         >
           {loading ? "Refreshing repositories…" : "Refresh repositories"}
-        </button>
+        </Button>
       </div>
 
       {!online ? (

@@ -1,3 +1,4 @@
+import { Button } from "./components/ui/button.js";
 import { useEffect, useRef, useState } from "react";
 
 import type {
@@ -335,7 +336,8 @@ export function ReviewPreparationPanel({
       )}
 
       <div className="review-preparation-actions">
-        <button
+        <Button
+          variant="outline"
           className="secondary-action"
           type="button"
           disabled={disabled || pending !== null || accepted !== null}
@@ -346,9 +348,9 @@ export function ReviewPreparationPanel({
             : preparation === null
               ? "Prepare Review"
               : "Refresh preparation"}
-        </button>
+        </Button>
         {preparation === null ? null : (
-          <button
+          <Button
             type="button"
             disabled={
               disabled ||
@@ -360,7 +362,7 @@ export function ReviewPreparationPanel({
             onClick={() => void start()}
           >
             {pending === "start" ? "Starting…" : "Start Review"}
-          </button>
+          </Button>
         )}
       </div>
     </section>
