@@ -65,6 +65,17 @@ function plan() {
 }
 
 describe("approvable Feature plans", () => {
+  it("keeps older plans readable and rejects one imported issue assigned twice", () => {
+    const candidate = FeaturePlanDocumentSchema.parse(plan());
+    expect(candidate.workItems[0]?.importedIssueId).toBeNull();
+    const importedIssueId = "c528b5d5-56ef-4acb-b2ee-691e09d0443a";
+    const duplicate = FeaturePlanDocumentSchema.parse({
+      ...candidate,
+      workItems: candidate.workItems.map((workItem) => ({ ...workItem, importedIssueId })),
+    });
+    expect(validateFeaturePlan(duplicate).join(" ")).toContain("Imported issue is assigned twice");
+  });
+
   it("accepts an ordered plan with requirement links and concrete verification", () => {
     expect(validateFeaturePlan(FeaturePlanDocumentSchema.parse(plan()))).toEqual([]);
   });

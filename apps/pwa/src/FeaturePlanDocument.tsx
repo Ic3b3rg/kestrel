@@ -21,6 +21,7 @@ const emptyItem = (key: string, requirementKeys: string[]): WorkItem => ({
   title: "",
   description: "",
   requirementKeys,
+  importedIssueId: null,
   acceptance: [""],
   dependsOn: [],
   verification: [emptyVerification()],

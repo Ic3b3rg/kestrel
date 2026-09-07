@@ -29,6 +29,7 @@ const version: FeaturePlanVersion = {
         key: "W1",
         title: "Search reports",
         description: "Implement title search",
+        importedIssueId: null,
         requirementKeys: ["R1"],
         acceptance: ["A title query returns matching reports"],
         dependsOn: [],

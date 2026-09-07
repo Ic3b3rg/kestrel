@@ -19,6 +19,7 @@ const columnLabels: Record<FactoryBoard["columns"][number]["id"], string> = {
   completed: "Completed",
 };
 const blockingLabels = {
+  publication: "GitHub publication pending",
   dependency: "Waiting for dependencies",
   execution_unavailable: "Waiting for execution",
   cancelled: "Cancelled",

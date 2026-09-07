@@ -23,6 +23,7 @@ export const FactoryVerificationCommandSchema = z.strictObject({
 
 export const FactoryWorkItemDefinitionSchema = z.strictObject({
   key,
+  importedIssueId: z.uuid().nullable().default(null),
   title: text(160),
   description: text(8000),
   requirementKeys: z.array(key).min(1).max(40),
@@ -67,7 +68,13 @@ export function validateFeaturePlan(plan: FeaturePlanDocument): string[] {
     positions.set(item.key, index);
   });
   const covered = new Set<string>();
+  const imported = new Set<string>();
   plan.workItems.forEach((item, index) => {
+    if (item.importedIssueId !== null) {
+      if (imported.has(item.importedIssueId))
+        errors.push(`Imported issue is assigned twice: ${item.key}`);
+      imported.add(item.importedIssueId);
+    }
     for (const requirement of item.requirementKeys) {
       if (!requirements.has(requirement))
         errors.push(`Unknown requirement ${requirement} in ${item.key}`);
@@ -169,6 +176,10 @@ export const FactoryActivitySchema = z.strictObject({
     "plan_approved",
     "item_queued",
     "feature_cancelled",
+    "issues_imported",
+    "issue_published",
+    "publication_failed",
+    "publication_retried",
   ]),
   summary: text(2000),
   createdAt: z.iso.datetime(),
@@ -181,7 +192,7 @@ export const FactoryWorkItemSchema = FactoryWorkItemDefinitionSchema.extend({
   column: FactoryBoardColumnSchema,
   blocking: z
     .strictObject({
-      kind: z.enum(["dependency", "execution_unavailable", "cancelled"]),
+      kind: z.enum(["dependency", "execution_unavailable", "publication", "cancelled"]),
       explanation: text(2000),
     })
     .nullable(),

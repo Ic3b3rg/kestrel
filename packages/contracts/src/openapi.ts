@@ -1,4 +1,11 @@
 import { z, type ZodType } from "zod";
+import {
+  FactoryGitHubIssuesSchema,
+  FactoryIssueImportsSchema,
+  ImportFactoryIssuesCommandSchema,
+  FactoryIssuePublicationSchema,
+  RetryFactoryPublicationCommandSchema,
+} from "./factory-issues.js";
 
 import {
   FeaturePlanDocumentSchema,
@@ -23,6 +30,7 @@ import {
 
 import {
   ApiErrorSchema,
+  KestrelIdSchema,
   ChangeIntentVersionCreatedSchema,
   CodexReviewModelPreferenceSchema,
   CodexSubscriptionConnectionSchema,
@@ -146,6 +154,13 @@ export const reviewWorkflowAcceptedJsonSchema = asJsonSchema(ReviewWorkflowAccep
 export const startReviewWorkflowCommandJsonSchema = asJsonSchema(StartReviewWorkflowCommandSchema);
 
 const factoryComponents = {
+  FactoryGitHubIssues: asComponentSchema(asJsonSchema(FactoryGitHubIssuesSchema)),
+  FactoryIssueImports: asComponentSchema(asJsonSchema(FactoryIssueImportsSchema)),
+  ImportFactoryIssuesCommand: asComponentSchema(asJsonSchema(ImportFactoryIssuesCommandSchema)),
+  FactoryIssuePublication: asComponentSchema(asJsonSchema(FactoryIssuePublicationSchema)),
+  RetryFactoryPublicationCommand: asComponentSchema(
+    asJsonSchema(RetryFactoryPublicationCommandSchema),
+  ),
   FeaturePlanDocument: asComponentSchema(asJsonSchema(FeaturePlanDocumentSchema)),
   FeaturePlanVersion: asComponentSchema(asJsonSchema(FeaturePlanVersionSchema)),
   FeaturePlans: asComponentSchema(asJsonSchema(FeaturePlansSchema)),
@@ -901,6 +916,38 @@ export const openApiDocument = sortJson({
           },
         },
       },
+    },
+    "/api/v1/projects/{projectId}/github-issues": {
+      parameters: [
+        { in: "path", name: "projectId", required: true, schema: asJsonSchema(KestrelIdSchema) },
+        {
+          in: "query",
+          name: "page",
+          required: false,
+          schema: { type: "integer", minimum: 1, maximum: 5 },
+        },
+      ],
+      get: factoryRead("readFactoryGitHubIssues", "FactoryGitHubIssues"),
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/imports": {
+      parameters: factoryParameters(),
+      get: factoryRead("readFactoryIssueImports", "FactoryIssueImports"),
+      post: factoryTurnMutation(
+        "importFactoryIssues",
+        "ImportFactoryIssuesCommand",
+        "FactoryIssueImports",
+        201,
+      ),
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/publication": {
+      parameters: factoryParameters(),
+      get: factoryRead("readFactoryIssuePublication", "FactoryIssuePublication"),
+      post: factoryTurnMutation(
+        "retryFactoryPublication",
+        "RetryFactoryPublicationCommand",
+        "FactoryIssuePublication",
+        202,
+      ),
     },
     "/api/v1/projects/{projectId}/features/{featureId}/plans": {
       parameters: factoryParameters(),
