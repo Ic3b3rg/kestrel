@@ -368,6 +368,23 @@ idempotency. `npm run test:browser` drives local and provider Project flows, dia
 Operator security controls through Chromium, checks keyboard and offline behavior, audits
 accessibility with axe, and verifies mobile and desktop viewports.
 
+An opt-in host GitHub check requires an explicitly authorized repository, a known open PR, and its
+expected inbox group (`review_requested`, `authored`, or `other`). It verifies every group's
+availability, the expected PR's unique classification, and selection through the same host account:
+
+```sh
+KESTREL_LIVE_GH_REPOSITORY=OWNER/REPOSITORY \
+KESTREL_LIVE_GH_PR_NUMBER=123 \
+KESTREL_LIVE_GH_PR_GROUP=authored \
+npx vitest run apps/web/src/host-github.live.test.ts
+```
+
+For the browser check, start `npm run dev`, sign in, open that repository's Project, and select
+**Refresh pull requests**. Verify that all groups are available and the known PR appears in its
+expected group, then select it and compare its provider identity and exact commits with
+`gh pr view`. Selection must show provider context without acquiring source or starting Review
+automatically.
+
 An explicit opt-in conformance check probes the current host Codex session without starting a thread
 or review and without printing credential material:
 
