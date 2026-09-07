@@ -50,6 +50,24 @@ regola esplicita per i modelli legacy. I delta non autorizzano pubblicazione.
 [Schema notifiche](/tmp/kestrel-factory-codex-schema/v2/TurnCompletedNotification.json),
 [output strutturato](https://learn.chatgpt.com/docs/app-server#start-a-turn).
 
+### Riscontro live dello schema del piano, #212
+
+Il 2026-09-07 sono state eseguite inferenze su fixture temporanee con `0.153.4`
+e il modello di catalogo `gpt-6-astra`. Lo schema minimo `{ok:string}` completa
+in circa quattro secondi. Lo schema completo del piano con il pattern NUL
+`^[^\0]*$` riproduce invece l'interruzione dello stream (`responseStreamDisconnected`)
+e non completa entro il limite della prova. Cambiando soltanto le due occorrenze
+in `^[^\x00]*$`, lo stesso piano viene prodotto e validato in circa otto secondi.
+È un riscontro di compatibilità del decoder, non una rimozione del controllo:
+il parser continua a rifiutare byte NUL, schemi invalidi e grafi non validi.
+La verifica HTTP ripete chat, generazione, persistenza e approvazione;
+`factory-plan.test.ts` copre gli argomenti esatti e il rifiuto dei NUL.
+
+La documentazione descrive il sottoinsieme JSON Schema e il supporto di `pattern`,
+ma non promette compatibilità con ogni escape accettato da JavaScript. Il caso
+sopra è stato quindi verificato sul percorso App Server effettivamente usato.
+[Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs#supported-schemas).
+
 ## Override di processo e limite MCP
 
 Base supportata, **insufficiente da sola per eliminare MCP configurati**:

@@ -120,6 +120,19 @@ describe("approvable Feature plans", () => {
     );
   });
 
+  it("rejects NUL bytes in verification while preserving ordinary zeroes and exact arguments", () => {
+    const candidate = plan();
+    command(candidate).args = ["--test", "tests/export-0.mjs", "0", "literal\\x00"];
+    expect(FeaturePlanDocumentSchema.parse(candidate).workItems[0]?.verification[0]?.args).toEqual(
+      command(candidate).args,
+    );
+    command(candidate).args.push("hidden\0argument");
+    expect(FeaturePlanDocumentSchema.safeParse(candidate).success).toBe(false);
+    command(candidate).args.pop();
+    command(candidate).cwd = "src\0hidden";
+    expect(FeaturePlanDocumentSchema.safeParse(candidate).success).toBe(false);
+  });
+
   it("rejects empty acceptance and unsupported verification options", () => {
     const empty = plan();
     item(empty, 0).acceptance = [];

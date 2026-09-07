@@ -2048,7 +2048,7 @@
                             "args": {
                               "items": {
                                 "maxLength": 2048,
-                                "pattern": "^[^\\0]*$",
+                                "pattern": "^[^\\x00]*$",
                                 "type": "string"
                               },
                               "maxItems": 32,
@@ -2057,7 +2057,7 @@
                             "cwd": {
                               "maxLength": 256,
                               "minLength": 1,
-                              "pattern": "^[^\\0]*$",
+                              "pattern": "^[^\\x00]*$",
                               "type": "string"
                             },
                             "program": {
@@ -2747,7 +2747,7 @@
                       "args": {
                         "items": {
                           "maxLength": 2048,
-                          "pattern": "^[^\\0]*$",
+                          "pattern": "^[^\\x00]*$",
                           "type": "string"
                         },
                         "maxItems": 32,
@@ -2756,7 +2756,7 @@
                       "cwd": {
                         "maxLength": 256,
                         "minLength": 1,
-                        "pattern": "^[^\\0]*$",
+                        "pattern": "^[^\\x00]*$",
                         "type": "string"
                       },
                       "program": {
@@ -2970,7 +2970,7 @@
                           "args": {
                             "items": {
                               "maxLength": 2048,
-                              "pattern": "^[^\\0]*$",
+                              "pattern": "^[^\\x00]*$",
                               "type": "string"
                             },
                             "maxItems": 32,
@@ -2979,7 +2979,7 @@
                           "cwd": {
                             "maxLength": 256,
                             "minLength": 1,
-                            "pattern": "^[^\\0]*$",
+                            "pattern": "^[^\\x00]*$",
                             "type": "string"
                           },
                           "program": {
@@ -3349,7 +3349,7 @@
                                   "args": {
                                     "items": {
                                       "maxLength": 2048,
-                                      "pattern": "^[^\\0]*$",
+                                      "pattern": "^[^\\x00]*$",
                                       "type": "string"
                                     },
                                     "maxItems": 32,
@@ -3358,7 +3358,7 @@
                                   "cwd": {
                                     "maxLength": 256,
                                     "minLength": 1,
-                                    "pattern": "^[^\\0]*$",
+                                    "pattern": "^[^\\x00]*$",
                                     "type": "string"
                                   },
                                   "program": {
@@ -22695,7 +22695,7 @@
                           "args": {
                             "items": {
                               "maxLength": 2048,
-                              "pattern": "^[^\\0]*$",
+                              "pattern": "^[^\\x00]*$",
                               "type": "string"
                             },
                             "maxItems": 32,
@@ -22704,7 +22704,7 @@
                           "cwd": {
                             "maxLength": 256,
                             "minLength": 1,
-                            "pattern": "^[^\\0]*$",
+                            "pattern": "^[^\\x00]*$",
                             "type": "string"
                           },
                           "program": {

@@ -5,6 +5,9 @@ import { KestrelIdSchema } from "./v1.js";
 
 const text = (max: number) => z.string().trim().min(1).max(max);
 const key = text(48).regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/u);
+// Codex's structured decoder accepts the hex escape; the equivalent \0 breaks its stream.
+// eslint-disable-next-line no-control-regex -- NUL is deliberately forbidden in executable arguments.
+const withoutNul = /^[^\x00]*$/u;
 export const DEFAULT_FACTORY_LIMITS = {
   maxConcurrentProjects: 2,
   maxActiveFeaturesPerProject: 1,
@@ -13,15 +16,8 @@ export const DEFAULT_FACTORY_LIMITS = {
 
 export const FactoryVerificationCommandSchema = z.strictObject({
   program: text(128).regex(/^[a-zA-Z0-9][a-zA-Z0-9._+-]*$/u),
-  args: z
-    .array(
-      z
-        .string()
-        .max(2048)
-        .regex(/^[^\0]*$/u),
-    )
-    .max(32),
-  cwd: text(256).regex(/^[^\0]*$/u),
+  args: z.array(z.string().max(2048).regex(withoutNul)).max(32),
+  cwd: text(256).regex(withoutNul),
   timeoutSeconds: z.int().min(1).max(7200),
 });
 
