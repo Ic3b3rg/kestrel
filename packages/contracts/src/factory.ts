@@ -28,7 +28,7 @@ export const FeatureSchema = z.strictObject({
   id: KestrelIdSchema,
   projectId: KestrelIdSchema,
   title: z.string().min(1).max(160),
-  state: z.literal("planning"),
+  state: z.enum(["planning", "queued", "cancelled"]),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
