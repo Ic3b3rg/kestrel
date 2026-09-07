@@ -37,6 +37,7 @@ export const TEST_OPERATOR_CREDENTIALS: OperatorTestCredentials = {
 };
 
 export interface StartStackOptions {
+  githubFixture?: string;
   gitHubRemoteMappings?: Readonly<Record<string, string>>;
   repositoryRoot?: string;
   reviewRevisionMaxBytes?: number;
@@ -154,6 +155,12 @@ export async function startStack(options: StartStackOptions = {}): Promise<Runni
   const repositoryRoot = await realpath(configuredRepositoryRoot);
   const generatedGitToolsRoot = await mkdtemp(join(tmpdir(), "kestrel-black-box-git-tools-"));
   const gitRecorder = join(generatedGitToolsRoot, "git-recorder");
+  const githubFixture = join(generatedGitToolsRoot, "factory-gh");
+  await writeFile(
+    githubFixture,
+    options.githubFixture ?? "#!/usr/local/bin/node\nprocess.exit(127);\n",
+    { mode: 0o755 },
+  );
   const gitHubRemoteMappings = options.gitHubRemoteMappings ?? {};
   await writeFile(
     gitRecorder,
@@ -196,6 +203,9 @@ process.exit(result.status ?? 1);
     KESTREL_RUNTIME_DATABASE_PASSWORD: randomBytes(32).toString("base64url"),
     KESTREL_TEST_REPOSITORY_ROOT: repositoryRoot,
     KESTREL_TEST_GIT_RECORDER: gitRecorder,
+    KESTREL_TEST_GH_FIXTURE: githubFixture,
+    KESTREL_TEST_GH_EXECUTABLE:
+      options.githubFixture === undefined ? "gh" : "/fixtures/git-tools/factory-gh",
     KESTREL_TEST_REVIEW_MAX_BYTES: String(options.reviewRevisionMaxBytes ?? 10 * 1024 * 1024),
     KESTREL_TEST_REVIEW_MAX_OBJECTS: String(options.reviewRevisionMaxObjects ?? 10_000),
     SESSION_SIGNING_KEY: options.sessionSigningKey ?? randomBytes(32).toString("base64url"),

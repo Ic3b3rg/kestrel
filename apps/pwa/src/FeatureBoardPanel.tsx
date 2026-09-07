@@ -1,6 +1,12 @@
-import { useEffect, useState } from "react";
-import type { FactoryBoard, FactoryWorkItem } from "@kestrel/contracts";
-import { fetchFactoryBoard } from "./api.js";
+import { useEffect, useRef, useState } from "react";
+import type { FactoryBoard, FactoryWorkItem, FactoryIssuePublication } from "@kestrel/contracts";
+import {
+  ApiClientError,
+  fetchFactoryBoard,
+  fetchFactoryIssuePublication,
+  retryFactoryIssuePublication,
+} from "./api.js";
+import { FactoryProviderProblem } from "./FeatureGitHubIssuesPanel.js";
 import { planningRequestError } from "./FeatureNavigation.js";
 import { VerificationSummary } from "./FeaturePlanDocument.js";
 import { Button } from "./components/ui/button.js";
@@ -21,6 +27,7 @@ const columnLabels: Record<FactoryBoard["columns"][number]["id"], string> = {
 const blockingLabels = {
   dependency: "Waiting for dependencies",
   execution_unavailable: "Waiting for execution",
+  publication: "Waiting for GitHub publication",
   cancelled: "Cancelled",
 };
 
@@ -39,7 +46,14 @@ function Activity({ activity }: { activity: FactoryBoard["activity"] }) {
   );
 }
 
-function WorkItemCard({ item }: { item: FactoryWorkItem }) {
+function WorkItemCard({
+  item,
+  publication,
+}: {
+  item: FactoryWorkItem;
+  publication?: FactoryIssuePublication["items"][number];
+}) {
+  const issueUrl = publication?.issue?.url ?? item.providerUrl;
   return (
     <Dialog>
       <DialogTrigger asChild>
@@ -101,10 +115,10 @@ function WorkItemCard({ item }: { item: FactoryWorkItem }) {
         </section>
         <section>
           <h3>GitHub issue</h3>
-          {item.providerUrl === null ? (
-            <p>No GitHub issue has been created.</p>
+          {issueUrl === null ? (
+            <p>No confirmed GitHub issue link yet.</p>
           ) : (
-            <a href={item.providerUrl} target="_blank" rel="noreferrer">
+            <a href={issueUrl} target="_blank" rel="noreferrer">
               Open linked issue
             </a>
           )}
@@ -118,38 +132,152 @@ function WorkItemCard({ item }: { item: FactoryWorkItem }) {
   );
 }
 
+const publicationLabels: Record<FactoryIssuePublication["state"], string> = {
+  not_approved: "GitHub publication starts after approval",
+  pending: "Publishing GitHub issues",
+  publishing: "Publishing GitHub issues",
+  blocked: "GitHub publication needs attention",
+  published: "GitHub issues published",
+  cancelled: "GitHub publication cancelled",
+};
+const itemPublicationLabels: Record<FactoryIssuePublication["items"][number]["state"], string> = {
+  pending: "Waiting to publish",
+  publishing: "Publishing",
+  reconciling: "Checking an existing write",
+  published: "Published",
+  blocked: "Blocked",
+};
+
+function PublicationSummary({
+  publication,
+  projectId,
+  retryDisabled,
+  onRetry,
+}: {
+  publication: FactoryIssuePublication;
+  projectId: string;
+  retryDisabled: boolean;
+  onRetry: () => void;
+}) {
+  const completed = publication.items.filter((item) => item.state === "published").length;
+  return (
+    <section className="github-publication" aria-label="GitHub publication">
+      <h3>{publicationLabels[publication.state]}</h3>
+      {publication.state === "not_approved" ? (
+        <p>New issues and imported issue links follow the approved plan.</p>
+      ) : (
+        <>
+          <p role="status">
+            {completed} of {publication.items.length} Work Items published
+          </p>
+          {publication.state === "pending" || publication.state === "publishing" ? (
+            <p>
+              Publication continues on the workstation if you leave this page. Required issue links
+              and dependencies must finish before execution.
+            </p>
+          ) : null}
+          {publication.failure === null ? null : (
+            <FactoryProviderProblem failure={publication.failure} projectId={projectId} />
+          )}
+          <ol className="github-publication-items">
+            {publication.items.map((item) => (
+              <li key={item.workItemId}>
+                <div>
+                  <strong>{item.key}</strong> · {itemPublicationLabels[item.state]}
+                  {item.issue === null ? null : (
+                    <>
+                      {" "}
+                      ·{" "}
+                      <a href={item.issue.url} target="_blank" rel="noreferrer">
+                        #{item.issue.number}
+                      </a>
+                    </>
+                  )}
+                </div>
+                {item.dependencyMode === null ? null : (
+                  <p>
+                    Dependencies:{" "}
+                    {item.dependencyMode === "native"
+                      ? "GitHub links"
+                      : "text references in GitHub"}
+                  </p>
+                )}
+                {item.failure === null || item.failure === publication.failure ? null : (
+                  <FactoryProviderProblem failure={item.failure} projectId={projectId} />
+                )}
+              </li>
+            ))}
+          </ol>
+          {publication.state === "blocked" ? (
+            <Button variant="outline" disabled={retryDisabled} onClick={onRetry}>
+              {publication.failure === "uncertain_write" ||
+              publication.failure === "reconciliation_limit"
+                ? "Reconcile publication"
+                : "Retry publication"}
+            </Button>
+          ) : null}
+        </>
+      )}
+    </section>
+  );
+}
+
+export interface FeatureBoardPanelProps {
+  projectId: string;
+  featureId: string;
+  online: boolean;
+  onAuthenticationError: (error: unknown) => boolean;
+  onViewPlan: () => void;
+  loadBoard?: typeof fetchFactoryBoard;
+  loadPublication?: typeof fetchFactoryIssuePublication;
+  retryPublication?: typeof retryFactoryIssuePublication;
+}
+
 export function FeatureBoardPanel({
   projectId,
   featureId,
   online,
   onAuthenticationError,
   onViewPlan,
-}: {
-  projectId: string;
-  featureId: string;
-  online: boolean;
-  onAuthenticationError: (error: unknown) => boolean;
-  onViewPlan: () => void;
-}) {
+  loadBoard = fetchFactoryBoard,
+  loadPublication = fetchFactoryIssuePublication,
+  retryPublication = retryFactoryIssuePublication,
+}: FeatureBoardPanelProps) {
   const [board, setBoard] = useState<FactoryBoard | null>(null);
+  const [publication, setPublication] = useState<FactoryIssuePublication | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [commandError, setCommandError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [uncertain, setUncertain] = useState(false);
   const [generation, setGeneration] = useState(0);
+  const alive = useRef(true);
+  const submitting = useRef(false);
+  const attempt = useRef<{ requestId: string } | null>(null);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
   useEffect(() => {
     if (!online) {
-      setBoard(null);
       setLoading(false);
       return;
     }
     const controller = new AbortController();
     setLoading(true);
     setError(null);
-    void fetchFactoryBoard(projectId, featureId, controller.signal)
-      .then((result) => {
+    void Promise.all([
+      loadBoard(projectId, featureId, controller.signal),
+      loadPublication(projectId, featureId, controller.signal),
+    ])
+      .then(([result, publication]) => {
         if (controller.signal.aborted) return;
-        if (result.feature.id !== featureId)
+        if (result.feature.id !== featureId || publication.featureId !== featureId)
           throw new Error("The response contains a different feature");
         setBoard(result);
+        setPublication(publication);
       })
       .catch((failure: unknown) => {
         if (!controller.signal.aborted && !onAuthenticationError(failure))
@@ -161,7 +289,51 @@ export function FeatureBoardPanel({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [projectId, featureId, online, generation, onAuthenticationError]);
+  }, [projectId, featureId, online, generation, onAuthenticationError, loadBoard, loadPublication]);
+  useEffect(() => {
+    if (
+      !online ||
+      loading ||
+      error !== null ||
+      (publication?.state !== "pending" && publication?.state !== "publishing")
+    )
+      return;
+    const timer = window.setTimeout(() => setGeneration((value) => value + 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [online, loading, error, publication, generation]);
+  const retry = async () => {
+    if (!online || submitting.current) return;
+    attempt.current ??= { requestId: crypto.randomUUID() };
+    submitting.current = true;
+    setBusy(true);
+    setCommandError(null);
+    try {
+      const result = await retryPublication(projectId, featureId, attempt.current);
+      if (!alive.current) return;
+      if (result.featureId !== featureId) throw new Error("Unexpected publication");
+      setPublication(result);
+      attempt.current = null;
+      setUncertain(false);
+      setGeneration((value) => value + 1);
+    } catch (failure) {
+      if (alive.current && !onAuthenticationError(failure)) {
+        const rejected =
+          failure instanceof ApiClientError && failure.status >= 400 && failure.status < 500;
+        if (rejected) attempt.current = null;
+        setUncertain(!rejected);
+        setCommandError(
+          planningRequestError(
+            failure,
+            "Kestrel could not confirm the retry. Retry the same request safely.",
+          ),
+        );
+        setGeneration((value) => value + 1);
+      }
+    } finally {
+      submitting.current = false;
+      if (alive.current) setBusy(false);
+    }
+  };
   return (
     <section className="feature-board-panel" aria-label="Feature board">
       <header className="plan-panel-header">
@@ -192,10 +364,28 @@ export function FeatureBoardPanel({
         </p>
       )}
       {!online ? (
-        <p>Reconnect to read the saved board.</p>
+        <p>Reconnect to refresh the board. Previously confirmed issue links are retained.</p>
       ) : board === null && loading ? (
         <p role="status">Loading the board…</p>
       ) : null}
+      {commandError === null ? null : (
+        <div role="alert" className="planning-command-error">
+          <p>{commandError}</p>
+          {uncertain ? (
+            <Button variant="outline" disabled={!online || busy} onClick={() => void retry()}>
+              Retry request
+            </Button>
+          ) : null}
+        </div>
+      )}
+      {publication === null ? null : (
+        <PublicationSummary
+          publication={publication}
+          projectId={projectId}
+          retryDisabled={!online || busy || uncertain || loading}
+          onRetry={() => void retry()}
+        />
+      )}
       {board === null ? null : (
         <>
           <div className="planning-notice">
@@ -226,11 +416,21 @@ export function FeatureBoardPanel({
                   <p className="factory-column-empty">No Work Items</p>
                 ) : (
                   <ol>
-                    {column.items.map((item) => (
-                      <li key={item.id}>
-                        <WorkItemCard item={item} />
-                      </li>
-                    ))}
+                    {column.items.map((item) => {
+                      const itemPublication = publication?.items.find(
+                        (entry) => entry.workItemId === item.id,
+                      );
+                      return (
+                        <li key={item.id}>
+                          <WorkItemCard
+                            item={item}
+                            {...(itemPublication === undefined
+                              ? {}
+                              : { publication: itemPublication })}
+                          />
+                        </li>
+                      );
+                    })}
                   </ol>
                 )}
               </section>

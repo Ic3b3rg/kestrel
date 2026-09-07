@@ -12,10 +12,12 @@ import {
   type PlanningFailure,
   type SendPlanningMessageCommand,
   type FeaturePlanDocument,
+  type ImportedFactoryIssue,
 } from "@kestrel/contracts";
 import type { PoolClient } from "pg";
 
 import type { DatabasePool } from "./pool.js";
+import { factoryImportsFor } from "./factory-issue-imports.js";
 import type { DiagnosticJobSender } from "./diagnostics.js";
 import { FACTORY_PLANNING_QUEUE, pgBossDatabase } from "./pg-boss.js";
 
@@ -58,6 +60,7 @@ export interface ClaimedPlanningTurn {
   purpose: "conversation" | "plan";
   expectedPlanVersion: number | null;
   previousPlan: FeaturePlanDocument | null;
+  imports?: ImportedFactoryIssue[];
   messages: FeatureChat["messages"];
   source: { repositoryId: string; identity: string } | null;
 }
@@ -134,6 +137,7 @@ export async function claimPlanningTurn(
         ? null
         : FeaturePlanDocumentSchema.parse(previous.rows[0].document),
     messages: chat.messages,
+    imports: await factoryImportsFor(pool, featureId),
     source:
       attached === undefined
         ? null

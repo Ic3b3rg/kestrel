@@ -15,6 +15,7 @@ import { Button } from "./components/ui/button.js";
 import { DocumentInspector, failures, pendingTurn } from "./PlanningDetails.js";
 import { FeaturePlanPanel } from "./FeaturePlanPanel.js";
 import { FeatureBoardPanel } from "./FeatureBoardPanel.js";
+import { FeatureGitHubIssuesPanel } from "./FeatureGitHubIssuesPanel.js";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs.js";
 import { Label } from "./components/ui/label.js";
 import { Textarea } from "./components/ui/textarea.js";
@@ -63,6 +64,7 @@ export function FeatureChatPanel({
   const [reading, setReading] = useState(true);
   const [readError, setReadError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [importsRevision, setImportsRevision] = useState(0);
   const [commandPending, setCommandPending] = useState(false);
   const [commandError, setCommandError] = useState<string | null>(null);
   const [attemptKind, setAttemptKind] = useState<Attempt["kind"] | null>(null);
@@ -225,6 +227,16 @@ export function FeatureChatPanel({
         </div>
         <div className="feature-planning-actions">
           <DocumentInspector context={chat.context} />
+          <FeatureGitHubIssuesPanel
+            projectId={projectId}
+            featureId={featureId}
+            online={online}
+            onAuthenticationError={onAuthenticationError}
+            onChanged={() => {
+              setImportsRevision((value) => value + 1);
+              void refresh();
+            }}
+          />
           <Button
             variant="ghost"
             size="icon"
@@ -454,6 +466,7 @@ export function FeatureChatPanel({
             online={online}
             visible={view === "plan"}
             conversationPending={activeTurn !== undefined}
+            importsRevision={importsRevision}
             onAuthenticationError={onAuthenticationError}
             onChanged={() => void refresh()}
             onApproved={() => selectView("board")}

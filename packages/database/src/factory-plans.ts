@@ -13,10 +13,13 @@ import {
   type SaveFeaturePlanCommand,
   type FactoryBoard,
   type FactoryWorkItem,
+  type ImportedFactoryIssue,
 } from "@kestrel/contracts";
 import type { PoolClient } from "pg";
 
 import type { DatabasePool } from "./pool.js";
+import { assertFactoryPlanImports } from "./factory-issue-imports.js";
+import { initializeFactoryPublication } from "./factory-publication.js";
 import {
   FactoryError,
   mapFactoryFeature,
@@ -31,6 +34,7 @@ export type FactoryPlanArtifactRenderer = (input: {
   version: number;
   plan: FeaturePlanDocument;
   context: PlanningContext | null;
+  imports?: ImportedFactoryIssue[];
 }) => { planMarkdown: string; specMarkdown: string };
 
 interface PlanRow {
@@ -60,8 +64,12 @@ async function boardFor(client: PoolClient, feature: FeatureRow): Promise<Factor
     key: string;
     position: number;
     board_column: FactoryWorkItem["column"];
+    provider_issue: { url: string } | null;
+    published_at: Date | null;
   }>(
-    "SELECT * FROM factory_work_items WHERE feature_id = $1 AND plan_version = $2 ORDER BY position",
+    `SELECT item.*, publication.issue AS provider_issue, publication.published_at
+     FROM factory_work_items item LEFT JOIN factory_issue_publications publication ON publication.work_item_id = item.id
+     WHERE item.feature_id = $1 AND item.plan_version = $2 ORDER BY item.position`,
     [feature.id, feature.approved_plan_version],
   );
   const activity = await client.query<{
@@ -116,11 +124,17 @@ async function boardFor(client: PoolClient, feature: FeatureRow): Promise<Factor
                   2000,
                 ),
               }
-            : {
-                kind: "execution_unavailable",
-                explanation: "The plan is approved. Automatic execution is not available yet.",
-              },
-      providerUrl: null,
+            : row.published_at === null
+              ? {
+                  kind: "publication",
+                  explanation:
+                    "GitHub issue publication must be confirmed before this Work Item can run.",
+                }
+              : {
+                  kind: "execution_unavailable",
+                  explanation: "The plan is approved. Automatic execution is not available yet.",
+                },
+      providerUrl: row.provider_issue?.url ?? null,
       activity: events
         .filter(({ workItemId }) => workItemId === row.id)
         .slice(-100)
@@ -187,6 +201,13 @@ export async function approveFactoryPlan(
   actorId: string,
   version: number,
   requestId: string,
+  featureUrl?: string,
+  validatePublication?: (input: {
+    title: string;
+    version: number;
+    plan: FeaturePlanDocument;
+    featureUrl?: string;
+  }) => void,
 ): Promise<FactoryBoard> {
   await reconcilePlanningTurns(pool);
   return withFactoryFeature(pool, projectId, featureId, async (client, feature) => {
@@ -212,6 +233,13 @@ export async function approveFactoryPlan(
     );
     const errors = validateFeaturePlan(document);
     if (errors.length > 0) throw new FactoryError("invalid_plan", errors.slice(0, 8).join("; "));
+    await assertFactoryPlanImports(client, featureId, document, true);
+    validatePublication?.({
+      title: feature.title,
+      version,
+      plan: document,
+      ...(featureUrl === undefined ? {} : { featureUrl }),
+    });
     await client.query(
       "INSERT INTO factory_plan_approvals (feature_id, plan_version, request_id, operator_id) VALUES ($1,$2,$3,$4)",
       [featureId, version, requestId, actorId],
@@ -232,6 +260,7 @@ export async function approveFactoryPlan(
         [featureId, id, `${item.key} queued from approved plan version ${String(version)}`],
       );
     }
+    await initializeFactoryPublication(client, featureId, document, featureUrl);
     const updated = await client.query<FeatureRow>(
       "UPDATE factory_features SET state = 'queued', approved_plan_version = $2, runtime_thread_id = NULL, updated_at = clock_timestamp() WHERE id = $1 RETURNING *",
       [featureId, version],
@@ -394,6 +423,7 @@ export function saveFactoryPlan(
     );
     if (pending.rowCount !== 0) throw new FactoryError("conflict");
     if ((feature.latest_plan_version ?? 0) >= 200) throw new FactoryError("plan_limit");
+    const imports = await assertFactoryPlanImports(client, featureId, document, false);
     const previous =
       feature.latest_plan_version === null
         ? null
@@ -402,7 +432,7 @@ export function saveFactoryPlan(
       previous === null ? feature.planning_context : previous.source_context,
     );
     const version = (feature.latest_plan_version ?? 0) + 1;
-    const artifacts = render({ title: feature.title, version, plan: document, context });
+    const artifacts = render({ title: feature.title, version, plan: document, context, imports });
     const result = await client.query<PlanRow>(
       `INSERT INTO factory_plan_versions (feature_id, version, based_on_version, request_id, document, source_context, plan_markdown, spec_markdown, author, created_by)
        VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7,$8,'operator',$9) RETURNING *`,
@@ -466,8 +496,9 @@ export async function completeGeneratedFactoryPlan(
     )
       throw new FactoryError("conflict");
     if ((feature.latest_plan_version ?? 0) >= 200) throw new FactoryError("plan_limit");
+    const imports = await assertFactoryPlanImports(client, turn.featureId, document, false);
     const version = (feature.latest_plan_version ?? 0) + 1;
-    const artifacts = render({ title: feature.title, version, plan: document, context });
+    const artifacts = render({ title: feature.title, version, plan: document, context, imports });
     await client.query(
       `INSERT INTO factory_plan_versions (feature_id, version, based_on_version, request_id, document, source_context, plan_markdown, spec_markdown, author, source_turn_id)
        VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7,$8,'assistant',$9)`,

@@ -3,6 +3,7 @@ import {
   validateFeaturePlan,
   type FeaturePlanDocument,
   type PlanningContext,
+  type ImportedFactoryIssue,
 } from "@kestrel/contracts";
 
 import { CodexPlanningError } from "./codex-planning-runtime.js";
@@ -53,11 +54,13 @@ export function renderFeaturePlanArtifacts({
   version,
   plan,
   context,
+  imports = [],
 }: {
   title: string;
   version: number;
   plan: FeaturePlanDocument;
   context: PlanningContext | null;
+  imports?: ImportedFactoryIssue[];
 }): { planMarkdown: string; specMarkdown: string } {
   const intent = [
     `Version: ${String(version)}`,
@@ -78,11 +81,22 @@ export function renderFeaturePlanArtifacts({
       `Execution attempt timeout: ${String(plan.limits.attemptTimeoutSeconds)} seconds`,
     ]),
     sourceContextMarkdown(context),
+    ...(imports.length === 0
+      ? []
+      : [
+          "## Imported issue snapshots",
+          "These immutable snapshots are planning context, not execution authority. The full original text is retained in Kestrel.",
+          ...imports.map(
+            (imported) =>
+              `- ${imported.issue.url} — ${imported.issue.title}\n  Snapshot: ${imported.id}; captured ${imported.importedAt}`,
+          ),
+        ]),
   ];
   const workItems = plan.workItems.map((item, index) =>
     [
       `### ${String(index + 1)}. ${item.key} — ${item.title}`,
       item.description,
+      `GitHub issue: ${item.importedIssueId === null ? "Create a new issue after approval" : (imports.find(({ id }) => id === item.importedIssueId)?.issue.url ?? `Imported snapshot ${item.importedIssueId}`)}`,
       `Requirements: ${item.requirementKeys.join(", ")}`,
       `Dependencies: ${item.dependsOn.length > 0 ? item.dependsOn.join(", ") : "None"}`,
       "#### Acceptance",

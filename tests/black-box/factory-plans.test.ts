@@ -28,6 +28,7 @@ const plan: FeaturePlanDocument = {
       key: "save",
       title: "Save a named search",
       description: "Persist the current filters under a name.",
+      importedIssueId: null,
       requirementKeys: ["saved-search"],
       acceptance: ["Reload retains the name and filters"],
       dependsOn: [],
@@ -39,6 +40,7 @@ const plan: FeaturePlanDocument = {
       key: "restore",
       title: "Restore a saved search",
       description: "Choose a saved search to restore filters.",
+      importedIssueId: null,
       requirementKeys: ["saved-search"],
       acceptance: ["Restored filters match the saved filters"],
       dependsOn: ["save"],
@@ -170,7 +172,7 @@ describe("versioned Factory plans", () => {
       { key: "save", order: 1, dependsOn: [] },
       { key: "restore", order: 2, dependsOn: ["save"] },
     ]);
-    expect(board.columns[0]?.items[0]?.blocking?.kind).toBe("execution_unavailable");
+    expect(board.columns[0]?.items[0]?.blocking?.kind).toBe("publication");
     expect(board.columns[0]?.items[1]?.blocking?.kind).toBe("dependency");
     expect(board.columns[0]?.items[0]?.activity).toHaveLength(1);
     const edit = await post(`${path}/plans`, { requestId: randomUUID(), expectedVersion: 2, plan });
@@ -196,7 +198,23 @@ describe("versioned Factory plans", () => {
       ),
     ).rejects.toThrow();
     await stack.restart("web");
-    expect(await (await stack.fetchApi(`${path}/board`)).json()).toEqual(board);
+    const restarted = FactoryBoardSchema.parse(
+      await (await stack.fetchApi(`${path}/board`)).json(),
+    );
+    // The approved cards survive restart; publication can append activity while we reconnect.
+    const containingEvents = (events: typeof board.activity): unknown =>
+      expect.arrayContaining(events);
+    expect(restarted).toEqual({
+      ...board,
+      activity: containingEvents(board.activity),
+      columns: board.columns.map((column) => ({
+        ...column,
+        items: column.items.map((item) => ({
+          ...item,
+          activity: containingEvents(item.activity),
+        })),
+      })),
+    });
     const saved = FeaturePlansSchema.parse(await (await stack.fetchApi(`${path}/plans`)).json());
     expect(saved.approval?.version).toBe(2);
   });

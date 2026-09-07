@@ -7,6 +7,8 @@ import type { DatabasePool, DiagnosticJobSender } from "@kestrel/database";
 
 import { registerDiagnosticRoutes } from "./routes/diagnostics.js";
 import { registerFactoryPlanningRoutes } from "./routes/factory-planning.js";
+import { registerFactoryIssueRoutes } from "./routes/factory-issues.js";
+import type { FactoryGitHubAdapter } from "./factory-github.js";
 import {
   createCodexAppServerAgentRuntime,
   type CodexAgentRuntimePort,
@@ -72,6 +74,7 @@ export interface BuildAppOptions {
   projectService?: ProjectService;
   hostGitHubProjectService?: HostGitHubProjectService;
   hostGitHubConnectionService?: HostGitHubConnectionService;
+  factoryGitHub?: FactoryGitHubAdapter;
   codexAgentRuntime?: CodexAgentRuntimePort;
   codexReviewModelPreferenceService?: CodexReviewModelPreferenceService;
   reviewRevisionService?: ReviewRevisionService;
@@ -166,6 +169,7 @@ export async function buildApp({
   }),
   hostGitHubProjectService,
   hostGitHubConnectionService = createHostGitHubConnectionService(pool),
+  factoryGitHub,
   codexAgentRuntime = createCodexAppServerAgentRuntime(),
   codexReviewModelPreferenceService = createDatabaseCodexReviewModelPreferenceService(
     pool,
@@ -227,6 +231,7 @@ export async function buildApp({
 
   registerDiagnosticRoutes(app, pool, boss, eventRetentionLimit);
   registerFactoryPlanningRoutes(app, pool, boss);
+  registerFactoryIssueRoutes(app, pool, factoryGitHub);
   registerEventRoutes(app, eventPool);
   registerHealthRoutes(app, pool);
   registerInstallationRoutes(app, pool);
