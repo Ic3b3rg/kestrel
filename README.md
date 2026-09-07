@@ -7,6 +7,10 @@ github.com pull request may add optional Provider Observation metadata without G
 PostgreSQL is the durable application authority; verified source objects live in a separate
 Kestrel-owned artifact root.
 
+Feature chats add persistent, source-grounded planning inside each Project. Factory 0.1 follows the
+[approved feature workflow](./docs/factory-v01/spec.md); its delivery is tracked in
+[GitHub issue #209](https://github.com/Ic3b3rg/kestrel/issues/209).
+
 Review First V1 is [local-first](./docs/adr/0002-make-review-first-v1-local-first.md): every review
 must be materialized from exact commits available through an authorized local Git repository. Public
 GitHub and the Operator's existing host `gh` session may provide optional pull-request discovery,
@@ -70,8 +74,8 @@ trusted-host inventory. Kestrel creates or reuses its durable Project and select
 selected Project opens to a compact, full-width PR table with **All**, **Review requested**, and
 **Authored** filters. Authored includes PRs that also request review. Counts describe the bounded
 fetched list; a partial or unavailable group is never presented as an empty result. The header shows
-the selected repository and actual inbox state. On narrow screens, **Projects & Settings** opens the
-navigation disclosure; desktop navigation spans the viewport.
+the selected repository and actual inbox state. On narrow screens, **Open navigation** opens the
+Project drawer; desktop navigation remains in the sidebar.
 
 **Project menu → Compare committed refs** retains a local change from the selected repository.
 **Open PR by URL** preserves the public-only observation path and rejects URLs for another
@@ -101,6 +105,27 @@ then shows the ChatGPT account, plan, available models, and typed usage availabi
 again** reruns either probe; action-required states provide the exact trusted-host command or access
 step to correct them. Each CLI keeps custody of its credentials, and Kestrel does not read, return,
 or persist tokens or auth-config material.
+
+### Plan a feature in Kestrel
+
+Open an authorized Project and create a named feature from its chat navigation. Each conversation
+has a stable `/projects/:projectId/features/:featureId` address. Kestrel saves the user message and
+pending turn before replying to the browser, then processes the turn through the host Codex App
+Server. You can close the page while the local Installation keeps running and reopen the saved chat
+later. Stopping the local process or sleeping the computer also stops progress.
+
+Planning requires the existing ChatGPT-authenticated Codex connection. It uses the saved Codex
+model, or the current catalog default when none has been selected; it does not use a Direct API key.
+Committed Project Markdown, including available repository instructions, is inspectable with its
+source commit. Dirty files and untracked files are not used. Missing or omitted documents are
+disclosed. The planning runtime has read-only authority and does not create issues or implement
+changes.
+
+Pending turns can be stopped. An unavailable, interrupted, or failed turn remains visible and can be
+retried explicitly without duplicating its user message. A process interruption may take up to four
+minutes to become an interrupted state; uncertain work is never silently replayed. A chat is bounded
+to 200 messages and 400 attempts, and a Project to 200 features. A capacity error leaves the
+existing conversation intact.
 
 If the password or every signed-in device is lost, recover the sole Operator from the trusted host:
 
@@ -411,6 +436,15 @@ or review and without printing credential material:
 KESTREL_LIVE_CODEX=1 npx vitest run apps/web/src/codex-app-server.live.test.ts
 ```
 
+The planning conformance checks make real model requests using the existing host subscription. The
+first exercises the bounded transport; the second logs in through HTTP, creates a disposable
+Project, and verifies two persistent turns through PostgreSQL and pg-boss. The HTTP check requires
+the cached `postgres:18.6-alpine` Docker image and removes its own test resources afterward.
+
+```sh
+KESTREL_LIVE_CODEX=1 npx vitest run apps/web/src/codex-planning-runtime.live.test.ts apps/web/src/factory-planning.live.test.ts
+```
+
 The authored Zod schemas live in `packages/contracts/src`. Regenerate committed JSON Schema and
 OpenAPI artifacts after an intentional contract change:
 
@@ -423,9 +457,9 @@ npm run contracts:check
 
 ## Architecture boundaries
 
-- `apps/web` owns the Fastify HTTP/SSE boundary, the ephemeral Codex App Server readiness adapter,
-  serves the compiled PWA, and consumes the low-priority Change Overview rendering queue because
-  only that process holds model credentials.
+- `apps/web` owns the Fastify HTTP/SSE boundary, the bounded Codex readiness and planning adapters,
+  serves the compiled PWA, and consumes the Factory planning and Change Overview rendering queues.
+  Host CLI credentials remain in their existing custody.
 - `apps/worker` consumes durable acquisition and diagnostic pg-boss jobs.
 - `apps/pwa` owns the browser experience and retains no product data in browser storage.
 - `packages/contracts` owns versioned Zod, JSON Schema, and OpenAPI contracts.
