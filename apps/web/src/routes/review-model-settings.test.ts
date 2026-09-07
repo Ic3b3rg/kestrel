@@ -70,10 +70,9 @@ describe("Codex review model preference service", () => {
       .fn()
       .mockResolvedValueOnce(readyConnection)
       .mockResolvedValueOnce({ ...readyConnection, models: [] });
-    const service = createDatabaseCodexReviewModelPreferenceService(
-      { query } as never,
-      { readConnection },
-    );
+    const service = createDatabaseCodexReviewModelPreferenceService({ query } as never, {
+      readConnection,
+    });
 
     await expect(service.select({ modelId: "gpt-5.6-sol" })).resolves.toEqual(preference);
     await expect(service.select({ modelId: "gpt-removed" })).rejects.toMatchObject({
@@ -137,10 +136,7 @@ describe("Codex review model Settings route", () => {
     expect(CodexReviewModelPreferenceSchema.parse(current.json())).toEqual(preference);
     expect(CodexReviewModelPreferenceSchema.parse(selected.json())).toEqual(preference);
     expect(read).toHaveBeenCalledOnce();
-    expect(select).toHaveBeenCalledWith(
-      { modelId: "gpt-5.6-sol" },
-      expect.any(AbortSignal),
-    );
+    expect(select).toHaveBeenCalledWith({ modelId: "gpt-5.6-sol" }, expect.any(AbortSignal));
   });
 
   it("rejects invalid input and a model absent from the fresh catalog", async () => {

@@ -88,8 +88,8 @@ describe("Codex Review model Settings", () => {
     await act(async () => Promise.resolve());
 
     const selector = container.querySelector<HTMLSelectElement>("#codex-review-model");
-    expect(selector).not.toBeNull();
-    expect([...selector!.options].map(({ value }) => value)).toEqual([
+    if (selector === null) throw new Error("Review model selector was not rendered");
+    expect([...selector.options].map(({ value }) => value)).toEqual([
       "",
       "gpt-5.6-sol",
       "gpt-5.6-terra",
@@ -97,8 +97,8 @@ describe("Codex Review model Settings", () => {
     expect(container.textContent).toContain("Choose a model");
 
     await act(async () => {
-      selector!.value = "gpt-5.6-terra";
-      selector!.dispatchEvent(new Event("change", { bubbles: true }));
+      selector.value = "gpt-5.6-terra";
+      selector.dispatchEvent(new Event("change", { bubbles: true }));
       findButton(container, "Save default").click();
       await Promise.resolve();
     });

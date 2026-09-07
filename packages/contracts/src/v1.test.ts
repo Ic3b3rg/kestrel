@@ -465,9 +465,9 @@ describe("V1 public contracts", () => {
     } as const;
 
     expect(CodexReviewModelPreferenceSchema.parse(preference)).toEqual(preference);
-    expect(SelectCodexReviewModelCommandSchema.parse({ modelId: preference.selectedModelId })).toEqual(
-      { modelId: preference.selectedModelId },
-    );
+    expect(
+      SelectCodexReviewModelCommandSchema.parse({ modelId: preference.selectedModelId }),
+    ).toEqual({ modelId: preference.selectedModelId });
     expect(() =>
       SelectCodexReviewModelCommandSchema.parse({ modelId: "gpt-safe; rm -rf /" }),
     ).toThrow();

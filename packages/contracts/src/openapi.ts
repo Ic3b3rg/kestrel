@@ -91,9 +91,7 @@ export const credentialChangeCommandJsonSchema = asJsonSchema(CredentialChangeCo
 export const codexSubscriptionConnectionJsonSchema = asJsonSchema(
   CodexSubscriptionConnectionSchema,
 );
-export const codexReviewModelPreferenceJsonSchema = asJsonSchema(
-  CodexReviewModelPreferenceSchema,
-);
+export const codexReviewModelPreferenceJsonSchema = asJsonSchema(CodexReviewModelPreferenceSchema);
 export const selectCodexReviewModelCommandJsonSchema = asJsonSchema(
   SelectCodexReviewModelCommandSchema,
 );
