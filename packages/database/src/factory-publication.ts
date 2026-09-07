@@ -243,6 +243,32 @@ export async function reconcileFactoryPublications(pool: DatabasePool, boss: Dia
           (publication.retry_after !== null && publication.retry_after.getTime() > Date.now())
         )
           return;
+        const ended = await client.query(
+          `SELECT id FROM pgboss.job WHERE name = $1 AND id = $2
+          AND state IN ('failed', 'cancelled', 'completed')`,
+          [FACTORY_PUBLICATION_QUEUE, publication.job_id],
+        );
+        if (ended.rows.length !== 0) {
+          await client.query(
+            `UPDATE factory_feature_publications SET state = 'blocked', failure = 'unavailable',
+            updated_at = clock_timestamp() WHERE feature_id = $1`,
+            [feature.id],
+          );
+          const item = (await publicationItems(client, feature.id)).find(
+            (candidate) => candidate.published_at === null,
+          );
+          if (item !== undefined)
+            await client.query(
+              "UPDATE factory_issue_publications SET failure = 'unavailable' WHERE work_item_id = $1",
+              [item.work_item_id],
+            );
+          await client.query(
+            `INSERT INTO factory_activity (feature_id, kind, summary)
+            VALUES ($1,'publication_failed','GitHub publication delivery interrupted; retry resumes the retained operation')`,
+            [feature.id],
+          );
+          return;
+        }
         await boss.send(
           FACTORY_PUBLICATION_QUEUE,
           { featureId: feature.id },

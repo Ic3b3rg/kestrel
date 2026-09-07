@@ -282,4 +282,36 @@ describe("Factory GitHub issue authority", () => {
     expect(final.issues).toEqual(before.issues);
     expect(final.comments).toEqual(before.comments);
   }, 45_000);
+
+  it("exposes an interrupted delivery before claim and safely retries it after restart", async () => {
+    const path = await featurePath("Recover a failed queue delivery");
+    const featureId = path.split("/").at(-1);
+    if (featureId === undefined) throw new Error("Feature fixture missing");
+    await stack.executeSql(`
+      CREATE FUNCTION fail_factory_claim() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.feature_id = '${featureId}'::uuid AND NEW.state = 'running' THEN
+          RAISE EXCEPTION 'Controlled delivery failure before any provider operation';
+        END IF;
+        RETURN NEW;
+      END; $$;
+      CREATE TRIGGER fail_factory_claim BEFORE UPDATE ON factory_feature_publications
+      FOR EACH ROW EXECUTE FUNCTION fail_factory_claim();
+    `);
+    try {
+      await approve(path);
+      const interrupted = await waitForPublication(path, "blocked");
+      expect(interrupted.failure).toBe("unavailable");
+      expect(interrupted.items[0]?.issue).toBeNull();
+    } finally {
+      await stack.executeSql(
+        "DROP TRIGGER fail_factory_claim ON factory_feature_publications; DROP FUNCTION fail_factory_claim();",
+      );
+    }
+    await stack.restart("web");
+    expect((await publication(path)).state).toBe("blocked");
+    expect((await post(`${path}/publication`, { requestId: randomUUID() })).status).toBe(202);
+    const recovered = await waitForPublication(path, "published");
+    expect(recovered.items[0]?.issue).not.toBeNull();
+  }, 60_000);
 });
