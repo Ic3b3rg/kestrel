@@ -66,9 +66,24 @@ compiled PWA are also available at [http://127.0.0.1:3000](http://127.0.0.1:3000
 
 After sign-in, use **Open Project** in the persistent Project rail to select one repository from the
 trusted-host inventory. Kestrel creates or reuses its durable Project and selects it through a
-`/projects/:id` URL, so the same Project remains selected after reload without browser storage.
-Settings remains available from the rail for Installation, host connections, repository access, and
-Operator controls.
+`/projects/:id` URL, so the same Project remains selected after reload without browser storage. The
+selected Project opens to a compact, full-width PR table with **All**, **Review requested**, and
+**Authored** filters. Authored includes PRs that also request review. Counts describe the bounded
+fetched list; a partial or unavailable group is never presented as an empty result. The header shows
+the selected repository and actual inbox state. On narrow screens, **Projects & Settings** opens the
+navigation disclosure; desktop navigation spans the viewport.
+
+**Project menu → Compare committed refs** retains a local change from the selected repository.
+**Open PR by URL** preserves the public-only observation path and rejects URLs for another
+repository. **Repository details** keeps source, provider and model facts inspectable; **Saved
+changes** reopens previously observed or retained changes. Selecting a change adds its identity to
+the Project URL so reload and browser navigation restore its detail without acquiring source or
+starting Review.
+
+Settings remains available from the rail for global host connections, Codex model defaults,
+repository access and Operator controls. **Project settings** has an explicit Project selector for
+its existing Direct API profile, separate from those global defaults; its selected scope survives
+navigation and reload.
 
 Each observed PR includes a **PR readiness** summary with its Project and repository, local source
 attachment, provider proposal, observed and retained exact commits, Revision State, current Change
@@ -129,11 +144,12 @@ both targets before deleting them.
 
 ## Configure direct OpenAI API access
 
-The Project panel can configure one exact OpenAI Responses API profile. Adding or replacing the API
-key requires the current Operator password and runs one bounded synthetic structured-output test
-before activation. Kestrel fixes the HTTPS origin, API surface and version, pinned model identity,
-disabled tool/file/URL/retrieval/callback policy, data-policy attestation, limits, and price
-snapshot. A failed identity check has no fallback route.
+**Settings → Project settings** can configure one exact OpenAI Responses API profile for the
+explicitly selected Project. Adding or replacing the API key requires the current Operator password
+and runs one bounded synthetic structured-output test before activation. Kestrel fixes the HTTPS
+origin, API surface and version, pinned model identity, disabled tool/file/URL/retrieval/callback
+policy, data-policy attestation, limits, and price snapshot. A failed identity check has no fallback
+route.
 
 The test sends the configured `OpenAI-Project` routing header and records that Project as
 attributed, while independently checking the response organization, API version, pinned model, and
@@ -187,10 +203,11 @@ Duplicate, nested, symlinked, escaped, inaccessible, or source/Kestrel-storage-o
 fail closed before the listener starts or an inventory refresh activates them. Kestrel-owned storage
 includes retained artifacts and model-provider secrets.
 
-In the PWA, “Open local repository” lists only bounded display labels and opaque IDs beneath these
-roots. The browser never submits a path. Select two enumerated committed refs and write or
-explicitly copy a commit-subject suggestion into Change Intent. Kestrel re-resolves both refs to
-exact object IDs before acquisition; later branch movement cannot retarget the Review Revision.
+In the PWA, **Open Project** lists only bounded display labels and opaque IDs beneath these roots.
+The browser never submits a path. Within that Project, **Project menu → Compare committed refs**
+loads only its attached repository. Select two enumerated committed refs and write or explicitly
+copy a commit-subject suggestion into Change Intent. Kestrel re-resolves both refs to exact object
+IDs before acquisition; later branch movement cannot retarget the Review Revision.
 
 Until that inventory is ready, the dialog names the current state: checking configuration, no
 configured roots, configured roots with no discoverable repository, or discovery failure. It shows
@@ -286,19 +303,21 @@ account or token, then persists the Project, Change Proposal, exact base/head re
 audit record atomically. Opening the same pull request again is a manual, idempotent refresh.
 
 For a selected Project with an attached Local Repository Source carrying GitHub coordinates, the PWA
-reads the host-session pull request inbox in the ordered groups Review requested, Authored, and
-Others. Each group retains its own loading, empty, or bounded failure state, so a partial rate-limit
-or timeout does not hide successful groups. Refresh remains an explicit Operator action. Selecting a
-pull request sends only its number and creates or reuses the same Project's Provider Observation and
-Change Proposal; it performs no provider write and does not acquire source or a Review Revision. The
-selected pull request keeps Provider Observation, Local Repository Source attachment, and its
-current Revision State distinct. The Operator confirms or edits Change Intent before retaining the
-captured exact base/head pair through the same local-source path. Only a Review Revision matching
-the currently observed source head is current: after a manual refresh moves that head, prior
-retained history remains immutable, its deterministic Change Overview is hidden, and the new exact
-pair must be retained explicitly. Target-only movement remains visible in Provider Observation
-without invalidating the retained source head. This retention path derives deterministic facts but
-does not enqueue optional model rendering or start a Review Workflow.
+reads the host-session pull request inbox as one table with All, Review requested, and Authored
+filters. The underlying Review requested, Authored, and Others groups retain their independent
+availability, so a partial rate-limit or timeout does not hide successful results or imply zero
+missing PRs. Authored matches the verified host account across fetched rows, including review
+requests. Refresh remains an explicit Operator action. Selecting a pull request sends only its
+number and creates or reuses the same Project's Provider Observation and Change Proposal; it
+performs no provider write and does not acquire source or a Review Revision. The selected pull
+request keeps Provider Observation, Local Repository Source attachment, and its current Revision
+State distinct. The Operator confirms or edits Change Intent before retaining the captured exact
+base/head pair through the same local-source path. Only a Review Revision matching the currently
+observed source head is current: after a manual refresh moves that head, prior retained history
+remains immutable, its deterministic Change Overview is hidden, and the new exact pair must be
+retained explicitly. Target-only movement remains visible in Provider Observation without
+invalidating the retained source head. This retention path derives deterministic facts but does not
+enqueue optional model rendering or start a Review Workflow.
 
 Provider Observation is limited by GitHub's shared unauthenticated allowance of 60 REST API requests
 per hour per Installation IP and never falls back to credentials. It does not supply source. When a

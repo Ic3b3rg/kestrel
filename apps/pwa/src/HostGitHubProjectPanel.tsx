@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import type {
   HostGitHubProjectInbox,
@@ -31,7 +31,9 @@ export interface HostGitHubProjectPanelProps {
   disabled: boolean;
   online: boolean;
   onAuthenticationError?: (error: unknown) => boolean;
-  onObserved: (project: ProjectUpserted["project"]) => void;
+  onObserved: (project: ProjectUpserted["project"], number: number) => void;
+  projectLabel?: string;
+  projectActions?: ReactNode;
   loadInbox?: typeof fetchHostGitHubProjectInbox;
   observePullRequest?: typeof observeHostGitHubPullRequest;
 }
@@ -43,103 +45,10 @@ function formatUpdatedAt(value: string): string {
   }).format(new Date(value));
 }
 
-function PullRequestGroup({
-  disabled,
-  group,
-  groupState,
-  loadFailed,
-  loading,
-  online,
-  onSelect,
-  projectId,
-  pullRequests,
-  selectingNumber,
-}: {
-  disabled: boolean;
-  group: Group;
-  groupState: HostGitHubPullRequestGroupState | null;
-  loadFailed: boolean;
-  loading: boolean;
-  online: boolean;
-  onSelect: (number: number) => void;
-  projectId: string;
-  pullRequests: HostGitHubPullRequestSummary[];
-  selectingNumber: number | null;
-}) {
-  const label = groupLabels[group];
-  const headingId = `host-github-${projectId}-${group}`;
-  const unavailableMessage =
-    groupState?.failureReason === null || groupState?.failureReason === undefined
-      ? null
-      : groupFailureMessages[groupState.failureReason];
-
-  return (
-    <section
-      className="host-github-group"
-      aria-busy={loading || undefined}
-      aria-labelledby={headingId}
-    >
-      <div className="host-github-group-heading">
-        <h5 id={headingId}>{label}</h5>
-        {groupState?.state === "available" ? <span>{pullRequests.length}</span> : null}
-      </div>
-      {!online ? (
-        <p className="host-github-group-state" role="status">
-          Reconnect this workstation to load {label}.
-        </p>
-      ) : loadFailed ? (
-        <p className="host-github-group-error" role="alert">
-          This group could not be loaded. Refresh to retry.
-        </p>
-      ) : groupState === null ? (
-        <p className="host-github-group-state" role="status">
-          Loading {label}…
-        </p>
-      ) : groupState.state === "unavailable" ? (
-        <p className="host-github-group-error" role="alert">
-          {unavailableMessage}
-        </p>
-      ) : pullRequests.length === 0 ? (
-        <p className="host-github-group-empty" role="status">
-          No open pull requests in this group.
-        </p>
-      ) : (
-        <ul className="host-github-pull-requests">
-          {pullRequests.map((pullRequest) => (
-            <li key={pullRequest.number}>
-              <div>
-                <p>#{pullRequest.number}</p>
-                <h6>{pullRequest.title}</h6>
-                <span>
-                  {pullRequest.author === null ? "Author unavailable" : `By ${pullRequest.author}`}{" "}
-                  · Updated {formatUpdatedAt(pullRequest.updatedAt)}
-                </span>
-              </div>
-              <button
-                type="button"
-                className="secondary-action"
-                disabled={disabled}
-                onClick={() => onSelect(pullRequest.number)}
-              >
-                {selectingNumber === pullRequest.number
-                  ? `Selecting PR #${String(pullRequest.number)}…`
-                  : `Select PR #${String(pullRequest.number)}`}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      {loading && groupState !== null ? (
-        <p className="host-github-group-refresh" role="status">
-          Refreshing {label}…
-        </p>
-      ) : null}
-    </section>
-  );
-}
-
 export function HostGitHubProjectPanel({
   projectId,
+  projectLabel,
+  projectActions,
   disabled,
   online,
   onAuthenticationError,
@@ -147,6 +56,7 @@ export function HostGitHubProjectPanel({
   loadInbox = fetchHostGitHubProjectInbox,
   observePullRequest = observeHostGitHubPullRequest,
 }: HostGitHubProjectPanelProps) {
+  const [filter, setFilter] = useState<"all" | "review_requested" | "authored">("all");
   const [inbox, setInbox] = useState<HostGitHubProjectInbox | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -192,6 +102,7 @@ export function HostGitHubProjectPanel({
 
   useEffect(() => {
     setInbox(null);
+    setFilter("all");
     setLoadError(false);
     setSelectionError(null);
     selectionController.current?.abort();
@@ -220,7 +131,7 @@ export function HostGitHubProjectPanel({
     setSelectionError(null);
     void observePullRequest(projectId, { number }, controller.signal)
       .then((result) => {
-        if (!controller.signal.aborted) onObserved(result.project);
+        if (!controller.signal.aborted) onObserved(result.project, number);
       })
       .catch((error: unknown) => {
         if (
@@ -238,78 +149,197 @@ export function HostGitHubProjectPanel({
       });
   };
 
-  const interactionDisabled = disabled || loading || selectingNumber !== null;
+  const interactionDisabled = disabled || !online || loading || selectingNumber !== null;
   const headingId = `host-github-inbox-${projectId}`;
+  const account = inbox?.status.authentication === "authenticated" ? inbox.status.account : null;
+  const rows = (selected: typeof filter) =>
+    (inbox?.pullRequests ?? []).filter(
+      (pr) =>
+        selected === "all" ||
+        (selected === "review_requested"
+          ? pr.group === selected
+          : account !== null && pr.author?.toLowerCase() === account.toLowerCase()),
+    );
+  const complete = (selected: typeof filter) =>
+    inbox !== null &&
+    !loadError &&
+    online &&
+    (selected !== "authored" || account !== null) &&
+    groups
+      .filter(
+        (group) =>
+          selected === "all" ||
+          group === "review_requested" ||
+          (selected === "authored" && group === "authored"),
+      )
+      .every(
+        (group) => inbox.groupStates.find((state) => state.group === group)?.state === "available",
+      );
+  const failures = inbox?.groupStates.filter((state) => state.state === "unavailable") ?? [];
+  const pullRequests = online && !loadError ? rows(filter) : [];
+  const stateLabel = !online
+    ? "Offline"
+    : loading
+      ? "Loading pull requests…"
+      : loadError || inbox === null
+        ? "Inbox unavailable"
+        : complete("all")
+          ? "Inbox loaded"
+          : failures.length === groups.length
+            ? "Inbox unavailable"
+            : "Partial inbox";
 
   return (
     <section className="host-github-panel" aria-labelledby={headingId}>
-      <div className="section-heading host-github-heading">
+      <header className="project-workspace-header">
         <div>
-          <p>HOST GITHUB CLI</p>
-          <h4 id={headingId}>Pull request inbox</h4>
+          {projectLabel === undefined ? (
+            <h2 id={headingId}>Pull request inbox</h2>
+          ) : (
+            <>
+              <h1>{projectLabel}</h1>
+              <h2 className="visually-hidden" id={headingId}>
+                Pull request inbox
+              </h2>
+            </>
+          )}
+          <p className="host-github-identity" role="status">
+            <strong>GitHub · {stateLabel}</strong>
+            {account !== null && !loadError && online ? (
+              <span>
+                {account}@{inbox?.status.host}
+              </span>
+            ) : null}
+          </p>
         </div>
-        <button
-          type="button"
-          className="secondary-action"
-          disabled={!online || interactionDisabled}
-          onClick={() => load(true)}
-        >
-          {loading && inbox !== null ? "Refreshing…" : "Refresh pull requests"}
-        </button>
-      </div>
-
-      {inbox?.status.account === null || inbox === null ? null : (
-        <p className="host-github-identity">
-          <strong>
-            {inbox.status.account}@{inbox.status.host}
-          </strong>
-          <span>gh {inbox.status.executableVersion ?? "unavailable"}</span>
-        </p>
-      )}
+        <div className="project-header-actions">
+          <button
+            type="button"
+            className="secondary-action"
+            disabled={interactionDisabled}
+            onClick={() => load(true)}
+          >
+            {loading && inbox !== null ? "Refreshing…" : "Refresh pull requests"}
+          </button>
+          {projectActions}
+        </div>
+      </header>
       {inbox?.status.authentication === "needs_authentication" ? (
         <p className="host-github-session-error" role="alert">
           <strong>Authentication required.</strong> Run{" "}
-          <code>gh auth login --hostname github.com</code>, then refresh.
+          <code>gh auth login --hostname github.com</code>, then refresh.{" "}
+          <a href={`/settings?projectId=${projectId}`}>Open Connections</a>
         </p>
       ) : inbox?.status.authentication === "access_denied" ? (
         <p className="host-github-session-error" role="alert">
           <strong>Project access required.</strong> Restore access for the selected repository, then
-          refresh.
+          refresh. <a href={`/settings?projectId=${projectId}`}>Open Connections</a>
         </p>
       ) : null}
-      <p className="host-github-boundary">
-        Host session, manual refresh only. Provider metadata never supplies source or starts Review.
-      </p>
-
+      {!online ? (
+        <p role="status">Reconnect this workstation to load pull requests.</p>
+      ) : loadError ? (
+        <p className="host-github-session-error" role="alert">
+          The inbox could not be loaded. Refresh to retry.
+        </p>
+      ) : (
+        failures.map((state) => (
+          <p className="host-github-session-error" role="alert" key={state.group}>
+            <strong>{groupLabels[state.group]} unavailable.</strong>{" "}
+            {state.failureReason === null
+              ? "Refresh to retry."
+              : groupFailureMessages[state.failureReason]}
+          </p>
+        ))
+      )}
       {selectionError === null ? null : (
         <p className="host-github-session-error" role="alert">
           {selectionError}
         </p>
       )}
-
-      <div className="host-github-groups">
-        {groups.map((group) => {
-          const groupState =
-            inbox?.groupStates.find((candidate) => candidate.group === group) ?? null;
-          const pullRequests =
-            inbox?.pullRequests.filter((pullRequest) => pullRequest.group === group) ?? [];
+      <div className="pr-filters" role="group" aria-label="Pull request filters">
+        {(["all", "review_requested", "authored"] as const).map((choice) => {
+          const count = rows(choice).length;
+          const countLabel = loading
+            ? "…"
+            : complete(choice)
+              ? String(count)
+              : count > 0 && online && !loadError
+                ? `${String(count)}+`
+                : "Unavailable";
           return (
-            <PullRequestGroup
-              disabled={interactionDisabled}
-              group={group}
-              groupState={groupState}
-              key={group}
-              loadFailed={loadError}
-              loading={loading}
-              online={online}
-              onSelect={select}
-              projectId={projectId}
-              pullRequests={pullRequests}
-              selectingNumber={selectingNumber}
-            />
+            <button
+              type="button"
+              className="secondary-action"
+              aria-pressed={filter === choice}
+              key={choice}
+              onClick={() => setFilter(choice)}
+            >
+              {choice === "all" ? "All" : groupLabels[choice]} <span>{countLabel}</span>
+            </button>
           );
         })}
       </div>
+      <div className="pr-table-container" aria-busy={loading}>
+        <table className="pr-table">
+          <caption className="visually-hidden">
+            {filter === "all" ? "All" : groupLabels[filter]} fetched pull requests
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Pull request</th>
+              <th scope="col">Author</th>
+              <th scope="col">Updated</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pullRequests.map((pr) => (
+              <tr key={pr.number}>
+                <td>
+                  <button
+                    type="button"
+                    className="pr-selection"
+                    disabled={interactionDisabled}
+                    aria-label={`Select PR #${String(pr.number)}: ${pr.title}`}
+                    onClick={() => select(pr.number)}
+                  >
+                    <span className="pr-number">#{pr.number}</span>
+                    <strong>{pr.title}</strong>
+                    {selectingNumber === pr.number ? <span>Opening…</span> : null}
+                  </button>
+                </td>
+                <td>{pr.author ?? "Unavailable"}</td>
+                <td>
+                  <time dateTime={pr.updatedAt}>{formatUpdatedAt(pr.updatedAt)}</time>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {pullRequests.length > 0 ? null : (
+          <p className="pr-table-state" role="status">
+            {loading
+              ? "Loading pull requests…"
+              : complete(filter)
+                ? "No open pull requests in this fetched list."
+                : "Pull requests unavailable for this filter. Refresh to retry."}
+          </p>
+        )}
+      </div>
+      <details className="inbox-limitations">
+        <summary>About this fetched list</summary>
+        <p>
+          This bounded list may not include every open pull request in the repository. Refresh is
+          manual.
+        </p>
+        <p>
+          Selecting a PR reads its provider context. Retaining source and starting Review require
+          explicit actions.
+        </p>
+        {inbox?.limitations.map((limitation) => (
+          <p key={limitation}>{limitation}</p>
+        ))}
+      </details>
     </section>
   );
 }

@@ -104,19 +104,10 @@ const authenticationRequiredInbox: HostGitHubProjectInbox = {
 
 function findButton(container: HTMLElement, text: string): HTMLButtonElement {
   const button = [...container.querySelectorAll("button")].find((candidate) =>
-    candidate.textContent.includes(text),
+    (candidate.getAttribute("aria-label") ?? candidate.textContent).includes(text),
   );
   if (button === undefined) throw new Error(`Button not found: ${text}`);
   return button;
-}
-
-function findGroup(container: HTMLElement, heading: string): HTMLElement {
-  const title = [...container.querySelectorAll("h5")].find(
-    (candidate) => candidate.textContent === heading,
-  );
-  const group = title?.closest("section");
-  if (!(group instanceof HTMLElement)) throw new Error(`Group not found: ${heading}`);
-  return group;
 }
 
 describe("host GitHub Project pull-request inbox", () => {
@@ -155,7 +146,43 @@ describe("host GitHub Project pull-request inbox", () => {
     });
   }
 
-  it("shows ordered loading states and preserves successful groups on a partial rate limit", async () => {
+  it("filters one deduplicated table and includes an authored PR that also requests review", async () => {
+    const requested = readyInbox.pullRequests[0];
+    if (requested === undefined) throw new Error("PR fixture missing");
+    const shared = { ...requested, author: "Operator" };
+    const other = {
+      ...shared,
+      author: "someone-else",
+      group: "other" as const,
+      number: 3,
+      title: "Other change",
+    };
+    const loadInbox = vi
+      .fn<NonNullable<HostGitHubProjectPanelProps["loadInbox"]>>()
+      .mockResolvedValue({ ...readyInbox, pullRequests: [shared, other] });
+    await renderPanel({ loadInbox });
+
+    expect(container.querySelectorAll("table")).toHaveLength(1);
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(2);
+    expect(findButton(container, "All").textContent).toContain("2");
+    await act(async () => {
+      findButton(container, "Authored").click();
+      await Promise.resolve();
+    });
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(1);
+    expect(container.querySelector("tbody")?.textContent).toContain(
+      "Keep host credentials outside Kestrel",
+    );
+    expect(container.querySelector("tbody")?.textContent).not.toContain("Other change");
+    await act(async () => {
+      findButton(container, "Review requested").click();
+      await Promise.resolve();
+    });
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(1);
+    expect(loadInbox).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps successful rows and marks incomplete filter counts when a group fails", async () => {
     let release: (value: HostGitHubProjectInbox) => void = () => undefined;
     const pending = new Promise<HostGitHubProjectInbox>((resolve) => {
       release = resolve;
@@ -164,28 +191,26 @@ describe("host GitHub Project pull-request inbox", () => {
       .fn<NonNullable<HostGitHubProjectPanelProps["loadInbox"]>>()
       .mockReturnValue(pending);
     await renderPanel({ loadInbox });
-
-    expect([...container.querySelectorAll("h5")].map((heading) => heading.textContent)).toEqual([
-      "Review requested",
-      "Authored",
-      "Others",
-    ]);
-    expect(container.textContent).toContain("Loading Review requested");
-    expect(container.textContent).toContain("Loading Authored");
-    expect(container.textContent).toContain("Loading Others");
-    expect(loadInbox).toHaveBeenCalledWith(projectId, false, expect.any(AbortSignal));
-
+    expect(container.textContent).toContain("Loading pull requests");
+    expect(findButton(container, "All").textContent).not.toContain("0");
     await act(async () => {
       release(partialInbox);
       await pending;
     });
-
-    expect(findGroup(container, "Review requested").textContent).toContain(
-      "#2Keep host credentials outside Kestrel",
+    expect(container.querySelector("tbody")?.textContent).toContain(
+      "Keep host credentials outside Kestrel",
     );
-    expect(findGroup(container, "Authored").textContent).toContain("GitHub rate limit reached");
-    expect(findGroup(container, "Others").textContent).toContain("GitHub rate limit reached");
-    expect(container.textContent).toContain("operator@github.com");
+    expect(findButton(container, "All").textContent).toContain("1+");
+    expect(findButton(container, "Review requested").textContent).toContain("1");
+    expect(findButton(container, "Authored").textContent).toContain("Unavailable");
+    expect(container.textContent).toContain("Authored unavailable");
+    expect(container.textContent).toContain("GitHub rate limit reached");
+    await act(async () => {
+      findButton(container, "Authored").click();
+      await Promise.resolve();
+    });
+    expect(container.textContent).not.toContain("No open pull requests");
+    expect(container.textContent).toContain("Pull requests unavailable for this filter");
   });
 
   it("shows empty groups and revalidates authentication on manual refresh", async () => {
@@ -195,7 +220,8 @@ describe("host GitHub Project pull-request inbox", () => {
       .mockResolvedValueOnce(authenticationRequiredInbox);
     await renderPanel({ loadInbox });
 
-    expect([...container.querySelectorAll(".host-github-group-empty")]).toHaveLength(3);
+    expect(container.textContent).toContain("No open pull requests in this fetched list");
+    expect(findButton(container, "All").textContent).toContain("0");
     await act(async () => {
       findButton(container, "Refresh pull requests").click();
       await Promise.resolve();
@@ -230,7 +256,7 @@ describe("host GitHub Project pull-request inbox", () => {
       expect.any(AbortSignal),
     );
     expect(JSON.stringify(observePullRequest.mock.calls[0])).not.toContain("Ic3b3rg/kestrel");
-    expect(onObserved).toHaveBeenCalledWith(project);
+    expect(onObserved).toHaveBeenCalledWith(project, 2);
   });
 
   it("does not query or expose stale Project results while offline", async () => {

@@ -10,6 +10,19 @@ describe("authenticated app routing", () => {
     expect(readAppRoute(`/projects/${projectId}`)).toEqual({ kind: "project", projectId });
   });
 
+  it("restores an explicitly selected change after Project reload", () => {
+    const proposalId = "018f0f89-9192-755f-aa96-f72094c734df";
+    const route = { kind: "project" as const, projectId, proposalId };
+    expect(appPath(route)).toBe(`/projects/${projectId}?proposalId=${proposalId}`);
+    expect(readAppRoute(`/projects/${projectId}`, `?proposalId=${proposalId}`)).toEqual(route);
+  });
+
+  it("keeps Project-owned Settings aligned with the URL", () => {
+    const route = { kind: "settings" as const, projectId };
+    expect(appPath(route)).toBe(`/settings?projectId=${projectId}`);
+    expect(readAppRoute("/settings", `?projectId=${projectId}`)).toEqual(route);
+  });
+
   it("keeps Settings and the Project landing as stable routes", () => {
     expect(readAppRoute("/")).toEqual({ kind: "projects" });
     expect(readAppRoute("/settings")).toEqual({ kind: "settings" });

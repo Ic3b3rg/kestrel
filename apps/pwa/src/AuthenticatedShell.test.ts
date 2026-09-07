@@ -71,7 +71,7 @@ describe("AuthenticatedShell", () => {
     expect(html).toContain(`href="/projects/${localProject.id}"`);
     expect(html).toContain(`href="/projects/${providerProject.id}"`);
     expect(html).toContain('aria-current="page"');
-    expect(html).toContain('href="/settings"');
+    expect(html).toContain(`href="/settings?projectId=${localProject.id}"`);
     expect(html).toContain("Settings");
     expect(html).toContain('href="#workspace"');
   });

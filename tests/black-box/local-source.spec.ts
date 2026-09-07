@@ -146,23 +146,29 @@ test.describe("local-first Project flow", () => {
     await expect(falconLink).toHaveAttribute("aria-current", "page");
 
     await page.setViewportSize({ height: 812, width: 375 });
+    await expect(page.locator(".workspace-navigation")).not.toHaveAttribute("open");
+    await page.locator(".navigation-toggle").focus();
+    await page.keyboard.press("Enter");
     await expect(projectNavigation).toBeVisible();
     await kestrelLink.focus();
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(kestrelUrl);
+    await expect(page.locator(".workspace-navigation")).not.toHaveAttribute("open");
+    await page.locator(".navigation-toggle").click();
     await expect(kestrelLink).toHaveAttribute("aria-current", "page");
-
     const settingsLink = page.getByRole("link", { name: "Settings", exact: true });
     await settingsLink.focus();
     await page.keyboard.press("Enter");
-    await expect(page).toHaveURL(/\/settings$/u);
+    await expect(page).toHaveURL(/\/settings\?projectId=/u);
     await expect(
       page.getByRole("heading", { level: 1, name: "Settings", exact: true }),
     ).toBeVisible();
+    await page.locator(".navigation-toggle").click();
     await expect(settingsLink).toHaveAttribute("aria-current", "page");
 
     await kestrelLink.focus();
     await page.keyboard.press("Enter");
+    await page.locator(".navigation-toggle").click();
     await openRepository("kestrel");
     const inbox = ProjectInboxSchema.parse(
       await page.evaluate(async () => {
@@ -177,6 +183,7 @@ test.describe("local-first Project flow", () => {
       await page.evaluate(() => ({ local: localStorage.length, session: sessionStorage.length })),
     ).toEqual({ local: 0, session: 0 });
 
+    if (!(await settingsLink.isVisible())) await page.locator(".navigation-toggle").click();
     await expect(settingsLink).toBeVisible();
     expect(
       await page.evaluate(
@@ -211,7 +218,7 @@ test.describe("local-first Project flow", () => {
     await expect(
       page.getByRole("heading", { level: 1, name: "Settings", exact: true }),
     ).toBeVisible();
-    const repositorySettings = page.getByRole("region", { name: "Settings" });
+    const repositorySettings = page.getByRole("region", { name: "Settings", exact: true });
     await expect(
       repositorySettings.getByRole("heading", { name: "Repository access" }),
     ).toBeVisible();
@@ -227,8 +234,9 @@ test.describe("local-first Project flow", () => {
       .getByRole("link", { name: /kestrel/u })
       .click();
 
-    const localTrigger = page.getByRole("button", { name: "Open local repository" });
-    const publicInput = page.getByLabel("Optional public GitHub pull request URL");
+    await page.getByText("Project menu", { exact: true }).click();
+    const localTrigger = page.getByRole("button", { name: "Compare committed refs" });
+    const publicInput = page.getByLabel("Public GitHub pull request URL");
     await expect(localTrigger).toBeVisible();
     await expect(publicInput).toBeVisible();
     expect(
@@ -241,34 +249,13 @@ test.describe("local-first Project flow", () => {
       }),
     ).toBe(true);
 
-    const staleInventory = await holdNextInventoryResponse(page);
-    await localTrigger.click();
-    await staleInventory.observed;
-    const dialog = page.getByRole("dialog", { name: "Retain an exact change" });
-    await expect(dialog).toBeVisible();
-    await dialog.getByRole("button", { name: "Close" }).click();
-    staleInventory.release();
-    await staleInventory.completed;
-    await page.unroute("**/api/v1/local-repository-sources", staleInventory.handler);
-    await page.evaluate(
-      () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
-    );
-
-    const freshInventory = await holdNextInventoryResponse(page);
     await localTrigger.focus();
     await page.keyboard.press("Enter");
-    await freshInventory.observed;
-    await expect(
-      page.getByLabel("Repository").getByRole("option", { name: "kestrel" }),
-    ).toHaveCount(0);
-    freshInventory.release();
-    await freshInventory.completed;
-    await page.unroute("**/api/v1/local-repository-sources", freshInventory.handler);
+    const dialog = page.getByRole("dialog", { name: "Retain an exact change" });
+    await expect(dialog).toBeVisible();
     await expect(page.getByRole("heading", { name: "Retain an exact change" })).toBeFocused();
-    await expect(dialog.getByText("No authorized local repositories are available.")).toHaveCount(
-      0,
-    );
-    await page.getByLabel("Repository").selectOption(kestrelRepositoryId);
+    await expect(dialog.getByLabel("Repository", { exact: true })).toHaveCount(0);
+    await expect(dialog).toContainText("kestrel");
     await expect(page.getByLabel("Base reference")).toBeEnabled();
     await page.getByLabel("Base reference").selectOption({ label: "main" });
     await page.getByLabel("Head reference").selectOption({ label: "review-source" });
@@ -311,7 +298,7 @@ test.describe("local-first Project flow", () => {
     await requestObserved;
     await expect(page.getByRole("button", { name: "Retaining…" })).toBeDisabled();
     await expect(dialog.getByRole("button", { name: "Close" })).toBeDisabled();
-    await expect(page.getByLabel("Repository")).toBeDisabled();
+    await expect(dialog.getByLabel("Repository", { exact: true })).toHaveCount(0);
     await expect(page.getByLabel("Base reference")).toBeDisabled();
     await expect(page.getByLabel("Head reference")).toBeDisabled();
     await expect(page.getByLabel("Change Intent")).toBeDisabled();
@@ -330,8 +317,11 @@ test.describe("local-first Project flow", () => {
     await retainButton.click();
 
     await expect(dialog).toHaveCount(0);
-    await expect(localTrigger).toBeFocused();
-    await expect(page.getByRole("status")).toContainText("The exact Review Revision is available.");
+    await expect(page.locator(".proposal-list")).toBeFocused();
+    await page.getByText("Repository details", { exact: true }).click();
+    await expect(
+      page.getByRole("status").filter({ hasText: "The exact Review Revision" }),
+    ).toContainText("The exact Review Revision is available.");
     await expect(page.getByText("Available", { exact: true })).toHaveCount(2);
     await expect(
       page.locator("dl.commit-pointer-list").getByText("Change Intent v1", { exact: true }),
@@ -438,12 +428,12 @@ test.describe("local-first Project flow", () => {
     ).toBeVisible();
 
     const inventoryUrl = "**/api/v1/local-repository-sources";
-    const trigger = page.getByRole("button", { name: "Open local repository" });
+    const trigger = page.getByRole("button", { name: "Open Project", exact: true });
     await expect(trigger).toBeEnabled();
     const trustedHostCommand =
       "npm run authorize-repository-root -- /absolute/path/to/authorized-parent";
     const assertGuidedState = async (title: string) => {
-      const dialog = page.getByRole("dialog", { name: "Retain an exact change" });
+      const dialog = page.getByRole("dialog", { name: "Open an authorized repository" });
       await expect(dialog.getByRole("heading", { name: title })).toBeVisible();
       await expect(dialog.getByText(trustedHostCommand, { exact: true })).toBeVisible();
       await expect(dialog.locator("form")).toBeHidden();
@@ -518,6 +508,7 @@ test.describe("local-first Project flow", () => {
     await page.getByRole("dialog").getByRole("button", { name: "Close" }).click();
 
     await page.setViewportSize({ width: 320, height: 800 });
+    await page.locator(".navigation-toggle").click();
     await verifyInventoryState("no_configured_roots", "No repository roots are configured");
     const width = await page.evaluate(() => ({
       client: document.documentElement.clientWidth,

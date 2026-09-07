@@ -131,6 +131,7 @@ const localInbox: ProjectInbox = {
 function render(inbox: ProjectInbox | null, loading = false): string {
   return renderToStaticMarkup(
     createElement(ProjectInboxPanel, {
+      selectedProposalId: inbox?.projects[0]?.changeProposals[0]?.id ?? "",
       error: null,
       inbox,
       loading,
@@ -154,19 +155,20 @@ it("shows independent PR readiness facts without offering review execution befor
 });
 
 describe("ProjectInboxPanel", () => {
-  it("keeps the local command enabled while a populated inbox refreshes in the background", () => {
+  it("keeps Project actions enabled while a populated inbox refreshes in the background", () => {
     const html = render(populatedInbox, true);
 
-    expect(html).toContain('<button type="button">Open local repository</button>');
+    expect(html).toContain('<button type="submit">Open PR by URL</button>');
   });
 
-  it("explains the credential-free public GitHub path when the inbox is empty", () => {
-    const html = render({ schemaVersion: 1, projects: [] });
-
-    expect(html).toContain("Optional public GitHub pull request URL");
-    expect(html).toContain("GitHub metadata does not by itself authorize or acquire review source");
+  it("keeps public URL entry scoped to an existing Project", () => {
+    expect(render({ schemaVersion: 1, projects: [] })).toContain("No Projects yet");
+    expect(render({ schemaVersion: 1, projects: [] })).not.toContain(
+      "Public GitHub pull request URL",
+    );
+    const html = render(populatedInbox);
+    expect(html).toContain("Public GitHub pull request URL");
     expect(html).toContain("No GitHub credentials are sent or stored");
-    expect(html).toContain("No Projects yet");
     expect(html).toContain("60 unauthenticated GitHub API requests per hour");
   });
 
@@ -200,20 +202,21 @@ describe("ProjectInboxPanel", () => {
 
     expect(html).toContain("Direct API available");
     expect(html).toContain("independent of source acquisition");
-    expect(html).toContain("Reading the effective profile");
+    expect(html).not.toContain("Reading the effective profile");
+    expect(html).toContain("Project settings");
   });
 
   it("renders local source, provider metadata, Revision State, and model access separately", () => {
     const html = render(localInbox);
 
-    expect(html).toContain("Open local repository");
-    expect(html.indexOf("Open local repository")).toBeLessThan(
-      html.indexOf("Optional public GitHub pull request URL"),
+    expect(html).toContain("Compare committed refs");
+    expect(html.indexOf("Compare committed refs")).toBeLessThan(
+      html.indexOf("Public GitHub pull request URL"),
     );
     expect(html).toContain("Local Repository Source");
     expect(html).toContain("kestrel");
     expect(html).toContain("Attached");
-    expect(html).toContain("Provider metadata");
+    expect(html).toContain("Provider Observation");
     expect(html).toContain("Not observed");
     expect(html).toContain("Revision State");
     expect(html).toContain("Source availability");
@@ -458,7 +461,7 @@ describe("ProjectInboxPanel", () => {
         },
       ],
     });
-    expect(html).toContain("GITHUB / HOST SESSION");
+    expect(html).not.toContain("PUBLIC GITHUB / NO AUTHENTICATION");
     expect(html).toContain("GitHub through host session");
     expect(html).toContain("operator on github.com");
     expect(html).not.toContain("PUBLIC GITHUB / NO AUTHENTICATION");

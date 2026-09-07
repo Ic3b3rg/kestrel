@@ -158,7 +158,7 @@ function ModelRendering({
 
   return (
     <section className="change-overview-model" aria-labelledby={headingId}>
-      <h6 id={headingId}>Natural-language orientation</h6>
+      <h4 id={headingId}>Natural-language orientation</h4>
       <p className="change-overview-model-boundary">
         Optional wording only organizes the cited deterministic facts.
       </p>
@@ -231,7 +231,7 @@ function ReadyOverview({ overview }: { overview: Extract<ChangeOverview, { state
       </dl>
 
       <section className="change-overview-group" aria-labelledby={`${exactRevision.id}-files`}>
-        <h6 id={`${exactRevision.id}-files`}>Changed files</h6>
+        <h4 id={`${exactRevision.id}-files`}>Changed files</h4>
         <p
           className="change-overview-summary"
           id={sourceFactTargetId(exactRevision.id, "commit_statistics")}
@@ -302,7 +302,7 @@ function ReadyOverview({ overview }: { overview: Extract<ChangeOverview, { state
 
       {sourceFacts.pathAreas.length === 0 ? null : (
         <section className="change-overview-group" aria-labelledby={`${exactRevision.id}-areas`}>
-          <h6 id={`${exactRevision.id}-areas`}>Source areas</h6>
+          <h4 id={`${exactRevision.id}-areas`}>Source areas</h4>
           <ul className="source-area-list">
             {sourceFacts.pathAreas.map((area, index) => (
               <li
@@ -326,7 +326,7 @@ function ReadyOverview({ overview }: { overview: Extract<ChangeOverview, { state
           className="change-overview-warnings"
           aria-labelledby={`${exactRevision.id}-warnings`}
         >
-          <h6 id={`${exactRevision.id}-warnings`}>Source warnings</h6>
+          <h4 id={`${exactRevision.id}-warnings`}>Source warnings</h4>
           <ul>
             {sourceFacts.warnings.map((warning, index) => (
               <li
@@ -356,7 +356,7 @@ export function ChangeOverviewPanel({ headingId, overview }: ChangeOverviewPanel
       <div className="change-overview-heading">
         <div>
           <p>EXACT COMMITTED SOURCE</p>
-          <h5 id={headingId}>Change Overview</h5>
+          <h3 id={headingId}>Change Overview</h3>
         </div>
         <strong className={`change-overview-status change-overview-status-${overview.state}`}>
           {statusLabels[overview.state]}

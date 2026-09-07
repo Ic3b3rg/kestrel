@@ -53,6 +53,7 @@ export function buildRetainCommand(
 export interface OpenLocalRepositoryFormProps {
   disabled: boolean;
   projects: ProjectInbox["projects"];
+  boundRepository?: { repositoryId: string; displayName: string };
   loadRepositories?: (signal?: AbortSignal) => Promise<LocalRepositoryInventory>;
   loadReferences?: (
     repositoryId: string,
@@ -107,6 +108,7 @@ function safeError(error: unknown, fallback: string): string {
 export function OpenLocalRepositoryForm({
   disabled,
   projects,
+  boundRepository,
   loadRepositories = fetchLocalRepositories,
   loadReferences = fetchLocalRepositoryReferences,
   retain = retainReviewRevision,
@@ -202,7 +204,8 @@ export function OpenLocalRepositoryForm({
       return;
     }
     setOpen(true);
-    await loadRepositoryInventory();
+    if (boundRepository === undefined) await loadRepositoryInventory();
+    else await selectRepository(boundRepository.repositoryId);
   };
 
   const selectRepository = async (selectedRepositoryId: string) => {
@@ -238,9 +241,9 @@ export function OpenLocalRepositoryForm({
 
   const base = references?.references.find(({ ref }) => ref === baseRef);
   const head = references?.references.find(({ ref }) => ref === headRef);
-  const repository = repositories?.repositories.find(
-    (candidate) => candidate.repositoryId === repositoryId,
-  );
+  const repository =
+    boundRepository ??
+    repositories?.repositories.find((candidate) => candidate.repositoryId === repositoryId);
   const matchingProposals = useMemo(() => {
     if (base === undefined || head === undefined) {
       return [];
@@ -319,7 +322,7 @@ export function OpenLocalRepositoryForm({
   return (
     <div className="project-local-entry">
       <button ref={trigger} type="button" disabled={disabled} onClick={() => void openDialog()}>
-        Open local repository
+        Compare committed refs
       </button>
       <p className="form-help">
         Select committed base and head references from an authorized read-only repository.
@@ -354,18 +357,20 @@ export function OpenLocalRepositoryForm({
           <p id={descriptionId}>
             Kestrel reads only committed Git objects and retains a verified base/head snapshot.
           </p>
-          <div className="local-inventory-actions">
-            <p>Inventory is read from the current trusted-host configuration.</p>
-            <button
-              className="secondary-action"
-              type="button"
-              disabled={disabled || pending || loading === "repositories"}
-              onClick={() => void loadRepositoryInventory()}
-            >
-              {loading === "repositories" ? "Refreshing repositories…" : "Refresh repositories"}
-            </button>
-          </div>
-          {repositories?.inventoryState !== "ready" ? (
+          {boundRepository === undefined ? (
+            <div className="local-inventory-actions">
+              <p>Inventory is read from the current trusted-host configuration.</p>
+              <button
+                className="secondary-action"
+                type="button"
+                disabled={disabled || pending || loading === "repositories"}
+                onClick={() => void loadRepositoryInventory()}
+              >
+                {loading === "repositories" ? "Refreshing repositories…" : "Refresh repositories"}
+              </button>
+            </div>
+          ) : null}
+          {boundRepository === undefined && repositories?.inventoryState !== "ready" ? (
             <RepositorySetupState
               state={
                 loading === "repositories" || (repositories === null && error === null)
@@ -377,27 +382,33 @@ export function OpenLocalRepositoryForm({
           ) : null}
           <form
             className="local-repository-form"
-            hidden={repositories?.inventoryState !== "ready"}
+            hidden={boundRepository === undefined && repositories?.inventoryState !== "ready"}
             onSubmit={(event) => void submit(event)}
             noValidate
           >
-            <div className="form-field">
-              <label htmlFor={`${titleId}-repository`}>Repository</label>
-              <select
-                id={`${titleId}-repository`}
-                value={repositoryId}
-                disabled={disabled || pending || loading === "repositories"}
-                onChange={(event) => void selectRepository(event.currentTarget.value)}
-              >
-                <option value="">Select an authorized repository</option>
-                {repositories?.repositories.map((repository) => (
-                  <option key={repository.repositoryId} value={repository.repositoryId}>
-                    {repository.displayName}
-                    {repository.attachmentState === "attached" ? " · attached" : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {boundRepository === undefined ? (
+              <div className="form-field">
+                <label htmlFor={`${titleId}-repository`}>Repository</label>
+                <select
+                  id={`${titleId}-repository`}
+                  value={repositoryId}
+                  disabled={disabled || pending || loading === "repositories"}
+                  onChange={(event) => void selectRepository(event.currentTarget.value)}
+                >
+                  <option value="">Select an authorized repository</option>
+                  {repositories?.repositories.map((repository) => (
+                    <option key={repository.repositoryId} value={repository.repositoryId}>
+                      {repository.displayName}
+                      {repository.attachmentState === "attached" ? " · attached" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <p>
+                <strong>Repository:</strong> {boundRepository.displayName}
+              </p>
+            )}
             <fieldset
               disabled={disabled || pending || loading === "references" || references === null}
             >

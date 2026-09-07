@@ -68,7 +68,7 @@ function SourceSnapshot({ source }: { source: ChangeIntentSource }) {
   return (
     <span className="intent-source-snapshot">
       <strong>{source.label}</strong>
-      <span>{source.text}</span>
+      <span tabIndex={0}>{source.text}</span>
       <small>
         {source.id} · version {source.version}
       </small>
@@ -189,11 +189,11 @@ export function ChangeIntentEditor({
       <div className="intent-editor-heading">
         <div>
           <p>CHANGE INTENT · PROPOSAL VERSION {proposal.version}</p>
-          <h5>
+          <h3>
             {current === null
               ? "Curate the first version"
               : `Curate version ${String(current.version + 1)}`}
-          </h5>
+          </h3>
         </div>
         <strong className={draftResolved ? "intent-resolved" : "intent-unresolved"}>
           {draftResolved ? "Ready to resolve" : "Unresolved draft"}

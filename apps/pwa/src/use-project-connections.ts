@@ -49,7 +49,9 @@ export function useProjectConnections(
 ) {
   const [generation, setGeneration] = useState(0);
   const enabled =
-    online && project.changeProposals.some(({ kind }) => kind === "provider_observed");
+    online &&
+    (project.localRepositorySource?.state === "attached" ||
+      project.changeProposals.some(({ kind }) => kind === "provider_observed"));
   const refreshKey = `${project.id}:${project.updatedAt}:${project.localRepositorySource?.state ?? "none"}:${String(generation)}`;
   const readGitHub = useCallback(
     (signal: AbortSignal) => fetchHostGitHubConnection(project.id, signal),
