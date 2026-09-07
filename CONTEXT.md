@@ -1,6 +1,6 @@
 # Kestrel
 
-Kestrel is the domain of understanding and governing software change across projects while keeping consequential decisions with the human. Review First V1 is the active release domain; the planned agentic-development lifecycle is reserved future language.
+Kestrel is the domain of understanding and governing software change across projects while keeping consequential decisions with the human. Factory 0.1 is the active delivery domain: planning, approved development, and conceptual review through an explicitly approved merge. Review First retains the exact-revision review vocabulary and trust contract within that lifecycle. See ADR 0004 and docs/factory-v01/spec.md.
 
 ## Implemented local-source boundary
 
@@ -39,7 +39,7 @@ Risk Level, unsupported behavioral claim, or review verdict.
 ### Review First V1
 
 **Kestrel**:
-The local-first system in which an Operator understands and governs software change across Projects through selectable Agent Runtimes. Review First V1 runs on the Operator's workstation and implements its read-only review domain; later releases may add remote operation or extend it into agentic development.
+The local-first system in which an Operator plans, delegates, understands, and governs software change across Projects through Agent Runtimes. Factory 0.1 runs on the Operator's workstation and joins approved development to exact-revision conceptual review; later releases may add remote operation.
 _Avoid_: PR reviewer, code-review tool, wrapper around an external coding agent
 
 **Review First V1**:
@@ -238,20 +238,32 @@ _Avoid_: speculative patching, end-to-end testing, arbitrary runtime permission 
 The Kestrel-held, Project-scoped, versioned catalog of checks and validated parameters that an Agent Runtime may select and execute during Review Verification without per-run confirmation, within the applicable Resource Envelope. Only the Operator may authorize new entries; repository content may suggest a check but never grants authority to execute it.
 _Avoid_: Repository test configuration, runtime permission prompt, arbitrary shell access
 
-### Reserved future development lifecycle
+### Factory development lifecycle
 
-These terms name planned Kestrel territory beyond Review First V1. They preserve the intended direction without granting V1 scope or implementation authority.
+These terms describe the Factory 0.1 delivery domain. Deployment, maintenance, remote operation, and provider-side invocation remain future scope.
+
+**Factory 0.1**:
+The first complete local Kestrel lifecycle from in-product planning and approved issue execution through a requirements-first Conceptual Review and explicitly approved merge, with concurrent Projects and one active Feature per Project.
+_Avoid_: Review First V1, autonomous merge, workflow editor
+
+**Feature**:
+The Project-scoped change delivered through one approved Feature Plan, ordered Work Items, one cumulative branch and pull request, and a current Conceptual Review. It completes only after confirmed integration.
+_Avoid_: Work Item, pull request, Agent Run
+
+**Feature Plan**:
+A versioned statement of one Feature's objective, scope, acceptance outcomes, ordered Work Items and dependencies, verification, and execution limits. The Operator's approval freezes one version and authorizes its eligible work.
+_Avoid_: Chat transcript, mutable issue body, runtime prompt
 
 **Development Lifecycle**:
-The future progression of intended software work through planning, agentic implementation, review, deployment, and maintenance inside Kestrel.
+The progression of intended software work through planning, agentic implementation, review, and integration inside Kestrel, with deployment and maintenance reserved for later releases.
 _Avoid_: Review First V1, pull-request workflow, coding phase
 
 **Work Item**:
-The future provider-neutral record that connects intended software work to its Planning Sessions, Agent Runs, Human Gates, and reviews.
+The provider-neutral unit of an approved Feature Plan, with acceptance criteria and dependencies, that connects intended work to Agent Runs, Human Gates, and the Feature's review. It may be linked to a new or imported GitHub issue.
 _Avoid_: Change Proposal, GitHub Issue, pull request
 
 **Planning Session**:
-A future human-led interaction that resolves goals, scope, trade-offs, and critical approvals before delegated development proceeds.
+A durable Feature-scoped conversation inside Kestrel that resolves goals, scope, trade-offs, and the Feature Plan before delegated development proceeds.
 _Avoid_: Review Thread, prompt, task description
 
 **Provider Invocation**:
@@ -259,17 +271,17 @@ A future provider-side interaction by an authorized human, such as a command or 
 _Avoid_: Provider Review Input, Provider Synchronization, Run Trigger, webhook delivery
 
 **Run Trigger**:
-The future Operator approval that authorizes one Agent Run from planned work; receiving or synchronizing provider activity is never sufficient.
+The Operator's approval of an exact Feature Plan that authorizes its eligible Agent Runs within the declared scope and limits. Receiving or synchronizing provider activity is never sufficient.
 _Avoid_: Provider Invocation, issue event, automatic issue execution
 
 **Agent Run**:
-A future persistent execution in which Kestrel directs an Agent Runtime to modify and validate a Project inside a Kestrel-managed Sandbox.
+A persistent, bounded execution in which Kestrel directs an Agent Runtime to carry out approved Work Items and verify their results inside a Kestrel-managed Sandbox.
 _Avoid_: Review Workflow, local session, external agent job
 
 **Human Gate**:
-A future deliberate pause in an Agent Run where the Operator must resolve a consequential objective, scope, trade-off, or approval.
+A deliberate pause requiring the Operator to resolve a consequential question about a Feature's requirements, acceptance criteria, or authorized limits. It blocks that Project's queue while other Projects may continue.
 _Avoid_: Operator Attention, notification, routine confirmation
 
 **Sandbox**:
-The future isolated Kestrel environment in which an Agent Run may modify, test, and commit a Project while remaining governed and observable.
+The isolated Kestrel environment in which an Agent Run may modify, test, and commit approved Feature work while remaining governed and observable and preserving the Operator's checkout.
 _Avoid_: Review Environment, Operator workstation, external coding service
