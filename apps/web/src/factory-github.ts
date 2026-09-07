@@ -574,9 +574,11 @@ export function createFactoryGitHubAdapter(
     }
     await verify(identity, signal);
     if (foreignAuthor || matches.size > 1) return { state: "ambiguous" };
-    if (limited) return { state: "limited" };
     const value = matches.values().next().value;
-    return value === undefined ? { state: "missing" } : { state: "found", value };
+    // One durable operation authorizes one POST. Its owned UUID marker is positive
+    // evidence even when older history falls outside the bounded scan.
+    if (value !== undefined) return { state: "found", value };
+    return { state: limited ? "limited" : "missing" };
   };
   return {
     identify,

@@ -79,7 +79,14 @@ if (url.pathname === base && method === 'GET') {
   state.issueReads++;
   const page = Number(url.searchParams.get('page') ?? 1);
   if (state.mode === 'hostile_link') reply(200, [], {Link:'<https://attacker.invalid/issues?page=2>; rel="next"'});
-  if (state.mode === 'limited') reply(200, [], {Link:'<https://api.github.com/repositories/41/issues?state=all&per_page=20&page=' + (page + 1) + '>; rel="next"'});
+  if (state.mode === 'limited') {
+    const issues = Array.from({length:20}, (_, index) => {
+      const number = 1000 + (page - 1) * 20 + index;
+      return {...state.issues[0], id:String(number + 10000), number, body:'Older unrelated issue', isPullRequest:index % 3 === 1, html_url:'https://github.com/owner/notes/issues/' + number};
+    });
+    if (page === 1) state.issues.slice(-20).reverse().forEach((issue, index) => { issues[index] = issue; });
+    reply(200, issues, {Link:'<https://api.github.com/repositories/41/issues?state=all&per_page=20&page=' + (page + 1) + '>; rel="next"'});
+  }
   if (state.mode === 'pagination') {
     if (page === 1) reply(200, [state.issues[0], {...state.issues[0], id:'502', number:2, isPullRequest:true, html_url:'https://github.com/owner/notes/pull/2'}], {Link:'<https://api.github.com/repositories/41/issues?state=open&sort=created&direction=desc&per_page=20&page=2>; rel="next"'});
     reply(200, [{...state.issues[0], id:'503', number:3, title:'Second page', html_url:'https://github.com/owner/notes/issues/3'}]);
@@ -112,7 +119,15 @@ if (url.pathname === base && method === 'POST') {
   }
 } else if (/\\/issues\\/\\d+\\/comments$/.test(url.pathname)) {
   if (method === 'GET') {
-    if (state.mode === 'comment_limited') reply(200, [], {Link:'<https://api.github.com/repositories/41/issues/1/comments?per_page=20&page=' + (Number(url.searchParams.get('page')) + 1) + '>; rel="next"'});
+    if (state.mode === 'comment_limited') {
+      const page = Number(url.searchParams.get('page'));
+      const comments = Array.from({length:20}, (_, index) => {
+        const id = String(1000 + (page - 1) * 20 + index);
+        return {id,body:'Unrelated comment',html_url:'https://github.com/owner/notes/issues/1#issuecomment-' + id,issue_url:'https://api.github.com/repos/owner/notes/issues/1',author:'operator'};
+      });
+      if (page === 1) state.comments.slice(0, 20).forEach((comment, index) => { comments[index] = comment; });
+      reply(200, comments, {Link:'<https://api.github.com/repositories/41/issues/1/comments?per_page=20&page=' + (page + 1) + '>; rel="next"'});
+    }
     reply(200, state.comments);
   }
   if (method === 'POST') {
@@ -255,6 +270,58 @@ describe("Factory GitHub subprocess boundary", () => {
         requests.filter((call) => call.args.some((arg) => arg.includes("/issues?"))),
       ).toHaveLength(mode === "limited" ? 5 : 1);
       expect(requests.some((call) => call.args.includes("POST"))).toBe(false);
+    },
+  );
+
+  it.each(["issue", "comment"])(
+    "reconciles one owned %s marker after a lost create response even when older history exceeds the scan limit",
+    async (kind) => {
+      const { adapter, calls, setState } = await fixture(
+        kind === "issue" ? "create_timeout" : "comment_timeout",
+      );
+      const result =
+        kind === "issue"
+          ? await adapter.createIssue(identity, { title: "Approved export", body: marker })
+          : await adapter.createComment(identity, 1, marker);
+      expect(result).toEqual({ state: "uncertain", failure: "timeout" });
+      await setState({ mode: kind === "issue" ? "limited" : "comment_limited" });
+      const found =
+        kind === "issue"
+          ? await adapter.findIssue(identity, marker)
+          : await adapter.findComment(identity, 1, marker);
+      expect(found).toMatchObject({
+        state: "found",
+        value: { id: kind === "issue" ? "599" : "701", body: marker },
+      });
+      const requests = await calls();
+      expect(requests.filter((call) => call.args.includes("POST"))).toHaveLength(1);
+      expect(
+        requests.filter((call) => call.args.some((arg) => arg.includes("per_page=20"))),
+      ).toHaveLength(5);
+    },
+  );
+
+  it.each(["foreign", "duplicate"])(
+    "keeps a %s marker ambiguous when the issue scan is limited",
+    async (kind) => {
+      const { adapter, calls, state, setState } = await fixture("limited");
+      const first = (await state()).issues[0];
+      const issues =
+        kind === "foreign"
+          ? [{ ...first, body: marker, author: "other" }]
+          : [
+              { ...first, body: marker },
+              {
+                ...first,
+                body: marker,
+                id: "502",
+                number: 2,
+                html_url: "https://github.com/owner/notes/issues/2",
+              },
+            ];
+      await setState({ issues });
+      expect(await adapter.findIssue(identity, marker)).toEqual({ state: "ambiguous" });
+      expect((await calls()).some((call) => call.args.includes("POST"))).toBe(false);
     },
   );
 
