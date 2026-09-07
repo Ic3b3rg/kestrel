@@ -2,7 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { FeaturePlans, FeaturePlanVersion } from "@kestrel/contracts";
+import type { FactoryIssueImports, FeaturePlans, FeaturePlanVersion } from "@kestrel/contracts";
 import { ApiClientError } from "./api.js";
 import { FeaturePlanPanel, type FeaturePlanPanelProps } from "./FeaturePlanPanel.js";
 
@@ -58,6 +58,28 @@ const initial: FeaturePlans = {
   approval: null,
   generation: null,
   versions: [{ version: 1, author: "operator", createdAt }],
+};
+const imported: FactoryIssueImports = {
+  schemaVersion: 1,
+  feature: initial.feature,
+  canImport: false,
+  issues: [
+    {
+      id: "018f0f89-949a-75a8-8f61-6df78a843b20",
+      featureId,
+      importedAt: createdAt,
+      issue: {
+        repository: { id: "10", owner: "reports", name: "app" },
+        id: "42",
+        number: 42,
+        url: "https://github.com/reports/app/issues/42",
+        title: "Search archived reports",
+        body: "A proposal, not execution authority.",
+        state: "open",
+        dependencies: null,
+      },
+    },
+  ],
 };
 
 function button(label: string): HTMLButtonElement {
@@ -117,12 +139,41 @@ describe("displayed plan authority", () => {
           onApproved: vi.fn(),
           onDirtyChange: vi.fn(),
           loadPlans: () => Promise.resolve(initial),
+          loadImports: () => Promise.resolve({ ...imported, issues: [] }),
           ...overrides,
         }),
       );
       await Promise.resolve();
     });
   }
+
+  it("requires every imported issue to be assigned before approving the displayed plan", async () => {
+    await render({ loadImports: () => Promise.resolve(imported) });
+    expect(button("Approve version 1").disabled).toBe(true);
+    expect(container.textContent).toContain("Assign #42 · Search archived reports to a Work Item");
+  });
+
+  it("links an imported issue through a normal field without replacing the approved intent", async () => {
+    const savePlan = vi.fn().mockResolvedValue({ ...version, version: 2 });
+    await render({ loadImports: () => Promise.resolve(imported), savePlan });
+    await click("Edit draft");
+    const field = container.querySelector<HTMLSelectElement>("#work-github-0");
+    expect(field).not.toBeNull();
+    if (field === null) return;
+    await act(async () => {
+      field.value = imported.issues[0]?.id ?? "";
+      field.dispatchEvent(new Event("change", { bubbles: true }));
+      await Promise.resolve();
+    });
+    await click("Save new version");
+    expect(savePlan).toHaveBeenCalledOnce();
+    expect(savePlan.mock.calls[0]?.[2]).toMatchObject({
+      plan: {
+        ...version.document,
+        workItems: [{ ...version.document.workItems[0], importedIssueId: imported.issues[0]?.id }],
+      },
+    });
+  });
 
   it("explains why a running conversation prevents plan approval", async () => {
     await render({ conversationPending: true });

@@ -1,6 +1,11 @@
 import { useId } from "react";
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
-import { DEFAULT_FACTORY_LIMITS, type FeaturePlanDocument } from "@kestrel/contracts";
+import {
+  DEFAULT_FACTORY_LIMITS,
+  type FeaturePlanDocument,
+  type ImportedFactoryIssue,
+} from "@kestrel/contracts";
+import { ImportedIssueReference } from "./FeatureGitHubIssuesPanel.js";
 import { Button } from "./components/ui/button.js";
 import { Input } from "./components/ui/input.js";
 import { Label } from "./components/ui/label.js";
@@ -211,10 +216,12 @@ export function FeaturePlanEditor({
   plan,
   onChange,
   disabled,
+  importedIssues = [],
 }: {
   plan: FeaturePlanDocument;
   onChange: (plan: FeaturePlanDocument) => void;
   disabled: boolean;
+  importedIssues?: ImportedFactoryIssue[];
 }) {
   const updateItem = (index: number, item: WorkItem) =>
     onChange({
@@ -405,6 +412,36 @@ export function FeaturePlanEditor({
               </div>
             </div>
             <div>
+              <Label htmlFor={`work-github-${String(index)}`}>GitHub issue {index + 1}</Label>
+              <NativeSelect
+                id={`work-github-${String(index)}`}
+                value={item.importedIssueId ?? ""}
+                onChange={(event) =>
+                  updateItem(index, { ...item, importedIssueId: event.target.value || null })
+                }
+              >
+                <option value="">Create a new GitHub issue</option>
+                {item.importedIssueId !== null &&
+                !importedIssues.some((source) => source.id === item.importedIssueId) ? (
+                  <option value={item.importedIssueId}>
+                    Imported issue unavailable — update this reference
+                  </option>
+                ) : null}
+                {importedIssues.map((source) => (
+                  <option
+                    key={source.id}
+                    value={source.id}
+                    disabled={plan.workItems.some(
+                      (other, position) =>
+                        position !== index && other.importedIssueId === source.id,
+                    )}
+                  >
+                    #{source.issue.number} · {source.issue.title}
+                  </option>
+                ))}
+              </NativeSelect>
+            </div>
+            <div>
               <Label htmlFor={`work-description-${String(index)}`}>Description {index + 1}</Label>
               <Textarea
                 id={`work-description-${String(index)}`}
@@ -578,7 +615,13 @@ export function VerificationSummary({ commands }: { commands: Verification[] }) 
   );
 }
 
-export function FeaturePlanDocumentView({ plan }: { plan: FeaturePlanDocument }) {
+export function FeaturePlanDocumentView({
+  plan,
+  importedIssues = [],
+}: {
+  plan: FeaturePlanDocument;
+  importedIssues?: ImportedFactoryIssue[];
+}) {
   return (
     <div className="feature-plan-document">
       <section>
@@ -626,6 +669,23 @@ export function FeaturePlanDocumentView({ plan }: { plan: FeaturePlanDocument })
               <h4>
                 {index + 1}. {item.title} <span className="plan-key">{item.key}</span>
               </h4>
+              <div>
+                <h5>GitHub issue</h5>
+                {item.importedIssueId === null ? (
+                  <p>A new issue will be published after approval.</p>
+                ) : (
+                  (() => {
+                    const source = importedIssues.find(
+                      (candidate) => candidate.id === item.importedIssueId,
+                    );
+                    return source === undefined ? (
+                      <p>Imported issue unavailable. Load the latest plan before approval.</p>
+                    ) : (
+                      <ImportedIssueReference source={source} />
+                    );
+                  })()
+                )}
+              </div>
               <p className="planning-message-content">{item.description}</p>
               <p>
                 Requirements:{" "}

@@ -6,6 +6,7 @@ import {
   type FeaturePlans,
   type FeaturePlanVersion,
   type SaveFeaturePlanCommand,
+  type FactoryIssueImports,
 } from "@kestrel/contracts";
 import {
   ApiClientError,
@@ -13,6 +14,7 @@ import {
   cancelFeature,
   cancelPlanningTurn,
   fetchFeaturePlans,
+  fetchFactoryIssueImports,
   fetchFeaturePlanVersion,
   generateFeaturePlan,
   retryPlanningTurn,
@@ -118,7 +120,9 @@ export interface FeaturePlanPanelProps {
   onChanged: () => void;
   onApproved: () => void;
   onDirtyChange: (dirty: boolean) => void;
+  importsRevision?: number;
   loadPlans?: typeof fetchFeaturePlans;
+  loadImports?: typeof fetchFactoryIssueImports;
   savePlan?: typeof saveFeaturePlan;
   approvePlan?: typeof approveFeaturePlan;
 }
@@ -133,11 +137,14 @@ export function FeaturePlanPanel({
   onChanged,
   onApproved,
   onDirtyChange,
+  importsRevision = 0,
   loadPlans = fetchFeaturePlans,
+  loadImports = fetchFactoryIssueImports,
   savePlan = saveFeaturePlan,
   approvePlan = approveFeaturePlan,
 }: FeaturePlanPanelProps) {
   const [plans, setPlans] = useState<FeaturePlans | null>(null);
+  const [imports, setImports] = useState<FactoryIssueImports | null>(null);
   const [displayed, setDisplayed] = useState<FeaturePlanVersion | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [reading, setReading] = useState(false);
@@ -176,11 +183,15 @@ export function FeaturePlanPanel({
       setReading(true);
       setReadError(null);
       try {
-        const result = await loadPlans(projectId, featureId, controller.signal);
+        const [result, sources] = await Promise.all([
+          loadPlans(projectId, featureId, controller.signal),
+          loadImports(projectId, featureId, controller.signal),
+        ]);
         if (!alive.current || controller.signal.aborted) return;
-        if (result.feature.id !== featureId)
+        if (result.feature.id !== featureId || sources.feature.id !== featureId)
           throw new Error("The response contains a different feature");
         setPlans(result);
+        setImports(sources);
         setDisplayed((current) =>
           replaceDisplayed ? result.current : (current ?? result.current),
         );
@@ -193,11 +204,11 @@ export function FeaturePlanPanel({
         if (alive.current && activeRead.current === controller) setReading(false);
       }
     },
-    [online, loadPlans, projectId, featureId, onAuthenticationError],
+    [online, loadPlans, loadImports, projectId, featureId, onAuthenticationError],
   );
   useEffect(() => {
     if (visible) void refresh();
-  }, [visible, refresh]);
+  }, [visible, refresh, importsRevision]);
   const generation = plans?.generation;
   useEffect(() => {
     if (!visible || !online || !pendingTurn(generation ?? undefined) || readError !== null) return;
@@ -318,9 +329,31 @@ export function FeaturePlanPanel({
 
   const planning = plans?.feature.state === "planning";
   const pending = conversationPending || pendingTurn(generation ?? undefined);
-  const controlsDisabled = !online || busy || uncertain || reading;
+  const controlsDisabled = !online || busy || uncertain || reading || readError !== null;
   const currentVersion = plans?.current?.version ?? null;
   const latestDisplayed = displayed?.version === currentVersion;
+  const visiblePlan = draft?.plan ?? displayed?.document;
+  const assignmentProblems: string[] = [];
+  if (visiblePlan !== undefined && imports !== null) {
+    for (const source of imports.issues) {
+      const count = visiblePlan.workItems.filter(
+        (item) => item.importedIssueId === source.id,
+      ).length;
+      if (count === 0)
+        assignmentProblems.push(
+          `Assign #${String(source.issue.number)} · ${source.issue.title} to a Work Item`,
+        );
+      else if (count > 1)
+        assignmentProblems.push(`Assign #${String(source.issue.number)} to only one Work Item`);
+    }
+    for (const item of visiblePlan.workItems) {
+      if (
+        item.importedIssueId !== null &&
+        !imports.issues.some((source) => source.id === item.importedIssueId)
+      )
+        assignmentProblems.push(`Update the unavailable imported issue in ${item.key}`);
+    }
+  }
   return (
     <section className="feature-plan-panel" aria-label="Feature plan">
       <header className="plan-panel-header">
@@ -426,6 +459,16 @@ export function FeaturePlanPanel({
           </ul>
         </div>
       )}
+      {assignmentProblems.length === 0 ? null : (
+        <div className="planning-notice" role="status">
+          <p>Before approval:</p>
+          <ul>
+            {assignmentProblems.map((problem) => (
+              <li key={problem}>{problem}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       {draft !== null ? (
         <form
           onSubmit={(event) => {
@@ -436,6 +479,7 @@ export function FeaturePlanPanel({
         >
           <FeaturePlanEditor
             plan={draft.plan}
+            importedIssues={imports?.issues ?? []}
             disabled={controlsDisabled || !planning || pending}
             onChange={(plan) => setDraft({ ...draft, plan })}
           />
@@ -464,7 +508,10 @@ export function FeaturePlanPanel({
           {displayed === null ? null : (
             <>
               <PlanArtifacts version={displayed} />
-              <FeaturePlanDocumentView plan={displayed.document} />
+              <FeaturePlanDocumentView
+                plan={displayed.document}
+                importedIssues={imports?.issues ?? []}
+              />
             </>
           )}
           {planning ? (
@@ -501,7 +548,8 @@ export function FeaturePlanPanel({
               <h3>Approve this exact version</h3>
               <p>
                 Authorize the scope, ordered Work Items and execution limits shown above. Approval
-                queues this feature. Execution is not available yet.
+                queues this feature and publishes its GitHub issues. Imported issues are reused.
+                Execution is not available yet.
               </p>
               <p>
                 {displayed.document.workItems.length} Work Items ·{" "}
@@ -514,6 +562,8 @@ export function FeaturePlanPanel({
                   controlsDisabled ||
                   pending ||
                   !latestDisplayed ||
+                  imports === null ||
+                  assignmentProblems.length > 0 ||
                   planErrors(displayed.document).length > 0
                 }
                 onClick={() =>

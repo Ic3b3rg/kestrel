@@ -12,6 +12,11 @@ import {
   FeaturePlansSchema,
   FeaturePlanVersionSchema,
   FactoryBoardSchema,
+  FactoryGitHubIssuesSchema,
+  FactoryIssueImportsSchema,
+  FactoryIssuePublicationSchema,
+  ImportFactoryIssuesCommandSchema,
+  RetryFactoryPublicationCommandSchema,
   SaveFeaturePlanCommandSchema,
   GenerateFeaturePlanCommandSchema,
   ApproveFeaturePlanCommandSchema,
@@ -58,6 +63,10 @@ import {
   type FeaturePlans,
   type FeaturePlanVersion,
   type FactoryBoard,
+  type FactoryGitHubIssues,
+  type FactoryIssueImports,
+  type FactoryIssuePublication,
+  type ImportFactoryIssuesCommand,
   type SaveFeaturePlanCommand,
   type ChangeIntentVersionCreated,
   type CodexReviewModelPreference,
@@ -227,6 +236,76 @@ export async function fetchFeatures(projectId: string, signal?: AbortSignal) {
     signal: signal ?? null,
   });
   return requireJson(response, FeatureListSchema, "feature list");
+}
+
+export async function fetchFactoryGitHubIssues(
+  projectId: string,
+  page = 1,
+  signal?: AbortSignal,
+): Promise<FactoryGitHubIssues> {
+  const response = await fetch(
+    `/api/v1/projects/${KestrelIdSchema.parse(projectId)}/github-issues?page=${String(FactoryGitHubIssuesSchema.shape.page.parse(page))}`,
+    {
+      credentials: "same-origin",
+      headers: { Accept: "application/json" },
+      signal: signal ?? null,
+    },
+  );
+  return requireJson(response, FactoryGitHubIssuesSchema, "GitHub issues");
+}
+
+export async function fetchFactoryIssueImports(
+  projectId: string,
+  featureId: string,
+  signal?: AbortSignal,
+): Promise<FactoryIssueImports> {
+  const response = await fetch(`${featurePath(projectId, featureId)}/imports`, {
+    credentials: "same-origin",
+    headers: { Accept: "application/json" },
+    signal: signal ?? null,
+  });
+  return requireJson(response, FactoryIssueImportsSchema, "imported issues");
+}
+
+export async function importFactoryIssues(
+  projectId: string,
+  featureId: string,
+  command: ImportFactoryIssuesCommand,
+): Promise<FactoryIssueImports> {
+  const response = await fetch(`${featurePath(projectId, featureId)}/imports`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: authenticatedMutationHeaders(),
+    body: JSON.stringify(ImportFactoryIssuesCommandSchema.parse(command)),
+  });
+  return requireJson(response, FactoryIssueImportsSchema, "imported issues");
+}
+
+export async function fetchFactoryIssuePublication(
+  projectId: string,
+  featureId: string,
+  signal?: AbortSignal,
+): Promise<FactoryIssuePublication> {
+  const response = await fetch(`${featurePath(projectId, featureId)}/publication`, {
+    credentials: "same-origin",
+    headers: { Accept: "application/json" },
+    signal: signal ?? null,
+  });
+  return requireJson(response, FactoryIssuePublicationSchema, "GitHub publication");
+}
+
+export async function retryFactoryIssuePublication(
+  projectId: string,
+  featureId: string,
+  command: { requestId: string },
+): Promise<FactoryIssuePublication> {
+  const response = await fetch(`${featurePath(projectId, featureId)}/publication`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: authenticatedMutationHeaders(),
+    body: JSON.stringify(RetryFactoryPublicationCommandSchema.parse(command)),
+  });
+  return requireJson(response, FactoryIssuePublicationSchema, "GitHub publication request");
 }
 
 export async function fetchFeaturePlans(
