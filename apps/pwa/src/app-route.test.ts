@@ -5,6 +5,13 @@ import { appPath, readAppRoute } from "./app-route.js";
 const projectId = "018f0f89-949a-75a8-8f61-6df78a843b1e";
 
 describe("authenticated app routing", () => {
+  it.each(["plan", "board"] as const)("restores the %s view of a feature", (view) => {
+    const featureId = "018f0f89-9192-755f-aa96-f72094c734df";
+    const path = `/projects/${projectId}/features/${featureId}`;
+    const route = { kind: "feature" as const, projectId, featureId, view };
+    expect(readAppRoute(path, `?view=${view}`)).toEqual(route);
+    expect(appPath(route)).toBe(`${path}?view=${view}`);
+  });
   it("restores a feature chat within its Project and rejects malformed chat identities", () => {
     const featureId = "018f0f89-9192-755f-aa96-f72094c734df";
     const route = { kind: "feature" as const, projectId, featureId };

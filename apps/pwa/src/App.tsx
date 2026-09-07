@@ -169,6 +169,7 @@ function hasPendingChangeOverviewRendering(inbox: ProjectInbox | null): boolean 
 
 export function App() {
   const [projectFeatureIds, setProjectFeatureIds] = useState(readFeatureNavigation);
+  const [planDirty, setPlanDirty] = useState(false);
   const [route, setRoute] = useState<AppRoute>(() =>
     readAppRoute(window.location.pathname, window.location.search),
   );
@@ -223,6 +224,7 @@ export function App() {
           kind: "feature" as const,
           projectId: feature.projectId,
           featureId: feature.id,
+          ...(route.view === undefined ? {} : { view: route.view }),
         };
         window.history.replaceState(null, "", appPath(canonicalRoute));
         setRoute(canonicalRoute);
@@ -238,19 +240,56 @@ export function App() {
     );
   }, []);
 
-  const navigate = useCallback((nextRoute: Exclude<AppRoute, { kind: "not_found" }>) => {
-    const path = appPath(nextRoute);
-    if (`${window.location.pathname}${window.location.search}` !== path)
-      window.history.pushState(null, "", path);
-    setRoute(nextRoute);
-  }, []);
+  const navigate = useCallback(
+    (nextRoute: Exclude<AppRoute, { kind: "not_found" }>) => {
+      const sameFeature =
+        route.kind === "feature" &&
+        nextRoute.kind === "feature" &&
+        route.projectId === nextRoute.projectId &&
+        route.featureId === nextRoute.featureId;
+      if (
+        planDirty &&
+        !sameFeature &&
+        !window.confirm("Discard unsaved plan edits and leave this feature?")
+      )
+        return;
+      const path = appPath(nextRoute);
+      if (`${window.location.pathname}${window.location.search}` !== path)
+        window.history.pushState(null, "", path);
+      setRoute(nextRoute);
+    },
+    [planDirty, route],
+  );
 
   useEffect(() => {
-    const handlePopState = () =>
-      setRoute(readAppRoute(window.location.pathname, window.location.search));
+    const handlePopState = () => {
+      const nextRoute = readAppRoute(window.location.pathname, window.location.search);
+      const sameFeature =
+        route.kind === "feature" &&
+        nextRoute.kind === "feature" &&
+        route.projectId === nextRoute.projectId &&
+        route.featureId === nextRoute.featureId;
+      if (
+        planDirty &&
+        route.kind !== "not_found" &&
+        !sameFeature &&
+        !window.confirm("Discard unsaved plan edits and leave this feature?")
+      ) {
+        window.history.pushState(null, "", appPath(route));
+        return;
+      }
+      setRoute(nextRoute);
+    };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
-  }, []);
+  }, [planDirty, route]);
+
+  useEffect(() => {
+    if (!planDirty) return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [planDirty]);
 
   useEffect(() => {
     if (route.kind !== "settings" || session == null) return;
@@ -883,6 +922,8 @@ export function App() {
               navigationProject === undefined ? "Project" : projectLabel(navigationProject)
             }
             featureId={route.featureId}
+            {...(route.view === undefined ? {} : { view: route.view })}
+            onPlanDirtyChange={setPlanDirty}
             online={online}
             onNavigate={navigate}
             onAuthenticationError={handleAuthenticationBoundaryError}

@@ -48,6 +48,384 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+@layer components {
+  .feature-tabs {
+    flex: 1;
+    gap: 1.5rem;
+    min-width: 0;
+  }
+  .feature-tab-list {
+    min-height: 2.5rem;
+  }
+  .feature-tab-list [role="tab"] {
+    min-width: 5rem;
+    padding-inline: 1rem;
+  }
+  .feature-chat-content {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    min-height: calc(100dvh - 21rem);
+  }
+  .feature-chat-content[data-state="inactive"] {
+    display: none;
+  }
+  .feature-plan-panel,
+  .feature-board-panel {
+    display: grid;
+    gap: 1.5rem;
+    min-width: 0;
+  }
+  .plan-panel-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .plan-panel-header h2 {
+    font-size: 1.25rem;
+    margin: 0 0 0.5rem;
+  }
+  .plan-panel-header p {
+    color: var(--muted-foreground);
+    margin: 0;
+    max-width: 65ch;
+  }
+  .plan-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  .feature-plan-document {
+    display: grid;
+    gap: 1.75rem;
+    min-width: 0;
+  }
+  .feature-plan-document h3,
+  .feature-plan-editor h3,
+  .factory-item-dialog h3 {
+    font-size: 1rem;
+    margin: 0 0 0.75rem;
+  }
+  .feature-plan-document h4,
+  .feature-plan-document h5 {
+    font-size: 0.9375rem;
+    margin: 1rem 0 0.5rem;
+  }
+  .feature-plan-document p,
+  .factory-item-dialog p {
+    line-height: 1.7;
+  }
+  .feature-plan-document ul,
+  .factory-item-dialog ul {
+    padding-left: 1.2rem;
+    list-style: disc;
+  }
+  .feature-plan-document li,
+  .factory-item-dialog li {
+    overflow-wrap: anywhere;
+    margin: 0.35rem 0;
+  }
+  .plan-scope-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.25rem;
+  }
+  .plan-outcomes {
+    display: grid;
+    gap: 0.75rem;
+  }
+  .plan-outcomes > div {
+    display: grid;
+    grid-template-columns: 4rem minmax(0, 1fr);
+    gap: 0.75rem;
+  }
+  .plan-outcomes dt,
+  .plan-key {
+    color: var(--muted-foreground);
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+  }
+  .plan-outcomes dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  .plan-key {
+    margin-left: 0.5rem;
+  }
+  .plan-work-items {
+    list-style: none;
+    padding: 0;
+    display: grid;
+    gap: 1rem;
+  }
+  .plan-work-items > li {
+    padding: 1.25rem;
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+  }
+  .plan-work-items > li > h4 {
+    margin-top: 0;
+  }
+  .plan-work-items a {
+    text-decoration: underline;
+  }
+  .plan-verification-summary {
+    display: grid;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+  .plan-verification-summary li {
+    min-width: 0;
+  }
+  .plan-verification-summary code {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .plan-verification-summary span {
+    display: block;
+    color: var(--muted-foreground);
+    font-size: 0.8125rem;
+    margin-top: 0.25rem;
+  }
+  .plan-frozen-limits,
+  .plan-approval {
+    padding: 1.25rem;
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    background: var(--card);
+  }
+  .plan-approval {
+    display: grid;
+    justify-items: start;
+    gap: 0.75rem;
+  }
+  .plan-approval h3,
+  .plan-approval p {
+    margin: 0;
+  }
+  .plan-approval p {
+    max-width: 70ch;
+    color: var(--muted-foreground);
+  }
+  .plan-artifact {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-height: 60dvh;
+    overflow: auto;
+    padding: 1rem;
+    background: var(--background);
+    border-radius: 0.5rem;
+    font-size: 0.8125rem;
+    line-height: 1.7;
+  }
+  .feature-plan-editor {
+    display: grid;
+    gap: 1.75rem;
+    border: 0;
+    padding: 0;
+    margin: 0;
+  }
+  .feature-plan-editor fieldset,
+  .feature-plan-panel form {
+    min-width: 0;
+  }
+  .feature-plan-editor label {
+    margin-bottom: 0.4rem;
+  }
+  .feature-plan-editor legend {
+    margin-bottom: 0.65rem;
+    font-weight: 600;
+  }
+  .plan-text-list {
+    display: grid;
+    gap: 0.75rem;
+  }
+  .plan-list-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  .plan-list-row textarea {
+    min-width: 0;
+    flex: 1;
+  }
+  .plan-editor-section {
+    display: grid;
+    gap: 1rem;
+    justify-items: stretch;
+  }
+  .plan-editor-section > p,
+  .plan-verifications > p {
+    margin: 0;
+    color: var(--muted-foreground);
+  }
+  .plan-editor-section > button {
+    justify-self: start;
+  }
+  .plan-requirement-editor {
+    display: grid;
+    grid-template-columns: minmax(6rem, 0.3fr) minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 0.75rem;
+  }
+  .plan-item-editor {
+    display: grid;
+    gap: 1.25rem;
+    padding: 1.25rem;
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+  }
+  .plan-item-editor > header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+  .plan-item-editor h4 {
+    margin: 0;
+    font-size: 1rem;
+  }
+  .plan-key-choices {
+    display: grid;
+    gap: 0.5rem;
+  }
+  .plan-key-choices > label {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    font-weight: 400;
+    line-height: 1.5;
+  }
+  .plan-key-choices input {
+    margin-top: 0.2rem;
+    accent-color: var(--primary);
+  }
+  .plan-verifications {
+    display: grid;
+    gap: 1rem;
+  }
+  .plan-verification-editor {
+    padding: 1rem;
+    background: var(--card);
+    border-radius: 0.5rem;
+  }
+  .plan-verification-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+  }
+  .plan-save-actions {
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+  }
+  .plan-version-select {
+    display: grid;
+    gap: 0.5rem;
+    max-width: 20rem;
+  }
+  .factory-board {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    align-items: start;
+    gap: 0.75rem;
+  }
+  .factory-column {
+    min-width: 0;
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    padding: 0.75rem;
+  }
+  .factory-column h3 {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+    align-items: center;
+    margin: 0 0 1rem;
+    font-size: 0.875rem;
+  }
+  .factory-column h3 span {
+    color: var(--muted-foreground);
+    font-size: 0.8125rem;
+  }
+  .factory-column > ol {
+    display: grid;
+    gap: 0.75rem;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .factory-column-empty {
+    color: var(--muted-foreground);
+    font-size: 0.8125rem;
+    margin: 1rem 0;
+  }
+  .factory-work-card {
+    padding: 0.75rem;
+    gap: 0.6rem;
+  }
+  .factory-work-card > span,
+  .factory-work-card > strong {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+  .factory-card-order,
+  .factory-work-card > span {
+    color: var(--muted-foreground);
+    font-size: 0.75rem;
+    font-weight: 400;
+  }
+  .factory-work-card > .factory-card-blocking {
+    color: var(--warning);
+  }
+  .factory-activity {
+    display: grid;
+    gap: 0.75rem;
+    list-style: none;
+    padding: 0;
+    margin: 0.75rem 0 0;
+  }
+  .factory-activity p {
+    margin: 0;
+  }
+  .factory-activity time {
+    color: var(--muted-foreground);
+    font-size: 0.75rem;
+  }
+  .factory-board-activity summary {
+    cursor: pointer;
+    padding: 0.5rem 0;
+    font-weight: 600;
+  }
+  .feature-board-panel > .planning-notice > p {
+    margin: 0;
+  }
+}
+
+@media (max-width: 47.99rem) {
+  .plan-scope-grid,
+  .plan-verification-fields,
+  .factory-board {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .plan-requirement-editor {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .plan-requirement-editor > div:first-child {
+    grid-column: 1 / -1;
+  }
+  .plan-item-editor,
+  .plan-work-items > li {
+    padding: 1rem;
+  }
+  .plan-outcomes > div {
+    grid-template-columns: 3rem minmax(0, 1fr);
+  }
+}
+
 :root {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
