@@ -1519,6 +1519,11 @@ test.describe("observable Installation PWA", () => {
     });
     page.on("pageerror", (error) => browserErrors.push(error.message));
     let projectPostCount = 0;
+    // This Project exists only in the provider-response fixture below.
+    await page.route(`**/api/v1/projects/${openedProject.project.id}/features`, async (route) => {
+      expect(route.request().method()).toBe("GET");
+      await route.fulfill({ json: { schemaVersion: 1, features: [] }, status: 200 });
+    });
     await page.route(
       `**/api/v1/projects/${openedProject.project.id}/model-profiles/direct-api`,
       async (route) => {
