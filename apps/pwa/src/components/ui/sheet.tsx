@@ -6,6 +6,7 @@ import { Dialog as SheetPrimitive } from "radix-ui";
 
 import { Button } from "@/components/ui/button";
 import { XIcon } from "lucide-react";
+import { WorkspaceSuspendedContext } from "./workspace-suspension.js";
 
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />;
@@ -20,6 +21,7 @@ function SheetClose({ ...props }: React.ComponentProps<typeof SheetPrimitive.Clo
 }
 
 function SheetPortal({ ...props }: React.ComponentProps<typeof SheetPrimitive.Portal>) {
+  if (React.useContext(WorkspaceSuspendedContext)) return null;
   return <SheetPrimitive.Portal data-slot="sheet-portal" {...props} />;
 }
 

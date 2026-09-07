@@ -340,6 +340,9 @@ test.describe("Feature plan approval", () => {
 
     await page.getByRole("button", { name: "Edit draft", exact: true }).click();
     await objective.fill("This private draft must disappear when the session ends.");
+    await page.getByRole("button", { name: "Project documents", exact: true }).click();
+    const privateDialog = page.getByRole("dialog", { name: "Project documents", exact: true });
+    await expect(privateDialog).toBeVisible();
     const signedOut = await page.evaluate(async () => {
       const csrf = document.cookie
         .split("; ")
@@ -361,6 +364,7 @@ test.describe("Feature plan approval", () => {
       page.getByRole("heading", { name: "Sign in to Kestrel", exact: true }),
     ).toBeVisible();
     await expect(objective).toHaveCount(0);
+    await expect(privateDialog).toHaveCount(0);
     await page.getByLabel("Username").fill(TEST_OPERATOR_CREDENTIALS.username);
     await page.getByLabel("Password", { exact: true }).fill(TEST_OPERATOR_CREDENTIALS.password);
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
@@ -420,5 +424,55 @@ test.describe("Feature plan approval", () => {
       page.getByRole("heading", { name: "Plan · version 1", exact: true }),
     ).toBeVisible();
     await expect(page.getByLabel("Objective", { exact: true })).toHaveCount(0);
+  });
+
+  test("suspends document dialogs and the mobile drawer while retaining a private draft", async ({
+    page,
+  }) => {
+    if (stack === undefined) throw new Error("The planning stack is unavailable");
+    await login(page, stack.pwaUrl);
+    await openFeature(page, "Keep a draft behind its document inspector");
+    await page.getByRole("tab", { name: "Plan", exact: true }).click();
+    await seedPlan(page);
+
+    const reconnectWithDialog = async (name: string) => {
+      const dialog = page.getByRole("dialog", { name, exact: true });
+      await expect(dialog).toBeVisible();
+      await page.context().setOffline(true);
+      await page.route("**/api/v1/session", (route) => route.abort("connectionfailed"), {
+        times: 1,
+      });
+      await page.context().setOffline(false);
+      await expect(page.getByText("Session check unavailable", { exact: true })).toBeVisible();
+      await expect(dialog).toHaveCount(0);
+      const retry = page.getByRole("button", { name: "Retry session check", exact: true });
+      await retry.focus();
+      await expect(retry).toBeFocused();
+      if (name === "Workspace navigation")
+        await page.screenshot({
+          path: test.info().outputPath("session-retry-mobile.png"),
+          animations: "disabled",
+        });
+      await page.keyboard.press("Enter");
+      await expect(dialog).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(dialog).toHaveCount(0);
+    };
+
+    await page.getByRole("button", { name: "Plan Markdown", exact: true }).click();
+    await reconnectWithDialog("Plan Markdown · version 1");
+    await page.getByRole("button", { name: "Edit draft", exact: true }).click();
+    const draftObjective = "Retain edits while checking access to the document inspector.";
+    await page.getByLabel("Objective", { exact: true }).fill(draftObjective);
+    await page.getByRole("button", { name: "Project documents", exact: true }).click();
+    await reconnectWithDialog("Project documents");
+    await expect(page.getByLabel("Objective", { exact: true })).toHaveValue(draftObjective);
+
+    await page.setViewportSize({ width: 375, height: 812 });
+    const navigation = page.getByRole("button", { name: "Open navigation", exact: true });
+    await navigation.click();
+    await reconnectWithDialog("Workspace navigation");
+    await expect(navigation).toBeFocused();
+    await expect(page.getByLabel("Objective", { exact: true })).toHaveValue(draftObjective);
   });
 });

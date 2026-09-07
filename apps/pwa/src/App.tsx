@@ -1,4 +1,5 @@
 import { Button } from "./components/ui/button.js";
+import { WorkspaceSuspendedContext } from "./components/ui/workspace-suspension.js";
 import { FeatureNavigation } from "./FeatureNavigation.js";
 import { FeatureChatPanel } from "./FeatureChatPanel.js";
 import { readFeatureNavigation, saveFeatureNavigation } from "./feature-navigation.js";
@@ -1005,43 +1006,45 @@ export function App() {
           </section>
         </main>
       ) : null}
-      <div hidden={sessionPaused}>
-        <AuthenticatedShell
-          key={`${session.operator.id}/${session.credentialVersion}/${session.issuedAt}`}
-          announcement={announcement}
-          connection={connection}
-          error={projectError}
-          inbox={projectInbox}
-          loading={projectLoading}
-          online={online}
-          openProjectControl={
-            <OpenProjectForm
-              disabled={!online || projectPending}
-              onAuthenticationError={handleAuthenticationBoundaryError}
-              onOpened={handleProjectOpened}
-            />
-          }
-          operatorUsername={session.operator.username}
-          route={route}
-          projectFeatureIds={projectFeatureIds}
-          projectNavigation={
-            navigationProject === undefined ? null : (
-              <FeatureNavigation
-                key={navigationProject.id}
-                projectId={navigationProject.id}
-                {...(route.kind === "feature" ? { selectedFeatureId: route.featureId } : {})}
-                online={online}
-                onNavigate={navigate}
+      <WorkspaceSuspendedContext.Provider value={sessionPaused}>
+        <div hidden={sessionPaused}>
+          <AuthenticatedShell
+            key={`${session.operator.id}/${session.credentialVersion}/${session.issuedAt}`}
+            announcement={announcement}
+            connection={connection}
+            error={projectError}
+            inbox={projectInbox}
+            loading={projectLoading}
+            online={online}
+            openProjectControl={
+              <OpenProjectForm
+                disabled={!online || projectPending}
                 onAuthenticationError={handleAuthenticationBoundaryError}
+                onOpened={handleProjectOpened}
               />
-            )
-          }
-          onNavigate={navigate}
-          onRetry={() => setProjectReloadGeneration((generation) => generation + 1)}
-        >
-          {workspace}
-        </AuthenticatedShell>
-      </div>
+            }
+            operatorUsername={session.operator.username}
+            route={route}
+            projectFeatureIds={projectFeatureIds}
+            projectNavigation={
+              navigationProject === undefined ? null : (
+                <FeatureNavigation
+                  key={navigationProject.id}
+                  projectId={navigationProject.id}
+                  {...(route.kind === "feature" ? { selectedFeatureId: route.featureId } : {})}
+                  online={online}
+                  onNavigate={navigate}
+                  onAuthenticationError={handleAuthenticationBoundaryError}
+                />
+              )
+            }
+            onNavigate={navigate}
+            onRetry={() => setProjectReloadGeneration((generation) => generation + 1)}
+          >
+            {workspace}
+          </AuthenticatedShell>
+        </div>
+      </WorkspaceSuspendedContext.Provider>
     </>
   );
 }

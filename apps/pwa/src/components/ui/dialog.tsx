@@ -4,6 +4,7 @@ import { Dialog as DialogPrimitive } from "radix-ui";
 
 import { Button } from "@/components/ui/button";
 import { XIcon } from "lucide-react";
+import { WorkspaceSuspendedContext } from "./workspace-suspension.js";
 
 function Dialog({ ...props }: React.ComponentProps<typeof DialogPrimitive.Root>) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />;
@@ -14,6 +15,7 @@ function DialogTrigger({ ...props }: React.ComponentProps<typeof DialogPrimitive
 }
 
 function DialogPortal({ ...props }: React.ComponentProps<typeof DialogPrimitive.Portal>) {
+  if (React.useContext(WorkspaceSuspendedContext)) return null;
   return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />;
 }
 
