@@ -4,6 +4,7 @@ import {
   PlanningContextSchema,
   FactoryExecutionRevisionSchema,
   FactoryVerificationResultSchema,
+  FactoryExecutionRunSchema,
   type FactoryExecutionFailure,
   type FactoryExecutionRevision,
   type FactoryVerificationResult,
@@ -336,9 +337,11 @@ export function saveFactoryVerification(
   value: Omit<FactoryVerificationResult, "id" | "createdAt">,
 ): Promise<void> {
   const check = FactoryVerificationResultSchema.omit({ id: true, createdAt: true }).parse(value);
-  return withRun(pool, run, async (client, feature, row) => {
-    assertRunning(feature, row);
-    const command = run.plan.workItems.find((item) => item.key === run.key)?.verification[
+  return withRun(pool, run, async (client, _feature, row) => {
+    // A command already started may finish after cancellation. Preserve that evidence;
+    // cancellation still prevents new checkpoints and new container reservations.
+    if (row.reservation_released_at !== null) throw new FactoryError("conflict");
+    const command = FactoryExecutionRunSchema.shape.acceptedCommands.parse(row.accepted_commands)[
       check.position - 1
     ];
     const revision = FactoryExecutionRevisionSchema.parse(row.revision);
@@ -385,7 +388,9 @@ export function finishFactoryExecution(
         [run.id],
       );
       const revision = FactoryExecutionRevisionSchema.parse(row.revision);
-      const commands = run.plan.workItems.find((item) => item.key === run.key)?.verification;
+      const commands = FactoryExecutionRunSchema.shape.acceptedCommands.parse(
+        row.accepted_commands,
+      );
       const workspace = await workspaceFor(client, run.featureId);
       verified =
         workspace !== null &&
