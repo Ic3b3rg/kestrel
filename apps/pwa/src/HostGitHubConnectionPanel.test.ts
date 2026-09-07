@@ -141,4 +141,14 @@ describe("host GitHub Connection Settings", () => {
     expect(findButton(container, "Verify again").disabled).toBe(true);
     expect(loadConnection).not.toHaveBeenCalled();
   });
+
+  it("keeps the corrective link's Project selected while the Project inventory loads", async () => {
+    const second = { ...project, id: "018f0f89-949a-75a8-8f61-6df78a843b1f" };
+    const loadConnection = vi.fn().mockResolvedValue(ready);
+    await renderPanel({ initialProjectId: second.id, loadConnection, projects: [] });
+    await renderPanel({ initialProjectId: second.id, loadConnection, projects: [project, second] });
+    expect(container.querySelector<HTMLSelectElement>("#github-connection-project")?.value).toBe(
+      second.id,
+    );
+  });
 });

@@ -179,7 +179,9 @@ export function CodexSubscriptionConnectionPanel({
         <div className="section-heading">
           <div>
             <p className="section-index">03 / CONNECTIONS</p>
-            <h2 id="codex-connection-title">Codex subscription</h2>
+            <h2 id="codex-connection-title" tabIndex={-1}>
+              Codex subscription
+            </h2>
           </div>
           <p className={`state-marker connection-${visibleState ?? "checking"}`} role="status">
             <span aria-hidden="true" />

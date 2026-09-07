@@ -201,6 +201,13 @@ export function App() {
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
+  useEffect(() => {
+    if (route.kind !== "settings" || session == null) return;
+    const target = document.getElementById(window.location.hash.slice(1));
+    target?.focus();
+    target?.scrollIntoView({ block: "start" });
+  }, [route, session]);
+
   const resetProjectState = useCallback(() => {
     projectInboxController.current?.abort();
     projectInboxController.current = null;
@@ -709,6 +716,9 @@ export function App() {
             connectionControls={
               <>
                 <HostGitHubConnectionPanel
+                  initialProjectId={
+                    new URLSearchParams(window.location.search).get("projectId") ?? ""
+                  }
                   online={online}
                   projects={projectInbox?.projects ?? []}
                   onAuthenticationError={handleAuthenticationBoundaryError}

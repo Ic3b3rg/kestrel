@@ -26,6 +26,7 @@ const remediation: Record<ConnectionReason, string> = {
 };
 
 export interface HostGitHubConnectionPanelProps {
+  initialProjectId?: string;
   loadConnection?: (projectId?: string, signal?: AbortSignal) => Promise<HostGitHubConnection>;
   onAuthenticationError?: (error: unknown) => boolean;
   online: boolean;
@@ -33,18 +34,22 @@ export interface HostGitHubConnectionPanelProps {
 }
 
 export function HostGitHubConnectionPanel({
+  initialProjectId,
   loadConnection = fetchHostGitHubConnection,
   onAuthenticationError,
   online,
   projects,
 }: HostGitHubConnectionPanelProps) {
-  const [selectedProjectId, setSelectedProjectId] = useState(projects[0]?.id ?? "");
+  const [selectedProjectId, setSelectedProjectId] = useState(
+    initialProjectId ?? projects[0]?.id ?? "",
+  );
   const [connection, setConnection] = useState<HostGitHubConnection | null>(null);
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
   const active = useRef<AbortController | null>(null);
 
   useEffect(() => {
+    if (projects.length === 0) return;
     if (selectedProjectId !== "" && !projects.some(({ id }) => id === selectedProjectId)) {
       setSelectedProjectId(projects[0]?.id ?? "");
     } else if (selectedProjectId === "" && projects[0] !== undefined) {
@@ -137,7 +142,9 @@ export function HostGitHubConnectionPanel({
       <div className="section-heading">
         <div>
           <p className="section-index">03 / CONNECTIONS</p>
-          <h2 id="github-connection-title">GitHub CLI</h2>
+          <h2 id="github-connection-title" tabIndex={-1}>
+            GitHub CLI
+          </h2>
         </div>
         <p className={`state-marker connection-${visibleState ?? "checking"}`} role="status">
           <span aria-hidden="true" />

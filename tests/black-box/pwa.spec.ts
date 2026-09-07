@@ -989,6 +989,264 @@ test.describe("observable Installation PWA", () => {
     expect(browserErrors).toEqual([]);
   });
 
+  test("PR readiness keeps exact source, provider and Codex facts independent", async ({
+    page,
+  }) => {
+    if (stack === undefined) throw new Error("Readiness browser stack is unavailable");
+    const inbox = ProjectInboxSchema.parse(await (await stack.fetchApi("/api/v1/projects")).json());
+    const stored = inbox.projects.find(({ repository }) => repository?.name === "openai-node");
+    const proposal = stored?.changeProposals.find((value) => value.kind === "provider_observed");
+    if (stored === undefined || proposal?.kind !== "provider_observed")
+      throw new Error("PR fixture unavailable");
+    const source = {
+      id: "018f0f89-9a1d-7484-b224-866ef9d69990",
+      repositoryId: "018f0f89-9a1e-7d64-a5dd-18cc3e317401",
+      displayName: "openai-node",
+      state: "attached" as const,
+      objectFormat: "sha1" as const,
+      createdAt: "2026-09-07T12:00:00.000Z",
+      updatedAt: "2026-09-07T12:00:00.000Z",
+    };
+    const retained = {
+      id: "018f0f89-9a21-7271-b92d-f1cb0d48bb47",
+      state: "available" as const,
+      objectFormat: "sha1" as const,
+      base: proposal.base,
+      head: proposal.head,
+      objectCount: 7,
+      retainedBytes: 4096,
+      failureReason: null,
+      createdAt: "2026-09-07T12:00:00.000Z",
+      availableAt: "2026-09-07T12:00:01.000Z",
+    };
+    const parsedProject = ProjectInboxSchema.parse({
+      schemaVersion: 1,
+      projects: [
+        {
+          ...stored,
+          localRepositorySource: source,
+          sourceAvailability: "available",
+          changeProposals: [{ ...proposal, reviewRevisions: [retained] }],
+        },
+      ],
+    }).projects[0];
+    if (parsedProject === undefined) throw new Error("Readiness Project fixture unavailable");
+    let currentProject = parsedProject;
+    const readyCodex: CodexSubscriptionConnection = {
+      schemaVersion: 1,
+      state: "ready",
+      reason: null,
+      cli: { version: "0.152.1", supported: true, protocol: "app_server_v2" },
+      account: { authentication: "chatgpt", email: "readiness@example.com", plan: "plus" },
+      models: [{ id: "gpt-5.6-sol", displayName: "GPT-5.6 Sol", isDefault: true }],
+      usage: { availability: "available", primary: null, secondary: null },
+      checkedAt: "2026-09-07T12:00:00.000Z",
+    };
+    let codex = readyCodex;
+    let preference: CodexReviewModelPreference = {
+      schemaVersion: 1,
+      route: "codex_subscription",
+      selectedModelId: "gpt-5.6-sol",
+      updatedAt: "2026-09-07T12:00:00.000Z",
+    };
+    let githubDenied = false;
+    let codexFails = false;
+    let releaseCodex: () => void = () => {
+      throw new Error("Codex probe was not held");
+    };
+    let codexGate: Promise<void> | null = null;
+    await page.route("**/api/v1/projects", (route) =>
+      route.fulfill({
+        json: { schemaVersion: 1, projects: [currentProject, openedProject.project] },
+      }),
+    );
+    await page.route("**/api/v1/projects/*/model-profiles/direct-api", (route) =>
+      route.fulfill({ json: { schemaVersion: 1, profile: null } }),
+    );
+    await page.route("**/api/v1/projects/*/provider/github", (route) =>
+      route.fulfill({
+        json: {
+          schemaVersion: 1,
+          projectId: currentProject.id,
+          route: "host_gh",
+          limitations: ["Host session, bounded reads, and manual refresh only."],
+          status: {
+            executableVersion: "2.87.0",
+            availability: "available",
+            host: "github.com",
+            authentication: "authenticated",
+            account: "operator",
+          },
+          groupStates: ["review_requested", "authored", "other"].map((group) => ({
+            group,
+            state: "available",
+            failureReason: null,
+          })),
+          pullRequests: [],
+          observedAt: "2026-09-07T12:00:00.000Z",
+        },
+      }),
+    );
+    await page.route("**/api/v1/connections/github*", (route) => {
+      const projectId = new URL(route.request().url()).searchParams.get("projectId");
+      const checkedProject =
+        projectId === currentProject.id ? currentProject : openedProject.project;
+      return route.fulfill({
+        json: {
+          schemaVersion: 1,
+          state: githubDenied ? "action_required" : "ready",
+          reason: githubDenied ? "project_access_denied" : null,
+          cli: { version: "2.87.0", supported: true },
+          identity: { host: "github.com", account: "operator" },
+          projectAccess: githubDenied
+            ? { state: "not_verified", projectId, repository: null }
+            : {
+                state: "verified",
+                projectId,
+                repository: {
+                  owner: checkedProject.repository?.owner,
+                  name: checkedProject.repository?.name,
+                },
+              },
+          checkedAt: "2026-09-07T12:00:00.000Z",
+        },
+      });
+    });
+    await page.route("**/api/v1/connections/codex", async (route) => {
+      const response = codex;
+      if (codexGate !== null) await codexGate;
+      if (codexFails) await route.abort("failed");
+      else await route.fulfill({ json: response });
+    });
+    await page.route("**/api/v1/settings/review-model", (route) =>
+      route.fulfill({ json: preference }),
+    );
+    await page.goto(stack.pwaUrl);
+    await page.getByLabel("Username").fill(TEST_OPERATOR_CREDENTIALS.username);
+    await page.getByLabel("Password").fill(TEST_OPERATOR_CREDENTIALS.password);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await openProjectWorkspace(page);
+    const readiness = page.getByRole("region", { name: "PR readiness", exact: true });
+    const fact = (label: string) => readiness.getByText(label, { exact: true }).locator("..");
+    await expect(fact("Project / repository")).toContainText("openai/openai-node");
+    await expect(fact("Codex account")).toContainText("readiness@example.com");
+    await expect(fact("Selected model")).toContainText("GPT-5.6 Sol");
+    await expect(fact("GitHub access")).toContainText("Verified for this Project");
+    await expect(fact("Revision State")).toHaveText("Revision StateAvailable");
+    await expect(
+      readiness.getByLabel(`Retained head object ID ${retained.head.objectId}`),
+    ).toBeVisible();
+    await expect(readiness).toContainText("Review execution arrives in 0.2");
+    await expect(page.getByRole("button", { name: "Prepare Review", exact: true })).toHaveCount(0);
+    const resolveIntent = readiness.getByRole("link", { name: "Resolve Change Intent" });
+    await resolveIntent.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator(`#intent-${proposal.id}`)).toBeFocused();
+    await page.reload();
+    await expect(fact("Selected model")).toContainText("GPT-5.6 Sol");
+
+    currentProject = { ...currentProject, localRepositorySource: { ...source, state: "detached" } };
+    await page.reload();
+    await expect(fact("Local Repository Source")).toContainText("Detached");
+    await expect(fact("Revision State")).toHaveText("Revision StateAvailable");
+    await readiness.getByRole("link", { name: "Open local repository", exact: true }).click();
+    await expect(page.locator("#local-source-setup")).toBeFocused();
+
+    currentProject = {
+      ...currentProject,
+      localRepositorySource: source,
+      changeProposals: [
+        {
+          ...proposal,
+          head: { ...proposal.head, objectId: "f".repeat(40) },
+          reviewRevisions: [retained],
+        },
+      ],
+    };
+    await page.reload();
+    await expect(fact("Revision State")).toContainText("Not acquired");
+    await expect(readiness.getByLabel(`Observed head object ID ${"f".repeat(40)}`)).toBeVisible();
+    await expect(
+      readiness.getByLabel(`Retained head object ID ${retained.head.objectId}`),
+    ).toHaveCount(0);
+    await readiness.getByRole("link", { name: "Inspect exact revision acquisition" }).click();
+    await expect(page.locator(`#acquire-${proposal.id}`)).toBeFocused();
+
+    codex = {
+      ...readyCodex,
+      state: "action_required",
+      reason: "authentication_required",
+      account: null,
+      models: [],
+      usage: null,
+    };
+    await readiness.getByRole("button", { name: "Verify connections" }).click();
+    await expect(fact("Codex account")).toContainText("Action required");
+    await expect(fact("Codex account")).not.toContainText("readiness@example.com");
+    await expect(fact("GitHub access")).toContainText("Verified for this Project");
+    await expect(fact("Selected model")).toContainText("Live catalog unavailable");
+    await readiness.getByRole("link", { name: "Correct Codex connection" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Codex subscription", exact: true }),
+    ).toBeInViewport();
+    await expect(page.locator(".codex-connection")).toContainText("codex login");
+    await openProjectWorkspace(page);
+
+    codex = readyCodex;
+    preference = { ...preference, selectedModelId: "gpt-removed" };
+    githubDenied = true;
+    await readiness.getByRole("button", { name: "Verify connections" }).click();
+    await expect(fact("Selected model")).toContainText("saved model is no longer available");
+    await expect(fact("Selected model")).not.toContainText("GPT-5.6 Sol");
+    await expect(fact("Codex account")).toContainText("readiness@example.com");
+    await readiness.getByRole("link", { name: "Correct GitHub connection" }).click();
+    await expect(page.getByLabel("Project access", { exact: true })).toHaveValue(currentProject.id);
+    await expect(page.getByRole("heading", { name: "GitHub CLI", exact: true })).toBeInViewport();
+    await openProjectWorkspace(page);
+    await readiness.getByRole("link", { name: "Choose review model" }).click();
+    await expect(page.getByRole("heading", { name: "Review model", exact: true })).toBeInViewport();
+    await openProjectWorkspace(page);
+    codexFails = true;
+    await readiness.getByRole("button", { name: "Verify connections" }).click();
+    await expect(fact("Codex account")).toContainText("Unavailable");
+    await expect(fact("Codex account")).not.toContainText("readiness@example.com");
+    codexFails = false;
+    codexGate = new Promise<void>((resolve) => {
+      releaseCodex = resolve;
+    });
+    await readiness.getByRole("button", { name: "Verify connections" }).click();
+    await expect(fact("Codex account")).toContainText("Checking Codex");
+    codex = {
+      ...readyCodex,
+      account: { authentication: "chatgpt", email: "second@example.com", plan: "plus" },
+    };
+    await openProjectWorkspace(page, "Ic3b3rg/kestrel");
+    await expect(fact("Project / repository")).toContainText("Ic3b3rg/kestrel");
+    await expect(fact("Revision State")).toContainText("Not acquired");
+    await expect(fact("Codex account")).not.toContainText("readiness@example.com");
+    await expect(fact("Codex account")).toContainText("Checking Codex");
+    releaseCodex();
+    codexGate = null;
+    await expect(fact("Codex account")).toContainText("second@example.com");
+    await expect(fact("Codex account")).not.toContainText("readiness@example.com");
+
+    for (const width of [320, 768, 1024, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      await expect(readiness).toBeVisible();
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+        ),
+      ).toBe(true);
+    }
+    expect((await new AxeBuilder({ page }).include(".pr-readiness").analyze()).violations).toEqual(
+      [],
+    );
+    expect(
+      await page.evaluate(() => ({ local: localStorage.length, session: sessionStorage.length })),
+    ).toEqual({ local: 0, session: 0 });
+  });
+
   test("the Operator curates a source-backed Change Intent version", async ({ page }) => {
     if (stack === undefined) throw new Error("Change Intent browser stack is unavailable");
     const runningStack = stack;
@@ -1117,7 +1375,16 @@ test.describe("observable Installation PWA", () => {
     );
     await expect(page.getByText("Current v1", { exact: true })).toBeVisible();
     await expect(page.getByText(`Source digest ${"f".repeat(64)}`, { exact: true })).toBeVisible();
-    await expect(page.getByText("Resolved", { exact: true })).toBeVisible();
+    await expect(
+      page
+        .getByRole("region", { name: "Current Change Intent version" })
+        .getByText("Resolved", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page
+        .getByRole("region", { name: "PR readiness", exact: true })
+        .getByText("Resolved", { exact: true }),
+    ).toBeVisible();
     await expect(page.getByText("Work Item", { exact: true })).toHaveCount(0);
     await expect(page.getByText("Planning Session", { exact: true })).toHaveCount(0);
     const accessibility = await new AxeBuilder({ page }).include(".change-intent-editor").analyze();

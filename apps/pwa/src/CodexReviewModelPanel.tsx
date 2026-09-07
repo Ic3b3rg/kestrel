@@ -185,7 +185,9 @@ export function CodexReviewModelPanel({
       <div className="section-heading">
         <div>
           <p className="section-index">04 / REVIEW MODEL</p>
-          <h2 id="review-model-title">Review model</h2>
+          <h2 id="review-model-title" tabIndex={-1}>
+            Review model
+          </h2>
         </div>
         <p className={`state-marker connection-${stateClass}`} role="status">
           <span aria-hidden="true" />

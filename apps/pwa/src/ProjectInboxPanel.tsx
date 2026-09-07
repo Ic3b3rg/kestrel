@@ -18,6 +18,8 @@ import { ShortObjectId } from "./ShortObjectId.js";
 import { ReviewPreparationPanel } from "./ReviewPreparationPanel.js";
 import { DirectApiProfilePanel } from "./DirectApiProfilePanel.js";
 import { currentReviewRevision } from "./current-review-revision.js";
+import { PrReadinessSummary } from "./PrReadinessSummary.js";
+import { useProjectConnections, type ProjectConnections } from "./use-project-connections.js";
 
 interface ProjectInboxPanelProps {
   error: string | null;
@@ -185,12 +187,12 @@ function ProjectFacts({ project }: { project: Project }) {
         </dd>
       </div>
       <div>
-        <dt>Model access</dt>
+        <dt>Direct API model access</dt>
         <dd>
           <strong>{modelAccessLabels[project.modelAccess]}</strong>
           <span>
             {project.modelAccess === "not_configured"
-              ? "No model route is available."
+              ? "No Direct API profile is configured. Codex readiness is shown with each PR."
               : "The Project profile remains independent of source acquisition and Review readiness."}
           </span>
         </dd>
@@ -250,6 +252,8 @@ function RevisionFacts({
 
 function ChangeProposalRecord({
   canAcquire,
+  connections,
+  project,
   changeProposal,
   disabled,
   onAuthenticationError,
@@ -259,6 +263,8 @@ function ChangeProposalRecord({
   projectId,
 }: {
   canAcquire: boolean;
+  connections: ProjectConnections;
+  project: Project;
   changeProposal: ChangeProposal;
   disabled: boolean;
   onAuthenticationError?: (error: unknown) => boolean;
@@ -343,7 +349,12 @@ function ChangeProposalRecord({
           Refresh PR #{changeProposal.number}
         </button>
       </div>
-      <dl className="commit-pointer-list">
+      <PrReadinessSummary
+        connections={connections}
+        disabled={disabled}
+        project={project}
+        proposal={changeProposal}
+      >
         <div>
           <dt>Observed base</dt>
           <dd>
@@ -377,36 +388,45 @@ function ChangeProposalRecord({
               ? null
               : ` v${String(changeProposal.changeIntent.version)}`}
           </dt>
-          <dd>{changeProposal.changeIntent?.text ?? "Not confirmed"}</dd>
+          <dd>
+            <strong>
+              {changeProposal.changeIntent?.resolution.state === "resolved"
+                ? "Resolved"
+                : "Action required"}
+            </strong>
+            <span>{changeProposal.changeIntent?.text ?? "Not confirmed"}</span>
+            <a href={`#intent-${changeProposal.id}`}>
+              {changeProposal.changeIntent?.resolution.state === "resolved"
+                ? "Edit Change Intent"
+                : "Resolve Change Intent"}
+            </a>
+          </dd>
         </div>
         <RevisionFacts revision={revision} />
-      </dl>
+      </PrReadinessSummary>
       <ChangeOverviewPanel headingId={changeOverviewHeadingId} overview={changeOverview} />
-      <ChangeIntentEditor
-        key={`${changeProposal.id}:${String(changeProposal.version)}`}
-        disabled={disabled}
-        projectId={projectId}
-        proposal={changeProposal}
-        {...(onAuthenticationError === undefined ? {} : { onAuthenticationError })}
-        onCreated={onIntentCreated}
-      />
-      {canAcquire ? (
-        <AcquireObservedReviewRevisionForm
-          key={`${changeProposal.id}:${String(changeProposal.changeIntent?.version ?? 0)}:${revision?.id ?? "none"}:${revision?.state ?? "none"}`}
+      <div id={`intent-${changeProposal.id}`} tabIndex={-1}>
+        <ChangeIntentEditor
+          key={`${changeProposal.id}:${String(changeProposal.version)}`}
           disabled={disabled}
           projectId={projectId}
           proposal={changeProposal}
           {...(onAuthenticationError === undefined ? {} : { onAuthenticationError })}
-          onAvailable={onAvailable}
+          onCreated={onIntentCreated}
         />
-      ) : null}
-      <ReviewPreparationPanel
-        key={`${changeProposal.id}:${String(changeProposal.version)}:${String(changeProposal.changeIntent?.version ?? 0)}:${revision?.id ?? "none"}:${revision?.state ?? "none"}`}
-        disabled={disabled}
-        projectId={projectId}
-        proposalId={changeProposal.id}
-        {...(onAuthenticationError === undefined ? {} : { onAuthenticationError })}
-      />
+      </div>
+      <div id={`acquire-${changeProposal.id}`} tabIndex={-1}>
+        {canAcquire ? (
+          <AcquireObservedReviewRevisionForm
+            key={`${changeProposal.id}:${String(changeProposal.changeIntent?.version ?? 0)}:${revision?.id ?? "none"}:${revision?.state ?? "none"}`}
+            disabled={disabled}
+            projectId={projectId}
+            proposal={changeProposal}
+            {...(onAuthenticationError === undefined ? {} : { onAuthenticationError })}
+            onAvailable={onAvailable}
+          />
+        ) : null}
+      </div>
     </section>
   );
 }
@@ -442,15 +462,16 @@ export function ProjectInboxPanel(props: ProjectInboxPanelProps) {
         <p className="credential-state">Credentials stay with host Git</p>
       </div>
 
-      <OpenLocalRepositoryForm
-        disabled={unavailable}
-        projects={props.inbox?.projects ?? []}
-        {...(props.onAuthenticationError === undefined
-          ? {}
-          : { onAuthenticationError: props.onAuthenticationError })}
-        onAvailable={(result) => props.onLocalAvailable?.(result)}
-      />
-
+      <div id="local-source-setup" tabIndex={-1}>
+        <OpenLocalRepositoryForm
+          disabled={unavailable}
+          projects={props.inbox?.projects ?? []}
+          {...(props.onAuthenticationError === undefined
+            ? {}
+            : { onAuthenticationError: props.onAuthenticationError })}
+          onAvailable={(result) => props.onLocalAvailable?.(result)}
+        />
+      </div>
       <form className="project-form" onSubmit={handleSubmit} noValidate>
         <div className="form-field">
           <label htmlFor={fieldId}>Optional public GitHub pull request URL</label>
@@ -524,84 +545,106 @@ export function ProjectInboxPanel(props: ProjectInboxPanelProps) {
       ) : (
         <div className="project-list">
           {props.inbox.projects.map((project) => (
-            <article className="project-card" key={project.id}>
-              <div className="project-identity">
-                <div>
-                  {project.repository === null ? (
-                    <>
-                      <p>LOCAL REPOSITORY SOURCE</p>
-                      <h3>{project.localRepositorySource?.displayName ?? "Local Project"}</h3>
-                    </>
-                  ) : (
-                    <>
-                      <p>
-                        {project.providerObservation?.kind === "host_gh"
-                          ? "GITHUB / HOST SESSION"
-                          : "PUBLIC GITHUB / NO AUTHENTICATION"}
-                      </p>
-                      <h3>
-                        <a href={project.repository.canonicalUrl}>
-                          {project.repository.owner}/{project.repository.name}
-                        </a>
-                      </h3>
-                    </>
-                  )}
-                </div>
-                <code>{project.id}</code>
-              </div>
-              <ProjectFacts project={project} />
-              <DirectApiProfilePanel
-                disabled={unavailable}
-                projectId={project.id}
-                {...(props.onAuthenticationError === undefined
-                  ? {}
-                  : { onAuthenticationError: props.onAuthenticationError })}
-                onChanged={(profile) => props.onModelProfileChanged?.(project.id, profile)}
-              />
-              {project.localRepositorySource?.state === "attached" ? (
-                <HostGitHubProjectPanel
-                  key={project.id}
-                  projectId={project.id}
-                  disabled={unavailable}
-                  online={props.online}
-                  {...(props.onAuthenticationError === undefined
-                    ? {}
-                    : { onAuthenticationError: props.onAuthenticationError })}
-                  onObserved={(observed) => props.onHostObserved?.(observed)}
-                />
-              ) : null}
-              <div className="proposal-list">
-                {project.changeProposals.map((changeProposal) => (
-                  <ChangeProposalRecord
-                    canAcquire={project.localRepositorySource?.state === "attached"}
-                    changeProposal={changeProposal}
-                    disabled={unavailable}
-                    key={changeProposal.id}
-                    projectId={project.id}
-                    {...(props.onAuthenticationError === undefined
-                      ? {}
-                      : { onAuthenticationError: props.onAuthenticationError })}
-                    onAvailable={(result) => props.onLocalAvailable?.(result)}
-                    onIntentCreated={(result) => props.onIntentCreated?.(result)}
-                    onRefresh={() => {
-                      if (
-                        project.providerObservation?.kind === "host_gh" &&
-                        isProviderChangeProposal(changeProposal)
-                      ) {
-                        props.onHostRefresh?.(project.id, changeProposal.number);
-                        return;
-                      }
-                      if (isProviderChangeProposal(changeProposal)) {
-                        props.onOpen(changeProposal.canonicalUrl);
-                      }
-                    }}
-                  />
-                ))}
-              </div>
-            </article>
+            <ProjectRecord
+              key={project.id}
+              project={project}
+              props={props}
+              unavailable={unavailable}
+            />
           ))}
         </div>
       )}
     </section>
+  );
+}
+
+function ProjectRecord({
+  project,
+  props,
+  unavailable,
+}: {
+  project: Project;
+  props: ProjectInboxPanelProps;
+  unavailable: boolean;
+}) {
+  const connections = useProjectConnections(project, props.online, props.onAuthenticationError);
+  return (
+    <article className="project-card" key={project.id}>
+      <div className="project-identity">
+        <div>
+          {project.repository === null ? (
+            <>
+              <p>LOCAL REPOSITORY SOURCE</p>
+              <h3>{project.localRepositorySource?.displayName ?? "Local Project"}</h3>
+            </>
+          ) : (
+            <>
+              <p>
+                {project.providerObservation?.kind === "host_gh"
+                  ? "GITHUB / HOST SESSION"
+                  : "PUBLIC GITHUB / NO AUTHENTICATION"}
+              </p>
+              <h3>
+                <a href={project.repository.canonicalUrl}>
+                  {project.repository.owner}/{project.repository.name}
+                </a>
+              </h3>
+            </>
+          )}
+        </div>
+        <code>{project.id}</code>
+      </div>
+      <ProjectFacts project={project} />
+      <DirectApiProfilePanel
+        disabled={unavailable}
+        projectId={project.id}
+        {...(props.onAuthenticationError === undefined
+          ? {}
+          : { onAuthenticationError: props.onAuthenticationError })}
+        onChanged={(profile) => props.onModelProfileChanged?.(project.id, profile)}
+      />
+      {project.localRepositorySource?.state === "attached" ? (
+        <HostGitHubProjectPanel
+          key={project.id}
+          projectId={project.id}
+          disabled={unavailable}
+          online={props.online}
+          {...(props.onAuthenticationError === undefined
+            ? {}
+            : { onAuthenticationError: props.onAuthenticationError })}
+          onObserved={(observed) => props.onHostObserved?.(observed)}
+        />
+      ) : null}
+      <div className="proposal-list">
+        {project.changeProposals.map((changeProposal) => (
+          <ChangeProposalRecord
+            connections={connections}
+            project={project}
+            canAcquire={project.localRepositorySource?.state === "attached"}
+            changeProposal={changeProposal}
+            disabled={unavailable}
+            key={changeProposal.id}
+            projectId={project.id}
+            {...(props.onAuthenticationError === undefined
+              ? {}
+              : { onAuthenticationError: props.onAuthenticationError })}
+            onAvailable={(result) => props.onLocalAvailable?.(result)}
+            onIntentCreated={(result) => props.onIntentCreated?.(result)}
+            onRefresh={() => {
+              if (
+                project.providerObservation?.kind === "host_gh" &&
+                isProviderChangeProposal(changeProposal)
+              ) {
+                props.onHostRefresh?.(project.id, changeProposal.number);
+                return;
+              }
+              if (isProviderChangeProposal(changeProposal)) {
+                props.onOpen(changeProposal.canonicalUrl);
+              }
+            }}
+          />
+        ))}
+      </div>
+    </article>
   );
 }

@@ -1419,6 +1419,43 @@ h4 a {
   font-size: 0.8125rem;
 }
 
+.pr-readiness {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+}
+
+.pr-readiness-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.pr-readiness-heading h5 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.pr-readiness-heading p,
+.pr-readiness-release {
+  margin: 0.5rem 0 0;
+  font-size: 0.8125rem;
+}
+
+.readiness-facts > div {
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+
+.pr-readiness-release {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
 .change-overview {
   display: grid;
   gap: 1rem;
