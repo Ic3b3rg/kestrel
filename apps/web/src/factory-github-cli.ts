@@ -51,15 +51,19 @@ export function runFactoryGitHubCli({
     let settled = false;
     let failure: FactoryProviderFailure | undefined;
     const kill = () => {
-      if (process.platform !== "win32" && child.pid !== undefined) {
-        try {
+      if (settled) return;
+      try {
+        if (process.platform !== "win32" && child.pid !== undefined) {
           process.kill(-child.pid, "SIGKILL");
-          return;
-        } catch {
-          /* direct-child fallback */
-        }
+        } else child.kill("SIGKILL");
+      } catch {
+        child.kill("SIGKILL");
       }
-      child.kill("SIGKILL");
+      // A descendant can escape the group and retain its pipes. Never wait for its close.
+      child.stdin.destroy();
+      child.stdout.destroy();
+      child.stderr.destroy();
+      finish(null);
     };
     const onAbort = () => {
       failure = "cancelled";

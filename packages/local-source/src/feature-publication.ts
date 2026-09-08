@@ -91,7 +91,13 @@ function run(
       config.gitExecutable,
       ["--no-lazy-fetch", ...SAFE_GIT_CONFIG_ARGUMENTS, ...args],
       {
-        env: environment,
+        env: {
+          ...environment,
+          // Native gh credential helpers must use the same profile as the identity check.
+          ...(process.env.GH_CONFIG_DIR === undefined
+            ? {}
+            : { GH_CONFIG_DIR: process.env.GH_CONFIG_DIR }),
+        },
         shell: false,
         detached: process.platform !== "win32",
         stdio: ["ignore", "pipe", "pipe"],
@@ -99,36 +105,59 @@ function run(
     );
     let problem: FeaturePublicationGitFailure | undefined;
     let started = child.pid !== undefined;
+    let settled = false;
     const chunks: Buffer[] = [];
     let stdoutBytes = 0;
     let stderrBytes = 0;
     const stop = () => {
-      if (process.platform !== "win32" && child.pid !== undefined) {
-        try {
+      if (settled) return;
+      try {
+        if (process.platform !== "win32" && child.pid !== undefined) {
           process.kill(-child.pid, "SIGKILL");
-          return;
-        } catch {
-          /* The group may have exited. */
-        }
+        } else child.kill("SIGKILL");
+      } catch {
+        child.kill("SIGKILL");
       }
-      child.kill("SIGKILL");
+      // An escaped descendant may retain these pipes after the original group dies.
+      child.stdout.destroy();
+      child.stderr.destroy();
+      finish(null);
     };
     const abort = () => {
       problem = "cancelled";
       stop();
     };
-    options.signal?.addEventListener("abort", abort, { once: true });
-    if (options.signal?.aborted === true) abort();
     const timer = setTimeout(() => {
       problem = "timeout";
       stop();
     }, options.timeoutMs ?? 10_000);
     timer.unref();
+    const finish = (exitCode: number | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      options.signal?.removeEventListener("abort", abort);
+      let stdout = "";
+      try {
+        stdout = new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks));
+      } catch {
+        problem ??= "unavailable";
+      }
+      resolve({
+        started,
+        exitCode,
+        stdout,
+        ...(problem === undefined ? {} : { failure: problem }),
+      });
+    };
+    options.signal?.addEventListener("abort", abort, { once: true });
+    if (options.signal?.aborted === true) abort();
     child.once("spawn", () => {
       started = true;
     });
     child.once("error", () => {
       problem ??= "unavailable";
+      stop();
     });
     child.stdout.on("data", (chunk: Buffer) => {
       stdoutBytes += chunk.length;
@@ -144,22 +173,7 @@ function run(
         stop();
       }
     });
-    child.once("close", (exitCode) => {
-      clearTimeout(timer);
-      options.signal?.removeEventListener("abort", abort);
-      let stdout = "";
-      try {
-        stdout = new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks));
-      } catch {
-        problem = "unavailable";
-      }
-      resolve({
-        started,
-        exitCode,
-        stdout,
-        ...(problem === undefined ? {} : { failure: problem }),
-      });
-    });
+    child.once("close", finish);
   });
 }
 async function checked(
