@@ -65,6 +65,107 @@ function plan() {
 }
 
 describe("approvable Feature plans", () => {
+  const proposal = {
+    key: "search-language",
+    kind: "glossary" as const,
+    path: "CONTEXT.md",
+    pathIsProvisional: false,
+    markdown: "# Language\n\n**Saved search**: A named set of filters.\n",
+    workItemKey: "save-search",
+  };
+
+  it("retains exact proposed Markdown with an owning Work Item without changing old plans", () => {
+    const legacy = FeaturePlanDocumentSchema.parse(plan());
+    expect(legacy).not.toHaveProperty("proposedDocuments");
+    const document = FeaturePlanDocumentSchema.parse({ ...plan(), proposedDocuments: [proposal] });
+    expect(document.proposedDocuments).toEqual([proposal]);
+    expect(validateFeaturePlan(document)).toEqual([]);
+  });
+
+  it.each([
+    "/tmp/CONTEXT.md",
+    "../CONTEXT.md",
+    "docs/../CONTEXT.md",
+    "docs//a.md",
+    "./CONTEXT.md",
+    "C:/CONTEXT.md",
+    "docs\\a.md",
+    "docs/a\0.md",
+    "docs/a\n.md",
+    ".git/notes.md",
+    ".kestrel/plan.md",
+    "docs/.git/notes.md",
+    "docs/a.txt",
+    "https://example.com/a.md",
+  ])("rejects proposed Markdown outside safe Project paths: %s", (path) => {
+    const result = FeaturePlanDocumentSchema.safeParse({
+      ...plan(),
+      proposedDocuments: [{ ...proposal, path }],
+    });
+    expect(result.success && validateFeaturePlan(result.data).length === 0).toBe(false);
+  });
+
+  it("rejects repeated document identities and unknown owning Work Items", () => {
+    const document = FeaturePlanDocumentSchema.parse({
+      ...plan(),
+      proposedDocuments: [proposal, { ...proposal, workItemKey: "missing-item" }],
+    });
+    const errors = validateFeaturePlan(document).join(" ");
+    expect(errors).toContain("Duplicate proposed document key");
+    expect(errors).toContain("Duplicate proposed document path");
+    expect(errors).toContain("Unknown Work Item missing-item");
+  });
+
+  it("bounds the combined UTF-8 Markdown, including content split across documents", () => {
+    const candidate = (markdown: string) =>
+      FeaturePlanDocumentSchema.parse({
+        ...plan(),
+        proposedDocuments: [
+          { ...proposal, markdown: "é".repeat(8_000) },
+          { ...proposal, key: "adr", kind: "adr", path: "docs/adr/search.md", markdown },
+        ],
+      });
+    expect(validateFeaturePlan(candidate("é".repeat(8_000)))).toEqual([]);
+    expect(validateFeaturePlan(candidate("é".repeat(8_000) + "x")).join(" ")).toContain(
+      "Proposed Markdown exceeds 32,000 UTF-8 bytes",
+    );
+    expect(
+      FeaturePlanDocumentSchema.safeParse({
+        ...plan(),
+        proposedDocuments: Array.from({ length: 5 }, () => proposal),
+      }).success,
+    ).toBe(false);
+  });
+
+  it("counts proposed documents inside the unchanged whole-plan detail limit", () => {
+    const document = FeaturePlanDocumentSchema.parse({
+      ...plan(),
+      proposedDocuments: [{ ...proposal, markdown: "x".repeat(32_000) }],
+    });
+    document.scope.includes = Array.from({ length: 20 }, () => "x".repeat(2_000));
+    document.scope.excludes = Array.from({ length: 12 }, () => "x".repeat(2_000));
+    expect(validateFeaturePlan(document).join(" ")).toContain("Plan exceeds the detail limit");
+  });
+
+  it("keeps a legacy plan at the exact old byte limit readable and approvable", () => {
+    const legacy = FeaturePlanDocumentSchema.parse(plan());
+    legacy.scope.includes = Array.from({ length: 20 }, () => "x".repeat(2_000));
+    legacy.scope.excludes = Array.from({ length: 20 }, () => "x".repeat(2_000));
+    const first = legacy.workItems[0];
+    const second = legacy.workItems[1];
+    if (first === undefined || second === undefined) throw new Error("Work Item fixture missing");
+    first.description = "x".repeat(8_000);
+    second.description += "x".repeat(96_000 - Buffer.byteLength(JSON.stringify(legacy)));
+    const parsed = FeaturePlanDocumentSchema.parse(legacy);
+    expect(Buffer.byteLength(JSON.stringify(parsed))).toBe(96_000);
+    expect(parsed).not.toHaveProperty("proposedDocuments");
+    expect(validateFeaturePlan(parsed)).toEqual([]);
+    second.description += "x";
+    expect(validateFeaturePlan(FeaturePlanDocumentSchema.parse(legacy)).join(" ")).toContain(
+      "Plan exceeds the detail limit",
+    );
+  });
+
   it("keeps older plans readable and rejects one imported issue assigned twice", () => {
     const candidate = FeaturePlanDocumentSchema.parse(plan());
     expect(candidate.workItems[0]?.importedIssueId).toBeNull();

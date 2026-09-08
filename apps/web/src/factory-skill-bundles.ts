@@ -95,7 +95,7 @@ export async function loadHostSkillBundle(
   };
 }
 
-function referencePath(from: string, reference: string, required: boolean): string | null {
+export function referencePath(from: string, reference: string, required: boolean): string | null {
   if (/^file:|^[a-z]:[\\/]/iu.test(reference)) throw new FactorySkillBundleError("unsafe_path");
   if (
     reference.startsWith("#") ||
@@ -203,7 +203,7 @@ async function readBoundedText(
   }
 }
 
-function entryMetadata(content: string): { name: string; description: string } {
+export function entryMetadata(content: string): { name: string; description: string } {
   const frontmatter = /^\uFEFF?---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)([\s\S]*)$/u.exec(
     content,
   );
@@ -235,7 +235,7 @@ function entryMetadata(content: string): { name: string; description: string } {
   return { name, description: description.trim() };
 }
 
-function instructionProse(content: string): string {
+export function instructionProse(content: string): string {
   const body = content.replace(/^\uFEFF?---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/u, "");
   let fence: string | undefined;
   return body
@@ -265,7 +265,7 @@ function negativeOrOptional(text: string): boolean {
   return /\b(?:not|never|avoid|without|don't|optional(?:ly)?|example)\b/iu.test(text);
 }
 
-function rejectRequiredExecution(prose: string): void {
+export function rejectRequiredExecution(prose: string): void {
   for (const sentence of prose.split(/[.!?]\s+|\n/u)) {
     const action = /\b(?:run|execute|launch)\b/iu.exec(sentence);
     if (action === null) continue;
@@ -293,7 +293,7 @@ function rejectRequiredExecution(prose: string): void {
 }
 
 /** Retain relative inline links and single-line reference links; examples and images are not dependencies. */
-function markdownReferences(prose: string): Array<{ target: string; required: boolean }> {
+export function markdownReferences(prose: string): Array<{ target: string; required: boolean }> {
   const definitions = new Map<string, string>();
   const label = (value: string) => value.trim().replace(/\s+/gu, " ").toLowerCase();
   const text = prose

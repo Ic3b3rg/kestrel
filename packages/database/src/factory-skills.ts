@@ -1,9 +1,15 @@
+import { createHash } from "node:crypto";
 import {
+  GitHubPlanningSkillBundleSchema,
+  GitHubPlanningSkillSourceSchema,
+  InstallGitHubPlanningSkillCommandSchema,
   PlanningSkillBundleSchema,
   PlanningSkillDigestsSchema,
   PlanningSkillSummarySchema,
   type FeaturePlanningSkills,
+  type GitHubPlanningSkillBundle,
   type InstallPlanningSkillCommand,
+  type InstallGitHubPlanningSkillCommand,
   type PlanningSkillBundle,
   type PlanningSkillSummary,
   type SelectPlanningSkillsCommand,
@@ -80,7 +86,7 @@ export async function listPlanningSkills(pool: DatabasePool): Promise<PlanningSk
 export async function readPlanningSkillInstall(
   reader: Reader,
   actorId: string,
-  command: InstallPlanningSkillCommand,
+  command: InstallPlanningSkillCommand | InstallGitHubPlanningSkillCommand,
 ): Promise<PlanningSkillBundle | null> {
   const result = await reader.query<{ candidate_id: string; digest: string }>(
     "SELECT candidate_id, digest FROM factory_planning_skill_installs WHERE actor_id = $1 AND request_id = $2",
@@ -88,20 +94,80 @@ export async function readPlanningSkillInstall(
   );
   const row = result.rows[0];
   if (row === undefined) return null;
-  if (row.candidate_id !== command.candidateId)
+  if (
+    "digest" in command ? row.digest !== command.digest : row.candidate_id !== command.candidateId
+  )
     throw new FactoryError(
       "conflict",
       "This import request was already used for a different Skill",
     );
-  return readPlanningSkill(reader, row.digest);
+  const retained = await readPlanningSkill(reader, row.digest);
+  if (retained.source.kind !== ("digest" in command ? "github" : "host"))
+    throw new FactoryError("conflict", "This request was already used for another import source");
+  return retained;
+}
+
+/** A preview retains provenance and bytes only; it grants no catalog or planning authority. */
+export async function retainGitHubPlanningSkill(
+  pool: DatabasePool,
+  input: GitHubPlanningSkillBundle,
+): Promise<GitHubPlanningSkillBundle> {
+  const bundle = GitHubPlanningSkillBundleSchema.parse(input);
+  const file = bundle.files.find(({ path }) => path === ".kestrel/source.json");
+  let source: unknown;
+  try {
+    const manifest: unknown = JSON.parse(file?.content ?? "null");
+    if (typeof manifest === "object" && manifest !== null && "source" in manifest)
+      source = manifest.source;
+  } catch {
+    // The public error must not expose the provider body or private process details.
+  }
+  const attributed = GitHubPlanningSkillSourceSchema.safeParse(source);
+  if (
+    !attributed.success ||
+    Object.entries(bundle.source).some(
+      ([key, value]) => attributed.data[key as keyof typeof attributed.data] !== value,
+    ) ||
+    createHash("sha256").update(JSON.stringify(bundle.files)).digest("hex") !== bundle.contentDigest
+  )
+    throw new FactoryError(
+      "conflict",
+      "The GitHub preview does not match its retained source and content",
+    );
+  await pool.query(
+    "INSERT INTO factory_planning_skill_versions (digest, bundle) VALUES ($1,$2::jsonb) ON CONFLICT (digest) DO NOTHING",
+    [bundle.contentDigest, JSON.stringify(bundle)],
+  );
+  return GitHubPlanningSkillBundleSchema.parse(await readPlanningSkill(pool, bundle.contentDigest));
+}
+
+export async function installGitHubPlanningSkill(
+  pool: DatabasePool,
+  actorId: string,
+  input: InstallGitHubPlanningSkillCommand,
+): Promise<GitHubPlanningSkillBundle> {
+  const command = InstallGitHubPlanningSkillCommandSchema.parse(input);
+  const preview = await readPlanningSkill(pool, command.digest);
+  if (preview.source.kind !== "github")
+    throw new FactoryError("conflict", "Preview a GitHub Skill before installing it");
+  return GitHubPlanningSkillBundleSchema.parse(
+    await installPlanningSkill(pool, actorId, command, preview),
+  );
 }
 export async function installPlanningSkill(
   pool: DatabasePool,
   actorId: string,
-  command: InstallPlanningSkillCommand,
+  command: InstallPlanningSkillCommand | InstallGitHubPlanningSkillCommand,
   input: PlanningSkillBundle,
 ): Promise<PlanningSkillBundle> {
   const bundle = PlanningSkillBundleSchema.parse(input);
+  const candidateId = bundle.source.candidateId;
+  if (
+    "digest" in command
+      ? bundle.source.kind !== "github" || bundle.contentDigest !== command.digest
+      : bundle.source.kind !== "host" || candidateId !== command.candidateId
+  )
+    throw new FactoryError("conflict", "The retained Skill does not match this import request");
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -112,15 +178,11 @@ export async function installPlanningSkill(
       await client.query("COMMIT");
       return existing;
     }
-    if (bundle.source.candidateId !== command.candidateId) throw new FactoryError("conflict");
     const sameName = await client.query<{ source_candidate_id: string }>(
       "SELECT source_candidate_id FROM factory_planning_skill_catalog WHERE name = $1",
       [bundle.name],
     );
-    if (
-      sameName.rows[0] !== undefined &&
-      sameName.rows[0].source_candidate_id !== command.candidateId
-    )
+    if (sameName.rows[0] !== undefined && sameName.rows[0].source_candidate_id !== candidateId)
       throw new FactoryError(
         "conflict",
         `A Skill named ${bundle.name} is already installed from another source. Use its retained version or choose a different Skill.`,
@@ -140,11 +202,11 @@ export async function installPlanningSkill(
     await client.query(
       `INSERT INTO factory_planning_skill_catalog (name,digest,source_candidate_id) VALUES ($1,$2,$3)
       ON CONFLICT (name) DO UPDATE SET digest = EXCLUDED.digest, updated_at = clock_timestamp()`,
-      [bundle.name, bundle.contentDigest, command.candidateId],
+      [bundle.name, bundle.contentDigest, candidateId],
     );
     await client.query(
       "INSERT INTO factory_planning_skill_installs (actor_id,request_id,candidate_id,digest) VALUES ($1,$2,$3,$4)",
-      [actorId, command.requestId, command.candidateId, bundle.contentDigest],
+      [actorId, command.requestId, candidateId, bundle.contentDigest],
     );
     const retained = await readPlanningSkill(client, bundle.contentDigest);
     await client.query("COMMIT");
@@ -223,7 +285,9 @@ export async function saveFeaturePlanningSkills(
         "conflict",
         "Wait for the current planning reply before changing Skills",
       );
-    const skills = await readPlanningSkills(client, command.digests);
+    const digests = PlanningSkillDigestsSchema.parse(command.digests);
+    await requireInstalledPlanningSkills(client, digests);
+    const skills = await readPlanningSkills(client, digests);
     const version = command.expectedVersion + 1;
     await client.query(
       "INSERT INTO factory_feature_skill_selections (feature_id,version,request_id,digests) VALUES ($1,$2,$3,$4::jsonb)",
@@ -236,6 +300,23 @@ export async function saveFeaturePlanningSkills(
     return { schemaVersion: 1, version, skills: skills.map(skillSummary) };
   });
 }
+
+async function requireInstalledPlanningSkills(
+  client: PoolClient,
+  digests: string[],
+): Promise<void> {
+  if (digests.length === 0) return;
+  const installed = await client.query<{ digest: string }>(
+    "SELECT DISTINCT digest FROM factory_planning_skill_installs WHERE digest = ANY($1::text[])",
+    [digests],
+  );
+  if (installed.rows.length !== digests.length)
+    throw new FactoryError(
+      "conflict",
+      "Install the previewed Skill before selecting it for planning",
+    );
+}
+
 export async function resolvePlanningSkillInvocation(
   client: PoolClient,
   text: string,
@@ -262,6 +343,7 @@ export async function resolvePlanningSkillInvocation(
   }
   if (digests.length > 8)
     throw new FactoryError("conflict", "Select at most eight Skills for one planning turn");
+  await requireInstalledPlanningSkills(client, digests);
   await readPlanningSkills(client, digests);
   return digests;
 }

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { PlanningSkillBundleSchema, SelectPlanningSkillsCommandSchema } from "./factory-skills.js";
+import {
+  InstallGitHubPlanningSkillCommandSchema,
+  PlanningSkillBundleSchema,
+  PreviewGitHubPlanningSkillCommandSchema,
+  SelectPlanningSkillsCommandSchema,
+} from "./factory-skills.js";
 
 const bundle = {
   name: "grilling",
@@ -10,6 +15,57 @@ const bundle = {
 };
 
 describe("retained planning Skill contracts", () => {
+  it("retains a GitHub source's exact resolved commit and requested ref", () => {
+    const github = {
+      ...bundle,
+      source: {
+        kind: "github",
+        label: "mattpocock/skills:grilling/SKILL.md",
+        candidateId: "b".repeat(64),
+        owner: "mattpocock",
+        repository: "skills",
+        path: "grilling/SKILL.md",
+        requestedRef: "main",
+        commitId: "c".repeat(40),
+      },
+    };
+    expect(PlanningSkillBundleSchema.safeParse(github).success).toBe(true);
+    expect(PlanningSkillBundleSchema.parse(github)).toEqual(github);
+    expect(
+      PlanningSkillBundleSchema.safeParse({
+        ...github,
+        source: { ...github.source, commitId: "main" },
+      }).success,
+    ).toBe(false);
+  });
+  it("accepts only an explicit starter or GitHub entry and installs by reviewed digest", () => {
+    const starter = { kind: "starter", starter: "grilling-starter" };
+    const source = {
+      kind: "github",
+      owner: "mattpocock",
+      repository: "skills",
+      path: "grilling/SKILL.md",
+      ref: "release/v1",
+    };
+    expect(PreviewGitHubPlanningSkillCommandSchema.parse(starter)).toEqual(starter);
+    expect(PreviewGitHubPlanningSkillCommandSchema.parse(source)).toEqual(source);
+    for (const invalid of [
+      { ...starter, ref: "main" },
+      { ...source, starter: "grilling-starter" },
+      { ...source, path: "C:\\skills\\SKILL.md" },
+      { ...source, path: "nested/../SKILL.md" },
+      { ...source, ref: " main " },
+      { ...source, ref: "main\nother" },
+      { ...source, path: "file.md" },
+      { ...source, repository: ".." },
+    ])
+      expect(PreviewGitHubPlanningSkillCommandSchema.safeParse(invalid).success).toBe(false);
+    const command = { requestId: crypto.randomUUID(), digest: bundle.contentDigest };
+    expect(InstallGitHubPlanningSkillCommandSchema.parse(command)).toEqual(command);
+    expect(
+      InstallGitHubPlanningSkillCommandSchema.safeParse({ ...command, ref: "main" }).success,
+    ).toBe(false);
+  });
   it("retains actual source and instructions while rejecting paths outside the bundle", () => {
     expect(PlanningSkillBundleSchema.parse(bundle)).toEqual(bundle);
     for (const path of [

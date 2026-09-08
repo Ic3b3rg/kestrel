@@ -7,8 +7,8 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 import { z } from "zod";
 
 import {
-  FeaturePlanDocumentSchema,
   NamedPlanningReplySchema,
+  GeneratedFeaturePlanDocumentSchema,
   type FeaturePlanDocument,
   type PlanningContext,
 } from "@kestrel/contracts";
@@ -59,6 +59,7 @@ let context: PlanningContext;
 function plan(): FeaturePlanDocument {
   return {
     objective: "Download every saved note as Markdown.",
+    proposedDocuments: [],
     scope: { includes: ["Export saved notes"], excludes: ["Import notes"] },
     acceptance: [{ key: "download", outcome: "The download includes every saved note." }],
     workItems: [
@@ -247,8 +248,20 @@ describe("structured Feature Plan processing", () => {
     expect(input).toBeDefined();
     expect(input?.threadId).toBeUndefined();
     expect(input?.outputSchema).toEqual(
-      z.toJSONSchema(FeaturePlanDocumentSchema, { target: "draft-7" }),
+      z.toJSONSchema(GeneratedFeaturePlanDocumentSchema, { target: "draft-7" }),
     );
+    expect(input?.outputSchema?.required).toContain("proposedDocuments");
+    expect(input?.outputSchema).toMatchObject({
+      properties: {
+        proposedDocuments: {
+          type: "array",
+          items: {
+            additionalProperties: false,
+            required: ["key", "kind", "path", "pathIsProvisional", "markdown", "workItemKey"],
+          },
+        },
+      },
+    });
     expect(input?.model).toBe("fixture-model");
     expect(input?.prompt).toContain("Use Markdown and preserve Unicode.");
     expect(input?.prompt).toContain("Selected notes or every saved note?");
@@ -295,6 +308,36 @@ describe("structured Feature Plan processing", () => {
       context,
       renderFeaturePlanArtifacts,
     );
+    expect(completePlanningTurn).not.toHaveBeenCalled();
+  });
+
+  it("retains proposed documents through generation with the exact supplied source snapshot", async () => {
+    const document = plan();
+    document.proposedDocuments = [
+      {
+        key: "export-language",
+        kind: "glossary",
+        path: "CONTEXT.md",
+        pathIsProvisional: false,
+        markdown: "# Export\nAn export preserves note text.\n",
+        workItemKey: "export",
+      },
+    ];
+    turn.previousPlan = structuredClone(document);
+    runTurn.mockResolvedValue({
+      threadId: "plan-thread",
+      turnId: "runtime-turn",
+      text: JSON.stringify(document),
+    });
+    await processor().process({ turnId: turn.id });
+    expect(generated).toHaveBeenCalledExactlyOnceWith(
+      pool,
+      turn,
+      document,
+      context,
+      renderFeaturePlanArtifacts,
+    );
+    expect(runTurn.mock.calls[0]?.[0].prompt).toContain(JSON.stringify(turn.previousPlan));
     expect(completePlanningTurn).not.toHaveBeenCalled();
   });
 

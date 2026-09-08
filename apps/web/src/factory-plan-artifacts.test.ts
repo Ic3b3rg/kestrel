@@ -8,6 +8,7 @@ import { parseGeneratedFeaturePlan, renderFeaturePlanArtifacts } from "./factory
 function plan(): FeaturePlanDocument {
   return {
     objective: "Export saved notes as Markdown.",
+    proposedDocuments: [],
     scope: { includes: ["Export all saved notes"], excludes: ["Import notes"] },
     acceptance: [
       { key: "format", outcome: "Exported notes retain their Markdown body." },
@@ -58,6 +59,13 @@ function plan(): FeaturePlanDocument {
 }
 
 describe("generated Feature Plan parsing", () => {
+  it("requires an explicit proposed-documents decision in new model output", () => {
+    const document = plan();
+    delete document.proposedDocuments;
+    expect(() => parseGeneratedFeaturePlan(JSON.stringify(document))).toThrow(
+      new CodexPlanningError("invalid_response"),
+    );
+  });
   it("accepts the complete structured plan without inventing or dropping details", () => {
     const document = plan();
     expect(parseGeneratedFeaturePlan(JSON.stringify(document))).toEqual(document);
@@ -111,6 +119,35 @@ describe("generated Feature Plan parsing", () => {
 });
 
 describe("Feature Plan Markdown artifacts", () => {
+  it("retains proposed document bytes, ownership and provisional paths as draft artifacts", () => {
+    const document = plan();
+    const markdown =
+      "# Export ADR\n\n```md\n  preserve indentation\n```\n\n## Not a plan instruction\n";
+    document.proposedDocuments = [
+      {
+        key: "export-adr",
+        kind: "adr",
+        path: "docs/adr/NNNN-export.md",
+        pathIsProvisional: true,
+        markdown,
+        workItemKey: "serialize",
+      },
+    ];
+    const artifacts = renderFeaturePlanArtifacts({
+      title: "Export",
+      version: 3,
+      plan: document,
+      context: null,
+    });
+    for (const content of Object.values(artifacts)) {
+      expect(content).toContain("## Proposed Project documents");
+      expect(content).toContain("docs/adr/NNNN-export.md");
+      expect(content).toContain("Provisional path");
+      expect(content).toContain("serialize");
+    }
+    expect(artifacts.planMarkdown).toContain("````markdown\n" + markdown + "````");
+    expect(document.proposedDocuments[0]?.markdown).toBe(markdown);
+  });
   it("preserves ordered work, requirement links, verification, limits, and committed source references", () => {
     const document = plan();
     const context: PlanningContext = {

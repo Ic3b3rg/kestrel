@@ -53,6 +53,7 @@ export const PlanningMessageSchema = z.strictObject({
   role: z.enum(["user", "assistant"]),
   content: z.string().min(1).max(32_000),
   createdAt: z.iso.datetime(),
+  generatedPlanVersion: z.int().min(1).max(200).optional(),
 });
 
 export const PlanningFailureSchema = z.enum([

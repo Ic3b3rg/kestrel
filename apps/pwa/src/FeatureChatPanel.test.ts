@@ -2,7 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { FeatureChat } from "@kestrel/contracts";
+import type { FeatureChat, FeaturePlanVersion } from "@kestrel/contracts";
 import { FeatureChatPanel, type FeatureChatPanelProps } from "./FeatureChatPanel.js";
 
 const projectId = "018f0f89-949a-75a8-8f61-6df78a843b1e";
@@ -35,6 +35,56 @@ const initial: FeatureChat = {
     },
   ],
   context: null,
+};
+const generatedVersion: FeaturePlanVersion = {
+  schemaVersion: 1,
+  id: "018f0f89-949a-75a8-8f61-6df78a843b20",
+  projectId,
+  featureId,
+  version: 1,
+  author: "assistant",
+  createdAt,
+  planMarkdown: "# Plan",
+  specMarkdown: "# Spec",
+  sourceContext: {
+    commitId: "a".repeat(40),
+    documents: [],
+    notice: "Retained generation context.",
+  },
+  document: {
+    objective: "Search",
+    scope: { includes: ["Titles"], excludes: [] },
+    acceptance: [{ key: "R1", outcome: "Find reports by title" }],
+    workItems: [
+      {
+        key: "W1",
+        title: "Search",
+        description: "Add title search",
+        importedIssueId: null,
+        requirementKeys: ["R1"],
+        acceptance: ["Reports can be found"],
+        dependsOn: [],
+        verification: [
+          { program: "node", args: ["--test", "search.test.mjs"], cwd: ".", timeoutSeconds: 60 },
+        ],
+      },
+    ],
+    limits: {
+      maxConcurrentProjects: 2,
+      maxActiveFeaturesPerProject: 1,
+      attemptTimeoutSeconds: 1800,
+    },
+    proposedDocuments: [
+      {
+        key: "language",
+        kind: "glossary",
+        path: "CONTEXT.md",
+        pathIsProvisional: false,
+        markdown: "# Language\nThe original glossary proposal.\n",
+        workItemKey: "W1",
+      },
+    ],
+  },
 };
 
 function button(label: string): HTMLButtonElement {
@@ -146,6 +196,49 @@ describe("persistent planning conversation", () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     await vi.waitFor(() => expect(document.activeElement).toBe(trigger));
   });
+  it.each([1, 3])(
+    "opens a reply's exact saved plan and refuses a different returned version: returned=%s",
+    async (returnedVersion) => {
+      const loadPlanVersion = vi
+        .fn()
+        .mockResolvedValue({ ...generatedVersion, version: returnedVersion });
+      await render({
+        loadChat: () =>
+          Promise.resolve({
+            ...initial,
+            turns: [],
+            messages: [
+              {
+                id: messageId,
+                createdAt,
+                role: "assistant",
+                content: "A plan was generated.",
+                generatedPlanVersion: 1,
+              },
+            ],
+            context: { commitId: "b".repeat(40), documents: [], notice: "Newer chat context." },
+          }),
+        loadPlanVersion,
+      });
+      await act(async () => {
+        button("Inspect plan 1 documents").click();
+        await Promise.resolve();
+      });
+      expect(loadPlanVersion.mock.calls[0]?.slice(0, 3)).toEqual([projectId, featureId, 1]);
+      if (returnedVersion === 1) {
+        expect(document.body.textContent).toContain("The original glossary proposal.");
+        await act(async () => {
+          button("Sources supplied for this plan").click();
+          await Promise.resolve();
+        });
+        expect(document.body.textContent).toContain("Retained generation context.");
+        expect(document.body.textContent).toContain("a".repeat(40));
+      } else {
+        expect(document.body.textContent).not.toContain("The original glossary proposal.");
+        expect(document.body.textContent).toContain("This plan version could not be loaded.");
+      }
+    },
+  );
 
   it("updates execution status without an active planning turn or a manual refresh", async () => {
     vi.useFakeTimers();

@@ -3,10 +3,12 @@
 The Operator imports and selects Skills inside Kestrel's planning composer or an existing Feature
 chat. Before the first prompt, selection remains in the composer; accepting that prompt freezes the
 selection together with the new Feature and first turn. A Skill supplies planning instructions; it
-does not acquire the runtime authority described by those instructions. The host configuration
-authorizes one absolute directory through `KESTREL_PLANNING_SKILL_ROOT`. Each direct child directory
-is an import candidate. Candidate responses disclose names and opaque identities, not host paths. An
-unconfigured source leaves the installed catalog and retained instructions usable.
+does not acquire the runtime authority described by those instructions. **Skills → Import from
+GitHub** offers the grilling starter or an explicit repository, Markdown entry path and ref. An
+optional host configuration also authorizes one absolute directory through
+`KESTREL_PLANNING_SKILL_ROOT`; each direct child directory is an import candidate. Candidate
+responses disclose names and opaque identities, not host paths. An unconfigured host directory
+leaves GitHub imports, the installed catalog and retained instructions usable.
 
 ## Import contract
 
@@ -25,8 +27,32 @@ syntax, and prose-only file dependencies are outside this first import format.
 The maximums are 256 discovered candidates, 200 installed names, 32 files and 128 KiB of UTF-8 text
 per bundle. Each bundle's digest covers its sorted retained file paths and contents. Catalog updates
 for a name must come from the same candidate. No install hook, setup command, or bundled script
-runs. Pinned GitHub imports and composition of the grilling starter are tracked separately in
-[issue #230](https://github.com/Ic3b3rg/kestrel/issues/230).
+runs.
+
+## Pinned GitHub imports
+
+Preview resolves the requested ref once and reads the required Git trees and blobs at that full
+commit through the host's GitHub CLI connection. It verifies their object identities, rejects
+symlinks/submodules and retains the complete bundle before returning it. Preview is inspectable but
+does not install or select the Skill. **Install this version** accepts the displayed digest and a
+durable request identity without rereading the provider. Closing and reopening the import dialog
+retains an uncertain install's request, so Retry cannot silently install a different version.
+
+The source manifest, original paths and bytes, full commit, required members, license and any
+Kestrel adaptation are included in the bundle digest. Advancing a branch cannot change retained
+instructions. A missing required reference or unreadable source rejects the whole preview. Updating
+the catalog requires another explicit preview and installation; existing turns and plans keep their
+old digests. An old install retry returns its original result without rolling back the current
+catalog.
+
+The built-in grilling starter pins
+[`mattpocock/skills` at `5c89081d4bbeb3d039a42093653f90bb698d780e`](https://github.com/mattpocock/skills/tree/5c89081d4bbeb3d039a42093653f90bb698d780e).
+It includes `grill-with-docs`, `grilling`, `domain-modeling`, `to-spec`, `to-tickets`, both document
+format references and the MIT license. Original upstream files remain unchanged under `sources/`;
+the entry point separately identifies Kestrel's adaptation. Interviewing applies the first three
+procedures. Explicit plan generation applies the specification and ticket procedures to the agreed
+conversation. The adaptation makes the available context and phase boundaries explicit; it does not
+pretend to run upstream setup, publication, repository writes or delegated tools.
 
 ## Selection and retained evidence
 
@@ -46,6 +72,25 @@ Plan generation records the accepted generation turn's retained Skills in its so
 plan/spec Markdown. Operator revisions preserve that provenance; approval freezes the version.
 Historical Skill previews load retained files by digest rather than rereading the workstation. The
 database runtime can append versions and history but cannot rewrite or delete them.
+
+## Proposed Project documents
+
+Glossary and ADR proposals appear as draft Markdown during the interview. Explicit plan generation
+then records structured proposals with their path, provisional-path flag and owning Work Item. The
+plan permits at most four proposals and 32,000 combined UTF-8 Markdown bytes within its existing
+96,000-byte serialized budget. Unknown owners, duplicate paths, traversal and reserved Git/Kestrel
+paths are rejected. A new ADR number remains provisional when the supplied context cannot establish
+the existing numbering.
+
+**Inspect plan N documents** in the generated chat reply reads that exact retained version,
+including its supplied Project and Skill sources. **Proposed documents** on the Plan tab shows the
+displayed version. The Operator can revise or remove proposals in a new draft. Later drafts and
+catalog updates cannot replace a historical reply's documents or provenance. Legacy plans without
+proposals remain readable and retain their original JSON and Markdown.
+
+Approval freezes the proposals with the rest of the plan. Execution receives only the claimed Work
+Item's owned proposals from that approved version. Planning and approval do not write Project
+documents, and a proposal does not create an extra issue outside the approved Work Items.
 
 ## Planning authority
 

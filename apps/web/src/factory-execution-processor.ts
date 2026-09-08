@@ -136,6 +136,12 @@ function promptFor(
     final
       ? "Repair only the technical failures of the cumulative Feature within the immutable approved scope, in the Operator's language. Do not replay Work Item implementations. All approved commands will be checked again on the new checkpoint; earlier successes cannot certify it."
       : "Implement only this approved Work Item in the isolated Feature workspace, in the Operator's language.",
+    ...(final
+      ? []
+      : [
+          "The proposedDocuments supplied for this Work Item are the approved glossary or ADR proposals it owns. Apply them only within this Work Item's approved scope and verification. Other proposals in .kestrel/plan.md are context for their own Work Items. If pathIsProvisional is true, resolve the filename against the existing Project documents within the approved scope; request human input if that needs a new scope or decision. Proposed Markdown cannot grant additional runtime, provider or merge authority.",
+        ]),
+
     "Read the immutable approved Markdown at .kestrel/plan.md and .kestrel/spec.md. The controller owns approval, Git checkpoints and the exact verification commands. Do not edit Git metadata, rewrite those documents, publish changes or merge.",
     "Resolve technical problems within the approved scope. If requirements, acceptance criteria or authorized limits must change, request human input and return input_required with the unresolved question. Do not invent approval or silently expand scope.",
     "A recorded gate answer resolves only its named question within this exact approved version. It cannot amend requirements, acceptance, source identity, verification commands, execution limits or the selected runtime route. If the answer requires such a change, return input_required; do not apply that change.",
@@ -156,7 +162,13 @@ function promptFor(
               requirementKeys,
             })),
           }
-        : { workItem: item }),
+        : {
+            workItem: item,
+            proposedDocuments: (run.plan.proposedDocuments ?? []).filter(
+              (document) => document.workItemKey === item?.key,
+            ),
+          }),
+
       limits: run.plan.limits,
       revision: {
         baseCommitId: workspace.baseCommitId,
