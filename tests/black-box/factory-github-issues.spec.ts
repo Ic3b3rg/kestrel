@@ -294,7 +294,17 @@ test.describe("Factory GitHub issues", () => {
     await page.reload();
     await expect(page.getByText("2 of 2 Work Items published", { exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: "#100", exact: true })).toBeVisible();
-    await expect(page.getByText("Execution is not available yet.", { exact: true })).toBeVisible();
+    const execution = page.getByRole("region", { name: "Feature execution", exact: true });
+    await expect(execution).toBeVisible();
+    // This installation deliberately has no execution image or host Codex. Its approved work
+    // must retain an inspectable blocked attempt instead of claiming successful implementation.
+    await expect(execution.getByText("Execution needs attention", { exact: true })).toBeVisible();
+    await execution.getByRole("button", { name: /^Attempt 1/ }).click();
+    const attempt = execution.getByRole("region", { name: "Attempt 1 details", exact: true });
+    await expect(attempt).toBeVisible();
+    await expect(
+      attempt.getByText('["npm","test","--","report-index"]', { exact: true }),
+    ).toBeVisible();
     await expect(page.getByRole("region", { name: "Completed", exact: true })).toContainText(
       "No Work Items",
     );

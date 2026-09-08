@@ -152,7 +152,7 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
-async function requireJson<T>(
+export async function requireJson<T>(
   response: Response,
   parser: Parser<T>,
   description: string,
@@ -222,7 +222,7 @@ export async function fetchProjectInbox(signal?: AbortSignal): Promise<ProjectIn
   return requireJson(response, ProjectInboxSchema, "Project inbox");
 }
 
-function featurePath(projectId: string, featureId?: string): string {
+export function featurePath(projectId: string, featureId?: string): string {
   const path = `/api/v1/projects/${encodeURIComponent(KestrelIdSchema.parse(projectId))}/features`;
   return featureId === undefined
     ? path

@@ -150,10 +150,10 @@ also queues GitHub publication through the existing host `gh` session. New Work 
 detailed issues; imported issues keep their original body. Kestrel adds an owned progress comment
 with the Feature link and dependency references, and records native GitHub dependency edges where
 available. The Board reports partial publication, access/rate-limit failures, and **Retry
-publication** without discarding confirmed issue links. This slice explicitly reports that automatic
-execution is not available yet; execution follows in #214. Completed is reserved for a confirmed
-feature merge; no manual card action can imply completion. Cancelling preserves the plan and cards
-for inspection and discards a pending generation result.
+publication** without discarding confirmed issue links. Published, approved Work Items start
+automatically when their dependencies and Project reservation permit it. Completed is reserved for a
+confirmed feature merge; no manual card action can imply completion. Cancelling preserves the plan
+and cards for inspection and discards a pending generation result.
 
 Publication continues with the browser closed while the local process is running. Retry reconciles
 an uncertain issue/comment creation using its persisted operation marker; it never blindly repeats
@@ -161,6 +161,37 @@ that POST. If the provider outcome cannot be confirmed, publication stays blocke
 progress retained. A definite rejection can be retried after access is restored or its rate-limit
 window expires. No GitHub issue is closed during planning or publication. See the
 [provider boundary](./docs/research/factory-github-publication-contract.md) for bounds and recovery.
+
+Prepare the execution image once before approving automatic work:
+
+```sh
+npm run factory:prepare
+npm run dev
+```
+
+Use the same `KESTREL_STATE_ROOT` for both commands when using a custom installation directory.
+Preparation downloads and verifies the pinned Codex Linux release, builds the execution image, and
+saves its immutable image ID. The authenticated Codex App Server stays on the host; its
+implementation tools run in a private Docker container with networking disabled and only the Feature
+checkout writable. The Operator's checkout, credentials, and Docker socket are never mounted there.
+An unavailable image, toolchain, dependency, or runtime produces an inspectable blocker; the worker
+cannot relax containment or install dependencies from the network.
+
+Each Feature uses its own checkout from committed source, preserving the Operator's dirty, staged,
+ignored, and untracked files. A fresh runtime context receives the approved plan and dependency
+results for each Work Item. Kestrel stops the implementation container, checkpoints the result, and
+runs the exact approved verification commands in separate containers. A passing Work Item moves to
+**In review** and unblocks its dependents on the same Feature branch. Failed checks allow up to
+three technical repair rounds within the approved attempt deadline.
+
+The Board's execution panel exposes attempts, accepted commands, bounded output, and the exact
+head/tree they verified. Questions, missing access, interrupted attempts, and failed checks retain
+their evidence and block the Project visibly. Cancelling interrupts execution; a Project stays
+reserved until container teardown is confirmed. The local launcher allows up to 90 seconds for
+bounded teardown and queue draining, including when a browser event stream remains open. Browser
+closure alone does not stop work. Pull request publication and review decisions follow in #216–#218.
+See the [runtime contract](./docs/research/factory-execution-runtime-contract.md) for containment,
+immutable image configuration, and the real-runtime conformance check.
 
 If the password or every signed-in device is lost, recover the sole Operator from the trusted host:
 

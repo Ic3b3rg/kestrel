@@ -2,8 +2,11 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
-import type { FactoryBoard, FactoryIssuePublication } from "@kestrel/contracts";
+import type { FactoryBoard, FactoryIssuePublication, FactoryWorkItem } from "@kestrel/contracts";
 import { FeatureBoardPanel } from "./FeatureBoardPanel.js";
+
+// Execution's own request/polling behavior is covered by FeatureExecutionPanel.test.ts.
+vi.mock("./FeatureExecutionPanel.js", () => ({ FeatureExecutionPanel: () => null }));
 
 const projectId = "018f0f89-949a-75a8-8f61-6df78a843b1e";
 const featureId = "018f0f89-9192-755f-aa96-f72094c734df";
@@ -22,7 +25,7 @@ const board: FactoryBoard = {
     updatedAt: createdAt,
   },
   approvedVersion: 1,
-  executionReadiness: { state: "unavailable", reason: "execution_not_available" },
+  executionReadiness: { state: "enabled", reason: "automatic_execution" },
   activity: [],
   columns: (["todo", "in_progress", "in_review", "completed"] as const).map((id) => ({
     id,
@@ -54,6 +57,83 @@ const blocked: FactoryIssuePublication = {
     },
   ],
 };
+
+it("moves cards through execution after GitHub publication has finished without a manual refresh", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const item: FactoryWorkItem = {
+    id: firstId,
+    featureId,
+    key: "W1",
+    order: 1,
+    title: "Implement reports",
+    description: "Show saved reports",
+    importedIssueId: null,
+    requirementKeys: ["reports"],
+    acceptance: ["Reports are visible"],
+    dependsOn: [],
+    verification: [{ program: "node", args: ["--test"], cwd: ".", timeoutSeconds: 30 }],
+    column: "todo",
+    blocking: null,
+    providerUrl: null,
+    activity: [],
+  };
+  const snapshot = (
+    state: FactoryBoard["feature"]["state"],
+    column: FactoryWorkItem["column"],
+  ): FactoryBoard => ({
+    ...board,
+    feature: { ...board.feature, state },
+    columns: board.columns.map((entry) => ({
+      ...entry,
+      items: entry.id === column ? [{ ...item, column }] : [],
+    })),
+  });
+  const loadBoard = vi
+    .fn()
+    .mockResolvedValueOnce(snapshot("queued", "todo"))
+    .mockResolvedValueOnce(snapshot("implementing", "in_progress"))
+    .mockResolvedValue(snapshot("in_review", "in_review"));
+  try {
+    await act(async () => {
+      root.render(
+        createElement(FeatureBoardPanel, {
+          projectId,
+          featureId,
+          online: true,
+          loadBoard,
+          loadPublication: (): Promise<FactoryIssuePublication> =>
+            Promise.resolve({ ...blocked, state: "published", failure: null }),
+          onAuthenticationError: () => false,
+          onViewPlan: vi.fn(),
+        }),
+      );
+      await Promise.resolve();
+    });
+    expect(container.querySelector('[aria-label="To do"]')?.textContent).toContain(item.title);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(container.querySelector('[aria-label="In progress"]')?.textContent).toContain(
+      item.title,
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(container.querySelector('[aria-label="In review"]')?.textContent).toContain(item.title);
+    expect(container.querySelector('[aria-label="Completed"]')?.textContent).not.toContain(
+      item.title,
+    );
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  }
+});
 
 it("retains successful links and retries the same uncertain publication request after reconnect", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

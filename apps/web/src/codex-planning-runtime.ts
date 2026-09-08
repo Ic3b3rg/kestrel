@@ -1,8 +1,15 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute } from "node:path";
-import { StringDecoder } from "node:string_decoder";
+
+import {
+  CodexFactoryTransport,
+  CodexFactoryError,
+  record,
+  boundedString,
+  inputQuestion,
+  protocolError,
+} from "./codex-factory-transport.js";
 
 export type CodexPlanningErrorCode =
   | "unavailable"
@@ -15,12 +22,10 @@ export type CodexPlanningErrorCode =
   | "interrupted"
   | "invalid_response";
 
-export class CodexPlanningError extends Error {
-  constructor(
-    public readonly code: CodexPlanningErrorCode,
-    public readonly question?: string,
-  ) {
-    super(`Codex planning failed: ${code}`);
+export class CodexPlanningError extends CodexFactoryError {
+  constructor(code: CodexPlanningErrorCode, question?: string) {
+    super(code, question);
+    this.message = `Codex planning failed: ${code}`;
     this.name = "CodexPlanningError";
   }
 }
@@ -48,11 +53,7 @@ interface PlanningTurnResult {
   text: string;
 }
 
-const MAX_FRAME_BYTES = 2 * 1024 * 1024;
-const MAX_STDOUT_BYTES = 4 * 1024 * 1024;
-const MAX_STDERR_BYTES = 64 * 1024;
 const MAX_ANSWER_BYTES = 128 * 1024;
-const STOP_TIMEOUT_MS = 250;
 const DISABLED_FEATURES = [
   "apps",
   "plugins",
@@ -78,115 +79,8 @@ const SAFETY_ARGUMENTS = [
   'approvals_reviewer="user"',
 ];
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function record(value: unknown): Record<string, unknown> {
-  if (!isRecord(value)) throw new CodexPlanningError("invalid_response");
-  return value;
-}
-
-function boundedString(value: unknown, limit = 256): string {
-  if (typeof value !== "string" || !value.trim() || Buffer.byteLength(value) > limit) {
-    throw new CodexPlanningError("invalid_response");
-  }
-  return value;
-}
-
-function inputQuestion(params: Record<string, unknown>): string {
-  if (
-    !Array.isArray(params.questions) ||
-    params.questions.length < 1 ||
-    params.questions.length > 3
-  ) {
-    throw new CodexPlanningError("invalid_response");
-  }
-  const questions = params.questions.map((value) => {
-    const question = record(value);
-    if (question.isSecret === true)
-      return "Codex requested sensitive input. Configure its authentication directly before retrying.";
-    const text = boundedString(question.question, 1_024);
-    if (question.options == null) return text;
-    if (!Array.isArray(question.options) || question.options.length > 8)
-      throw new CodexPlanningError("invalid_response");
-    const options = question.options.map((value) => {
-      const option = record(value);
-      return `- ${boundedString(option.label, 128)}: ${boundedString(option.description, 512)}`;
-    });
-    return [text, ...options].join("\n");
-  });
-  return boundedString(questions.join("\n\n"), 4_096);
-}
-
-function protocolError(value: unknown): CodexPlanningError {
-  const error = isRecord(value) ? value : {};
-  const data = isRecord(error.data) ? error.data : {};
-  const info = error.codexErrorInfo ?? data.codexErrorInfo;
-  const details = isRecord(info) ? Object.values(info).find(isRecord) : undefined;
-  const status = details?.httpStatusCode ?? error.code;
-  const message = typeof error.message === "string" ? error.message.toLowerCase() : "";
-  if (
-    info === "unauthorized" ||
-    status === 401 ||
-    /not logged in|unauthenticated|authentication|unauthorized/u.test(message)
-  ) {
-    return new CodexPlanningError("authentication");
-  }
-  if (
-    info === "usageLimitExceeded" ||
-    info === "rateLimitExceeded" ||
-    info === "sessionBudgetExceeded" ||
-    status === 429 ||
-    /usage limit|rate limit|quota|credits? exhausted/u.test(message)
-  ) {
-    return new CodexPlanningError("usage_limit");
-  }
-  if (info === "sandboxError" || /approval|permission|sandbox/u.test(message)) {
-    return new CodexPlanningError("permission_required");
-  }
-  return new CodexPlanningError("unavailable");
-}
-
-function safeEnvironment(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { LANG: "C", LC_ALL: "C", NO_COLOR: "1" };
-  for (const name of ["HOME", "PATH", "CODEX_HOME", "XDG_CONFIG_HOME"] as const) {
-    if (process.env[name] !== undefined) env[name] = process.env[name];
-  }
-  return env;
-}
-
-function killGroup(child: ChildProcessWithoutNullStreams, signal: NodeJS.Signals): void {
-  if (process.platform !== "win32" && child.pid !== undefined) {
-    try {
-      process.kill(-child.pid, signal);
-      return;
-    } catch {
-      // The group may already have exited; still stop the direct child if present.
-    }
-  }
-  child.kill(signal);
-}
-
-function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
 class PlanningSession {
-  readonly #child: ChildProcessWithoutNullStreams;
-  readonly #closed: Promise<void>;
-  readonly #failed: Promise<never>;
-  readonly #timeout: NodeJS.Timeout;
-  readonly #decoder = new StringDecoder("utf8");
-  readonly #signal: AbortSignal | undefined;
-  #rejectFailure!: (error: CodexPlanningError) => void;
-  #failure: CodexPlanningError | null = null;
-  #pending: { id: number; resolve(value: unknown): void } | null = null;
-  #nextId = 1;
-  #buffer = "";
-  #stdoutBytes = 0;
-  #stderrBytes = 0;
-  #closing = false;
+  readonly #transport: CodexFactoryTransport;
   #turnCompleted = false;
   #threadId: string | undefined;
   #turnId: string | undefined;
@@ -196,106 +90,30 @@ class PlanningSession {
   readonly #turnResult: Promise<PlanningTurnResult>;
 
   constructor(options: CodexPlanningOptions, timeoutMs: number, signal?: AbortSignal) {
-    this.#signal = signal;
-    this.#failed = new Promise((_, reject) => {
-      this.#rejectFailure = reject;
-    });
-    void this.#failed.catch(() => undefined);
     this.#turnResult = new Promise((resolve) => {
       this.#resolveTurn = resolve;
     });
-    this.#child = spawn(
-      options.executable ?? "codex",
-      [...(options.arguments ?? ["app-server", "--listen", "stdio://"]), ...SAFETY_ARGUMENTS],
-      {
-        cwd: tmpdir(),
-        env: safeEnvironment(),
-        shell: false,
-        detached: process.platform !== "win32",
-        stdio: ["pipe", "pipe", "pipe"],
-      },
-    );
-    this.#closed = new Promise((resolve) => this.#child.once("close", () => resolve()));
-    this.#child.once("error", () => this.#fail(new CodexPlanningError("unavailable")));
-    this.#child.once("close", () => {
-      if (!this.#closing && !this.#turnCompleted) {
-        this.#fail(
-          new CodexPlanningError(this.#turnId === undefined ? "unavailable" : "interrupted"),
-        );
-      }
-    });
-    this.#child.stdin.on("error", () => this.#fail(new CodexPlanningError("unavailable")));
-    this.#child.stdout.on("data", (chunk: Buffer) => this.#receiveChunk(chunk));
-    this.#child.stderr.on("data", (chunk: Buffer) => {
-      this.#stderrBytes += chunk.byteLength;
-      if (this.#stderrBytes > MAX_STDERR_BYTES)
-        this.#fail(new CodexPlanningError("invalid_response"));
-    });
-    this.#timeout = setTimeout(() => this.#fail(new CodexPlanningError("timeout")), timeoutMs);
-    signal?.addEventListener("abort", this.#onAbort, { once: true });
-    if (signal?.aborted) this.#onAbort();
-  }
-
-  #onAbort = (): void => {
-    this.#fail(new CodexPlanningError("cancelled"));
-  };
-
-  #fail(error: CodexPlanningError): void {
-    if (this.#failure !== null || this.#closing) return;
-    this.#failure = error;
-    this.#rejectFailure(error);
-    this.#pending = null;
-  }
-
-  async guard<T>(operation: Promise<T>): Promise<T> {
-    if (this.#failure !== null) throw this.#failure;
-    return Promise.race([operation, this.#failed]);
-  }
-
-  #send(message: unknown): void {
-    this.#child.stdin.write(`${JSON.stringify(message)}\n`, (error) => {
-      if (error) this.#fail(new CodexPlanningError("unavailable"));
+    this.#transport = new CodexFactoryTransport({
+      executable: options.executable ?? "codex",
+      arguments: [
+        ...(options.arguments ?? ["app-server", "--listen", "stdio://"]),
+        ...SAFETY_ARGUMENTS,
+      ],
+      cwd: tmpdir(),
+      timeoutMs,
+      ...(signal === undefined ? {} : { signal }),
+      receive: (message) => this.#receive(message),
     });
   }
 
+  guard<T>(operation: Promise<T>): Promise<T> {
+    return this.#transport.guard(operation);
+  }
   notify(method: string, params?: unknown): void {
-    if (this.#failure !== null) throw this.#failure;
-    this.#send({ method, params });
+    this.#transport.notify(method, params);
   }
-
-  async request(method: string, params: unknown): Promise<Record<string, unknown>> {
-    if (this.#failure !== null) throw this.#failure;
-    if (this.#pending !== null) throw new CodexPlanningError("invalid_response");
-    const id = this.#nextId++;
-    const response = new Promise<unknown>((resolve) => {
-      this.#pending = { id, resolve };
-    });
-    this.#send({ id, method, params });
-    return record(await this.guard(response));
-  }
-
-  #receiveChunk(chunk: Buffer): void {
-    if (this.#failure !== null || this.#closing) return;
-    this.#stdoutBytes += chunk.byteLength;
-    if (this.#stdoutBytes > MAX_STDOUT_BYTES)
-      return this.#fail(new CodexPlanningError("invalid_response"));
-    this.#buffer += this.#decoder.write(chunk);
-    let newline: number;
-    while ((newline = this.#buffer.indexOf("\n")) !== -1) {
-      const line = this.#buffer.slice(0, newline);
-      this.#buffer = this.#buffer.slice(newline + 1);
-      if (Buffer.byteLength(line) > MAX_FRAME_BYTES)
-        return this.#fail(new CodexPlanningError("invalid_response"));
-      try {
-        this.#receive(record(JSON.parse(line)));
-      } catch (error) {
-        return this.#fail(
-          error instanceof CodexPlanningError ? error : new CodexPlanningError("invalid_response"),
-        );
-      }
-    }
-    if (Buffer.byteLength(this.#buffer) > MAX_FRAME_BYTES)
-      this.#fail(new CodexPlanningError("invalid_response"));
+  request(method: string, params: unknown): Promise<Record<string, unknown>> {
+    return this.#transport.request(method, params);
   }
 
   #receive(message: Record<string, unknown>): void {
@@ -303,30 +121,11 @@ class PlanningSession {
       this.#rejectServerRequest(message);
       return;
     }
-    if ("id" in message) {
-      const pending = this.#pending;
-      if (
-        pending === null ||
-        message.id !== pending.id ||
-        "result" in message === "error" in message
-      ) {
-        throw new CodexPlanningError("invalid_response");
-      }
-      this.#pending = null;
-      if ("error" in message) throw protocolError(message.error);
-      pending.resolve(message.result);
-      return;
-    }
     const method = boundedString(message.method);
     if (
-      method === "error" ||
-      method === "turn/started" ||
-      method === "turn/completed" ||
-      method === "item/completed" ||
-      method === "item/started"
-    ) {
+      ["error", "turn/started", "turn/completed", "item/completed", "item/started"].includes(method)
+    )
       this.#receiveTurnEvent(method, record(message.params));
-    }
   }
 
   #rejectServerRequest(message: Record<string, unknown>): void {
@@ -335,23 +134,26 @@ class PlanningSession {
     switch (message.method) {
       case "item/commandExecution/requestApproval":
       case "item/fileChange/requestApproval":
-        this.#send({ id: message.id, result: { decision: "cancel" } });
+        this.#transport.send({ id: message.id, result: { decision: "cancel" } });
         throw new CodexPlanningError("permission_required");
       case "item/permissions/requestApproval":
-        this.#send({ id: message.id, result: { permissions: {}, scope: "turn" } });
+        this.#transport.send({ id: message.id, result: { permissions: {}, scope: "turn" } });
         throw new CodexPlanningError("permission_required");
       case "mcpServer/elicitation/request":
-        this.#send({ id: message.id, result: { action: "cancel" } });
+        this.#transport.send({ id: message.id, result: { action: "cancel" } });
         throw new CodexPlanningError("permission_required");
       case "item/tool/requestUserInput": {
         const params = record(message.params);
         this.#observeTurn(params.threadId, params.turnId);
         const question = inputQuestion(params);
-        this.#send({ id: message.id, result: { answers: {} } });
+        this.#transport.send({ id: message.id, result: { answers: {} } });
         throw new CodexPlanningError("input_required", question);
       }
       default:
-        this.#send({ id: message.id, error: { code: -32601, message: "Unsupported request" } });
+        this.#transport.send({
+          id: message.id,
+          error: { code: -32601, message: "Unsupported request" },
+        });
         throw new CodexPlanningError("invalid_response");
     }
   }
@@ -362,6 +164,7 @@ class PlanningSession {
       throw new CodexPlanningError("invalid_response");
     }
     this.#turnId = id;
+    this.#transport.started();
     return id;
   }
 
@@ -392,6 +195,7 @@ class PlanningSession {
       if (text === undefined || this.#threadId === undefined)
         throw new CodexPlanningError("invalid_response");
       this.#turnCompleted = true;
+      this.#transport.completed();
       this.#resolveTurn({ threadId: this.#threadId, turnId, text });
       return;
     }
@@ -422,26 +226,14 @@ class PlanningSession {
   }
 
   async close(): Promise<void> {
-    this.#closing = true;
-    clearTimeout(this.#timeout);
-    this.#signal?.removeEventListener("abort", this.#onAbort);
-    if (this.#threadId !== undefined && this.#turnId !== undefined && !this.#turnCompleted) {
-      this.#send({
-        id: this.#nextId++,
-        method: "turn/interrupt",
-        params: { threadId: this.#threadId, turnId: this.#turnId },
-      });
-    }
-    this.#child.stdin.end();
-    await Promise.race([this.#closed, delay(STOP_TIMEOUT_MS)]);
-    killGroup(this.#child, "SIGTERM");
-    await Promise.race([this.#closed, delay(STOP_TIMEOUT_MS)]);
-    killGroup(this.#child, "SIGKILL");
-    await Promise.race([this.#closed, delay(STOP_TIMEOUT_MS)]);
-    this.#child.stdin.destroy();
-    this.#child.stdout.destroy();
-    this.#child.stderr.destroy();
-    this.#child.unref();
+    await this.#transport.close(
+      this.#threadId !== undefined && this.#turnId !== undefined && !this.#turnCompleted
+        ? {
+            method: "turn/interrupt",
+            params: { threadId: this.#threadId, turnId: this.#turnId },
+          }
+        : undefined,
+    );
   }
 }
 
@@ -538,7 +330,9 @@ export function createCodexPlanningRuntime(options: CodexPlanningOptions = {}) {
         await session.guard(input.onThread(threadId));
         return await session.turn(input, cwd, threadId);
       } catch (error) {
-        throw error instanceof CodexPlanningError ? error : new CodexPlanningError("unavailable");
+        throw error instanceof CodexFactoryError
+          ? new CodexPlanningError(error.code, error.question)
+          : new CodexPlanningError("unavailable");
       } finally {
         await session?.close();
       }

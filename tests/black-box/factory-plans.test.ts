@@ -159,7 +159,7 @@ describe("versioned Factory plans", () => {
     expect(await duplicate.json()).toEqual(board);
     expect(board.feature.state).toBe("queued");
     expect(board.approvedVersion).toBe(2);
-    expect(board.executionReadiness.reason).toBe("execution_not_available");
+    expect(board.executionReadiness.reason).toBe("automatic_execution");
     expect(board.columns.map(({ id, items }) => [id, items.length])).toEqual([
       ["todo", 2],
       ["in_progress", 0],

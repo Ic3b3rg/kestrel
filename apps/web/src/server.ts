@@ -2,6 +2,10 @@ import { isAbsolute, resolve } from "node:path";
 
 import { buildApp } from "./app.js";
 import {
+  createFactoryExecutionProcessor,
+  FACTORY_EXECUTION_WORK_OPTIONS,
+} from "./factory-execution-processor.js";
+import {
   createLocalRepositoryService,
   inspectLocalSourceAttachments,
 } from "./routes/local-repository-sources.js";
@@ -29,6 +33,7 @@ import {
   CHANGE_OVERVIEW_RENDER_QUEUE,
   FACTORY_PLANNING_QUEUE,
   FACTORY_PUBLICATION_QUEUE,
+  FACTORY_EXECUTION_QUEUE,
   readReferencedArtifactLocators,
   readDatabaseConfig,
   readEventRetentionLimit,
@@ -37,6 +42,7 @@ import {
   reconcileLocalSourceAttachments,
   reconcilePlanningTurns,
   reconcileFactoryPublications,
+  reconcileFactoryExecutions,
   withArtifactLifecycleLock,
 } from "@kestrel/database";
 import { readLocalSourceConfig, reconcileArtifactRoot } from "@kestrel/local-source";
@@ -120,11 +126,30 @@ const planningProcessor = createFactoryPlanningProcessor({
   readSourceConfig: () => readLocalSourceConfig(),
 });
 const publicationProcessor = createFactoryPublicationProcessor({ pool });
+const executionProcessor = createFactoryExecutionProcessor({
+  pool,
+  readSourceConfig: () => readLocalSourceConfig(),
+  ...(process.env.KESTREL_FACTORY_EXECUTION_IMAGE === undefined
+    ? {}
+    : { containerImage: process.env.KESTREL_FACTORY_EXECUTION_IMAGE }),
+  ...(process.env.KESTREL_FACTORY_DOCKER_EXECUTABLE === undefined
+    ? {}
+    : { dockerExecutable: process.env.KESTREL_FACTORY_DOCKER_EXECUTABLE }),
+});
 let publicationReconciliation: NodeJS.Timeout | undefined;
+let executionReconciliation: NodeJS.Timeout | undefined;
+let reconcilingExecution: Promise<void> | null = null;
 boss.on("error", (error) => {
   app.log.error({ err: error, event: "pgboss.error" });
 });
 let shuttingDown = false;
+
+async function stopExecutionAndHttp(): Promise<void> {
+  // Interrupt tool execution before HTTP draining can wait on an open client.
+  const stoppingExecution = executionProcessor.stop();
+  await Promise.all([stoppingExecution, app.close()]);
+  await reconcilingExecution;
+}
 
 async function shutdown(signal: string): Promise<void> {
   if (shuttingDown) {
@@ -132,8 +157,9 @@ async function shutdown(signal: string): Promise<void> {
   }
   shuttingDown = true;
   clearInterval(publicationReconciliation);
+  clearInterval(executionReconciliation);
   app.log.info({ event: "web.stopping", signal });
-  await app.close();
+  await stopExecutionAndHttp();
   await boss.stop();
   await eventPool.end();
   await pool.end();
@@ -152,6 +178,18 @@ try {
   await boss.start();
   await reconcilePlanningTurns(pool);
   await reconcileFactoryPublications(pool, boss);
+  await reconcileFactoryExecutions(pool, boss);
+  executionReconciliation = setInterval(() => {
+    if (reconcilingExecution !== null || shuttingDown) return;
+    reconcilingExecution = reconcileFactoryExecutions(pool, boss)
+      .catch((error: unknown) =>
+        app.log.error({ err: error, event: "factory.execution_reconciliation_failed" }),
+      )
+      .finally(() => {
+        reconcilingExecution = null;
+      });
+  }, 2_000);
+  executionReconciliation.unref();
   let reconcilingPublication = false;
   publicationReconciliation = setInterval(() => {
     if (reconcilingPublication || shuttingDown) return;
@@ -178,6 +216,14 @@ try {
     if (job !== undefined) await planningProcessor.process(job.data, job.signal);
   });
   await boss.work<unknown>(
+    FACTORY_EXECUTION_QUEUE,
+    FACTORY_EXECUTION_WORK_OPTIONS,
+    async (jobs) => {
+      const job = jobs[0];
+      if (job !== undefined) await executionProcessor.process(job.data, job.signal);
+    },
+  );
+  await boss.work<unknown>(
     CHANGE_OVERVIEW_RENDER_QUEUE,
     CHANGE_OVERVIEW_RENDER_WORK_OPTIONS,
     async (jobs) => {
@@ -196,8 +242,9 @@ try {
   app.log.info({ event: "web.started" });
 } catch (error) {
   clearInterval(publicationReconciliation);
+  clearInterval(executionReconciliation);
   app.log.error({ err: error, event: "web.start_failed" });
-  await app.close();
+  await stopExecutionAndHttp();
   await boss.stop({ graceful: false });
   await eventPool.end();
   await pool.end();

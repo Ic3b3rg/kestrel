@@ -21,6 +21,14 @@ import { Label } from "./components/ui/label.js";
 import { Textarea } from "./components/ui/textarea.js";
 
 const ignoreDirtyChange = () => undefined;
+const featureStatus: Record<Feature["state"], string> = {
+  planning: "Planning · Define the outcome before implementation.",
+  queued: "Queued · Approved work is waiting to run.",
+  implementing: "In progress · Approved work is running on the workstation.",
+  gated: "Decision needed · Review the blocked work on the board.",
+  in_review: "In review · Inspect the work and its verification results.",
+  cancelled: "Cancelled · Saved work remains available.",
+};
 
 type Attempt =
   | { kind: "send"; command: SendPlanningMessageCommand }
@@ -120,7 +128,14 @@ export function FeatureChatPanel({
   const latestTurn = chat?.turns.at(-1);
   const activeTurn = chat?.turns.find(pendingTurn);
   useEffect(() => {
-    if (!online || activeTurn === undefined || readError !== null) return;
+    if (
+      !online ||
+      readError !== null ||
+      (activeTurn === undefined &&
+        chat?.feature.state !== "queued" &&
+        chat?.feature.state !== "implementing")
+    )
+      return;
     const timer = window.setTimeout(() => void refresh(), 1_000);
     return () => window.clearTimeout(timer);
   }, [online, activeTurn, readError, refresh, chat]);
@@ -217,13 +232,7 @@ export function FeatureChatPanel({
             {projectName}
           </a>
           <h1 id="feature-title">{chat.feature.title}</h1>
-          <p>
-            {editable
-              ? "Planning · Define the outcome before implementation."
-              : chat.feature.state === "queued"
-                ? "Queued · Approved work is waiting to run."
-                : "Cancelled · Saved work remains available."}
-          </p>
+          <p>{featureStatus[chat.feature.state]}</p>
         </div>
         <div className="feature-planning-actions">
           <DocumentInspector context={chat.context} />

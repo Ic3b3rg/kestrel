@@ -1,0 +1,15 @@
+FROM node:24.18.1-trixie-slim
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends bash git ripgrep \
+  && rm -rf /var/lib/apt/lists/* \
+  && mkdir -p /home/codex /workspace
+
+COPY --chmod=755 codex /usr/local/bin/codex
+RUN codex --version | grep -Fx 'codex-cli 0.153.4'
+
+LABEL org.opencontainers.image.title="Kestrel Factory executor" \
+  org.opencontainers.image.version="0.153.4"
+WORKDIR /workspace
+ENV HOME=/home/codex
+ENTRYPOINT ["/usr/local/bin/codex"]

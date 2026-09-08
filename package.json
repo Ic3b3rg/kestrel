@@ -20,6 +20,7 @@
     "contracts:check": "npm run check -w @kestrel/contracts",
     "contracts:generate": "npm run generate -w @kestrel/contracts",
     "dev": "node scripts/local-development.mjs",
+    "factory:prepare": "node scripts/factory-execution-image.mjs",
     "dev:down": "node scripts/docker-compose.mjs down",
     "dev:logs": "node scripts/docker-compose.mjs logs --follow",
     "format": "prettier --write .",
