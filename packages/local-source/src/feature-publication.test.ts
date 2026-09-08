@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import { afterEach, expect, it, vi } from "vitest";
 import { readLocalSourceConfig } from "./config.js";
@@ -29,9 +30,26 @@ const git = async (directory: string, args: string[]) =>
     })
   ).stdout.trim();
 afterEach(async () => {
+  vi.useRealTimers();
   vi.unstubAllEnvs();
-  for (const path of directories.splice(0)) await rm(path, { recursive: true, force: true });
+  for (const path of directories.splice(0)) {
+    await stopEscapedChild(path);
+    await rm(path, { recursive: true, force: true });
+  }
 });
+
+async function stopEscapedChild(root: string) {
+  const text = await readFile(join(root, "escaped.pid"), "utf8").catch(() => undefined);
+  if (text === undefined) return;
+  const pid = Number(text);
+  if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error("Invalid fixture child identity");
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+  }
+  await rm(join(root, "escaped.pid"), { force: true });
+}
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "kestrel-feature-publication-"));
@@ -57,6 +75,7 @@ async function fixture() {
   await writeFile(join(operator, "untracked.txt"), "Operator untracked bytes\n");
   const controlPath = join(root, "control.json");
   const callsPath = join(root, "calls.jsonl");
+  const escapedPidPath = join(root, "escaped.pid");
   const executable = join(root, "git.mjs");
   await writeFile(controlPath, "{}");
   await writeFile(
@@ -70,7 +89,8 @@ async function fixture() {
       "appendFileSync(" +
         JSON.stringify(callsPath) +
         ",JSON.stringify({args,tokenPresent:process.env.GH_TOKEN!==undefined})+'\\n');",
-      "if(args[0]==='config' && (args.includes('--global')||args.includes('--system'))) process.exit(1);",
+      "if(args[0]==='config' && (args.includes('--global')||args.includes('--system'))) { if(args.includes('--global')&&control.credentialHelper) { process.stdout.write('credential.helper\\n'+control.credentialHelper+'\\0'); process.exit(0); } process.exit(1); }",
+      "if(control.credentialHelper && (args.includes('ls-remote')||args.includes('push'))) { const result=spawnSync('/usr/bin/git',['credential','fill'],{env:process.env,input:'protocol=https\\nhost=github.com\\n\\n',encoding:'utf8'}); if(result.status!==0) process.exit(128); const username=result.stdout.match(/^username=(.+)$/m)?.[1]; appendFileSync(control.credentialLog,JSON.stringify({command:args.includes('push')?'push':'ls-remote',username})+'\\n'); }",
       "if(control.unreadable && args.includes('ls-remote')) process.exit(128);",
       "if(args.includes('push')&&control.raceRef)spawnSync('/usr/bin/git',['--git-dir='+" +
         JSON.stringify(remote) +
@@ -85,7 +105,9 @@ async function fixture() {
       "const lose=args.includes('push') && control.losePush;",
       "const child=spawn('/usr/bin/git',mapped,{env:process.env,stdio:lose?['inherit','pipe','pipe']:'inherit'});",
       "if(lose){child.stdout.resume();child.stderr.resume();}",
-      "child.on('error',()=>process.exit(128));child.on('exit',code=>{if(args.includes('push')&&code===0&&control.moveTarget)spawnSync('/usr/bin/git',['--git-dir='+" +
+      "child.on('error',()=>process.exit(128));child.on('exit',code=>{if(args.includes('push')&&code===0&&control.escapeAfterPush) { const escaped=spawn(process.execPath,['-e',\"require('node:fs').writeFileSync(process.argv[1],String(process.pid)); setInterval(()=>{},1000);\"," +
+        JSON.stringify(escapedPidPath) +
+        "],{detached:true,stdio:['ignore',1,2]}); escaped.unref(); setInterval(()=>{},1000); return; } if(args.includes('push')&&code===0&&control.moveTarget)spawnSync('/usr/bin/git',['--git-dir='+" +
         JSON.stringify(remote) +
         ",'update-ref','refs/heads/main',control.moveTarget]);process.exit(lose&&code===0?128:code??128);});",
     ].join("\n"),
@@ -138,12 +160,22 @@ async function fixture() {
     untracked: await readFile(join(operator, "untracked.txt"), "utf8"),
   });
   return {
+    root,
     config,
     source,
     target,
     operator,
     operatorState,
     remote,
+    waitForEscapedChild: async () => {
+      const deadline = performance.now() + 5_000;
+      while (performance.now() < deadline) {
+        const pid = Number(await readFile(escapedPidPath, "utf8").catch(() => undefined));
+        if (Number.isSafeInteger(pid) && pid > 0) return pid;
+        await delay(20);
+      }
+      throw new Error("Fixture descendant did not become ready");
+    },
     control: (value: unknown) => writeFile(controlPath, JSON.stringify(value)),
     calls: async () =>
       (await readFile(callsPath, "utf8"))
@@ -152,6 +184,69 @@ async function fixture() {
         .map((line) => JSON.parse(line) as { args: string[]; tokenPresent: boolean }),
   };
 }
+
+it("uses the selected native GitHub profile for credential helpers during remote reads and pushes", async () => {
+  const value = await fixture();
+  const xdgConfig = join(value.root, "xdg");
+  const selectedProfile = join(value.root, "selected-gh");
+  const defaultProfile = join(xdgConfig, "gh");
+  for (const [profile, username] of [
+    [selectedProfile, "selected-operator"],
+    [defaultProfile, "default-operator"],
+  ] as const) {
+    await mkdir(profile, { recursive: true });
+    await writeFile(join(profile, "account.json"), JSON.stringify({ username }));
+  }
+  const helper = join(value.root, "gh.mjs");
+  await writeFile(
+    helper,
+    `#!${process.execPath}
+import {readFileSync} from 'node:fs';
+import {join} from 'node:path';
+if (process.argv.slice(2).join(' ') !== 'auth git-credential get') process.exit(2);
+let input = '';
+for await (const chunk of process.stdin) input += chunk;
+if (input !== 'protocol=https\\nhost=github.com\\n') process.exit(3);
+const profile = process.env.GH_CONFIG_DIR ?? join(process.env.XDG_CONFIG_HOME, 'gh');
+const {username} = JSON.parse(readFileSync(join(profile, 'account.json'), 'utf8'));
+process.stdout.write('username=' + username + '\\npassword=fixture-only\\n');
+`,
+    { mode: 0o755 },
+  );
+  const credentialLog = join(value.root, "credential-log.jsonl");
+  await value.control({
+    credentialHelper: "!'" + helper.replaceAll("'", "'\\''") + "' auth git-credential",
+    credentialLog,
+  });
+  vi.stubEnv("XDG_CONFIG_HOME", xdgConfig);
+  vi.stubEnv("GH_CONFIG_DIR", selectedProfile);
+  const before = await value.operatorState();
+
+  expect(await readFeaturePublicationRefs(value.config, value.source, value.target)).toEqual({
+    targetHead: value.source.workspace.identity.baseCommitId,
+    featureHead: null,
+  });
+  expect(await pushFeaturePublicationHead(value.config, value.source, value.target)).toMatchObject({
+    state: "confirmed",
+  });
+  const credentials = (await readFile(credentialLog, "utf8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as { command: string; username: string });
+  expect(credentials.map(({ command }) => command)).toEqual([
+    "ls-remote",
+    "ls-remote",
+    "push",
+    "ls-remote",
+  ]);
+  expect(credentials.map(({ username }) => username)).toEqual([
+    "selected-operator",
+    "selected-operator",
+    "selected-operator",
+    "selected-operator",
+  ]);
+  expect(await value.operatorState()).toEqual(before);
+}, 30_000);
 
 it("creates only the exact certified Feature ref with an empty lease and preserves the Operator source", async () => {
   const value = await fixture();
@@ -220,6 +315,39 @@ it("reconciles a lost push response by the exact remote ref without sending a se
   });
   expect((await value.calls()).filter(({ args }) => args.includes("push"))).toHaveLength(1);
 }, 30_000);
+
+it.each(["cancelled", "timeout"] as const)(
+  "settles an uncertain %s push while an escaped descendant holds its pipes open",
+  async (failure) => {
+    const value = await fixture();
+    await value.control({ escapeAfterPush: true });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const controller = new AbortController();
+    const pending = pushFeaturePublicationHead(value.config, value.source, value.target, {
+      signal: controller.signal,
+    });
+    let result: unknown;
+    try {
+      const pid = await value.waitForEscapedChild();
+      if (failure === "cancelled") controller.abort();
+      else await vi.runOnlyPendingTimersAsync();
+      result = await Promise.race([pending, delay(1_000, "did not settle")]);
+      expect(() => process.kill(pid, 0)).not.toThrow();
+    } finally {
+      controller.abort();
+      await stopEscapedChild(value.root);
+      await pending;
+      vi.useRealTimers();
+    }
+    expect(result).toEqual({ state: "uncertain", failure });
+    expect(await readFeaturePublicationRefs(value.config, value.source, value.target)).toEqual({
+      targetHead: value.source.workspace.identity.baseCommitId,
+      featureHead: value.source.snapshot.headCommitId,
+    });
+    expect((await value.calls()).filter(({ args }) => args.includes("push"))).toHaveLength(1);
+  },
+  30_000,
+);
 
 it("rejects a foreign Feature ref before writing and rejects a racing ref using Git's empty lease", async () => {
   const value = await fixture();
