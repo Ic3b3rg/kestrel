@@ -17,9 +17,9 @@ Umbrella: https://github.com/Ic3b3rg/kestrel/issues/209
 6. [Factory 0.1-06 — Human Gates, two-Project scheduling, and durable recovery](https://github.com/Ic3b3rg/kestrel/issues/215)
    — blocked by #214
 7. [Factory 0.1-07 — Publish one verified feature pull request](https://github.com/Ic3b3rg/kestrel/issues/216)
-   — blocked by #215
-   — implemented through [final cumulative verification #234](https://github.com/Ic3b3rg/kestrel/issues/234)
-   and [certified Feature PR publication #235](https://github.com/Ic3b3rg/kestrel/issues/235)
+   — blocked by #215 — implemented through
+   [final cumulative verification #234](https://github.com/Ic3b3rg/kestrel/issues/234) and
+   [certified Feature PR publication #235](https://github.com/Ic3b3rg/kestrel/issues/235)
 8. [Factory 0.1-08 — Requirements-first Conceptual Review with an explorable evidence graph](https://github.com/Ic3b3rg/kestrel/issues/217)
    — blocked by #216
 9. [Factory 0.1-09 — Selected corrections and exact-head merge from Kestrel](https://github.com/Ic3b3rg/kestrel/issues/218)
