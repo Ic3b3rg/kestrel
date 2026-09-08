@@ -18,6 +18,7 @@ import type { DiagnosticJobSender } from "./diagnostics.js";
 import { FACTORY_EXECUTION_QUEUE, pgBossDatabase } from "./pg-boss.js";
 import { FactoryError, withFactoryFeature, type FeatureRow } from "./factory-planning.js";
 import type { ExecutionRunRow } from "./factory-execution-read.js";
+import { ensureFactoryGate, factoryGateForRetry } from "./factory-gates.js";
 
 interface OwnedRunRow extends ExecutionRunRow {
   owner_instance_id: string | null;
@@ -39,6 +40,14 @@ export interface ClaimedFactoryExecution {
   specMarkdown: string;
   context: PlanningContext | null;
   source: OwnedRunRow["source"];
+  gateResolution: {
+    id: string;
+    runId: string;
+    approvedVersion: number;
+    reason: FactoryExecutionFailure;
+    question: string;
+    answer: string;
+  } | null;
   completed: Array<{ key: string; revision: FactoryExecutionRevision }>;
 }
 
@@ -77,8 +86,8 @@ export async function queueFactoryExecutions(
     );
     let available = Math.min(2, ...active.rows.map((row) => row.limit)) - active.rows.length;
     if (available <= 0) return [];
-    const candidates = await client.query<{ id: string; project_id: string }>(
-      `SELECT feature.id, COALESCE(owner.canonical_project_id, owner.id) AS project_id
+    const candidates = await client.query<FeatureRow>(
+      `SELECT feature.*, COALESCE(owner.canonical_project_id, owner.id) AS project_id
        FROM factory_features feature JOIN projects owner ON owner.id = feature.project_id
        JOIN factory_plan_approvals approval ON approval.feature_id = feature.id AND approval.plan_version = feature.approved_plan_version
        JOIN factory_feature_publications publication ON publication.feature_id = feature.id AND publication.state = 'published'
@@ -127,33 +136,46 @@ export async function queueFactoryExecutions(
       if (ready === undefined) continue;
       const definition = plan.workItems.find((item) => item.key === ready.key);
       if (definition === undefined) throw new Error("Approved Work Item missing");
-      const previous = await client.query<{ attempt: number }>(
-        "SELECT attempt FROM factory_execution_runs WHERE work_item_id = $1 ORDER BY attempt DESC LIMIT 1",
+      const previous = await client.query<OwnedRunRow>(
+        "SELECT * FROM factory_execution_runs WHERE work_item_id = $1 ORDER BY attempt DESC LIMIT 1",
         [ready.id],
       );
-      // Failed attempts require a recorded human disposition before being eligible again.
-      if (previous.rows.length > 0) continue;
-      const source = await client.query<{ repository_id: string; source_identity: string }>(
-        `SELECT source.repository_id, source.source_identity FROM local_repository_sources source JOIN projects owner ON owner.id = source.project_id
+      const prior = previous.rows[0];
+      const gate =
+        prior === undefined ? null : await factoryGateForRetry(client, candidate, prior.id);
+      if (
+        prior !== undefined &&
+        (gate === null ||
+          prior.plan_version !== approved.version ||
+          JSON.stringify(
+            FactoryExecutionRunSchema.shape.acceptedCommands.parse(prior.accepted_commands),
+          ) !== JSON.stringify(definition.verification))
+      )
+        continue;
+      // A retry carries the original source and commands. An answer cannot rebind them.
+      let source = prior?.source ?? null;
+      if (prior === undefined) {
+        const sources = await client.query<{ repository_id: string; source_identity: string }>(
+          `SELECT source.repository_id, source.source_identity FROM local_repository_sources source JOIN projects owner ON owner.id = source.project_id
          WHERE COALESCE(owner.canonical_project_id, owner.id) = $1 AND source.attachment_state = 'attached' ORDER BY source.project_id LIMIT 1`,
-        [candidate.project_id],
-      );
-      const attached = source.rows[0];
+          [candidate.project_id],
+        );
+        const attached = sources.rows[0];
+        if (attached !== undefined)
+          source = { repositoryId: attached.repository_id, identity: attached.source_identity };
+      }
       const inserted = await client.query<{ id: string }>(
-        `INSERT INTO factory_execution_runs (feature_id, project_id, work_item_id, plan_version, attempt, source, accepted_commands)
-         VALUES ($1,$2,$3,$4,1,$5::jsonb,$6::jsonb) RETURNING id`,
+        `INSERT INTO factory_execution_runs (feature_id, project_id, work_item_id, plan_version, attempt, source, accepted_commands, resume_gate_id)
+         VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8) RETURNING id`,
         [
           candidate.id,
           candidate.project_id,
           ready.id,
           approved.version,
-          attached === undefined
-            ? null
-            : JSON.stringify({
-                repositoryId: attached.repository_id,
-                identity: attached.source_identity,
-              }),
+          (prior?.attempt ?? 0) + 1,
+          source === null ? null : JSON.stringify(source),
           JSON.stringify(definition.verification),
+          gate?.id ?? null,
         ],
       );
       const id = inserted.rows[0]?.id;
@@ -251,6 +273,57 @@ export async function claimFactoryExecution(
       );
       const item = workItems.rows.find((item) => item.id === row.work_item_id);
       if (item === undefined || item.board_column !== "todo") throw new FactoryError("conflict");
+      const plan = FeaturePlanDocumentSchema.parse(version.document);
+      const definition = plan.workItems.find((definition) => definition.key === item.key);
+      if (
+        definition === undefined ||
+        JSON.stringify(definition.verification) !==
+          JSON.stringify(
+            FactoryExecutionRunSchema.shape.acceptedCommands.parse(row.accepted_commands),
+          )
+      )
+        throw new FactoryError("conflict");
+      let gateResolution: ClaimedFactoryExecution["gateResolution"] = null;
+      if (row.resume_gate_id !== null) {
+        const gates = await client.query<{
+          id: string;
+          run_id: string;
+          plan_version: number;
+          reason: FactoryExecutionFailure;
+          question: string;
+          answer: string;
+        }>(
+          `SELECT gate.id, gate.run_id, gate.plan_version, gate.reason, gate.question, gate.answer
+           FROM factory_human_gates gate JOIN factory_execution_runs previous ON previous.id = gate.run_id
+           WHERE gate.id = $1 AND gate.feature_id = $2 AND gate.work_item_id = $3 AND gate.plan_version = $4
+             AND gate.decision = 'resume_within_plan' AND gate.resolved_at IS NOT NULL
+             AND previous.work_item_id = $3 AND previous.plan_version = $4 AND previous.attempt = $5 - 1
+             AND previous.state IN ('blocked', 'interrupted') AND previous.reservation_released_at IS NOT NULL
+             AND previous.source IS NOT DISTINCT FROM $6::jsonb AND previous.accepted_commands = $7::jsonb
+             AND gate.reason NOT IN ('source_changed', 'revision_changed')
+             AND previous.failure NOT IN ('source_changed', 'revision_changed')
+             AND NOT EXISTS (SELECT 1 FROM factory_execution_containers WHERE run_id = previous.id AND stopped_at IS NULL)`,
+          [
+            row.resume_gate_id,
+            row.feature_id,
+            row.work_item_id,
+            row.plan_version,
+            row.attempt,
+            row.source === null ? null : JSON.stringify(row.source),
+            JSON.stringify(row.accepted_commands),
+          ],
+        );
+        const gate = gates.rows[0];
+        if (gate === undefined) throw new FactoryError("conflict");
+        gateResolution = {
+          id: gate.id,
+          runId: gate.run_id,
+          approvedVersion: gate.plan_version,
+          reason: gate.reason,
+          question: gate.question,
+          answer: gate.answer,
+        };
+      } else if (row.attempt !== 1) throw new FactoryError("conflict");
       const completed = await client.query<{ key: string; revision: unknown }>(
         `SELECT item.key, run.revision FROM factory_work_items item JOIN factory_execution_runs run ON run.work_item_id = item.id
        WHERE item.feature_id = $1 AND item.board_column IN ('in_review', 'completed') AND run.state = 'verified' ORDER BY item.position`,
@@ -274,11 +347,12 @@ export async function claimFactoryExecution(
         key: item.key,
         attempt: row.attempt,
         version: row.plan_version,
-        plan: FeaturePlanDocumentSchema.parse(version.document),
+        plan,
         context: PlanningContextSchema.nullable().parse(version.source_context),
         planMarkdown: version.plan_markdown,
         specMarkdown: version.spec_markdown,
         source: row.source,
+        gateResolution,
         completed: completed.rows.map((item) => ({
           key: item.key,
           revision: FactoryExecutionRevisionSchema.parse(item.revision),
@@ -446,6 +520,8 @@ export function finishFactoryExecution(
           THEN 'in_review' ELSE 'implementing' END ELSE 'gated' END, updated_at = clock_timestamp() WHERE id = $1`,
         [row.feature_id, verified],
       );
+    if (!verified && !cancelled)
+      await ensureFactoryGate(client, row.id, failure ?? "interrupted", outcome.question);
     await client.query(
       "INSERT INTO factory_activity (feature_id, work_item_id, kind, summary) VALUES ($1,$2,$3,$4)",
       [
@@ -694,28 +770,70 @@ export async function reconcileFactoryExecutions(
         );
         const row = selected.rows[0];
         if (row === undefined) return;
-        const neverOwned = row.owner_instance_id === null;
-        const question = neverOwned
+        const pendingContainers = await client.query(
+          "SELECT name FROM factory_execution_containers WHERE run_id = $1 AND stopped_at IS NULL",
+          [row.id],
+        );
+        const writerStopped = row.owner_instance_id === null && pendingContainers.rowCount === 0;
+        const question = writerStopped
           ? "Execution delivery stopped before work could start. Retry this Work Item after checking the local service."
           : "Execution was interrupted. Kestrel retains this Project until its execution environment has been stopped.";
         await client.query(
           `UPDATE factory_execution_runs SET state = $2, failure = 'interrupted', question = $3,
            stop_requested_at = clock_timestamp(), completed_at = clock_timestamp(),
            reservation_released_at = CASE WHEN $4 THEN clock_timestamp() ELSE NULL END WHERE id = $1`,
-          [row.id, neverOwned ? "blocked" : "interrupted", question, neverOwned],
+          [row.id, writerStopped ? "blocked" : "interrupted", question, writerStopped],
         );
         await client.query("UPDATE factory_work_items SET board_column = 'todo' WHERE id = $1", [
           row.work_item_id,
         ]);
-        if (feature.state !== "cancelled")
+        if (feature.state !== "cancelled") {
           await client.query(
             "UPDATE factory_features SET state = 'gated', updated_at = clock_timestamp() WHERE id = $1",
             [row.feature_id],
           );
+          await ensureFactoryGate(client, row.id, "interrupted", question);
+        }
         await client.query(
           "INSERT INTO factory_activity (feature_id, work_item_id, kind, summary) VALUES ($1,$2,'execution_blocked',$3)",
           [row.feature_id, row.work_item_id, question],
         );
+      },
+    );
+  }
+  // Upgrade previously gated #214 attempts without inventing a new attempt or taking ownership.
+  const missing = await pool.query<{ id: string; feature_id: string; project_id: string }>(
+    `SELECT run.id, run.feature_id, run.project_id FROM factory_features feature
+     JOIN LATERAL (SELECT * FROM factory_execution_runs WHERE feature_id = feature.id
+       ORDER BY created_at DESC, id DESC LIMIT 1) run ON true
+     WHERE feature.state = 'gated' AND run.state IN ('blocked', 'interrupted')
+       AND NOT EXISTS (SELECT 1 FROM factory_human_gates WHERE run_id = run.id)
+     ORDER BY run.feature_id LIMIT 200`,
+  );
+  for (const candidate of missing.rows) {
+    await withFactoryFeature(
+      pool,
+      candidate.project_id,
+      candidate.feature_id,
+      async (client, feature) => {
+        if (feature.state !== "gated") return;
+        const selected = await client.query<OwnedRunRow>(
+          `SELECT run.* FROM factory_execution_runs run WHERE run.id = $1 AND run.feature_id = $2
+         AND run.state IN ('blocked', 'interrupted') AND NOT EXISTS (
+           SELECT 1 FROM factory_execution_runs later WHERE later.feature_id = run.feature_id
+             AND (later.created_at, later.id) > (run.created_at, run.id)) FOR UPDATE`,
+          [candidate.id, candidate.feature_id],
+        );
+        const row = selected.rows[0];
+        if (row !== undefined)
+          await ensureFactoryGate(
+            client,
+            row.id,
+            row.failure === null
+              ? "interrupted"
+              : FactoryExecutionRunSchema.shape.failure.unwrap().parse(row.failure),
+            row.question,
+          );
       },
     );
   }

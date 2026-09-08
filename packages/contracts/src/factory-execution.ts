@@ -1,26 +1,10 @@
 import { z } from "zod";
 
 import { FactoryVerificationCommandSchema } from "./factory-plan.js";
+import { FactoryExecutionFailureSchema, FactoryGateSchema } from "./factory-gates.js";
 import { GitObjectIdSchema, KestrelIdSchema } from "./v1.js";
 
-export const FactoryExecutionFailureSchema = z.enum([
-  "unavailable",
-  "authentication",
-  "usage_limit",
-  "sandbox_unavailable",
-  "source_unavailable",
-  "source_changed",
-  "permission_required",
-  "input_required",
-  "timeout",
-  "cancelled",
-  "interrupted",
-  "invalid_response",
-  "verification_failed",
-  "revision_changed",
-  "stop_unconfirmed",
-]);
-export type FactoryExecutionFailure = z.infer<typeof FactoryExecutionFailureSchema>;
+export { FactoryExecutionFailureSchema, type FactoryExecutionFailure } from "./factory-gates.js";
 
 export const FactoryExecutionRevisionSchema = z.strictObject({
   baseCommitId: GitObjectIdSchema,
@@ -75,6 +59,7 @@ export const FactoryExecutionRunSchema = FactoryExecutionRunSummarySchema.extend
   featureId: KestrelIdSchema,
   approvedVersion: z.int().min(1).max(200),
   question: z.string().min(1).max(4000).nullable(),
+  gate: FactoryGateSchema.nullable().optional(),
   revision: FactoryExecutionRevisionSchema.nullable(),
   runtime: z
     .strictObject({
@@ -121,6 +106,7 @@ export const FactoryExecutionSchema = z.strictObject({
   ]),
   failure: FactoryExecutionFailureSchema.nullable(),
   question: z.string().min(1).max(4000).nullable(),
+  gate: FactoryGateSchema.nullable().optional(),
   revision: FactoryExecutionRevisionSchema.nullable(),
   workItems: z
     .array(
