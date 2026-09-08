@@ -1,5 +1,5 @@
 import {
-  FeaturePlanDocumentSchema,
+  GeneratedFeaturePlanDocumentSchema,
   validateFeaturePlan,
   type FeaturePlanDocument,
   type PlanningContext,
@@ -10,7 +10,7 @@ import { CodexPlanningError } from "./codex-planning-runtime.js";
 
 export function parseGeneratedFeaturePlan(text: string): FeaturePlanDocument {
   try {
-    const plan = FeaturePlanDocumentSchema.parse(JSON.parse(text));
+    const plan = GeneratedFeaturePlanDocumentSchema.parse(JSON.parse(text));
     if (validateFeaturePlan(plan).length > 0) throw new CodexPlanningError("invalid_response");
     return plan;
   } catch {
@@ -27,6 +27,28 @@ function markdownCode(value: string): string {
   while (value.includes(fence)) fence += "`";
   const padding = /^[` ]|[` ]$/u.test(value) ? " " : "";
   return `${fence}${padding}${value}${padding}${fence}`;
+}
+
+function proposedDocumentsMarkdown(plan: FeaturePlanDocument, contents: boolean): string[] {
+  if ((plan.proposedDocuments?.length ?? 0) === 0) return [];
+  return [
+    "## Proposed Project documents",
+    "These are proposed Markdown, not committed Project documents. Only their owning Work Items may apply them after exact plan approval. The planning sources below record the inputs supplied for this version.",
+    ...(plan.proposedDocuments ?? []).map((document) => {
+      let fence = "```";
+      while (document.markdown.includes(fence)) fence += "`";
+      return [
+        `### ${document.key} — ${document.kind === "adr" ? "ADR" : "Glossary"}`,
+        `${document.pathIsProvisional ? "Provisional path" : "Proposed path"}: ${markdownCode(document.path)}`,
+        `Owning Work Item: ${markdownCode(document.workItemKey)}`,
+        ...(contents
+          ? [
+              `${fence}markdown\n${document.markdown}${document.markdown.endsWith("\n") ? "" : "\n"}${fence}`,
+            ]
+          : ["The complete proposed Markdown is retained in the Feature Plan artifact."]),
+      ].join("\n\n");
+    }),
+  ];
 }
 
 function sourceContextMarkdown(context: PlanningContext | null): string {
@@ -141,6 +163,7 @@ export function renderFeaturePlanArtifacts({
         ),
         "## Ordered Work Items",
         ...workItems,
+        ...proposedDocumentsMarkdown(plan, true),
         ...limitsAndSources,
       ].join("\n\n") + "\n",
     specMarkdown:
@@ -156,6 +179,7 @@ export function renderFeaturePlanArtifacts({
               .join(", ")}`,
           ].join("\n"),
         ),
+        ...proposedDocumentsMarkdown(plan, false),
         ...limitsAndSources,
       ].join("\n\n") + "\n",
   };

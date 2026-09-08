@@ -261,6 +261,7 @@ interface MessageRow {
   role: string;
   content: string;
   created_at: Date;
+  generated_plan_version?: number | null;
 }
 interface TurnRow {
   id: string;
@@ -378,7 +379,11 @@ export async function readFactoryChat(
   if (row === undefined) throw new FactoryError("not_found");
   const [messages, turns] = await Promise.all([
     pool.query<MessageRow>(
-      "SELECT id, role, content, created_at FROM factory_planning_messages WHERE feature_id = $1 ORDER BY created_at, id LIMIT 200",
+      `SELECT message.id, message.role, message.content, message.created_at, plan.version AS generated_plan_version
+       FROM factory_planning_messages message
+       LEFT JOIN factory_plan_versions plan ON plan.source_turn_id = message.reply_to_turn_id
+         AND plan.feature_id = message.feature_id AND message.role = 'assistant'
+       WHERE message.feature_id = $1 ORDER BY message.created_at, message.id LIMIT 200`,
       [featureId],
     ),
     pool.query<TurnRow>(
@@ -399,6 +404,9 @@ export async function readFactoryChat(
         role: message.role,
         content: message.content,
         createdAt: message.created_at.toISOString(),
+        ...(message.generated_plan_version == null || message.role !== "assistant"
+          ? {}
+          : { generatedPlanVersion: message.generated_plan_version }),
       }),
     ),
     turns: turns.rows.map((turn) =>

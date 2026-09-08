@@ -6,6 +6,7 @@ import {
   ApiClientError,
   cancelPlanningTurn,
   fetchFeatureChat,
+  fetchFeaturePlanVersion,
   retryPlanningTurn,
   sendPlanningMessage,
 } from "./api.js";
@@ -14,6 +15,7 @@ import { handleFeatureLink, planningRequestError } from "./FeatureNavigation.js"
 import { Button } from "./components/ui/button.js";
 import { DocumentInspector, failures, pendingTurn } from "./PlanningDetails.js";
 import { FeaturePlanPanel } from "./FeaturePlanPanel.js";
+import { GeneratedPlanDocuments } from "./FeaturePlanDocuments.js";
 import { FeatureBoardPanel } from "./FeatureBoardPanel.js";
 import { PlanningSkillsPanel, SkillProvenance } from "./PlanningSkillsPanel.js";
 import { FeatureGitHubIssuesPanel } from "./FeatureGitHubIssuesPanel.js";
@@ -48,6 +50,7 @@ export interface FeatureChatPanelProps {
   onFeatureRead: (feature: Feature) => void;
   onFeatureUnavailable: (projectId: string, featureId: string) => void;
   loadChat?: typeof fetchFeatureChat;
+  loadPlanVersion?: typeof fetchFeaturePlanVersion;
   sendMessage?: typeof sendPlanningMessage;
   retryTurn?: typeof retryPlanningTurn;
   cancelTurn?: typeof cancelPlanningTurn;
@@ -65,6 +68,7 @@ export function FeatureChatPanel({
   onFeatureRead,
   onFeatureUnavailable,
   loadChat = fetchFeatureChat,
+  loadPlanVersion = fetchFeaturePlanVersion,
   sendMessage = sendPlanningMessage,
   retryTurn = retryPlanningTurn,
   cancelTurn = cancelPlanningTurn,
@@ -365,6 +369,17 @@ export function FeatureChatPanel({
                       </time>
                     </header>
                     <div className="planning-message-content">{message.content}</div>
+                    {message.role !== "assistant" ||
+                    message.generatedPlanVersion === undefined ? null : (
+                      <GeneratedPlanDocuments
+                        projectId={projectId}
+                        featureId={featureId}
+                        versionNumber={message.generatedPlanVersion}
+                        online={online}
+                        onAuthenticationError={onAuthenticationError}
+                        loadVersion={loadPlanVersion}
+                      />
+                    )}
                     <SkillProvenance
                       skills={turn?.skills ?? []}
                       onAuthenticationError={onAuthenticationError}

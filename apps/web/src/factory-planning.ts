@@ -6,7 +6,7 @@ import { z } from "zod";
 
 import {
   DEFAULT_FACTORY_LIMITS,
-  FeaturePlanDocumentSchema,
+  GeneratedFeaturePlanDocumentSchema,
   KestrelIdSchema,
   PlanningSkillSummarySchema,
   type PlanningContext,
@@ -80,6 +80,8 @@ function promptFor(turn: ClaimedPlanningTurn, context: PlanningContext): string 
       ? [
           "You are the Kestrel planning assistant. Generate one complete Feature Plan as JSON matching the supplied schema, in the Operator's language. Do not wrap it in Markdown or append a chat answer.",
           "Preserve agreed objective, scope, acceptance outcomes, and execution limits. Use the conversation to revise the previous draft; do not silently discard agreed requirements or expand authority.",
+          "Retain agreed glossary and ADR proposals in proposedDocuments, preserving their Markdown and stable keys when revising a draft. Use an empty array when none are agreed. At most four documents and 32,000 combined UTF-8 Markdown bytes fit inside the whole plan's 96,000-byte JSON limit. Use safe relative .md paths outside .git and .kestrel. Give each proposal a known owning workItemKey whose scope, acceptance and verification cover applying it. Do not add work outside the agreed scope.",
+          "Set pathIsProvisional for an ADR filename unless supplied context establishes its final path and existing numbering. Its owning Work Item must resolve a provisional filename within the approved scope. Cite supplied Project documents and retained format references; do not invent repository facts or claim a proposal was already written. Provenance is recorded by Kestrel from this turn's supplied sources and retained Skills.",
           "Give requirements and Work Items stable unique keys. Cover every requirement with at least one Work Item. Order Work Items so every dependency appears earlier; dependencies must be known, distinct, and acyclic.",
           "Each Work Item needs implementation detail, requirement keys, acceptance criteria, and concrete verification. Verification uses a program name and separate argv arguments, a relative Project cwd without parent traversal, and a timeout no greater than the attempt limit. Do not invent existing test commands or repository capabilities.",
           "If consequential decisions or verification details are missing, do not invent them to satisfy the schema. Request clarification through runtime user input if available; otherwise leave generation unsuccessful so the Operator can continue the planning conversation.",
@@ -92,6 +94,7 @@ function promptFor(turn: ClaimedPlanningTurn, context: PlanningContext): string 
         ]
       : [
           "You are the Kestrel planning assistant. Conduct a concise requirements grilling conversation in the Operator's language.",
+          "When the procedure calls for a glossary or ADR, show the proposed Markdown in your planning reply, clearly labelled as a draft with its proposed path and supplied sources. Keep any uncertain ADR numbering provisional. These proposals become structured plan documents only on explicit draft generation; interviewing does not approve or write them.",
           (turn.skills?.length ?? 0) === 0
             ? "Ask the most consequential unresolved question, explain relevant tradeoffs, and record agreed decisions. Cite supplied documents by relative path when supporting a question."
             : "Follow the selected planning procedures below to structure the questions and agreed decisions. Cite supplied Project documents and retained Skill references where relevant.",
@@ -245,7 +248,11 @@ export function createFactoryPlanningProcessor({
           requestId: turn.id,
           prompt,
           ...(turn.purpose === "plan"
-            ? { outputSchema: z.toJSONSchema(FeaturePlanDocumentSchema, { target: "draft-7" }) }
+            ? {
+                outputSchema: z.toJSONSchema(GeneratedFeaturePlanDocumentSchema, {
+                  target: "draft-7",
+                }),
+              }
             : turn.threadId === null
               ? {}
               : { threadId: turn.threadId }),
