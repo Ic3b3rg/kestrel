@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { GitObjectIdSchema, KestrelIdSchema } from "./v1.js";
+import { FeaturePlanningSkillsSchema, PlanningSkillSummarySchema } from "./factory-skills.js";
 
 export const PlanningContextSchema = z.strictObject({
   commitId: GitObjectIdSchema.nullable(),
@@ -14,6 +15,7 @@ export const PlanningContextSchema = z.strictObject({
     )
     .max(24),
   notice: z.string().max(2048).nullable(),
+  skills: z.array(PlanningSkillSummarySchema).max(8).optional(),
 });
 export type PlanningContext = z.infer<typeof PlanningContextSchema>;
 
@@ -42,6 +44,7 @@ export const FeatureListSchema = z.strictObject({
 export const SendPlanningMessageCommandSchema = z.strictObject({
   requestId: z.uuid(),
   text: z.string().trim().min(1).max(16_000),
+  skillSelectionVersion: z.number().int().min(0).max(1_000).optional(),
 });
 export type SendPlanningMessageCommand = z.infer<typeof SendPlanningMessageCommandSchema>;
 
@@ -75,6 +78,7 @@ export const PlanningTurnSchema = z.strictObject({
   createdAt: z.iso.datetime(),
   startedAt: z.iso.datetime().nullable(),
   completedAt: z.iso.datetime().nullable(),
+  skills: z.array(PlanningSkillSummarySchema).max(8).optional(),
 });
 export type PlanningTurn = z.infer<typeof PlanningTurnSchema>;
 
@@ -93,5 +97,6 @@ export const FeatureChatSchema = z.strictObject({
   messages: z.array(PlanningMessageSchema).max(200),
   turns: z.array(PlanningTurnSchema).max(400),
   context: PlanningContextSchema.nullable(),
+  skills: FeaturePlanningSkillsSchema.optional(),
 });
 export type FeatureChat = z.infer<typeof FeatureChatSchema>;

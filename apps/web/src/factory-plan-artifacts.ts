@@ -46,6 +46,17 @@ function sourceContextMarkdown(context: PlanningContext | null): string {
         )
       : "No committed planning documents were available.",
     ...(context.notice === null ? [] : [`Context notice: ${context.notice}`]),
+    ...((context.skills?.length ?? 0) === 0
+      ? []
+      : [
+          "Selected planning Skills:",
+          markdownList(
+            (context.skills ?? []).map(
+              (skill) =>
+                `${markdownCode("$" + skill.name)} from ${markdownCode(skill.source.label)} — retained version ${markdownCode(skill.contentDigest)}`,
+            ),
+          ),
+        ]),
   ].join("\n\n");
 }
 

@@ -125,7 +125,9 @@ export function validateFeaturePlan(plan: FeaturePlanDocument): string[] {
 
 const version = z.int().min(1).max(200);
 const versionCommand = z.strictObject({ requestId: z.uuid(), expectedVersion: version.nullable() });
-export const GenerateFeaturePlanCommandSchema = versionCommand;
+export const GenerateFeaturePlanCommandSchema = versionCommand.extend({
+  skillSelectionVersion: z.number().int().min(0).max(1_000).optional(),
+});
 export const SaveFeaturePlanCommandSchema = versionCommand.extend({
   plan: FeaturePlanDocumentSchema,
 });

@@ -178,7 +178,9 @@ function readCsrfToken(): string {
   return token;
 }
 
-function authenticatedMutationHeaders(extra: Record<string, string> = {}): Record<string, string> {
+export function authenticatedMutationHeaders(
+  extra: Record<string, string> = {},
+): Record<string, string> {
   return {
     Accept: "application/json",
     "Content-Type": "application/json",

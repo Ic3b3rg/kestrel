@@ -97,7 +97,7 @@ export function registerFactoryPlanningRoutes(
   app.post(
     "/api/v1/projects/:projectId/features/:featureId/plans/generate",
     {
-      bodyLimit: 256,
+      bodyLimit: 512,
       config: AUTHENTICATED_MUTATION_ROUTE_CONFIG,
       schema: {
         params: jsonSchema(featureParams),
@@ -118,6 +118,9 @@ export function registerFactoryPlanningRoutes(
             {
               requestId: command.requestId,
               text: "Generate a detailed plan from our discussion and the current draft for me to inspect before approval.",
+              ...(command.skillSelectionVersion === undefined
+                ? {}
+                : { skillSelectionVersion: command.skillSelectionVersion }),
             },
             { expectedVersion: command.expectedVersion },
           ),

@@ -41,7 +41,7 @@ import {
 type VersionCommand = { requestId: string; expectedVersion: number | null };
 type PlanAttempt =
   | { kind: "save"; command: SaveFeaturePlanCommand }
-  | { kind: "generate"; command: VersionCommand }
+  | { kind: "generate"; command: VersionCommand & { skillSelectionVersion?: number } }
   | { kind: "cancel"; command: VersionCommand }
   | { kind: "approve"; version: number; requestId: string }
   | { kind: "retry"; turnId: string; requestId: string }
@@ -121,6 +121,7 @@ export interface FeaturePlanPanelProps {
   onApproved: () => void;
   onDirtyChange: (dirty: boolean) => void;
   importsRevision?: number;
+  skillSelectionVersion?: number;
   loadPlans?: typeof fetchFeaturePlans;
   loadImports?: typeof fetchFactoryIssueImports;
   savePlan?: typeof saveFeaturePlan;
@@ -128,6 +129,7 @@ export interface FeaturePlanPanelProps {
 }
 
 export function FeaturePlanPanel({
+  skillSelectionVersion,
   projectId,
   featureId,
   online,
@@ -522,7 +524,11 @@ export function FeaturePlanPanel({
                 onClick={() =>
                   void run({
                     kind: "generate",
-                    command: { requestId: crypto.randomUUID(), expectedVersion: currentVersion },
+                    command: {
+                      requestId: crypto.randomUUID(),
+                      expectedVersion: currentVersion,
+                      ...(skillSelectionVersion === undefined ? {} : { skillSelectionVersion }),
+                    },
                   })
                 }
               >
