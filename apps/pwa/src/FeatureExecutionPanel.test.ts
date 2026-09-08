@@ -543,3 +543,115 @@ it("rejects attempt evidence belonging to another Work Item", async () => {
   expect(container.textContent).not.toContain("Accepted verification commands");
   expect(container.textContent).not.toContain("Report export failed its declared check.");
 });
+
+it("shows cumulative verification separately and opens its Feature-scoped evidence and gate", async () => {
+  const finalId = "018f0f89-949a-75a8-8f61-6df78a843b25";
+  const finalGate = {
+    ...gate,
+    purpose: "feature_verification",
+    workItemId: null,
+    runId: finalId,
+    reason: "verification_failed",
+    question: "W2 changed the behavior checked by W1. Repair within the approved plan?",
+  };
+  const summary = {
+    ...execution.workItems[0]?.runs[0],
+    id: finalId,
+    purpose: "feature_verification",
+    workItemId: null,
+    state: "blocked",
+  };
+  const finalRun = {
+    ...run,
+    id: finalId,
+    purpose: "feature_verification",
+    workItemId: null,
+    gate: finalGate,
+    initialRevision: run.revision,
+    verificationManifest: [
+      {
+        position: 1,
+        command,
+        origins: [
+          { workItemKey: "REPORTS-1", position: 1 },
+          { workItemKey: "REPORTS-2", position: 1 },
+        ],
+      },
+    ],
+  };
+  const value = {
+    ...execution,
+    gate: finalGate,
+    finalVerification: {
+      runs: [summary],
+      certificate: null,
+      progress: { round: 3, checked: 1, passed: 0, total: 1 },
+    },
+  };
+  const fetch = vi.fn<typeof globalThis.fetch>((url) =>
+    Promise.resolve(Response.json(requestUrl(url).endsWith(`/runs/${finalId}`) ? finalRun : value)),
+  );
+  vi.stubGlobal("fetch", fetch);
+  await render();
+  const section = container.querySelector('[aria-label="Final Feature verification"]');
+  expect(section?.textContent).toContain("Pass 3 · 1 of 1 checks recorded · 0 passed");
+  expect(section?.textContent).toContain("No final verification record yet");
+  expect(container.textContent).toContain(finalGate.question);
+  await click("Final attempt 1", true);
+  expect(section?.textContent).toContain("REPORTS-1 · command 1");
+  expect(section?.textContent).toContain("REPORTS-2 · command 1");
+  expect(section?.textContent).toContain(head);
+  expect(section?.textContent).toContain("Exit code 1");
+});
+
+it("shows the retained final record for the exact revision and never offers publication", async () => {
+  const finalId = "018f0f89-949a-75a8-8f61-6df78a843b25";
+  const summary = {
+    ...execution.workItems[0]?.runs[0],
+    id: finalId,
+    purpose: "feature_verification",
+    workItemId: null,
+    state: "verified",
+    failure: null,
+    writerStopped: true,
+  };
+  const certificate = {
+    id: itemId,
+    featureId,
+    runId: finalId,
+    approvedVersion: 2,
+    source: { repositoryId: "retained", identity: "retained-identity" },
+    revision: run.revision,
+    manifest: [{ position: 1, command, origins: [{ workItemKey: "REPORTS-1", position: 1 }] }],
+    manifestDigest: "d".repeat(64),
+    evidenceIds: [projectId],
+    createdAt,
+  };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      Response.json({
+        ...execution,
+        state: "verified",
+        failure: null,
+        question: null,
+        finalVerification: {
+          runs: [summary],
+          certificate,
+          progress: { round: 2, checked: 1, passed: 1, total: 1 },
+        },
+      }),
+    ),
+  );
+  await render();
+  expect(container.textContent).toContain("Final Feature revision verified");
+  const section = container.querySelector('[aria-label="Final Feature verification"]');
+  expect(section?.textContent).toContain("All 1 approved checks passed · plan version 2");
+  expect(section?.textContent).toContain(head);
+  expect(section?.textContent).toContain(tree);
+  expect(
+    [...container.querySelectorAll("button")].some((button) =>
+      /publish|merge|pull request/i.test(button.textContent),
+    ),
+  ).toBe(false);
+});

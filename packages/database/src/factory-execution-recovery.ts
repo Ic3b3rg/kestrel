@@ -17,7 +17,8 @@ interface RunIdentity {
   project_id: string;
 }
 interface RecoveryRun extends RunIdentity {
-  work_item_id: string;
+  work_item_id: string | null;
+  purpose?: "work_item" | "feature_verification";
   state: string;
   stop_requested_at: Date | null;
   reservation_released_at: Date | null;
@@ -66,7 +67,7 @@ async function withFencedRun<T>(
 
 async function containersFor(client: PoolClient, runId: string): Promise<ContainerRow[]> {
   const result = await client.query<ContainerRow>(
-    "SELECT name, container_id, daemon_id, stopped_at FROM factory_execution_containers WHERE run_id = $1 ORDER BY created_at, name LIMIT 40 FOR UPDATE",
+    "SELECT name, container_id, daemon_id, stopped_at FROM factory_execution_containers WHERE run_id = $1 AND stopped_at IS NULL ORDER BY created_at, name LIMIT 40 FOR UPDATE",
     [runId],
   );
   return result.rows;
@@ -89,7 +90,7 @@ export async function recoverFactoryExecutions(
     const containers = await withFencedRun(pool, candidate, (client, run) =>
       containersFor(client, run.id),
     );
-    if (containers === undefined || containers.length > 39) continue;
+    if (containers === undefined) continue;
     const deadline = AbortSignal.timeout(10_000);
     for (const container of containers) {
       if (deadline.aborted) break;
@@ -138,8 +139,7 @@ export async function recoverFactoryExecutions(
     }
     const didRelease = await withFencedRun(pool, candidate, async (client, run, feature) => {
       const current = await containersFor(client, run.id);
-      if (current.length > 39 || current.some((container) => container.stopped_at === null))
-        return false;
+      if (current.some((container) => container.stopped_at === null)) return false;
       // An empty lifecycle is also a proof: every create awaits its durable
       // reservation, and the committed stop fence rejects all later reservations.
       const cancelled = feature.state === "cancelled";
@@ -152,9 +152,10 @@ export async function recoverFactoryExecutions(
          WHERE id = $1`,
         [run.id, cancelled ? "cancelled" : "blocked", failure],
       );
-      await client.query("UPDATE factory_work_items SET board_column = 'todo' WHERE id = $1", [
-        run.work_item_id,
-      ]);
+      if (run.purpose !== "feature_verification")
+        await client.query("UPDATE factory_work_items SET board_column = 'todo' WHERE id = $1", [
+          run.work_item_id,
+        ]);
       if (!cancelled) {
         await client.query(
           "UPDATE factory_features SET state = 'gated', updated_at = clock_timestamp() WHERE id = $1",

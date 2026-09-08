@@ -4,7 +4,11 @@ import {
   PlanningContextSchema,
   FactoryExecutionRevisionSchema,
   FactoryVerificationResultSchema,
-  FactoryExecutionRunSchema,
+  FactoryAcceptedVerificationCommandsSchema,
+  FactoryExecutionFailureSchema,
+  FactoryVerificationManifestSchema,
+  factoryVerificationManifest,
+  type FactoryVerificationManifest,
   type FactoryExecutionFailure,
   type FactoryExecutionRevision,
   type FactoryVerificationResult,
@@ -17,6 +21,11 @@ import type { DatabasePool } from "./pool.js";
 import type { DiagnosticJobSender } from "./diagnostics.js";
 import { FACTORY_EXECUTION_QUEUE, pgBossDatabase } from "./pg-boss.js";
 import { FactoryError, withFactoryFeature, type FeatureRow } from "./factory-planning.js";
+import {
+  factoryWorkItemsVerified,
+  persistFactoryFeatureVerification,
+  readCurrentFactoryFeatureVerification,
+} from "./factory-verification.js";
 import type { ExecutionRunRow } from "./factory-execution-read.js";
 import { ensureFactoryGate, factoryGateForRetry } from "./factory-gates.js";
 import {
@@ -35,7 +44,10 @@ export interface ClaimedFactoryExecution {
   projectId: string;
   featureId: string;
   title: string;
-  workItemId: string;
+  workItemId: string | null;
+  purpose?: "work_item" | "feature_verification";
+  verificationManifest?: FactoryVerificationManifest;
+  initialRevision?: FactoryExecutionRevision;
   key: string;
   attempt: number;
   version: number;
@@ -95,7 +107,7 @@ export async function queueFactoryExecutions(
        FROM factory_features feature JOIN projects owner ON owner.id = feature.project_id
        JOIN factory_plan_approvals approval ON approval.feature_id = feature.id AND approval.plan_version = feature.approved_plan_version
        JOIN factory_feature_publications publication ON publication.feature_id = feature.id AND publication.state = 'published'
-       WHERE feature.state IN ('queued', 'implementing')
+       WHERE feature.state IN ('queued', 'implementing', 'in_review')
          AND NOT EXISTS (SELECT 1 FROM factory_execution_runs run
            JOIN projects running_project ON running_project.id = run.project_id
            WHERE COALESCE(running_project.canonical_project_id, running_project.id) = COALESCE(owner.canonical_project_id, owner.id)
@@ -137,7 +149,32 @@ export async function queueFactoryExecutions(
               ),
             ),
       );
-      if (ready === undefined) continue;
+      if (ready === undefined) {
+        if (
+          items.rows.length !== plan.workItems.length ||
+          !items.rows.every(
+            (item, index) =>
+              item.key === plan.workItems[index]?.key &&
+              ["in_review", "completed"].includes(item.board_column),
+          )
+        )
+          continue;
+        const finalId = await queueFeatureVerification(
+          client,
+          boss,
+          candidate,
+          approved.version,
+          plan,
+        );
+        if (finalId !== null) {
+          queued.push(finalId);
+          available = Math.min(
+            available - 1,
+            plan.limits.maxConcurrentProjects - active.rows.length - queued.length,
+          );
+        }
+        continue;
+      }
       const definition = plan.workItems.find((item) => item.key === ready.key);
       if (definition === undefined) throw new Error("Approved Work Item missing");
       const previous = await client.query<OwnedRunRow>(
@@ -152,7 +189,7 @@ export async function queueFactoryExecutions(
         (gate === null ||
           prior.plan_version !== approved.version ||
           JSON.stringify(
-            FactoryExecutionRunSchema.shape.acceptedCommands.parse(prior.accepted_commands),
+            FactoryAcceptedVerificationCommandsSchema.parse(prior.accepted_commands),
           ) !== JSON.stringify(definition.verification))
       )
         continue;
@@ -208,6 +245,100 @@ export async function queueFactoryExecutions(
   });
 }
 
+/** Runs under the scheduler and Feature locks; no model turn is admitted here. */
+async function queueFeatureVerification(
+  client: PoolClient,
+  boss: DiagnosticJobSender,
+  feature: FeatureRow,
+  version: number,
+  plan: FeaturePlanDocument,
+): Promise<string | null> {
+  const workspace = await workspaceFor(client, feature.id);
+  if (workspace === null) return null; // The read model exposes missing retained proof as a blocker.
+  const revision = FactoryExecutionRevisionSchema.parse({
+    baseCommitId: workspace.baseCommitId,
+    headCommitId: workspace.headCommitId,
+    treeId: workspace.treeId,
+    branch: workspace.branch,
+  });
+  if ((await readCurrentFactoryFeatureVerification(client, feature.id, version, revision)) !== null)
+    return null;
+  const previous = await client.query<OwnedRunRow>(
+    "SELECT * FROM factory_execution_runs WHERE feature_id = $1 AND plan_version = $2 AND purpose = 'feature_verification' ORDER BY attempt DESC LIMIT 1",
+    [feature.id, version],
+  );
+  const prior = previous.rows[0];
+  const gate = prior === undefined ? null : await factoryGateForRetry(client, feature, prior.id);
+  const manifest = factoryVerificationManifest(plan);
+  if (
+    prior !== undefined &&
+    (gate === null ||
+      JSON.stringify(FactoryVerificationManifestSchema.parse(prior.verification_manifest)) !==
+        JSON.stringify(manifest))
+  )
+    return null;
+  // Successors preserve original frozen inputs, including SQL NULL. Retained workspace
+  // identity binds the first final attempt without rewriting any historical Work Item.
+  const source =
+    prior === undefined
+      ? { repositoryId: workspace.repositoryId, identity: workspace.sourceIdentity }
+      : prior.source;
+  const proof =
+    source !== null &&
+    source.repositoryId === workspace.repositoryId &&
+    source.identity === workspace.sourceIdentity &&
+    (await factoryWorkItemsVerified(client, feature.id, version, plan, source, revision));
+  const inserted = await client.query<{ id: string }>(
+    `INSERT INTO factory_execution_runs (feature_id,project_id,work_item_id,plan_version,purpose,attempt,source,accepted_commands,resume_gate_id,verification_manifest,initial_revision,revision)
+     VALUES ($1,$2,NULL,$3,'feature_verification',$4,$5::jsonb,$6::jsonb,$7,$8::jsonb,$9::jsonb,$9::jsonb) RETURNING id`,
+    [
+      feature.id,
+      feature.project_id,
+      version,
+      (prior?.attempt ?? 0) + 1,
+      source === null ? null : JSON.stringify(source),
+      JSON.stringify(manifest.map((entry) => entry.command)),
+      gate?.id ?? null,
+      JSON.stringify(manifest),
+      JSON.stringify(revision),
+    ],
+  );
+  const id = inserted.rows[0]?.id;
+  if (id === undefined) throw new Error("Final verification reservation was not persisted");
+  if (!proof) {
+    const question =
+      "Final verification cannot prove that every approved Work Item belongs to the retained workspace and has stopped. Inspect the retained source and attempt evidence before continuing.";
+    await client.query(
+      "UPDATE factory_execution_runs SET state = 'blocked', failure = 'source_changed', question = $2, completed_at = clock_timestamp(), reservation_released_at = clock_timestamp() WHERE id = $1",
+      [id, question],
+    );
+    await client.query(
+      "UPDATE factory_features SET state = 'gated', updated_at = clock_timestamp() WHERE id = $1",
+      [feature.id],
+    );
+    await ensureFactoryGate(client, id, "source_changed", question);
+    return null;
+  }
+  const jobId = await boss.send(
+    FACTORY_EXECUTION_QUEUE,
+    { runId: id },
+    { db: pgBossDatabase(client), id },
+  );
+  if (jobId !== id) throw new Error("Final verification was not durably queued");
+  await client.query(
+    "UPDATE factory_features SET state = 'implementing', updated_at = clock_timestamp() WHERE id = $1",
+    [feature.id],
+  );
+  await client.query(
+    "INSERT INTO factory_activity (feature_id, work_item_id, kind, summary) VALUES ($1,NULL,'execution_queued',$2)",
+    [
+      feature.id,
+      "Final Feature verification reserved for every approved command on the cumulative revision",
+    ],
+  );
+  return id;
+}
+
 async function withRun<T>(
   pool: DatabasePool,
   run: Pick<ClaimedFactoryExecution, "id" | "featureId" | "projectId" | "ownerInstanceId">,
@@ -252,7 +383,7 @@ export async function claimFactoryExecution(
     identity.feature_id,
     async (client, feature) => {
       const result = await client.query<OwnedRunRow>(
-        `UPDATE factory_execution_runs SET state = 'running', owner_instance_id = $2, started_at = clock_timestamp(), heartbeat_at = clock_timestamp()
+        `UPDATE factory_execution_runs SET state = CASE WHEN purpose = 'feature_verification' THEN 'verifying' ELSE 'running' END, owner_instance_id = $2, started_at = clock_timestamp(), heartbeat_at = clock_timestamp()
        WHERE id = $1 AND state = 'queued' AND owner_instance_id IS NULL AND reservation_released_at IS NULL AND stop_requested_at IS NULL
          AND EXISTS (SELECT 1 FROM factory_features WHERE id = feature_id AND state = 'implementing') RETURNING *`,
         [id, ownerInstanceId],
@@ -276,17 +407,46 @@ export async function claimFactoryExecution(
         [row.feature_id],
       );
       const item = workItems.rows.find((item) => item.id === row.work_item_id);
-      if (item === undefined || item.board_column !== "todo") throw new FactoryError("conflict");
+      const final = row.purpose === "feature_verification";
+      if (!final && (item === undefined || item.board_column !== "todo"))
+        throw new FactoryError("conflict");
       const plan = FeaturePlanDocumentSchema.parse(version.document);
-      const definition = plan.workItems.find((definition) => definition.key === item.key);
+      const definition = plan.workItems.find((definition) => definition.key === item?.key);
       if (
-        definition === undefined ||
-        JSON.stringify(definition.verification) !==
-          JSON.stringify(
-            FactoryExecutionRunSchema.shape.acceptedCommands.parse(row.accepted_commands),
-          )
+        (!final && definition === undefined) ||
+        JSON.stringify(
+          final
+            ? factoryVerificationManifest(plan).map((entry) => entry.command)
+            : definition?.verification,
+        ) !== JSON.stringify(FactoryAcceptedVerificationCommandsSchema.parse(row.accepted_commands))
       )
         throw new FactoryError("conflict");
+      if (final) {
+        const workspace = await workspaceFor(client, row.feature_id);
+        const initial = FactoryExecutionRevisionSchema.parse(row.initial_revision);
+        if (
+          workspace === null ||
+          row.work_item_id !== null ||
+          row.source === null ||
+          workspace.repositoryId !== row.source.repositoryId ||
+          workspace.sourceIdentity !== row.source.identity ||
+          JSON.stringify(FactoryVerificationManifestSchema.parse(row.verification_manifest)) !==
+            JSON.stringify(factoryVerificationManifest(plan)) ||
+          workspace.baseCommitId !== initial.baseCommitId ||
+          workspace.headCommitId !== initial.headCommitId ||
+          workspace.treeId !== initial.treeId ||
+          workspace.branch !== initial.branch ||
+          !(await factoryWorkItemsVerified(
+            client,
+            row.feature_id,
+            row.plan_version,
+            plan,
+            row.source,
+            initial,
+          ))
+        )
+          throw new FactoryError("conflict");
+      }
       let gateResolution: ClaimedFactoryExecution["gateResolution"] = null;
       if (row.resume_gate_id !== null) {
         const gates = await client.query<{
@@ -299,11 +459,13 @@ export async function claimFactoryExecution(
         }>(
           `SELECT gate.id, gate.run_id, gate.plan_version, gate.reason, gate.question, gate.answer
            FROM factory_human_gates gate JOIN factory_execution_runs previous ON previous.id = gate.run_id
-           WHERE gate.id = $1 AND gate.feature_id = $2 AND gate.work_item_id = $3 AND gate.plan_version = $4
+           WHERE gate.id = $1 AND gate.feature_id = $2 AND gate.work_item_id IS NOT DISTINCT FROM $3::uuid AND gate.plan_version = $4
              AND gate.decision = 'resume_within_plan' AND gate.resolved_at IS NOT NULL
-             AND previous.work_item_id = $3 AND previous.plan_version = $4 AND previous.attempt = $5 - 1
+             AND previous.work_item_id IS NOT DISTINCT FROM $3::uuid AND previous.plan_version = $4 AND previous.attempt = $5 - 1
              AND previous.state IN ('blocked', 'interrupted') AND previous.reservation_released_at IS NOT NULL
              AND previous.source IS NOT DISTINCT FROM $6::jsonb AND previous.accepted_commands = $7::jsonb
+             AND previous.purpose = $8 AND gate.purpose = $8
+             AND previous.verification_manifest IS NOT DISTINCT FROM $9::jsonb
              AND gate.reason NOT IN ('source_changed', 'revision_changed')
              AND previous.failure NOT IN ('source_changed', 'revision_changed')
              AND NOT EXISTS (SELECT 1 FROM factory_execution_containers WHERE run_id = previous.id AND stopped_at IS NULL)`,
@@ -315,6 +477,8 @@ export async function claimFactoryExecution(
             row.attempt,
             row.source === null ? null : JSON.stringify(row.source),
             JSON.stringify(row.accepted_commands),
+            row.purpose ?? "work_item",
+            row.verification_manifest == null ? null : JSON.stringify(row.verification_manifest),
           ],
         );
         const gate = gates.rows[0];
@@ -333,13 +497,20 @@ export async function claimFactoryExecution(
        WHERE item.feature_id = $1 AND item.board_column IN ('in_review', 'completed') AND run.state = 'verified' ORDER BY item.position`,
         [row.feature_id],
       );
-      await client.query(
-        "UPDATE factory_work_items SET board_column = 'in_progress' WHERE id = $1",
-        [row.work_item_id],
-      );
+      if (!final)
+        await client.query(
+          "UPDATE factory_work_items SET board_column = 'in_progress' WHERE id = $1",
+          [row.work_item_id],
+        );
       await client.query(
         "INSERT INTO factory_activity (feature_id, work_item_id, kind, summary) VALUES ($1,$2,'execution_started',$3)",
-        [row.feature_id, row.work_item_id, `${item.key} is being implemented`],
+        [
+          row.feature_id,
+          row.work_item_id,
+          final
+            ? "Final Feature verification is checking the cumulative revision"
+            : `${item?.key ?? "Work Item"} is being implemented`,
+        ],
       );
       return {
         id,
@@ -348,7 +519,16 @@ export async function claimFactoryExecution(
         featureId: row.feature_id,
         title: feature.title,
         workItemId: row.work_item_id,
-        key: item.key,
+        key: item?.key ?? "Feature verification",
+        purpose: row.purpose ?? "work_item",
+        ...(final
+          ? {
+              verificationManifest: FactoryVerificationManifestSchema.parse(
+                row.verification_manifest,
+              ),
+              initialRevision: FactoryExecutionRevisionSchema.parse(row.initial_revision),
+            }
+          : {}),
         attempt: row.attempt,
         version: row.plan_version,
         plan,
@@ -419,7 +599,7 @@ export function saveFactoryVerification(
     // A command already started may finish after cancellation. Preserve that evidence;
     // cancellation still prevents new checkpoints and new container reservations.
     if (row.reservation_released_at !== null) throw new FactoryError("conflict");
-    const command = FactoryExecutionRunSchema.shape.acceptedCommands.parse(row.accepted_commands)[
+    const command = FactoryAcceptedVerificationCommandsSchema.parse(row.accepted_commands)[
       check.position - 1
     ];
     const revision = FactoryExecutionRevisionSchema.parse(row.revision);
@@ -430,8 +610,8 @@ export function saveFactoryVerification(
     )
       throw new FactoryError("conflict");
     await client.query(
-      "INSERT INTO factory_verification_results (run_id, round, position, result) VALUES ($1,$2,$3,$4::jsonb)",
-      [run.id, check.round, check.position, JSON.stringify(check)],
+      "INSERT INTO factory_verification_results (run_id, round, position, result, purpose) VALUES ($1,$2,$3,$4::jsonb,$5)",
+      [run.id, check.round, check.position, JSON.stringify(check), row.purpose ?? "work_item"],
     );
   });
 }
@@ -460,15 +640,13 @@ export function finishFactoryExecution(
       row.stop_requested_at === null &&
       ["running", "verifying"].includes(row.state);
     if (verified) {
-      const checks = await client.query<{ result: unknown }>(
-        `SELECT result FROM factory_verification_results WHERE run_id = $1 AND round =
+      const checks = await client.query<{ id: string; result: unknown }>(
+        `SELECT id, result FROM factory_verification_results WHERE run_id = $1 AND round =
           (SELECT max(round) FROM factory_verification_results WHERE run_id = $1) ORDER BY position`,
         [run.id],
       );
       const revision = FactoryExecutionRevisionSchema.parse(row.revision);
-      const commands = FactoryExecutionRunSchema.shape.acceptedCommands.parse(
-        row.accepted_commands,
-      );
+      const commands = FactoryAcceptedVerificationCommandsSchema.parse(row.accepted_commands);
       const workspace = await workspaceFor(client, run.featureId);
       verified =
         workspace !== null &&
@@ -492,6 +670,24 @@ export function finishFactoryExecution(
         });
       if (!verified)
         throw new FactoryError("conflict", "All approved checks must pass on the exact revision");
+      if (row.purpose === "feature_verification") {
+        if (
+          workspace === null ||
+          row.source?.repositoryId !== workspace.repositoryId ||
+          row.source.identity !== workspace.sourceIdentity ||
+          JSON.stringify(
+            FactoryVerificationManifestSchema.parse(row.verification_manifest).map(
+              (entry) => entry.command,
+            ),
+          ) !== JSON.stringify(commands)
+        )
+          throw new FactoryError("conflict");
+        await persistFactoryFeatureVerification(
+          client,
+          { ...row, verification_manifest: row.verification_manifest },
+          checks.rows.map((check) => check.id),
+        );
+      }
     }
     const cancelled = feature.state === "cancelled";
     const state = !writerStopped
@@ -513,10 +709,11 @@ export function finishFactoryExecution(
         reservation_released_at = CASE WHEN $5 THEN clock_timestamp() ELSE NULL END WHERE id = $1`,
       [run.id, state, failure, outcome.question?.slice(0, 4000) ?? null, writerStopped],
     );
-    await client.query("UPDATE factory_work_items SET board_column = $2 WHERE id = $1", [
-      row.work_item_id,
-      verified ? "in_review" : "todo",
-    ]);
+    if (row.purpose !== "feature_verification")
+      await client.query("UPDATE factory_work_items SET board_column = $2 WHERE id = $1", [
+        row.work_item_id,
+        verified ? "in_review" : "todo",
+      ]);
     if (!cancelled)
       await client.query(
         `UPDATE factory_features SET state = CASE WHEN $2 THEN
@@ -526,6 +723,8 @@ export function finishFactoryExecution(
       );
     if (!verified && !cancelled)
       await ensureFactoryGate(client, row.id, failure ?? "interrupted", outcome.question);
+    // The immutable Feature certificate is its success record; do not invent a verified Work Item.
+    if (verified && row.purpose === "feature_verification") return;
     await client.query(
       "INSERT INTO factory_activity (feature_id, work_item_id, kind, summary) VALUES ($1,$2,$3,$4)",
       [
@@ -555,7 +754,7 @@ export function reserveFactoryExecutionContainer(
       "SELECT count(*) FROM factory_execution_containers WHERE run_id = $1",
       [run.id],
     );
-    if (Number(count.rows[0]?.count) >= 39)
+    if (Number(count.rows[0]?.count) >= (row.purpose === "feature_verification" ? 1442 : 39))
       throw new FactoryError("conflict", "The attempt environment limit was reached");
     await client.query(
       "INSERT INTO factory_execution_containers (name, run_id, phase, daemon_id) VALUES ($1,$2,$3,$4)",
@@ -784,7 +983,7 @@ export async function reconcileFactoryExecutions(
         );
         const writerStopped = row.owner_instance_id === null && pendingContainers.rowCount === 0;
         const question = writerStopped
-          ? "Execution delivery stopped before work could start. Retry this Work Item after checking the local service."
+          ? "Execution delivery stopped before work could start. Retry this attempt after checking the local service."
           : "Execution was interrupted. Kestrel retains this Project while it verifies and stops the recorded environment. If its identity cannot be confirmed, inspect Docker using the recorded container name; answering this gate cannot release an unconfirmed environment.";
         await client.query(
           `UPDATE factory_execution_runs SET state = $2, failure = 'interrupted', question = $3,
@@ -792,9 +991,10 @@ export async function reconcileFactoryExecutions(
            reservation_released_at = CASE WHEN $4 THEN clock_timestamp() ELSE NULL END WHERE id = $1`,
           [row.id, writerStopped ? "blocked" : "interrupted", question, writerStopped],
         );
-        await client.query("UPDATE factory_work_items SET board_column = 'todo' WHERE id = $1", [
-          row.work_item_id,
-        ]);
+        if (row.purpose !== "feature_verification")
+          await client.query("UPDATE factory_work_items SET board_column = 'todo' WHERE id = $1", [
+            row.work_item_id,
+          ]);
         if (feature.state !== "cancelled") {
           await client.query(
             "UPDATE factory_features SET state = 'gated', updated_at = clock_timestamp() WHERE id = $1",
@@ -837,9 +1037,7 @@ export async function reconcileFactoryExecutions(
           await ensureFactoryGate(
             client,
             row.id,
-            row.failure === null
-              ? "interrupted"
-              : FactoryExecutionRunSchema.shape.failure.unwrap().parse(row.failure),
+            row.failure === null ? "interrupted" : FactoryExecutionFailureSchema.parse(row.failure),
             row.question,
           );
       },

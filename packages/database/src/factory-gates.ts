@@ -14,7 +14,8 @@ import type { DatabasePool } from "./pool.js";
 interface GateRow {
   id: string;
   feature_id: string;
-  work_item_id: string;
+  work_item_id: string | null;
+  purpose?: "work_item" | "feature_verification";
   run_id: string;
   plan_version: number;
   reason: FactoryExecutionFailure;
@@ -33,18 +34,20 @@ interface GateRow {
   has_pending_container: boolean;
   latest_run_id: string;
   successor_run_id: string | null;
-  board_column: string;
+  board_column: string | null;
+  has_unverified_item?: boolean;
 }
 
 const gateSelection = `SELECT gate.*, run.state AS run_state, run.failure AS run_failure,
   run.attempt, run.reservation_released_at, item.board_column,
+  EXISTS (SELECT 1 FROM factory_work_items pending WHERE pending.feature_id = gate.feature_id AND pending.plan_version = gate.plan_version AND pending.board_column NOT IN ('in_review', 'completed')) AS has_unverified_item,
   EXISTS (SELECT 1 FROM factory_execution_containers container
     WHERE container.run_id = run.id AND container.stopped_at IS NULL) AS has_pending_container,
   (SELECT latest.id FROM factory_execution_runs latest WHERE latest.feature_id = gate.feature_id
     ORDER BY latest.created_at DESC, latest.id DESC LIMIT 1) AS latest_run_id,
   (SELECT successor.id FROM factory_execution_runs successor WHERE successor.resume_gate_id = gate.id) AS successor_run_id
   FROM factory_human_gates gate JOIN factory_execution_runs run ON run.id = gate.run_id
-  JOIN factory_work_items item ON item.id = gate.work_item_id`;
+  LEFT JOIN factory_work_items item ON item.id = gate.work_item_id`;
 
 /** Call under the Feature lock, after the run's authoritative outcome is persisted. */
 export async function ensureFactoryGate(
@@ -71,8 +74,8 @@ export async function ensureFactoryGate(
           ? "Which technical choice resolves this attempt within the approved requirements and limits?"
           : `Execution stopped with ${reason}. Inspect its recorded results and resolve the cause before retrying within the approved plan.`;
   await client.query(
-    `INSERT INTO factory_human_gates (feature_id, work_item_id, run_id, plan_version, reason, question, required_decision)
-     SELECT feature_id, work_item_id, id, plan_version, $2, $3, $4 FROM factory_execution_runs WHERE id = $1
+    `INSERT INTO factory_human_gates (feature_id, work_item_id, run_id, plan_version, reason, question, required_decision, purpose)
+     SELECT feature_id, work_item_id, id, plan_version, $2, $3, $4, purpose FROM factory_execution_runs WHERE id = $1
      ON CONFLICT (run_id) DO NOTHING`,
     [runId, reason, question?.trim().slice(0, 4000) || fallback, requiredDecision],
   );
@@ -90,7 +93,9 @@ function blockedReason(
     !["gated", "queued"].includes(feature.state) ||
     row.latest_run_id !== row.run_id ||
     row.successor_run_id !== null ||
-    row.board_column !== "todo"
+    (row.purpose === "feature_verification"
+      ? row.work_item_id !== null || row.has_unverified_item === true
+      : row.board_column !== "todo")
   )
     return "stale_gate";
   if (
@@ -115,6 +120,7 @@ function mapGate(feature: FeatureRow, row: GateRow): FactoryGate {
   return FactoryGateSchema.parse({
     schemaVersion: 1,
     id: row.id,
+    purpose: row.purpose ?? "work_item",
     featureId: row.feature_id,
     workItemId: row.work_item_id,
     runId: row.run_id,

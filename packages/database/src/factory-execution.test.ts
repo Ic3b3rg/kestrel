@@ -375,3 +375,44 @@ it("admits a single answered retry with frozen source and checks after its verif
   );
   expect(query.mock.calls.some(([sql]) => sql.includes("UPDATE factory_work_items"))).toBe(false);
 });
+
+it.each([
+  { purpose: "work_item", count: 38, allowed: true },
+  { purpose: "work_item", count: 39, allowed: false },
+  { purpose: "feature_verification", count: 1441, allowed: true },
+  { purpose: "feature_verification", count: 1442, allowed: false },
+])(
+  "keeps separate finite environment bounds for each purpose: %j",
+  async ({ purpose, count, allowed }) => {
+    const query = vi.fn<Query>((sql) => {
+      if (sql.includes("FROM factory_features") && sql.includes("FOR UPDATE"))
+        return { rows: [{ id: featureId, project_id: projectId, state: "implementing" }] };
+      if (sql.includes("SELECT * FROM factory_execution_runs"))
+        return {
+          rows: [
+            {
+              owner_instance_id: ownerId,
+              state: "verifying",
+              purpose,
+              revision: {},
+              stop_requested_at: null,
+              reservation_released_at: null,
+            },
+          ],
+        };
+      if (sql.includes("SELECT count(*)")) return { rows: [{ count: String(count) }] };
+      return { rows: [], rowCount: 1 };
+    });
+    const request = reserveFactoryExecutionContainer(
+      { connect: () => ({ query, release: vi.fn() }) } as never,
+      { id: runId, featureId, projectId, ownerInstanceId: ownerId } as never,
+      `kestrel-factory-${"1".repeat(32)}`,
+      "verification",
+    );
+    if (allowed) await expect(request).resolves.toBeUndefined();
+    else await expect(request).rejects.toMatchObject({ code: "conflict" });
+    expect(
+      query.mock.calls.some(([sql]) => sql.includes("INSERT INTO factory_execution_containers")),
+    ).toBe(allowed);
+  },
+);

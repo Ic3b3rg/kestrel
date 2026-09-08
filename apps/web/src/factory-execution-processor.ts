@@ -4,6 +4,7 @@ import { StringDecoder } from "node:string_decoder";
 import { z } from "zod";
 import {
   KestrelIdSchema,
+  factoryVerificationManifest,
   type FactoryExecutionFailure,
   type FactoryExecutionRun,
   type FactoryVerificationResult,
@@ -120,17 +121,21 @@ function promptFor(
   workspace: FactoryFeatureWorkspace,
   previousChecks: VerificationFeedback[],
 ): string {
+  const final = run.purpose === "feature_verification";
   const item = run.plan.workItems.find((item) => item.key === run.key);
   if (
-    item === undefined ||
-    item.dependsOn.some((key) => !run.completed.some((done) => done.key === key))
+    !final &&
+    (item === undefined ||
+      item.dependsOn.some((key) => !run.completed.some((done) => done.key === key)))
   )
     throw new ExecutionFailure(
       "interrupted",
       "A required Work Item has no verified dependency artifact.",
     );
   const prompt = [
-    "Implement only this approved Work Item in the isolated Feature workspace, in the Operator's language.",
+    final
+      ? "Repair only the technical failures of the cumulative Feature within the immutable approved scope, in the Operator's language. Do not replay Work Item implementations. All approved commands will be checked again on the new checkpoint; earlier successes cannot certify it."
+      : "Implement only this approved Work Item in the isolated Feature workspace, in the Operator's language.",
     "Read the immutable approved Markdown at .kestrel/plan.md and .kestrel/spec.md. The controller owns approval, Git checkpoints and the exact verification commands. Do not edit Git metadata, rewrite those documents, publish changes or merge.",
     "Resolve technical problems within the approved scope. If requirements, acceptance criteria or authorized limits must change, request human input and return input_required with the unresolved question. Do not invent approval or silently expand scope.",
     "A recorded gate answer resolves only its named question within this exact approved version. It cannot amend requirements, acceptance, source identity, verification commands, execution limits or the selected runtime route. If the answer requires such a change, return input_required; do not apply that change.",
@@ -143,7 +148,15 @@ function promptFor(
       objective: run.plan.objective,
       scope: run.plan.scope,
       requirements: run.plan.acceptance,
-      workItem: item,
+      ...(final
+        ? {
+            workItems: run.plan.workItems.map(({ key, title, requirementKeys }) => ({
+              key,
+              title,
+              requirementKeys,
+            })),
+          }
+        : { workItem: item }),
       limits: run.plan.limits,
       revision: {
         baseCommitId: workspace.baseCommitId,
@@ -151,8 +164,23 @@ function promptFor(
         treeId: workspace.treeId,
         branch: workspace.branch,
       },
-      dependencies: run.completed.filter((done) => item.dependsOn.includes(done.key)),
-      previousChecks,
+      dependencies: final ? [] : run.completed.filter((done) => item?.dependsOn.includes(done.key)),
+      previousChecks: final
+        ? previousChecks
+            .filter((check) => check.outcome !== "passed")
+            .slice(0, 12)
+            .map((check) => ({
+              ...check,
+              origins: run.verificationManifest?.[check.position - 1]?.origins,
+            }))
+        : previousChecks,
+      ...(final
+        ? {
+            failedCheckCount: previousChecks.filter((check) => check.outcome !== "passed").length,
+            feedbackLimit:
+              "At most 12 failed checks; all exact evidence remains retained by the controller.",
+          }
+        : {}),
       gateResolution: run.gateResolution,
       planningContext: {
         commitId: run.context?.commitId ?? null,
@@ -177,6 +205,23 @@ async function prepareWorkspace(
 ): Promise<{ workspace: FeatureWorkspace; revision: FactoryFeatureWorkspace }> {
   if (run.source === null) throw new ExecutionFailure("source_unavailable");
   let revision = await readFactoryFeatureWorkspace(pool, run);
+  if (run.purpose === "feature_verification") {
+    const initial = run.initialRevision;
+    if (revision === null || initial === undefined)
+      throw new ExecutionFailure("source_unavailable");
+    if (
+      revision.baseCommitId !== initial.baseCommitId ||
+      revision.headCommitId !== initial.headCommitId ||
+      revision.treeId !== initial.treeId ||
+      revision.branch !== initial.branch
+    )
+      throw new ExecutionFailure("revision_changed");
+    if (
+      JSON.stringify(run.verificationManifest) !==
+      JSON.stringify(factoryVerificationManifest(run.plan))
+    )
+      throw new ExecutionFailure("invalid_response");
+  }
   if (revision !== null) {
     if (
       revision.repositoryId !== run.source.repositoryId ||
@@ -377,25 +422,36 @@ async function execute(
       ...config.repositoryRoots.map((root) => root.path),
       homedir(),
     ].sort((left, right) => right.length - left.length);
-    const connection = options.connection ?? createCodexAppServerAgentRuntime();
-    const readiness = await connection.readConnection(signal);
-    if (readiness.state !== "ready" || readiness.account?.authentication !== "chatgpt") {
-      const reason = readiness.reason;
-      throw new ExecutionFailure(
-        reason === "authentication_required" || reason === "chatgpt_subscription_required"
-          ? "authentication"
-          : reason === "waiting_for_usage_reset" || reason === "usage_limit_reached"
-            ? "usage_limit"
-            : reason === "timed_out"
-              ? "timeout"
-              : "unavailable",
-      );
-    }
-    const preference = await readCodexReviewModelPreference(pool);
-    const model =
-      preference.selectedModelId ?? readiness.models.find((model) => model.isDefault)?.id;
-    if (model === undefined || !readiness.models.some((candidate) => candidate.id === model))
-      throw new ExecutionFailure("unavailable");
+    const final = run.purpose === "feature_verification";
+    let model: string | undefined;
+    const selectModel = async (): Promise<string> => {
+      if (model !== undefined) return model;
+      const connection = options.connection ?? createCodexAppServerAgentRuntime();
+      const readiness = await connection.readConnection(signal);
+      if (readiness.state !== "ready" || readiness.account?.authentication !== "chatgpt") {
+        const reason = readiness.reason;
+        throw new ExecutionFailure(
+          reason === "authentication_required" || reason === "chatgpt_subscription_required"
+            ? "authentication"
+            : reason === "waiting_for_usage_reset" || reason === "usage_limit_reached"
+              ? "usage_limit"
+              : reason === "timed_out"
+                ? "timeout"
+                : "unavailable",
+        );
+      }
+      const preference = await readCodexReviewModelPreference(pool);
+      const selected =
+        preference.selectedModelId ?? readiness.models.find((model) => model.isDefault)?.id;
+      if (
+        selected === undefined ||
+        !readiness.models.some((candidate) => candidate.id === selected)
+      )
+        throw new ExecutionFailure("unavailable");
+      model = selected;
+      return selected;
+    };
+    if (!final) await selectModel();
     if (options.runtime === undefined && !options.containerImage?.trim())
       throw new ExecutionFailure("sandbox_unavailable");
     const runtime =
@@ -410,74 +466,85 @@ async function execute(
     const prepared = await prepareWorkspace(pool, run, config, signal);
     const { workspace } = prepared;
     let revision = prepared.revision;
-    runtimeState = { ...runtimeState, model };
-    await saveFactoryExecutionRuntime(pool, run, runtimeState);
     let previousChecks: VerificationFeedback[] = [];
     for (let round = 1; round <= 3; round++) {
       verifying = false;
       signal.throwIfAborted();
-      runtimeState = { ...runtimeState, threadId: null, turnId: null, containerId: null };
-      const implementation = lifecycle("implementation");
-      const result = await runtime.runTurn({
-        ...implementation.callbacks,
-        cwd: workspace.workspacePath,
-        gitDirectory: workspace.gitDirectory,
-        model,
-        prompt: promptFor(run, revision, previousChecks),
-        requestId: `${run.id}:implementation:${String(round)}`,
-        outputSchema: z.toJSONSchema(completionSchema, { target: "draft-7" }),
-        signal,
-        onThread: async (threadId) => {
-          runtimeState = { ...runtimeState, threadId, turnId: null };
-          await saveFactoryExecutionRuntime(pool, run, runtimeState);
-        },
-        onTurn: async (turnId) => {
-          runtimeState = { ...runtimeState, turnId };
-          await saveFactoryExecutionRuntime(pool, run, runtimeState);
-        },
-        onActivity: (activity) =>
-          recordFactoryExecutionActivity(
-            pool,
-            run,
-            activity.kind === "message" ? "runtime" : activity.kind,
-            publicText(activity.summary, 2000) || "Runtime activity",
-          ),
-        onQuestion: async (question) => {
-          const text = publicText(question.question);
-          await recordFactoryExecutionActivity(pool, run, "question", text);
-          abort.abort(new ExecutionFailure(question.code, text));
-        },
-      });
-      implementation.assertStopped();
-      signal.throwIfAborted();
-      const completion = readCompletion(result.text);
-      if (completion.status === "input_required")
-        throw new ExecutionFailure("input_required", completion.question);
-      await recordFactoryExecutionActivity(
-        pool,
-        run,
-        "runtime",
-        publicText(completion.summary, 2000),
-      );
-      const candidate = await snapshotFeatureWorkspace(workspace, {
-        expectedHead: revision.headCommitId,
-        signal,
-      });
-      const committed = await checkpointFeatureWorkspace(workspace, {
-        expectedHead: revision.headCommitId,
-        expectedTree: candidate.treeId,
-        checkpointId: checkpointId(run.id, round),
-        message: `${run.key}: approved implementation (round ${String(round)})`,
-        signal,
-      });
-      signal.throwIfAborted();
-      const checkpoint = await recordFactoryExecutionCheckpoint(pool, run, {
-        expectedHead: revision.headCommitId,
-        ...committed,
-      });
-      revision = { ...revision, ...checkpoint };
+      let committed = { headCommitId: revision.headCommitId, treeId: revision.treeId };
+      if (!final || round > 1) {
+        const selectedModel = await selectModel();
+        runtimeState = {
+          ...runtimeState,
+          model: selectedModel,
+          threadId: null,
+          turnId: null,
+          containerId: null,
+        };
+        await saveFactoryExecutionRuntime(pool, run, runtimeState);
+        const implementation = lifecycle("implementation");
+        const result = await runtime.runTurn({
+          ...implementation.callbacks,
+          cwd: workspace.workspacePath,
+          gitDirectory: workspace.gitDirectory,
+          model: selectedModel,
+          prompt: promptFor(run, revision, previousChecks),
+          requestId: `${run.id}:implementation:${String(round)}`,
+          outputSchema: z.toJSONSchema(completionSchema, { target: "draft-7" }),
+          signal,
+          onThread: async (threadId) => {
+            runtimeState = { ...runtimeState, threadId, turnId: null };
+            await saveFactoryExecutionRuntime(pool, run, runtimeState);
+          },
+          onTurn: async (turnId) => {
+            runtimeState = { ...runtimeState, turnId };
+            await saveFactoryExecutionRuntime(pool, run, runtimeState);
+          },
+          onActivity: (activity) =>
+            recordFactoryExecutionActivity(
+              pool,
+              run,
+              activity.kind === "message" ? "runtime" : activity.kind,
+              publicText(activity.summary, 2000) || "Runtime activity",
+            ),
+          onQuestion: async (question) => {
+            const text = publicText(question.question);
+            await recordFactoryExecutionActivity(pool, run, "question", text);
+            abort.abort(new ExecutionFailure(question.code, text));
+          },
+        });
+        implementation.assertStopped();
+        signal.throwIfAborted();
+        const completion = readCompletion(result.text);
+        if (completion.status === "input_required")
+          throw new ExecutionFailure("input_required", completion.question);
+        await recordFactoryExecutionActivity(
+          pool,
+          run,
+          "runtime",
+          publicText(completion.summary, 2000),
+        );
+        const candidate = await snapshotFeatureWorkspace(workspace, {
+          expectedHead: revision.headCommitId,
+          signal,
+        });
+        committed = await checkpointFeatureWorkspace(workspace, {
+          expectedHead: revision.headCommitId,
+          expectedTree: candidate.treeId,
+          checkpointId: checkpointId(run.id, round),
+          message: `${run.key}: approved implementation (round ${String(round)})`,
+          signal,
+        });
+        signal.throwIfAborted();
+        const checkpoint = await recordFactoryExecutionCheckpoint(pool, run, {
+          expectedHead: revision.headCommitId,
+          ...committed,
+        });
+        revision = { ...revision, ...checkpoint };
+      }
       verifying = true;
-      const commands = run.plan.workItems.find((item) => item.key === run.key)?.verification;
+      const commands = final
+        ? run.verificationManifest?.map((entry) => entry.command)
+        : run.plan.workItems.find((item) => item.key === run.key)?.verification;
       if (commands === undefined || commands.length === 0)
         throw new ExecutionFailure("invalid_response");
       previousChecks = [];
@@ -549,7 +616,20 @@ async function execute(
         verified = true;
         break;
       }
-      if (round === 3) throw new ExecutionFailure("verification_failed");
+      if (round === 3) {
+        const failed = previousChecks.filter((check) => check.outcome !== "passed");
+        throw new ExecutionFailure(
+          "verification_failed",
+          final
+            ? `Final Feature verification failed checks ${failed
+                .slice(0, 12)
+                .map((check) => String(check.position))
+                .join(
+                  ", ",
+                )}${failed.length > 12 ? ` and ${String(failed.length - 12)} more` : ""}. Can these technical failures be resolved within approved plan version ${String(run.version)}, with the same requirements and verification commands?`
+            : null,
+        );
+      }
       await recordFactoryExecutionActivity(
         pool,
         run,

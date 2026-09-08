@@ -15,7 +15,7 @@ const blockedText: Record<NonNullable<FactoryGate["resumeBlockedReason"]>, strin
   stale_gate:
     "This gate no longer controls the current attempt. Refresh execution to see its latest state.",
   attempt_limit:
-    "This Work Item has reached its attempt limit. Inspect the retained work before replanning.",
+    "This execution has reached its attempt limit. Inspect the retained work before replanning.",
   plan_change_required:
     "The approved plan must change. This feature stays paused. For now, cancel this feature and start a new plan with the required changes; approve that plan before execution.",
   already_resolved: "An answer has already been recorded for this gate.",
@@ -26,6 +26,9 @@ export function GateAnswer({ gate }: { gate: FactoryGate }) {
   return (
     <div className="space-y-2 text-sm">
       <p className="font-medium">Answer saved · plan version {gate.approvedVersion}</p>
+      {gate.purpose === "feature_verification" ? (
+        <p>Only final verification resumes. Verified Work Item implementations are retained.</p>
+      ) : null}
       <p className="whitespace-pre-wrap break-words">{gate.resolution.answer}</p>
       <p className="text-muted-foreground">
         {gate.resumeBlockedReason === "cancelled"
@@ -124,6 +127,11 @@ export function FactoryGatePanel({
       aria-label="Human gate"
       className="min-w-0 space-y-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4"
     >
+      {gate.purpose === "feature_verification" ? (
+        <p className="text-sm font-medium">
+          Final Feature verification · plan version {gate.approvedVersion}
+        </p>
+      ) : null}
       <h4 className="font-semibold">
         {current.resolution !== null
           ? "Recorded decision"

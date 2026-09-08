@@ -65,11 +65,23 @@ export async function fetchFactoryExecution(
     execution.featureId !== featureId ||
     (execution.gate != null &&
       (execution.gate.featureId !== featureId ||
-        !execution.workItems.some(
-          (item) =>
-            item.id === execution.gate?.workItemId &&
-            item.runs.some((run) => run.id === execution.gate?.runId),
-        ))) ||
+        (execution.gate.purpose === "feature_verification"
+          ? !execution.finalVerification?.runs.some((run) => run.id === execution.gate?.runId)
+          : !execution.workItems.some(
+              (item) =>
+                item.id === execution.gate?.workItemId &&
+                item.runs.some((run) => run.id === execution.gate?.runId),
+            )))) ||
+    (execution.finalVerification?.certificate != null &&
+      (execution.finalVerification.certificate.featureId !== featureId ||
+        !execution.finalVerification.runs.some(
+          (run) =>
+            run.id === execution.finalVerification?.certificate?.runId &&
+            run.state === "verified" &&
+            run.writerStopped,
+        ) ||
+        JSON.stringify(execution.finalVerification.certificate.revision) !==
+          JSON.stringify(execution.revision))) ||
     execution.workItems.some((item) => item.runs.some((run) => run.workItemId !== item.id))
   ) {
     throw new InvalidServerResponseError("The server returned execution for different work");
@@ -99,7 +111,8 @@ export async function fetchFactoryExecutionRun(
     (run.gate != null &&
       (run.gate.featureId !== featureId ||
         run.gate.runId !== runId ||
-        run.gate.workItemId !== run.workItemId))
+        run.gate.workItemId !== run.workItemId ||
+        (run.gate.purpose ?? "work_item") !== (run.purpose ?? "work_item")))
   ) {
     throw new InvalidServerResponseError("The server returned a different execution attempt");
   }
