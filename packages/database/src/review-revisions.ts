@@ -8,6 +8,7 @@ import {
   ChangeIntentSourceSchema,
   ProjectUpsertedSchema,
   type ChangeIntent,
+  type ChangeIntentSource,
   type ChangeOverviewSourceFacts,
   type ProjectUpserted,
   type ReviewRevision,
@@ -36,6 +37,13 @@ export interface LocalRepositorySourceObservation {
 
 export interface BeginReviewRevisionInput {
   actorId: string;
+  /** Internal Feature publisher only; independently validated against immutable approval/certificate. */
+  approvedFeaturePlan?: {
+    featureId: string;
+    approvedVersion: number;
+    certificateId: string;
+    approvalId: string;
+  };
   base: { objectId: string; ref: string };
   changeIntent: string;
   changeProposalId?: string;
@@ -229,16 +237,21 @@ function mapIntent(row: IntentRow): ChangeIntent {
   });
 }
 
-function acquisitionIntentFields(intentText: string, version: number) {
+function acquisitionIntentFields(
+  intentText: string,
+  version: number,
+  approvedSource?: ChangeIntentSource,
+) {
   const sources = [
-    ChangeIntentSourceSchema.parse({
-      id: "operator_input",
-      kind: "operator_input",
-      label: "Operator input",
-      text: intentText,
-      version: String(version),
-      provenance: { kind: "operator_input" },
-    }),
+    approvedSource ??
+      ChangeIntentSourceSchema.parse({
+        id: "operator_input",
+        kind: "operator_input",
+        label: "Operator input",
+        text: intentText,
+        version: String(version),
+        provenance: { kind: "operator_input" },
+      }),
   ];
   const resolution = {
     state: "unresolved" as const,
@@ -255,6 +268,60 @@ function acquisitionIntentFields(intentText: string, version: number) {
     sourceDigest: createHash("sha256").update(JSON.stringify(sources), "utf8").digest("hex"),
     sources,
   };
+}
+
+async function approvedFeatureIntentSource(
+  client: PoolClient,
+  input: BeginReviewRevisionInput,
+  intentText: string,
+): Promise<ChangeIntentSource | undefined> {
+  if (input.approvedFeaturePlan === undefined) return undefined;
+  if (input.expectedProjectId === undefined) {
+    throw new ReviewRevisionPersistenceError("change_proposal_mismatch");
+  }
+  const source = ChangeIntentSourceSchema.parse({
+    id: "approved_feature_plan",
+    kind: "approved_feature_plan",
+    label: "Approved Feature plan",
+    text: intentText,
+    version: String(input.approvedFeaturePlan.approvedVersion),
+    provenance: { kind: "approved_feature_plan", ...input.approvedFeaturePlan },
+  });
+  const approved = input.approvedFeaturePlan;
+  const result = await client.query(
+    `
+    SELECT certificate.id
+    FROM factory_feature_verifications AS certificate
+    JOIN factory_plan_approvals AS approval
+      ON approval.feature_id = certificate.feature_id AND approval.plan_version = certificate.plan_version
+    JOIN factory_plan_versions AS plan
+      ON plan.feature_id = approval.feature_id AND plan.version = approval.plan_version
+    JOIN factory_features AS feature ON feature.id = certificate.feature_id
+    JOIN projects AS project ON project.id = feature.project_id
+    WHERE certificate.id = $1 AND certificate.feature_id = $2 AND certificate.plan_version = $3
+      AND approval.id = $4 AND approval.operator_id = $5
+      AND COALESCE(project.canonical_project_id, project.id) = $6
+      AND feature.approved_plan_version = certificate.plan_version
+      AND certificate.revision->>'baseCommitId' = $7 AND certificate.revision->>'headCommitId' = $8
+      AND certificate.source->>'repositoryId' = $9 AND certificate.source->>'identity' = $10
+      AND plan.document->>'objective' = $11
+  `,
+    [
+      approved.certificateId,
+      approved.featureId,
+      approved.approvedVersion,
+      approved.approvalId,
+      input.actorId,
+      input.expectedProjectId,
+      input.base.objectId,
+      input.head.objectId,
+      input.source.repositoryId,
+      input.source.sourceIdentity,
+      intentText,
+    ],
+  );
+  if (result.rowCount !== 1) throw new ReviewRevisionPersistenceError("change_proposal_mismatch");
+  return source;
 }
 
 function mapRevision(
@@ -1230,6 +1297,7 @@ async function appendOrReuseIntent(
   targetProposalId: string,
   actorId: string,
   intentText: string,
+  approvedSource?: ChangeIntentSource,
 ): Promise<ChangeIntent> {
   const family = await client.query<{ canonical_proposal_id: string }>(
     `
@@ -1280,7 +1348,12 @@ async function appendOrReuseIntent(
   if (
     currentRow !== undefined &&
     currentRow.change_proposal_id === targetProposalId &&
-    currentRow.intent_text === intentText
+    currentRow.intent_text === intentText &&
+    (approvedSource === undefined
+      ? !mapIntent(currentRow).sources.some((source) => source.kind === "approved_feature_plan")
+      : currentRow.source_digest ===
+        acquisitionIntentFields(intentText, Number(currentRow.version), approvedSource)
+          .sourceDigest)
   ) {
     return mapIntent(currentRow);
   }
@@ -1289,7 +1362,7 @@ async function appendOrReuseIntent(
     throw new Error("Change Intent version is invalid");
   }
   const nextVersion = currentMaxVersion + 1;
-  const structured = acquisitionIntentFields(intentText, nextVersion);
+  const structured = acquisitionIntentFields(intentText, nextVersion, approvedSource);
   const inserted = await client.query<IntentRow>(
     `
       INSERT INTO change_intents (
@@ -1566,6 +1639,7 @@ async function beginReviewRevisionOnClient(
   try {
     await client.query("BEGIN");
     const installationId = await readInstallationId(client);
+    const approvedSource = await approvedFeatureIntentSource(client, input, intentText);
     await client.query(
       "SELECT pg_advisory_xact_lock(hashtextextended('kestrel-local-source:' || $1, 0))",
       [input.source.sourceIdentity],
@@ -1634,7 +1708,13 @@ async function beginReviewRevisionOnClient(
     let outcome: BeginReviewRevisionResult["outcome"];
     let limits: { maxBytes: number; maxObjects: number };
     let retried = false;
-    const currentIntent = await appendOrReuseIntent(client, proposalId, input.actorId, intentText);
+    const currentIntent = await appendOrReuseIntent(
+      client,
+      proposalId,
+      input.actorId,
+      intentText,
+      approvedSource,
+    );
     if (existingRevision !== null && existingRevision.revision_state !== "unavailable") {
       changeIntent = await readIntent(client, existingRevision.acquisition_change_intent_id);
       revision = mapExactRevision(existingRevision);
@@ -1648,6 +1728,7 @@ async function beginReviewRevisionOnClient(
               existingRevision.change_proposal_id,
               input.actorId,
               intentText,
+              approvedSource,
             )
           : currentIntent;
       if (existingRevision === null) {

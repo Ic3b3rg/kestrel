@@ -158,6 +158,8 @@ export interface PublicGitHubProjectObservation {
 
 export interface UpsertGitHubObservedProjectInput {
   actorId: string;
+  /** Internal acquisition can retain provider facts without starting model work. */
+  enqueueModelRendering?: boolean;
   correlationId: string;
   observation: PublicGitHubProjectObservation;
   route?: { kind: "host_gh"; host: string; account: string };
@@ -1319,7 +1321,7 @@ async function upsertGitHubObservedProject(
     }
     const proposal = input.observation.proposal;
     const upsertedProposal = await upsertProviderProposal(client, projectId, proposal);
-    if (upsertedProposal.renderingTrigger) {
+    if (upsertedProposal.renderingTrigger && input.enqueueModelRendering !== false) {
       await enqueueCurrentChangeOverviewRendering(client, renderingCoordinator, {
         changeProposalId: upsertedProposal.changeProposalId,
         correlationId: input.correlationId,
