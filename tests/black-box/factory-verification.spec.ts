@@ -101,7 +101,9 @@ test.describe("Final Feature verification evidence and decisions", () => {
       const failedCheck = details
         .getByText("Round 1 · Check 1 · Failed", { exact: true })
         .locator("..");
-      await expect(failedCheck.getByText(/order.test.mjs/)).toBeVisible();
+      await expect(
+        failedCheck.getByText('["node","--test","order.test.mjs"]', { exact: true }),
+      ).toBeVisible();
       const output = failedCheck.getByText("Captured output and revision", { exact: true });
       await output.focus();
       await output.press("Enter");

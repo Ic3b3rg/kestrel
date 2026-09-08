@@ -427,8 +427,10 @@ function ExecutionPanel({
       {execution === null ? null : (
         <>
           <p role="status" className="font-medium">
-            {execution.state === "cancelled" && stopUnconfirmed
-              ? "Cancellation requested"
+            {execution.state === "cancelled"
+              ? stopUnconfirmed
+                ? "Cancellation requested"
+                : phaseLabels.cancelled
               : execution.finalVerification?.certificate != null
                 ? "Final Feature revision verified"
                 : execution.state === "running" &&

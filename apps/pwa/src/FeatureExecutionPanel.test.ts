@@ -604,54 +604,59 @@ it("shows cumulative verification separately and opens its Feature-scoped eviden
   expect(section?.textContent).toContain("Exit code 1");
 });
 
-it("shows the retained final record for the exact revision and never offers publication", async () => {
-  const finalId = "018f0f89-949a-75a8-8f61-6df78a843b25";
-  const summary = {
-    ...execution.workItems[0]?.runs[0],
-    id: finalId,
-    purpose: "feature_verification",
-    workItemId: null,
-    state: "verified",
-    failure: null,
-    writerStopped: true,
-  };
-  const certificate = {
-    id: itemId,
-    featureId,
-    runId: finalId,
-    approvedVersion: 2,
-    source: { repositoryId: "retained", identity: "retained-identity" },
-    revision: run.revision,
-    manifest: [{ position: 1, command, origins: [{ workItemKey: "REPORTS-1", position: 1 }] }],
-    manifestDigest: "d".repeat(64),
-    evidenceIds: [projectId],
-    createdAt,
-  };
-  vi.stubGlobal(
-    "fetch",
-    vi.fn().mockResolvedValue(
-      Response.json({
-        ...execution,
-        state: "verified",
-        failure: null,
-        question: null,
-        finalVerification: {
-          runs: [summary],
-          certificate,
-          progress: { round: 2, checked: 1, passed: 1, total: 1 },
-        },
-      }),
-    ),
-  );
-  await render();
-  expect(container.textContent).toContain("Final Feature revision verified");
-  const section = container.querySelector('[aria-label="Final Feature verification"]');
-  expect(section?.textContent).toContain("All 1 approved checks passed · plan version 2");
-  expect(section?.textContent).toContain(head);
-  expect(section?.textContent).toContain(tree);
-  expect(
-    [...container.querySelectorAll("button")].some((button) =>
-      /publish|merge|pull request/i.test(button.textContent),
-    ),
-  ).toBe(false);
-});
+it.each(["verified", "cancelled"] as const)(
+  "shows the retained final record with current state %s and never offers publication",
+  async (state) => {
+    const finalId = "018f0f89-949a-75a8-8f61-6df78a843b25";
+    const summary = {
+      ...execution.workItems[0]?.runs[0],
+      id: finalId,
+      purpose: "feature_verification",
+      workItemId: null,
+      state: "verified",
+      failure: null,
+      writerStopped: true,
+    };
+    const certificate = {
+      id: itemId,
+      featureId,
+      runId: finalId,
+      approvedVersion: 2,
+      source: { repositoryId: "retained", identity: "retained-identity" },
+      revision: run.revision,
+      manifest: [{ position: 1, command, origins: [{ workItemKey: "REPORTS-1", position: 1 }] }],
+      manifestDigest: "d".repeat(64),
+      evidenceIds: [projectId],
+      createdAt,
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        Response.json({
+          ...execution,
+          state,
+          failure: null,
+          question: null,
+          finalVerification: {
+            runs: [summary],
+            certificate,
+            progress: { round: 2, checked: 1, passed: 1, total: 1 },
+          },
+        }),
+      ),
+    );
+    await render();
+    expect(container.querySelector('[role="status"]')?.textContent).toBe(
+      state === "cancelled" ? "Execution cancelled" : "Final Feature revision verified",
+    );
+    const section = container.querySelector('[aria-label="Final Feature verification"]');
+    expect(section?.textContent).toContain("All 1 approved checks passed · plan version 2");
+    expect(section?.textContent).toContain(head);
+    expect(section?.textContent).toContain(tree);
+    expect(
+      [...container.querySelectorAll("button")].some((button) =>
+        /publish|merge|pull request/i.test(button.textContent),
+      ),
+    ).toBe(false);
+  },
+);

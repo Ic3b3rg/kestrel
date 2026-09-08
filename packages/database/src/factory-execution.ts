@@ -108,6 +108,12 @@ export async function queueFactoryExecutions(
        JOIN factory_plan_approvals approval ON approval.feature_id = feature.id AND approval.plan_version = feature.approved_plan_version
        JOIN factory_feature_publications publication ON publication.feature_id = feature.id AND publication.state = 'published'
        WHERE feature.state IN ('queued', 'implementing', 'in_review')
+         AND NOT EXISTS (SELECT 1 FROM factory_feature_verifications certificate
+           JOIN factory_feature_workspaces workspace ON workspace.feature_id = certificate.feature_id
+           WHERE certificate.feature_id = feature.id AND certificate.plan_version = feature.approved_plan_version
+             AND certificate.revision = jsonb_build_object(
+               'baseCommitId', workspace.base_commit_id, 'headCommitId', workspace.head_commit_id,
+               'treeId', workspace.tree_id, 'branch', workspace.branch))
          AND NOT EXISTS (SELECT 1 FROM factory_execution_runs run
            JOIN projects running_project ON running_project.id = run.project_id
            WHERE COALESCE(running_project.canonical_project_id, running_project.id) = COALESCE(owner.canonical_project_id, owner.id)
