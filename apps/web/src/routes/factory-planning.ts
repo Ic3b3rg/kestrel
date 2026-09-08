@@ -40,6 +40,7 @@ import {
 import { AUTHENTICATED_MUTATION_ROUTE_CONFIG } from "../authentication.js";
 import { renderFeaturePlanArtifacts } from "../factory-plan-artifacts.js";
 import { validateFactoryPublication } from "../factory-issue-content.js";
+import { registerFactoryStartRoutes } from "./factory-start.js";
 
 const projectParams = z.strictObject({ projectId: KestrelIdSchema });
 const featureParams = projectParams.extend({ featureId: KestrelIdSchema });
@@ -94,6 +95,7 @@ export function registerFactoryPlanningRoutes(
   pool: DatabasePool,
   boss: DiagnosticJobSender,
 ): void {
+  registerFactoryStartRoutes(app, pool, boss);
   app.post(
     "/api/v1/projects/:projectId/features/:featureId/plans/generate",
     {

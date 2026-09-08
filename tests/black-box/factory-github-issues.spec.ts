@@ -59,12 +59,20 @@ async function createFeature(page: Page, url: string): Promise<string> {
   await repository.getByLabel("Repository", { exact: true }).selectOption(repositoryId);
   await repository.getByRole("button", { name: "Open selected Project" }).click();
   await expect(repository).toHaveCount(0);
-  await page.getByRole("button", { name: "New feature", exact: true }).click();
-  const feature = page.getByRole("dialog", { name: "New feature", exact: true });
   const title = "Deliver report search from existing issues";
+  await page.getByRole("button", { name: "New plan", exact: true }).click();
+  await page.getByLabel("Describe the change", { exact: true }).fill(title);
+  await page.getByRole("main").getByRole("button", { name: "Start plan", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { level: 1, name: "New plan", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Rename feature", exact: true }).click();
+  const feature = page.getByRole("dialog", { name: "Rename feature", exact: true });
   await feature.getByLabel("Feature name", { exact: true }).fill(title);
-  await feature.getByRole("button", { name: "Create feature", exact: true }).click();
+  await feature.getByRole("button", { name: "Save name", exact: true }).click();
+  await expect(feature).toHaveCount(0);
   await expect(page.getByRole("heading", { level: 1, name: title, exact: true })).toBeVisible();
+  await expect(page.getByText("Codex is unavailable", { exact: true })).toBeVisible();
   return `/api/v1${new URL(page.url()).pathname}`;
 }
 

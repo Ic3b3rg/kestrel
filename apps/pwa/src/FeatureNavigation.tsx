@@ -1,13 +1,10 @@
-import { useEffect, useRef, useState, type MouseEvent, type SyntheticEvent } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import { MessageSquare, Plus } from "lucide-react";
-import type { CreateFeatureCommand, Feature } from "@kestrel/contracts";
+import type { Feature } from "@kestrel/contracts";
 
-import { ApiClientError, createFeature, fetchFeatures } from "./api.js";
+import { ApiClientError, fetchFeatures } from "./api.js";
 import { appPath, type AppRoute } from "./app-route.js";
 import { Button } from "./components/ui/button.js";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "./components/ui/dialog.js";
-import { Input } from "./components/ui/input.js";
-import { Label } from "./components/ui/label.js";
 import {
   SidebarGroup,
   SidebarGroupLabel,
@@ -42,124 +39,6 @@ export function handleFeatureLink(
   onNavigate(route);
 }
 
-function NewFeatureButton({
-  projectId,
-  online,
-  onCreated,
-  onAuthenticationError,
-}: {
-  projectId: string;
-  online: boolean;
-  onCreated: (feature: Feature) => void;
-  onAuthenticationError: (error: unknown) => boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const [title, setTitle] = useState("");
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const command = useRef<CreateFeatureCommand | null>(null);
-  const completed = useRef<Feature | null>(null);
-  const trigger = useRef<HTMLButtonElement>(null);
-  const alive = useRef(true);
-  useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-    };
-  }, []);
-
-  const submit = async (event: SyntheticEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!online || pending || title.trim() === "") return;
-    command.current ??= { requestId: crypto.randomUUID(), title: title.trim() };
-    setPending(true);
-    setError(null);
-    try {
-      // An accepted command belongs to the workstation, even if this view closes.
-      const feature = await createFeature(projectId, command.current);
-      if (!alive.current) return;
-      completed.current = feature;
-      command.current = null;
-      setTitle("");
-      setOpen(false);
-    } catch (failure) {
-      if (alive.current && !onAuthenticationError(failure))
-        setError(
-          planningRequestError(
-            failure,
-            "Kestrel could not confirm creation. Retry to check the same request.",
-          ),
-        );
-    } finally {
-      if (alive.current) setPending(false);
-    }
-  };
-
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        if (!pending) setOpen(next);
-      }}
-    >
-      <Button
-        ref={trigger}
-        variant="outline"
-        className="w-full justify-start"
-        disabled={!online}
-        onClick={() => setOpen(true)}
-      >
-        <Plus aria-hidden="true" />
-        New feature
-      </Button>
-      <DialogContent
-        showCloseButton={!pending}
-        className="sm:max-w-md"
-        onInteractOutside={(event) => {
-          if (pending) event.preventDefault();
-        }}
-        onEscapeKeyDown={(event) => {
-          if (pending) event.preventDefault();
-        }}
-        onCloseAutoFocus={(event) => {
-          event.preventDefault();
-          trigger.current?.focus();
-          const feature = completed.current;
-          completed.current = null;
-          if (feature !== null) onCreated(feature);
-        }}
-      >
-        <DialogTitle>New feature</DialogTitle>
-        <DialogDescription>
-          Name the outcome you want. You will shape its scope and requirements in the chat.
-        </DialogDescription>
-        <form onSubmit={(event) => void submit(event)} className="grid gap-4">
-          <div className="grid gap-2">
-            <Label htmlFor="new-feature-name">Feature name</Label>
-            <Input
-              id="new-feature-name"
-              value={title}
-              maxLength={160}
-              required
-              disabled={pending || error !== null}
-              onChange={(event) => setTitle(event.currentTarget.value)}
-              placeholder="For example, search saved reports"
-            />
-          </div>
-          {error === null ? null : (
-            <p role="alert" className="planning-error">
-              {error}
-            </p>
-          )}
-          <Button type="submit" disabled={!online || pending || title.trim() === ""}>
-            {pending ? "Creating…" : error === null ? "Create feature" : "Retry creation"}
-          </Button>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 export function FeatureNavigation({
   projectId,
   selectedFeatureId,
@@ -186,37 +65,43 @@ export function FeatureNavigation({
     const controller = new AbortController();
     setLoading(true);
     setError(null);
-    void fetchFeatures(projectId, controller.signal)
-      .then((result) => {
-        if (!controller.signal.aborted) setFeatures(result.features);
-      })
-      .catch((failure: unknown) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const read = async () => {
+      try {
+        const result = await fetchFeatures(projectId, controller.signal);
+        if (controller.signal.aborted) return;
+        setFeatures(result.features);
+        timer = setTimeout(() => void read(), 2_000);
+      } catch (failure) {
         if (!controller.signal.aborted && !onAuthenticationError(failure))
           setError(
             planningRequestError(failure, "Feature chats could not be loaded. Refresh to retry."),
           );
-      })
-      .finally(() => {
+      } finally {
         if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
+      }
+    };
+    void read();
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
   }, [projectId, selectedFeatureId, online, generation, onAuthenticationError]);
 
   return (
     <nav aria-label="Feature chats">
       <SidebarGroup className="gap-2">
         <SidebarGroupLabel>Features</SidebarGroupLabel>
-        <NewFeatureButton
-          projectId={projectId}
-          online={online}
-          onAuthenticationError={onAuthenticationError}
-          onCreated={(feature) => {
-            setFeatures((current) =>
-              current.some(({ id }) => id === feature.id) ? current : [...current, feature],
-            );
-            onNavigate({ kind: "feature", projectId: feature.projectId, featureId: feature.id });
-          }}
-        />
+        <Button
+          variant="outline"
+          className="w-full justify-start"
+          disabled={!online}
+          onClick={() =>
+            onNavigate({ kind: "planning", projectId, requestId: crypto.randomUUID() })
+          }
+        >
+          <Plus aria-hidden="true" /> Start plan
+        </Button>
         {!online ? (
           <p className="project-rail-state">Reconnect to view feature chats.</p>
         ) : loading && features.length === 0 ? (

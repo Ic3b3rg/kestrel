@@ -19,6 +19,7 @@ import {
   FactoryBoardSchema,
   LocalRepositoryInventorySchema,
   PlanningTurnAcceptedSchema,
+  PlanningFeatureStartedSchema,
   ProjectUpsertedSchema,
 } from "@kestrel/contracts";
 import {
@@ -292,14 +293,6 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX === "1")(
           ).json(),
         );
         const collection = `/api/v1/projects/${opened.project.id}/features`;
-        const creation = await request(collection, {
-          requestId: randomUUID(),
-          title: "Export notes",
-        });
-        expect(creation.status).toBe(201);
-        const feature = FeatureSchema.parse(await creation.json());
-        const path = `${collection}/${feature.id}`;
-        const readChat = async () => FeatureChatSchema.parse(await (await request(path)).json());
         const candidates = PlanningSkillCandidatesSchema.parse(
           await (await request("/api/v1/planning-skills/candidates")).json(),
         );
@@ -311,26 +304,37 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX === "1")(
         expect(imported.status).toBe(201);
         const skill = PlanningSkillBundleSchema.parse(await imported.json());
         expect(skill.files.map((file) => file.path)).toEqual(["SKILL.md", "unicode-checklist.md"]);
-        expect(
-          (
-            await request(`${path}/skills`, {
-              requestId: randomUUID(),
-              expectedVersion: 0,
-              digests: [skill.contentDigest],
-            })
-          ).status,
-        ).toBe(200);
+        const firstText =
+          "Voglio esportare le note. Fai una domanda breve sul requisito mancante, citando CONTEXT.md.";
+        const creation = await request(`/api/v1/projects/${opened.project.id}/planning`, {
+          requestId: randomUUID(),
+          text: firstText,
+          skillDigests: [skill.contentDigest],
+        });
+        expect(creation.status).toBe(202);
+        const started = PlanningFeatureStartedSchema.parse(await creation.json());
+        const feature = started.feature;
+        expect(feature.title).toBe("New plan");
+        const path = `${collection}/${feature.id}`;
+        const readChat = async () => FeatureChatSchema.parse(await (await request(path)).json());
         for (const text of [
-          "Voglio esportare le note. Fai una domanda breve sul requisito mancante, citando CONTEXT.md.",
+          firstText,
           "Confermo Markdown e tutte le note. I caratteri accentati e le emoji devono restare identici. Registra la decisione e chiedi un ultimo criterio verificabile, in modo breve.",
         ]) {
-          const sent = await request(`${path}/messages`, {
-            requestId: randomUUID(),
-            text,
-            skillSelectionVersion: 1,
-          });
-          expect(sent.status).toBe(202);
-          const accepted = PlanningTurnAcceptedSchema.parse(await sent.json());
+          let accepted = {
+            schemaVersion: 1 as const,
+            turnId: started.turnId,
+            messageId: started.messageId,
+          };
+          if (text !== firstText) {
+            const sent = await request(`${path}/messages`, {
+              requestId: randomUUID(),
+              text,
+              skillSelectionVersion: 1,
+            });
+            expect(sent.status).toBe(202);
+            accepted = PlanningTurnAcceptedSchema.parse(await sent.json());
+          }
           const until = Date.now() + 55_000;
           let completed = false;
           while (!completed && Date.now() < until) {
@@ -355,6 +359,9 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX === "1")(
             throw new Error("Accepted planning turn did not reach a durable terminal state");
         }
         const chat = await readChat();
+        expect(chat.feature.title).not.toBe("New plan");
+        expect(chat.feature.title.length).toBeLessThanOrEqual(80);
+        expect(chat.feature.title).toMatch(/not|esport|markdown/iu);
         expect(chat.messages.map(({ role }) => role)).toEqual([
           "user",
           "assistant",
@@ -478,6 +485,35 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX === "1")(
         expect(board.feature.state).toBe("queued");
         expect(board.columns[0]?.items).toHaveLength(plans.current?.document.workItems.length ?? 0);
         expect(board.columns.slice(1).every(({ items }) => items.length === 0)).toBe(true);
+
+        const race = PlanningFeatureStartedSchema.parse(
+          await (
+            await request(`/api/v1/projects/${opened.project.id}/planning`, {
+              requestId: randomUUID(),
+              text: "Voglio cercare note per titolo. Chiedi un criterio verificabile in una frase breve.",
+              skillDigests: [],
+            })
+          ).json(),
+        );
+        const racePath = `${collection}/${race.feature.id}`;
+        const raceChat = async () =>
+          FeatureChatSchema.parse(await (await request(racePath)).json());
+        await expect
+          .poll(async () => (await raceChat()).turns[0]?.state, { timeout: 10_000, interval: 100 })
+          .toBe("running");
+        const operatorTitle = "Ricerca note scelta dall’Operator";
+        const renamed = await request(`${racePath}/title`, {
+          requestId: randomUUID(),
+          title: operatorTitle,
+        });
+        expect(renamed.status).toBe(200);
+        expect(FeatureSchema.parse(await renamed.json()).title).toBe(operatorTitle);
+        await expect
+          .poll(async () => (await raceChat()).turns[0]?.state, { timeout: 55_000, interval: 250 })
+          .toBe("completed");
+        const namedRace = await raceChat();
+        expect(namedRace.feature.title).toBe(operatorTitle);
+        expect(namedRace.messages.map(({ role }) => role)).toEqual(["user", "assistant"]);
         expect(await readFile(join(repository, "CONTEXT.md"), "utf8")).toBe(dirty);
         expect(await readFile(join(repository, "untracked.md"), "utf8")).toBe(untracked);
         expect((await runGit(["status", "--porcelain=v1"])).stdout).toBe(before.stdout);
@@ -495,6 +531,6 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX === "1")(
         await runDocker(["rm", "--force", container]).catch(() => undefined);
         await rm(directory, { recursive: true, force: true });
       }
-    }, 210_000);
+    }, 270_000);
   },
 );
