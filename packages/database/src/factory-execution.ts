@@ -19,6 +19,10 @@ import { FACTORY_EXECUTION_QUEUE, pgBossDatabase } from "./pg-boss.js";
 import { FactoryError, withFactoryFeature, type FeatureRow } from "./factory-planning.js";
 import type { ExecutionRunRow } from "./factory-execution-read.js";
 import { ensureFactoryGate, factoryGateForRetry } from "./factory-gates.js";
+import {
+  recoverFactoryExecutions,
+  type FactoryExecutionContainerRecovery,
+} from "./factory-execution-recovery.js";
 
 interface OwnedRunRow extends ExecutionRunRow {
   owner_instance_id: string | null;
@@ -541,9 +545,12 @@ export function reserveFactoryExecutionContainer(
   run: ClaimedFactoryExecution,
   name: string,
   phase: "implementation" | "verification",
+  daemonId?: string,
 ): Promise<void> {
   return withRun(pool, run, async (client, feature, row) => {
     assertRunning(feature, row);
+    if (daemonId !== undefined && !/^[A-Za-z0-9][A-Za-z0-9:._-]{0,255}$/u.test(daemonId))
+      throw new FactoryError("conflict", "Docker Engine identity was not confirmed");
     const count = await client.query<{ count: string }>(
       "SELECT count(*) FROM factory_execution_containers WHERE run_id = $1",
       [run.id],
@@ -551,8 +558,8 @@ export function reserveFactoryExecutionContainer(
     if (Number(count.rows[0]?.count) >= 39)
       throw new FactoryError("conflict", "The attempt environment limit was reached");
     await client.query(
-      "INSERT INTO factory_execution_containers (name, run_id, phase) VALUES ($1,$2,$3)",
-      [name, run.id, phase],
+      "INSERT INTO factory_execution_containers (name, run_id, phase, daemon_id) VALUES ($1,$2,$3,$4)",
+      [name, run.id, phase, daemonId ?? null],
     );
     if (phase === "implementation")
       await client.query("UPDATE factory_execution_runs SET state = 'running' WHERE id = $1", [
@@ -745,6 +752,7 @@ export function recordFactoryExecutionCheckpoint(
 export async function reconcileFactoryExecutions(
   pool: DatabasePool,
   boss: DiagnosticJobSender,
+  recoverContainer?: FactoryExecutionContainerRecovery,
 ): Promise<void> {
   const candidates = await pool.query<{ id: string; feature_id: string; project_id: string }>(
     `SELECT run.id, run.feature_id, run.project_id FROM factory_execution_runs run
@@ -777,7 +785,7 @@ export async function reconcileFactoryExecutions(
         const writerStopped = row.owner_instance_id === null && pendingContainers.rowCount === 0;
         const question = writerStopped
           ? "Execution delivery stopped before work could start. Retry this Work Item after checking the local service."
-          : "Execution was interrupted. Kestrel retains this Project until its execution environment has been stopped.";
+          : "Execution was interrupted. Kestrel retains this Project while it verifies and stops the recorded environment. If its identity cannot be confirmed, inspect Docker using the recorded container name; answering this gate cannot release an unconfirmed environment.";
         await client.query(
           `UPDATE factory_execution_runs SET state = $2, failure = 'interrupted', question = $3,
            stop_requested_at = clock_timestamp(), completed_at = clock_timestamp(),
@@ -837,5 +845,6 @@ export async function reconcileFactoryExecutions(
       },
     );
   }
+  if (recoverContainer !== undefined) await recoverFactoryExecutions(pool, recoverContainer);
   await queueFactoryExecutions(pool, boss);
 }

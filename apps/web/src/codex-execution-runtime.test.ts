@@ -10,6 +10,7 @@ import { z } from "zod";
 import { createCodexExecutionRuntime } from "./codex-execution-runtime.js";
 
 const directories: string[] = [];
+const daemonId = "c20f7230-59a2-4824-a2f4-fda71c982ee6";
 vi.setConfig({ testTimeout: 20_000 });
 const fixturePath = fileURLToPath(
   new URL("./__fixtures__/codex-execution-runtime.mjs", import.meta.url),
@@ -24,14 +25,17 @@ async function fixture(mode = "happy") {
   await writeFile(join(cwd, ".git"), "gitdir: /controller-owned-fixture\n");
   const logPath = join(cwd, "protocol.jsonl");
   const dockerPath = join(cwd, "docker.mjs");
+  const daemonPath = join(cwd, "daemon.json");
+  await writeFile(daemonPath, JSON.stringify(daemonId));
   await writeFile(
     dockerPath,
-    `#!${process.execPath}\nprocess.env.KESTREL_TEST_ROOT=${JSON.stringify(cwd)};process.env.KESTREL_TEST_MODE=${JSON.stringify(mode)};await import(${JSON.stringify(dockerFixturePath)});\n`,
+    `#!${process.execPath}\nif (process.argv[2] === "info") { const {readFile}=await import("node:fs/promises"); console.log(JSON.parse(await readFile(${JSON.stringify(daemonPath)}, "utf8"))); } else { process.env.KESTREL_TEST_ROOT=${JSON.stringify(cwd)};process.env.KESTREL_TEST_MODE=${JSON.stringify(mode)};await import(${JSON.stringify(dockerFixturePath)}); }\n`,
     { mode: 0o700 },
   );
   return {
     cwd,
     logPath,
+    daemonPath,
     runtime: createCodexExecutionRuntime({
       executable: process.execPath,
       arguments: [fixturePath, mode, logPath],
@@ -97,6 +101,29 @@ function input(cwd: string) {
     onQuestion: vi.fn(() => Promise.resolve()),
   };
 }
+
+it("persists the selected Docker Engine identity before the container can be created", async () => {
+  const { cwd, runtime } = await fixture();
+  const turn = input(cwd);
+  await runtime.runTurn(turn);
+  expect(turn.beforeContainerCreate).toHaveBeenCalledWith(
+    expect.stringMatching(/^kestrel-factory-/u),
+    daemonId,
+  );
+});
+
+it("retains an uncertain reservation when Docker changes after its durable create intent", async () => {
+  const { cwd, runtime, daemonPath } = await fixture();
+  const turn = {
+    ...input(cwd),
+    beforeContainerCreate: async () => {
+      await writeFile(daemonPath, JSON.stringify("other-daemon"));
+    },
+  };
+  await expect(runtime.runTurn(turn)).rejects.toMatchObject({ code: "stop_unconfirmed" });
+  expect(turn.onStopped).not.toHaveBeenCalled();
+  expect((await dockerCalls(cwd)).some((args) => args[0] === "create")).toBe(false);
+});
 
 it("honors cancellation while the caller is persisting container intent, without starting a writer", async () => {
   const { cwd, runtime } = await fixture();

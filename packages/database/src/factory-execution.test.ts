@@ -2,8 +2,10 @@ import { expect, it, vi } from "vitest";
 
 import {
   finishFactoryExecution,
+  identifyFactoryExecutionContainer,
   queueFactoryExecutions,
   reconcileFactoryExecutions,
+  reserveFactoryExecutionContainer,
 } from "./factory-execution.js";
 
 const featureId = "01991c36-7f90-7000-8000-000000000001";
@@ -14,6 +16,126 @@ const ownerId = "01991c36-7f90-7000-8000-000000000005";
 const gateId = "01991c36-7f90-7000-8000-000000000006";
 const successorId = "01991c36-7f90-7000-8000-000000000007";
 type Query = (statement: string, parameters?: unknown[]) => { rows: unknown[]; rowCount?: number };
+
+it("stores the Docker Engine identity with the durable create reservation", async () => {
+  const daemonId = "c20f7230-59a2-4824-a2f4-fda71c982ee6";
+  const name = `kestrel-factory-${"1".repeat(32)}`;
+  const query = vi.fn<Query>((statement) => {
+    if (statement.includes("FROM factory_features") && statement.includes("FOR UPDATE"))
+      return { rows: [{ id: featureId, project_id: projectId, state: "implementing" }] };
+    if (statement.includes("SELECT * FROM factory_execution_runs"))
+      return {
+        rows: [
+          {
+            owner_instance_id: ownerId,
+            state: "running",
+            stop_requested_at: null,
+            reservation_released_at: null,
+          },
+        ],
+      };
+    if (statement.includes("SELECT count(*)")) return { rows: [{ count: "0" }] };
+    return { rows: [], rowCount: 1 };
+  });
+  await reserveFactoryExecutionContainer(
+    { connect: () => ({ query, release: vi.fn() }) } as never,
+    { id: runId, featureId, projectId, ownerInstanceId: ownerId } as never,
+    name,
+    "implementation",
+    daemonId,
+  );
+  expect(
+    query.mock.calls.find(([sql]) => sql.includes("INSERT INTO factory_execution_containers"))?.[1],
+  ).toEqual([name, runId, "implementation", daemonId]);
+});
+
+it.each([null, new Date("2026-09-08T12:00:00.000Z")])(
+  "prevents a stale owner from reserving another environment after fencing (released=%s)",
+  async (released) => {
+    const query = vi.fn<Query>((statement) => {
+      if (statement.includes("FROM factory_features") && statement.includes("FOR UPDATE"))
+        return { rows: [{ id: featureId, project_id: projectId, state: "implementing" }] };
+      if (statement.includes("SELECT * FROM factory_execution_runs"))
+        return {
+          rows: [
+            {
+              owner_instance_id: ownerId,
+              state: "running",
+              stop_requested_at: new Date(),
+              reservation_released_at: released,
+            },
+          ],
+        };
+      return { rows: [] };
+    });
+    await expect(
+      reserveFactoryExecutionContainer(
+        { connect: () => ({ query, release: vi.fn() }) } as never,
+        { id: runId, featureId, projectId, ownerInstanceId: ownerId } as never,
+        `kestrel-factory-${"1".repeat(32)}`,
+        "implementation",
+      ),
+    ).rejects.toMatchObject({ code: "conflict" });
+    expect(
+      query.mock.calls.some(([sql]) => sql.includes("INSERT INTO factory_execution_containers")),
+    ).toBe(false);
+  },
+);
+
+it.each([null, new Date("2026-09-08T12:00:00.000Z")])(
+  "denies a delayed create permission to start after fencing, preserving its ID only while unreleased (released=%s)",
+  async (released) => {
+    const query = vi.fn<Query>((statement) => {
+      if (statement.includes("FROM factory_features") && statement.includes("FOR UPDATE"))
+        return { rows: [{ id: featureId, project_id: projectId, state: "gated" }] };
+      if (statement.includes("SELECT * FROM factory_execution_runs"))
+        return {
+          rows: [
+            {
+              owner_instance_id: ownerId,
+              state: "interrupted",
+              stop_requested_at: new Date(),
+              reservation_released_at: released,
+            },
+          ],
+        };
+      return { rows: [], rowCount: 1 };
+    });
+    await expect(
+      identifyFactoryExecutionContainer(
+        { connect: () => ({ query, release: vi.fn() }) } as never,
+        { id: runId, featureId, projectId, ownerInstanceId: ownerId } as never,
+        { name: `kestrel-factory-${"1".repeat(32)}`, id: "a".repeat(64) },
+      ),
+    ).rejects.toMatchObject({ code: "conflict" });
+    expect(
+      query.mock.calls.some(([sql]) => sql.includes("UPDATE factory_execution_containers")),
+    ).toBe(released === null);
+    expect(query.mock.calls.at(-1)?.[0]).toBe(released === null ? "COMMIT" : "ROLLBACK");
+  },
+);
+
+it("ignores a stale owner's final outcome after recovery has released its reservation", async () => {
+  const query = vi.fn<Query>((statement) => {
+    if (statement.includes("FROM factory_features") && statement.includes("FOR UPDATE"))
+      return { rows: [{ id: featureId, project_id: projectId, state: "gated" }] };
+    if (statement.includes("SELECT * FROM factory_execution_runs"))
+      return {
+        rows: [
+          { owner_instance_id: ownerId, state: "blocked", reservation_released_at: new Date() },
+        ],
+      };
+    return { rows: [] };
+  });
+  await finishFactoryExecution(
+    { connect: () => ({ query, release: vi.fn() }) } as never,
+    { id: runId, featureId, projectId, ownerInstanceId: ownerId } as never,
+    { verified: true, writerStopped: true, failure: null, question: null },
+  );
+  expect(
+    query.mock.calls.some(([sql]) => sql.startsWith("UPDATE") || sql.startsWith("INSERT")),
+  ).toBe(false);
+});
 
 it("atomically retains the actual consequential question and approved identity when a writer stops", async () => {
   const row = {
