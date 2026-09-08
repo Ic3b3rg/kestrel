@@ -39,6 +39,13 @@ teardown can release the reservation and expose the retained Human Gate. An unav
 service or an unverifiable container identity keeps the reservation held. No recovery operation
 silently restarts model execution or repeats an external write.
 
+New attempts persist the Docker Engine identity before creating an environment. Recovery checks that
+identity as well as the full container ID, name and ownership label; changing Docker contexts does
+not count as stopping the original environment. A retained ID already absent from the same recorded
+Engine can be reconciled after a crash between removal and recording teardown. Legacy records
+without Engine provenance require an inspectable matching environment. A reserved name without a
+discovered ID remains uncertain because an earlier create may still finish.
+
 Source or revision uncertainty cannot be overridden by a text answer. The retained workspace must
 still match its recorded checkpoint before a successor runtime is started. Authentication, usage,
 verification, permission and environment failures remain distinct; a retry does not switch to a paid

@@ -87,11 +87,19 @@ describe.runIf(process.env.KESTREL_LIVE_FACTORY_EXECUTION === "1")(
         let server: ChildProcess | undefined;
         let logs = "";
         const serverGroups = new Set<number>();
+        const stopServerGroup = (pid: number) => {
+          try {
+            process.kill(-pid, "SIGKILL");
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+          }
+          serverGroups.delete(pid);
+        };
         const eventsAbort = new AbortController();
         const shutdownServer = async () => {
           const child = server;
           server = undefined;
-          if (child === undefined || child.exitCode !== null) return;
+          if (child === undefined || child.exitCode !== null || child.signalCode !== null) return;
           const closed = new Promise<void>((resolveClose) =>
             child.once("close", () => resolveClose()),
           );
@@ -99,6 +107,7 @@ describe.runIf(process.env.KESTREL_LIVE_FACTORY_EXECUTION === "1")(
           const force = setTimeout(() => child.kill("SIGKILL"), 40_000);
           try {
             await closed;
+            if (child.pid !== undefined) stopServerGroup(child.pid);
           } finally {
             clearTimeout(force);
           }
@@ -408,6 +417,7 @@ describe.runIf(process.env.KESTREL_LIVE_FACTORY_EXECUTION === "1")(
               );
               process.kill(-abandoned.pid, "SIGKILL");
               await exited;
+              serverGroups.delete(abandoned.pid);
               server = undefined;
               const interrupted = await owner.query<{
                 name: string;
@@ -417,7 +427,8 @@ describe.runIf(process.env.KESTREL_LIVE_FACTORY_EXECUTION === "1")(
                 "SELECT name, container_id, daemon_id FROM factory_execution_containers WHERE phase='verification' AND stopped_at IS NULL",
               );
               expect(interrupted.rows).toHaveLength(1);
-              const container = interrupted.rows[0]!;
+              const container = interrupted.rows[0];
+              if (container === undefined) throw new Error("Interrupted environment missing");
               expect(container.daemon_id).toBe(
                 (await runDocker(["info", "--format", "{{.ID}}"])).stdout.trim(),
               );
@@ -433,6 +444,8 @@ describe.runIf(process.env.KESTREL_LIVE_FACTORY_EXECUTION === "1")(
                 await (await request(`${path}/execution`)).json(),
               );
               expect(recovered.state).toBe("blocked");
+              const recoveredGate = recovered.gate;
+              if (recoveredGate == null) throw new Error("Recovered Human Gate missing");
               expect(recovered.workItems.map((item) => item.runs.length)).toEqual([1, 0]);
               expect(recovered.gate).toMatchObject({
                 approvedVersion: 1,
@@ -479,7 +492,7 @@ describe.runIf(process.env.KESTREL_LIVE_FACTORY_EXECUTION === "1")(
                   "The verification process was interrupted. Retry within the same approved requirements and checks.",
               };
               expect(
-                (await request(`${path}/execution/gates/${recovered.gate!.id}/resolve`, answer))
+                (await request(`${path}/execution/gates/${recoveredGate.id}/resolve`, answer))
                   .status,
               ).toBe(200);
               await expect
@@ -491,7 +504,7 @@ describe.runIf(process.env.KESTREL_LIVE_FACTORY_EXECUTION === "1")(
                 )
                 .toBe(2);
               expect(
-                (await request(`${path}/execution/gates/${recovered.gate!.id}/resolve`, answer))
+                (await request(`${path}/execution/gates/${recoveredGate.id}/resolve`, answer))
                   .status,
               ).toBe(200);
               expect(
@@ -656,13 +669,7 @@ describe.runIf(process.env.KESTREL_LIVE_FACTORY_EXECUTION === "1")(
         } finally {
           eventsAbort.abort();
           await shutdownServer();
-          for (const pid of serverGroups) {
-            try {
-              process.kill(-pid, "SIGKILL");
-            } catch (error) {
-              if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
-            }
-          }
+          for (const pid of serverGroups) stopServerGroup(pid);
           if (owner !== undefined) {
             const containers = await owner
               .query<{ name: string }>("SELECT name FROM factory_execution_containers")

@@ -36,10 +36,15 @@ const plan: FeaturePlanDocument = {
   limits: { maxConcurrentProjects: 2, maxActiveFeaturesPerProject: 1, attemptTimeoutSeconds: 120 },
 };
 
+function required<T>(value: T | undefined): T {
+  if (value === undefined) throw new Error("Expected fixture value missing");
+  return value;
+}
+
 describe("Factory Human Gates over HTTP and PostgreSQL", () => {
   let stack: RunningStack;
   const cleanup: Array<() => Promise<void>> = [];
-  const projects: Record<string, string> = {};
+  const projects = { kestrel: "", falcon: "", owl: "" };
   let first: string;
   let queued: string;
   let other: string;
@@ -152,7 +157,7 @@ describe("Factory Human Gates over HTTP and PostgreSQL", () => {
     const inventory = LocalRepositoryInventorySchema.parse(
       await (await stack.fetchApi("/api/v1/local-repository-sources")).json(),
     );
-    for (const name of ["kestrel", "falcon", "owl"]) {
+    for (const name of ["kestrel", "falcon", "owl"] as const) {
       const repository = inventory.repositories.find((entry) => entry.displayName === name);
       if (repository === undefined) throw new Error(`Fixture ${name} missing`);
       projects[name] = ProjectUpsertedSchema.parse(
@@ -170,42 +175,39 @@ describe("Factory Human Gates over HTTP and PostgreSQL", () => {
     "keeps the gated Feature first, progresses another Project, and releases its global execution slot",
     { timeout: 120_000 },
     async () => {
-      first = await approve(projects.kestrel!, "First feature");
-      queued = await approve(projects.kestrel!, "Queued feature");
-      other = await approve(projects.falcon!, "Other project", {
+      first = await approve(projects.kestrel, "First feature");
+      queued = await approve(projects.kestrel, "Queued feature");
+      other = await approve(projects.falcon, "Other project", {
         ...plan,
         workItems: plan.workItems.slice(0, 1),
       });
-      third = await approve(projects.owl!, "Third project", {
+      third = await approve(projects.owl, "Third project", {
         ...plan,
         workItems: plan.workItems.slice(0, 1),
       });
       const claims = await claim([first, queued, other, third]);
       expect(claims.map((run) => run.featureId).sort()).toEqual([first, other].sort());
-      original = claims.find((run) => run.featureId === first)!;
+      original = required(claims.find((run) => run.featureId === first));
       expect(original.key).toBe("order");
       gate = await block(original);
-      await verify(claims.find((run) => run.featureId === other)!);
+      await verify(required(claims.find((run) => run.featureId === other)));
       const board = FactoryBoardSchema.parse(
-        await (await stack.fetchApi(`${path(projects.kestrel!, first)}/board`)).json(),
+        await (await stack.fetchApi(`${path(projects.kestrel, first)}/board`)).json(),
       );
-      expect(
-        board.columns.find((column) => column.id === "todo")?.items[0]?.blocking,
-      ).toMatchObject({
-        kind: "human_gate",
-        explanation: expect.stringContaining(gate.question),
-      });
+      const blocking = board.columns.find((column) => column.id === "todo")?.items[0]?.blocking;
+      expect(blocking?.kind).toBe("human_gate");
+      expect(blocking?.explanation).toContain(gate.question);
       expect(
         FactoryExecutionSchema.parse(
-          await (await stack.fetchApi(`${path(projects.falcon!, other)}/execution`)).json(),
+          await (await stack.fetchApi(`${path(projects.falcon, other)}/execution`)).json(),
         ).state,
       ).toBe("verified");
       const next = await claim([queued, third]);
       expect(next.map((run) => run.featureId)).toEqual([third]);
-      await block(next[0]!);
+      await block(required(next[0]));
       expect(
         FactoryExecutionSchema.parse(
-          await (await stack.fetchApi(`${path(projects.kestrel!, queued)}/execution`)).json(),
+          await (await stack.fetchApi(`${path(projects.kestrel, queued)}/execution`)).json(),
         ).workItems.every((item) => item.runs.length === 0),
       ).toBe(true);
     },
@@ -215,7 +217,7 @@ describe("Factory Human Gates over HTTP and PostgreSQL", () => {
     "persists one exact answer through restart and creates one successor before its dependent Work Item",
     { timeout: 90_000 },
     async () => {
-      const endpoint = `${path(projects.kestrel!, first)}/execution/gates/${gate.id}`;
+      const endpoint = `${path(projects.kestrel, first)}/execution/gates/${gate.id}`;
       const answer = {
         requestId: randomUUID(),
         expectedPlanVersion: 1,
@@ -264,7 +266,7 @@ describe("Factory Human Gates over HTTP and PostgreSQL", () => {
       });
       const successors = await claim([first, queued]);
       expect(successors).toHaveLength(1);
-      const successor = successors[0]!;
+      const successor = required(successors[0]);
       expect(successor).toMatchObject({
         featureId: first,
         key: "order",
@@ -281,7 +283,7 @@ describe("Factory Human Gates over HTTP and PostgreSQL", () => {
       expect(successor.plan).toEqual(original.plan);
       const details = FactoryExecutionRunSchema.parse(
         await (
-          await stack.fetchApi(`${path(projects.kestrel!, first)}/execution/runs/${successor.id}`)
+          await stack.fetchApi(`${path(projects.kestrel, first)}/execution/runs/${successor.id}`)
         ).json(),
       );
       expect(details.acceptedCommands).toEqual(verification);
@@ -294,14 +296,14 @@ describe("Factory Human Gates over HTTP and PostgreSQL", () => {
         attempt: 1,
         completed: [{ key: "order" }],
       });
-      await verify(dependent[0]!);
+      await verify(required(dependent[0]));
       expect((await post(`${endpoint}/resolve`, answer)).status).toBe(200);
       expect(
         (await post(`${endpoint}/resolve`, { ...answer, requestId: randomUUID() })).status,
       ).toBe(409);
       expect(
         (
-          await post(`${path(projects.kestrel!, first)}/cancel`, {
+          await post(`${path(projects.kestrel, first)}/cancel`, {
             requestId: randomUUID(),
             expectedVersion: 1,
           })
@@ -317,7 +319,7 @@ describe("Factory Human Gates over HTTP and PostgreSQL", () => {
       run,
       "Should the feature add a new filter outside its approved scope?",
     );
-    const endpoint = `${path(projects.kestrel!, queued)}/execution/gates/${pendingGate.id}/resolve`;
+    const endpoint = `${path(projects.kestrel, queued)}/execution/gates/${pendingGate.id}/resolve`;
     const change = {
       requestId: randomUUID(),
       expectedPlanVersion: 1,
@@ -336,25 +338,25 @@ describe("Factory Human Gates over HTTP and PostgreSQL", () => {
         .status,
     ).toBe(409);
     const thirdExecution = FactoryExecutionSchema.parse(
-      await (await stack.fetchApi(`${path(projects.owl!, third)}/execution`)).json(),
+      await (await stack.fetchApi(`${path(projects.owl, third)}/execution`)).json(),
     );
     if (thirdExecution.gate == null) throw new Error("Third Project gate missing");
     const race = await Promise.all([
-      post(`${path(projects.owl!, third)}/execution/gates/${thirdExecution.gate.id}/resolve`, {
+      post(`${path(projects.owl, third)}/execution/gates/${thirdExecution.gate.id}/resolve`, {
         requestId: randomUUID(),
         expectedPlanVersion: 1,
         decision: "resume_within_plan",
         answer: "Continue within the approved ordering requirement.",
       }),
-      post(`${path(projects.owl!, third)}/cancel`, { requestId: randomUUID(), expectedVersion: 1 }),
+      post(`${path(projects.owl, third)}/cancel`, { requestId: randomUUID(), expectedVersion: 1 }),
     ]);
-    expect([200, 409]).toContain(race[0]!.status);
-    expect(race[1]!.status).toBe(200);
+    expect([200, 409]).toContain(race[0].status);
+    expect(race[1].status).toBe(200);
     for (const response of race) await response.arrayBuffer();
     expect(await claim([third])).toEqual([]);
     expect(
       FactoryExecutionSchema.parse(
-        await (await stack.fetchApi(`${path(projects.owl!, third)}/execution`)).json(),
+        await (await stack.fetchApi(`${path(projects.owl, third)}/execution`)).json(),
       ).state,
     ).toBe("cancelled");
   });

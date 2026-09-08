@@ -1,6 +1,7 @@
 import { isAbsolute, resolve } from "node:path";
 
 import { buildApp } from "./app.js";
+import { createCodexExecutionContainerRecovery } from "./codex-execution-runtime.js";
 import {
   createFactoryExecutionProcessor,
   FACTORY_EXECUTION_WORK_OPTIONS,
@@ -126,6 +127,11 @@ const planningProcessor = createFactoryPlanningProcessor({
   readSourceConfig: () => readLocalSourceConfig(),
 });
 const publicationProcessor = createFactoryPublicationProcessor({ pool });
+const recoverExecutionContainer = createCodexExecutionContainerRecovery(
+  process.env.KESTREL_FACTORY_DOCKER_EXECUTABLE === undefined
+    ? {}
+    : { dockerExecutable: process.env.KESTREL_FACTORY_DOCKER_EXECUTABLE },
+);
 const executionProcessor = createFactoryExecutionProcessor({
   pool,
   readSourceConfig: () => readLocalSourceConfig(),
@@ -178,10 +184,10 @@ try {
   await boss.start();
   await reconcilePlanningTurns(pool);
   await reconcileFactoryPublications(pool, boss);
-  await reconcileFactoryExecutions(pool, boss);
+  await reconcileFactoryExecutions(pool, boss, recoverExecutionContainer);
   executionReconciliation = setInterval(() => {
     if (reconcilingExecution !== null || shuttingDown) return;
-    reconcilingExecution = reconcileFactoryExecutions(pool, boss)
+    reconcilingExecution = reconcileFactoryExecutions(pool, boss, recoverExecutionContainer)
       .catch((error: unknown) =>
         app.log.error({ err: error, event: "factory.execution_reconciliation_failed" }),
       )

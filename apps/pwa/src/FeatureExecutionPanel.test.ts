@@ -170,17 +170,19 @@ async function answerGate(text: string) {
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(input, text);
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.dispatchEvent(new Event("change", { bubbles: true }));
+    await Promise.resolve();
   });
 }
 
 it("answers the visible gate once against its approved plan and preserves a lost-response retry", async () => {
   const sent: unknown[] = [];
   let current = gate;
-  const fetch = vi.fn<typeof globalThis.fetch>(async (url, options) => {
+  const fetch = vi.fn<typeof globalThis.fetch>((url, options) => {
     if (options?.method === "POST") {
-      const command = JSON.parse(String(options.body)) as { requestId: string; answer: string };
+      if (typeof options.body !== "string") throw new Error("Expected a JSON gate answer");
+      const command = JSON.parse(options.body) as { requestId: string; answer: string };
       sent.push(command);
-      if (sent.length === 1) throw new TypeError("Response lost");
+      if (sent.length === 1) return Promise.reject(new TypeError("Response lost"));
       current = {
         ...gate,
         canResume: false,
@@ -193,12 +195,14 @@ it("answers the visible gate once against its approved plan and preserves a lost
           resolvedAt: createdAt,
         },
       };
-      return Response.json(current);
+      return Promise.resolve(Response.json(current));
     }
-    return Response.json(
-      requestUrl(url).endsWith(`/runs/${runId}`)
-        ? { ...run, gate: current }
-        : { ...execution, gate: current },
+    return Promise.resolve(
+      Response.json(
+        requestUrl(url).endsWith(`/runs/${runId}`)
+          ? { ...run, gate: current }
+          : { ...execution, gate: current },
+      ),
     );
   });
   vi.stubGlobal("fetch", fetch);
@@ -256,15 +260,13 @@ it.each(["cancelled", "stale_gate"] as const)(
   async (reason) => {
     vi.stubGlobal(
       "fetch",
-      vi
-        .fn()
-        .mockResolvedValue(
-          Response.json({
-            ...execution,
-            state: reason === "cancelled" ? "cancelled" : "blocked",
-            gate: { ...gate, canResume: false, resumeBlockedReason: reason },
-          }),
-        ),
+      vi.fn().mockResolvedValue(
+        Response.json({
+          ...execution,
+          state: reason === "cancelled" ? "cancelled" : "blocked",
+          gate: { ...gate, canResume: false, resumeBlockedReason: reason },
+        }),
+      ),
     );
     await render();
     expect(container.textContent).toContain(gate.question);

@@ -9,12 +9,12 @@ import {
   type FeaturePlanDocument,
 } from "@kestrel/contracts";
 import { startStack, TEST_OPERATOR_CREDENTIALS, type RunningStack } from "./support/compose.js";
-import { createGitFixture, type GitFixture } from "./support/git-fixture.js";
+import { createGitFixture } from "./support/git-fixture.js";
 import { factoryGitHubFixture } from "./support/factory-github-fixture.js";
 
 test.describe("Human Gate decisions", () => {
   let stack: RunningStack;
-  let fixture: GitFixture;
+  const cleanup: Array<() => Promise<void>> = [];
   let projectId: string;
   let featureId: string;
   const question = "Should equal values retain their original order?";
@@ -27,11 +27,13 @@ test.describe("Human Gate decisions", () => {
       body: JSON.stringify(body),
     });
   test.beforeAll(async () => {
-    fixture = await createGitFixture();
+    const fixture = await createGitFixture();
+    cleanup.push(() => fixture.close());
     stack = await startStack({
       repositoryRoot: fixture.rootPath,
       githubFixture: factoryGitHubFixture,
     });
+    cleanup.push(() => stack.close());
     await stack.authenticateOperator();
     await stack.executeSql(`CREATE FUNCTION hold_browser_gate_delivery() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.name='factory-execution-v1' THEN NEW.start_after=clock_timestamp()+interval '1 hour'; END IF; RETURN NEW; END $$;
       CREATE TRIGGER hold_browser_gate_delivery BEFORE INSERT ON pgboss.job FOR EACH ROW EXECUTE FUNCTION hold_browser_gate_delivery();`);
@@ -105,8 +107,7 @@ test.describe("Human Gate decisions", () => {
     `);
   });
   test.afterAll(async () => {
-    await stack?.close();
-    await fixture?.close();
+    for (const close of cleanup.toReversed()) await close();
   });
 
   test("answers the concrete question, restores its history, and cancels the queued successor", async ({

@@ -336,10 +336,10 @@ async function execute(
       stopped: false,
     };
     const callbacks: CodexExecutionLifecycle = {
-      beforeContainerCreate: async (name) => {
+      beforeContainerCreate: async (name, daemonId) => {
         if (proof.name !== null) throw new ExecutionFailure("stop_unconfirmed");
         signal.throwIfAborted();
-        await reserveFactoryExecutionContainer(pool, run, name, phase);
+        await reserveFactoryExecutionContainer(pool, run, name, phase, daemonId);
         proof.name = name;
         pending.add(name);
         signal.throwIfAborted();
