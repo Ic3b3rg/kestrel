@@ -4,3 +4,5 @@ export * from "./factory.js";
 export * from "./factory-plan.js";
 export * from "./factory-issues.js";
 export * from "./factory-execution.js";
+
+export * from "./factory-skills.js";

@@ -3688,6 +3688,60 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "skills": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "contentDigest": {
+                          "pattern": "^[a-f0-9]{64}$",
+                          "type": "string"
+                        },
+                        "description": {
+                          "maxLength": 2000,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "name": {
+                          "maxLength": 64,
+                          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                          "type": "string"
+                        },
+                        "source": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "candidateId": {
+                              "pattern": "^[a-f0-9]{64}$",
+                              "type": "string"
+                            },
+                            "kind": {
+                              "const": "host",
+                              "type": "string"
+                            },
+                            "label": {
+                              "maxLength": 255,
+                              "minLength": 1,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "label",
+                            "candidateId"
+                          ],
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "description",
+                        "contentDigest",
+                        "source"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 8,
+                    "type": "array"
                   }
                 },
                 "required": [
@@ -3799,6 +3853,80 @@
             "const": 1,
             "type": "number"
           },
+          "skills": {
+            "additionalProperties": false,
+            "properties": {
+              "schemaVersion": {
+                "const": 1,
+                "type": "number"
+              },
+              "skills": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "contentDigest": {
+                      "pattern": "^[a-f0-9]{64}$",
+                      "type": "string"
+                    },
+                    "description": {
+                      "maxLength": 2000,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "name": {
+                      "maxLength": 64,
+                      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                      "type": "string"
+                    },
+                    "source": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "candidateId": {
+                          "pattern": "^[a-f0-9]{64}$",
+                          "type": "string"
+                        },
+                        "kind": {
+                          "const": "host",
+                          "type": "string"
+                        },
+                        "label": {
+                          "maxLength": 255,
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "label",
+                        "candidateId"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "description",
+                    "contentDigest",
+                    "source"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 8,
+                "type": "array"
+              },
+              "version": {
+                "maximum": 1000,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "schemaVersion",
+              "version",
+              "skills"
+            ],
+            "type": "object"
+          },
           "turns": {
             "items": {
               "additionalProperties": false,
@@ -3862,6 +3990,60 @@
                       "type": "null"
                     }
                   ]
+                },
+                "skills": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "contentDigest": {
+                        "pattern": "^[a-f0-9]{64}$",
+                        "type": "string"
+                      },
+                      "description": {
+                        "maxLength": 2000,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "name": {
+                        "maxLength": 64,
+                        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                        "type": "string"
+                      },
+                      "source": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "candidateId": {
+                            "pattern": "^[a-f0-9]{64}$",
+                            "type": "string"
+                          },
+                          "kind": {
+                            "const": "host",
+                            "type": "string"
+                          },
+                          "label": {
+                            "maxLength": 255,
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "label",
+                          "candidateId"
+                        ],
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "description",
+                      "contentDigest",
+                      "source"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 8,
+                  "type": "array"
                 },
                 "startedAt": {
                   "anyOf": [
@@ -4521,6 +4703,60 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "skills": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "contentDigest": {
+                          "pattern": "^[a-f0-9]{64}$",
+                          "type": "string"
+                        },
+                        "description": {
+                          "maxLength": 2000,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "name": {
+                          "maxLength": 64,
+                          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                          "type": "string"
+                        },
+                        "source": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "candidateId": {
+                              "pattern": "^[a-f0-9]{64}$",
+                              "type": "string"
+                            },
+                            "kind": {
+                              "const": "host",
+                              "type": "string"
+                            },
+                            "label": {
+                              "maxLength": 255,
+                              "minLength": 1,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "label",
+                            "candidateId"
+                          ],
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "description",
+                        "contentDigest",
+                        "source"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 8,
+                    "type": "array"
                   }
                 },
                 "required": [
@@ -4558,6 +4794,80 @@
           "specMarkdown",
           "author",
           "createdAt"
+        ],
+        "type": "object"
+      },
+      "FeaturePlanningSkills": {
+        "additionalProperties": false,
+        "properties": {
+          "schemaVersion": {
+            "const": 1,
+            "type": "number"
+          },
+          "skills": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "contentDigest": {
+                  "pattern": "^[a-f0-9]{64}$",
+                  "type": "string"
+                },
+                "description": {
+                  "maxLength": 2000,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "name": {
+                  "maxLength": 64,
+                  "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                  "type": "string"
+                },
+                "source": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "candidateId": {
+                      "pattern": "^[a-f0-9]{64}$",
+                      "type": "string"
+                    },
+                    "kind": {
+                      "const": "host",
+                      "type": "string"
+                    },
+                    "label": {
+                      "maxLength": 255,
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "label",
+                    "candidateId"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "name",
+                "description",
+                "contentDigest",
+                "source"
+              ],
+              "type": "object"
+            },
+            "maxItems": 8,
+            "type": "array"
+          },
+          "version": {
+            "maximum": 1000,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "version",
+          "skills"
         ],
         "type": "object"
       },
@@ -4914,6 +5224,60 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "skills": {
+                            "items": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "contentDigest": {
+                                  "pattern": "^[a-f0-9]{64}$",
+                                  "type": "string"
+                                },
+                                "description": {
+                                  "maxLength": 2000,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "maxLength": 64,
+                                  "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                                  "type": "string"
+                                },
+                                "source": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "candidateId": {
+                                      "pattern": "^[a-f0-9]{64}$",
+                                      "type": "string"
+                                    },
+                                    "kind": {
+                                      "const": "host",
+                                      "type": "string"
+                                    },
+                                    "label": {
+                                      "maxLength": 255,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "label",
+                                    "candidateId"
+                                  ],
+                                  "type": "object"
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "description",
+                                "contentDigest",
+                                "source"
+                              ],
+                              "type": "object"
+                            },
+                            "maxItems": 8,
+                            "type": "array"
                           }
                         },
                         "required": [
@@ -5079,6 +5443,60 @@
                       }
                     ]
                   },
+                  "skills": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "contentDigest": {
+                          "pattern": "^[a-f0-9]{64}$",
+                          "type": "string"
+                        },
+                        "description": {
+                          "maxLength": 2000,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "name": {
+                          "maxLength": 64,
+                          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                          "type": "string"
+                        },
+                        "source": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "candidateId": {
+                              "pattern": "^[a-f0-9]{64}$",
+                              "type": "string"
+                            },
+                            "kind": {
+                              "const": "host",
+                              "type": "string"
+                            },
+                            "label": {
+                              "maxLength": 255,
+                              "minLength": 1,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "label",
+                            "candidateId"
+                          ],
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "description",
+                        "contentDigest",
+                        "source"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 8,
+                    "type": "array"
+                  },
                   "startedAt": {
                     "anyOf": [
                       {
@@ -5185,6 +5603,11 @@
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
+          },
+          "skillSelectionVersion": {
+            "maximum": 1000,
+            "minimum": 0,
+            "type": "integer"
           }
         },
         "required": [
@@ -5623,6 +6046,25 @@
         "required": [
           "requestId",
           "issueNumbers"
+        ],
+        "type": "object"
+      },
+      "InstallPlanningSkillCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "candidateId": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "candidateId"
         ],
         "type": "object"
       },
@@ -6160,6 +6602,190 @@
         },
         "required": [
           "url"
+        ],
+        "type": "object"
+      },
+      "PlanningSkillBundle": {
+        "additionalProperties": false,
+        "properties": {
+          "contentDigest": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "description": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "content": {
+                  "maxLength": 131072,
+                  "type": "string"
+                },
+                "path": {
+                  "maxLength": 512,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "content"
+              ],
+              "type": "object"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "type": "array"
+          },
+          "name": {
+            "maxLength": 64,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "type": "string"
+          },
+          "source": {
+            "additionalProperties": false,
+            "properties": {
+              "candidateId": {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              "kind": {
+                "const": "host",
+                "type": "string"
+              },
+              "label": {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "label",
+              "candidateId"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "contentDigest",
+          "source",
+          "files"
+        ],
+        "type": "object"
+      },
+      "PlanningSkillCandidates": {
+        "additionalProperties": false,
+        "properties": {
+          "candidates": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "candidateId": {
+                  "pattern": "^[a-f0-9]{64}$",
+                  "type": "string"
+                },
+                "label": {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "candidateId",
+                "label"
+              ],
+              "type": "object"
+            },
+            "maxItems": 256,
+            "type": "array"
+          },
+          "configured": {
+            "type": "boolean"
+          },
+          "schemaVersion": {
+            "const": 1,
+            "type": "number"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "configured",
+          "candidates"
+        ],
+        "type": "object"
+      },
+      "PlanningSkillCatalog": {
+        "additionalProperties": false,
+        "properties": {
+          "schemaVersion": {
+            "const": 1,
+            "type": "number"
+          },
+          "skills": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "contentDigest": {
+                  "pattern": "^[a-f0-9]{64}$",
+                  "type": "string"
+                },
+                "description": {
+                  "maxLength": 2000,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "name": {
+                  "maxLength": 64,
+                  "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                  "type": "string"
+                },
+                "source": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "candidateId": {
+                      "pattern": "^[a-f0-9]{64}$",
+                      "type": "string"
+                    },
+                    "kind": {
+                      "const": "host",
+                      "type": "string"
+                    },
+                    "label": {
+                      "maxLength": 255,
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "label",
+                    "candidateId"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "name",
+                "description",
+                "contentDigest",
+                "source"
+              ],
+              "type": "object"
+            },
+            "maxItems": 200,
+            "type": "array"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "skills"
         ],
         "type": "object"
       },
@@ -24266,6 +24892,35 @@
         ],
         "type": "object"
       },
+      "SelectPlanningSkillsCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "digests": {
+            "items": {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            "maxItems": 8,
+            "type": "array"
+          },
+          "expectedVersion": {
+            "maximum": 1000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "requestId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "expectedVersion",
+          "digests"
+        ],
+        "type": "object"
+      },
       "SendPlanningMessageCommand": {
         "additionalProperties": false,
         "properties": {
@@ -24273,6 +24928,11 @@
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
+          },
+          "skillSelectionVersion": {
+            "maximum": 1000,
+            "minimum": 0,
+            "type": "integer"
           },
           "text": {
             "maxLength": 16000,
@@ -25055,6 +25715,475 @@
           }
         }
       }
+    },
+    "/api/v1/planning-skills": {
+      "get": {
+        "operationId": "readPlanningSkillCatalog",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanningSkillCatalog"
+                }
+              }
+            },
+            "description": "Current durable Factory state"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          }
+        }
+      }
+    },
+    "/api/v1/planning-skills/candidates": {
+      "get": {
+        "operationId": "readHostPlanningSkillCandidates",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanningSkillCandidates"
+                }
+              }
+            },
+            "description": "Current durable Factory state"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          }
+        }
+      }
+    },
+    "/api/v1/planning-skills/install": {
+      "post": {
+        "operationId": "importHostPlanningSkill",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Origin",
+            "required": true,
+            "schema": {
+              "format": "uri",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Kestrel-CSRF",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstallPlanningSkillCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanningSkillBundle"
+                }
+              }
+            },
+            "description": "Durable Factory result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          }
+        }
+      }
+    },
+    "/api/v1/planning-skills/{digest}": {
+      "get": {
+        "operationId": "readRetainedPlanningSkill",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanningSkillBundle"
+                }
+              }
+            },
+            "description": "Current durable Factory state"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          }
+        }
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "digest",
+          "required": true,
+          "schema": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          }
+        }
+      ]
     },
     "/api/v1/projects": {
       "get": {
@@ -27963,6 +29092,268 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/FactoryIssuePublication"
+                }
+              }
+            },
+            "description": "Durable Factory result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/skills": {
+      "get": {
+        "operationId": "readFeaturePlanningSkills",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeaturePlanningSkills"
+                }
+              }
+            },
+            "description": "Current durable Factory state"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          }
+        }
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "featureId",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "selectFeaturePlanningSkills",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Origin",
+            "required": true,
+            "schema": {
+              "format": "uri",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Kestrel-CSRF",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelectPlanningSkillsCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeaturePlanningSkills"
                 }
               }
             },

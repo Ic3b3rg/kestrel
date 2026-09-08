@@ -15,6 +15,7 @@ import { Button } from "./components/ui/button.js";
 import { DocumentInspector, failures, pendingTurn } from "./PlanningDetails.js";
 import { FeaturePlanPanel } from "./FeaturePlanPanel.js";
 import { FeatureBoardPanel } from "./FeatureBoardPanel.js";
+import { PlanningSkillsPanel, SkillProvenance } from "./PlanningSkillsPanel.js";
 import { FeatureGitHubIssuesPanel } from "./FeatureGitHubIssuesPanel.js";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs.js";
 import { Label } from "./components/ui/label.js";
@@ -185,7 +186,11 @@ export function FeatureChatPanel({
       return;
     void runAttempt({
       kind: "send",
-      command: { requestId: crypto.randomUUID(), text: draft.trim() },
+      command: {
+        requestId: crypto.randomUUID(),
+        text: draft.trim(),
+        ...(chat.skills === undefined ? {} : { skillSelectionVersion: chat.skills.version }),
+      },
     });
   };
   const editable = chat?.feature.state === "planning";
@@ -236,6 +241,16 @@ export function FeatureChatPanel({
         </div>
         <div className="feature-planning-actions">
           <DocumentInspector context={chat.context} />
+          <PlanningSkillsPanel
+            projectId={projectId}
+            featureId={featureId}
+            online={online}
+            editable={editable && activeTurn === undefined}
+            selection={chat.skills ?? { schemaVersion: 1, version: 0, skills: [] }}
+            onChanged={() => void refresh()}
+            onAuthenticationError={onAuthenticationError}
+          />
+
           <FeatureGitHubIssuesPanel
             projectId={projectId}
             featureId={featureId}
@@ -305,6 +320,14 @@ export function FeatureChatPanel({
           {chat.context?.notice === null || chat.context?.notice === undefined ? null : (
             <p className="planning-notice">{chat.context.notice}</p>
           )}
+          {(chat.skills?.skills.length ?? 0) === 0 ? null : (
+            <p
+              className="text-xs text-muted-foreground"
+              aria-label="Skills guiding the next message"
+            >
+              Next message: {chat.skills?.skills.map((skill) => `$${skill.name}`).join(", ")}
+            </p>
+          )}
           {chat.messages.length === 0 && editable ? (
             <div className="planning-empty">
               <h2>What do you want to build?</h2>
@@ -342,6 +365,10 @@ export function FeatureChatPanel({
                       </time>
                     </header>
                     <div className="planning-message-content">{message.content}</div>
+                    <SkillProvenance
+                      skills={turn?.skills ?? []}
+                      onAuthenticationError={onAuthenticationError}
+                    />
                   </article>
                   {message.role !== "user" ||
                   turn === undefined ||
@@ -470,6 +497,7 @@ export function FeatureChatPanel({
         </TabsContent>
         <TabsContent value="plan" forceMount className="data-[state=inactive]:hidden">
           <FeaturePlanPanel
+            {...(chat.skills === undefined ? {} : { skillSelectionVersion: chat.skills.version })}
             projectId={projectId}
             featureId={featureId}
             online={online}

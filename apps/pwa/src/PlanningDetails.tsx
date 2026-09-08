@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { FileText } from "lucide-react";
 import type { FeatureChat, PlanningFailure, PlanningTurn } from "@kestrel/contracts";
+import { SkillProvenance } from "./PlanningSkillsPanel.js";
 import { Button } from "./components/ui/button.js";
 import {
   Dialog,
@@ -91,6 +92,7 @@ export function DocumentInspector({
             Source commit <code>{context.commitId}</code>
           </p>
         )}
+        <SkillProvenance skills={context?.skills ?? []} />
         {context === null ? (
           <p>{emptyMessage}</p>
         ) : context.documents.length === 0 ? (

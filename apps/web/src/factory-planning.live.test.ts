@@ -10,6 +10,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   FeatureChatSchema,
+  PlanningSkillBundleSchema,
+  PlanningSkillCandidatesSchema,
   FeatureListSchema,
   FeatureSchema,
   FeaturePlanVersionSchema,
@@ -25,6 +27,8 @@ import {
   createPool,
   FACTORY_PLANNING_QUEUE,
   FACTORY_PLANNING_QUEUE_OPTIONS,
+  FACTORY_PUBLICATION_QUEUE,
+  FACTORY_PUBLICATION_QUEUE_OPTIONS,
   migrate,
   openLocalProject,
 } from "@kestrel/database";
@@ -80,6 +84,8 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX === "1")(
       const repositoryRoot = join(directory, "repositories");
       const repository = join(repositoryRoot, "notes");
       const artifactRoot = join(directory, "artifacts");
+      const skillRoot = join(directory, "planning-skills");
+      const previousSkillRoot = process.env.KESTREL_PLANNING_SKILL_ROOT;
       const runGit = (args: string[]) =>
         execFileAsync(git, args, {
           cwd: repository,
@@ -107,6 +113,16 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX === "1")(
       try {
         await mkdir(repository, { recursive: true });
         await mkdir(artifactRoot, { mode: 0o700 });
+        await mkdir(join(skillRoot, "unicode-export"), { recursive: true });
+        await writeFile(
+          join(skillRoot, "unicode-export/SKILL.md"),
+          "---\nname: unicode-export\ndescription: Clarify Unicode export guarantees.\n---\nFollow the [Unicode checklist](unicode-checklist.md) when discussing exports and generating their plan.\n",
+        );
+        await writeFile(
+          join(skillRoot, "unicode-export/unicode-checklist.md"),
+          "Before finalizing the export, ask whether accented characters and emoji must remain unchanged. Include the exact phrase Unicode round-trip in that question. Once the Operator agrees, preserve that guarantee in the generated plan and include an explicit Unicode or emoji example in an acceptance outcome.\n",
+        );
+        process.env.KESTREL_PLANNING_SKILL_ROOT = skillRoot;
         await runGit(["init", "--initial-branch=main"]);
         await writeFile(join(repository, "CONTEXT.md"), committed);
         await writeFile(
@@ -179,6 +195,7 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX === "1")(
         await migrator.start();
         await migrate(owner);
         await migrator.createQueue(FACTORY_PLANNING_QUEUE, FACTORY_PLANNING_QUEUE_OPTIONS);
+        await migrator.createQueue(FACTORY_PUBLICATION_QUEUE, FACTORY_PUBLICATION_QUEUE_OPTIONS);
         const credentials = { username: "factory-fixture", password: `Fixture-${randomUUID()}` };
         await bootstrapOperator(owner, {
           username: credentials.username,
@@ -283,11 +300,35 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX === "1")(
         const feature = FeatureSchema.parse(await creation.json());
         const path = `${collection}/${feature.id}`;
         const readChat = async () => FeatureChatSchema.parse(await (await request(path)).json());
+        const candidates = PlanningSkillCandidatesSchema.parse(
+          await (await request("/api/v1/planning-skills/candidates")).json(),
+        );
+        expect(candidates.candidates).toHaveLength(1);
+        const imported = await request("/api/v1/planning-skills/install", {
+          requestId: randomUUID(),
+          candidateId: candidates.candidates[0]?.candidateId,
+        });
+        expect(imported.status).toBe(201);
+        const skill = PlanningSkillBundleSchema.parse(await imported.json());
+        expect(skill.files.map((file) => file.path)).toEqual(["SKILL.md", "unicode-checklist.md"]);
+        expect(
+          (
+            await request(`${path}/skills`, {
+              requestId: randomUUID(),
+              expectedVersion: 0,
+              digests: [skill.contentDigest],
+            })
+          ).status,
+        ).toBe(200);
         for (const text of [
           "Voglio esportare le note. Fai una domanda breve sul requisito mancante, citando CONTEXT.md.",
-          "Confermo Markdown e tutte le note. Registra la decisione e chiedi un ultimo criterio verificabile, in modo breve.",
+          "Confermo Markdown e tutte le note. I caratteri accentati e le emoji devono restare identici. Registra la decisione e chiedi un ultimo criterio verificabile, in modo breve.",
         ]) {
-          const sent = await request(`${path}/messages`, { requestId: randomUUID(), text });
+          const sent = await request(`${path}/messages`, {
+            requestId: randomUUID(),
+            text,
+            skillSelectionVersion: 1,
+          });
           expect(sent.status).toBe(202);
           const accepted = PlanningTurnAcceptedSchema.parse(await sent.json());
           const until = Date.now() + 55_000;
@@ -324,6 +365,13 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX === "1")(
           expect(message.content.length).toBeGreaterThan(10);
           expect(message.content.length).toBeLessThanOrEqual(32_000);
         }
+        expect(chat.messages.find((message) => message.role === "assistant")?.content).toContain(
+          "Unicode round-trip",
+        );
+        expect(
+          chat.turns.every((turn) => turn.skills?.[0]?.contentDigest === skill.contentDigest),
+        ).toBe(true);
+        expect(chat.context?.skills?.[0]?.contentDigest).toBe(skill.contentDigest);
         expect(chat.context?.commitId).toBe(commitOutput.trim());
         expect(
           chat.context?.documents.find(({ path: documentPath }) => documentPath === "CONTEXT.md")
@@ -363,6 +411,7 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX === "1")(
             workItems: [
               {
                 key: "export",
+                importedIssueId: null,
                 title: "Implement and verify the Markdown export",
                 description:
                   "Add one export operation without changing stored notes. Include all note titles and unchanged bodies in current order. Add the Node regression file tests/export.test.mjs as part of the work.",
@@ -394,6 +443,7 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX === "1")(
         const generation = await request(`${path}/plans/generate`, {
           requestId: randomUUID(),
           expectedVersion: 1,
+          skillSelectionVersion: 1,
         });
         expect(generation.status).toBe(202);
         const generatedTurn = PlanningTurnAcceptedSchema.parse(await generation.json());
@@ -415,6 +465,11 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX === "1")(
         expect(plans.current?.author).toBe("assistant");
         expect(plans.current?.sourceContext?.commitId).toBe(commitOutput.trim());
         expect(plans.current?.planMarkdown).toContain(commitOutput.trim());
+        expect(plans.current?.sourceContext?.skills?.[0]?.contentDigest).toBe(skill.contentDigest);
+        expect(plans.current?.planMarkdown).toContain(skill.contentDigest);
+        expect(JSON.stringify(plans.current?.document.acceptance)).toMatch(
+          /unicode|emoji|accent/iu,
+        );
         expect(plans.current?.document.workItems.length).toBeGreaterThan(0);
         expect(plans.current?.document.limits.attemptTimeoutSeconds).toBe(1800);
         const approval = await request(`${path}/plans/2/approve`, { requestId: randomUUID() });
@@ -429,6 +484,8 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX === "1")(
         expect((await runGit(["rev-parse", "HEAD"])).stdout).toBe(commitOutput);
         expect(queueFailed).toBe(false);
       } finally {
+        if (previousSkillRoot === undefined) delete process.env.KESTREL_PLANNING_SKILL_ROOT;
+        else process.env.KESTREL_PLANNING_SKILL_ROOT = previousSkillRoot;
         await Promise.allSettled([
           app?.close(),
           boss?.stop({ graceful: false }),

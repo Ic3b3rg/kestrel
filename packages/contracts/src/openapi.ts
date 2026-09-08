@@ -1,6 +1,14 @@
 import { z, type ZodType } from "zod";
 import { FactoryExecutionSchema, FactoryExecutionRunSchema } from "./factory-execution.js";
 import {
+  PlanningSkillBundleSchema,
+  PlanningSkillCandidatesSchema,
+  PlanningSkillCatalogSchema,
+  FeaturePlanningSkillsSchema,
+  InstallPlanningSkillCommandSchema,
+  SelectPlanningSkillsCommandSchema,
+} from "./factory-skills.js";
+import {
   FactoryGitHubIssuesSchema,
   FactoryIssueImportsSchema,
   ImportFactoryIssuesCommandSchema,
@@ -155,6 +163,12 @@ export const reviewWorkflowAcceptedJsonSchema = asJsonSchema(ReviewWorkflowAccep
 export const startReviewWorkflowCommandJsonSchema = asJsonSchema(StartReviewWorkflowCommandSchema);
 
 const factoryComponents = {
+  PlanningSkillBundle: asComponentSchema(asJsonSchema(PlanningSkillBundleSchema)),
+  PlanningSkillCandidates: asComponentSchema(asJsonSchema(PlanningSkillCandidatesSchema)),
+  PlanningSkillCatalog: asComponentSchema(asJsonSchema(PlanningSkillCatalogSchema)),
+  FeaturePlanningSkills: asComponentSchema(asJsonSchema(FeaturePlanningSkillsSchema)),
+  InstallPlanningSkillCommand: asComponentSchema(asJsonSchema(InstallPlanningSkillCommandSchema)),
+  SelectPlanningSkillsCommand: asComponentSchema(asJsonSchema(SelectPlanningSkillsCommandSchema)),
   FactoryExecution: asComponentSchema(asJsonSchema(FactoryExecutionSchema)),
   FactoryExecutionRun: asComponentSchema(asJsonSchema(FactoryExecutionRunSchema)),
   FactoryGitHubIssues: asComponentSchema(asJsonSchema(FactoryGitHubIssuesSchema)),
@@ -1704,6 +1718,41 @@ export const openApiDocument = sortJson({
           },
         },
       },
+    },
+    "/api/v1/planning-skills": {
+      get: factoryRead("readPlanningSkillCatalog", "PlanningSkillCatalog"),
+    },
+    "/api/v1/planning-skills/candidates": {
+      get: factoryRead("readHostPlanningSkillCandidates", "PlanningSkillCandidates"),
+    },
+    "/api/v1/planning-skills/{digest}": {
+      parameters: [
+        {
+          in: "path",
+          name: "digest",
+          required: true,
+          schema: { type: "string", pattern: "^[a-f0-9]{64}$" },
+        },
+      ],
+      get: factoryRead("readRetainedPlanningSkill", "PlanningSkillBundle"),
+    },
+    "/api/v1/planning-skills/install": {
+      post: factoryTurnMutation(
+        "importHostPlanningSkill",
+        "InstallPlanningSkillCommand",
+        "PlanningSkillBundle",
+        201,
+      ),
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/skills": {
+      parameters: factoryParameters(),
+      get: factoryRead("readFeaturePlanningSkills", "FeaturePlanningSkills"),
+      post: factoryTurnMutation(
+        "selectFeaturePlanningSkills",
+        "SelectPlanningSkillsCommand",
+        "FeaturePlanningSkills",
+        200,
+      ),
     },
     "/api/v1/session": {
       get: {

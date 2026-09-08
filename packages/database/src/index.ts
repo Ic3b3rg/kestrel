@@ -30,3 +30,5 @@ export { createPool, type CreatePoolOptions, type DatabasePool } from "./pool.js
 export { verifyDatabaseReadiness } from "./readiness.js";
 export * from "./factory-execution-read.js";
 export * from "./factory-execution.js";
+
+export * from "./factory-skills.js";

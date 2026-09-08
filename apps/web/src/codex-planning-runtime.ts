@@ -289,7 +289,7 @@ export function createCodexPlanningRuntime(options: CodexPlanningOptions = {}) {
         throw new CodexPlanningError("invalid_response");
       boundedString(input.model, 128);
       boundedString(input.requestId);
-      boundedString(input.prompt, 256 * 1024);
+      boundedString(input.prompt, 512 * 1024);
       if (input.threadId !== undefined) boundedString(input.threadId);
       if (input.signal?.aborted) throw new CodexPlanningError("cancelled");
       let session: PlanningSession | undefined;
