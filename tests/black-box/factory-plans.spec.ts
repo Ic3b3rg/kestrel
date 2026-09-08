@@ -203,7 +203,7 @@ test.describe("Feature plan approval", () => {
       await expect(stalePage.getByRole("region", { name: label, exact: true })).toBeVisible();
     }
     await expect(
-      stalePage.getByText("Execution is not available yet.", { exact: true }),
+      stalePage.getByRole("region", { name: "Feature execution", exact: true }),
     ).toBeVisible();
     await stalePage.getByRole("button", { name: "2. Search saved reports", exact: true }).click();
     const item = stalePage.getByRole("dialog", { name: "Search saved reports", exact: true });

@@ -478,6 +478,17 @@ export function reserveFactoryExecutionContainer(
       "INSERT INTO factory_execution_containers (name, run_id, phase) VALUES ($1,$2,$3)",
       [name, run.id, phase],
     );
+    if (phase === "implementation")
+      await client.query("UPDATE factory_execution_runs SET state = 'running' WHERE id = $1", [
+        run.id,
+      ]);
+    else {
+      if (row.revision === null)
+        throw new FactoryError("conflict", "Verification requires an exact checkpoint");
+      await client.query("UPDATE factory_execution_runs SET state = 'verifying' WHERE id = $1", [
+        run.id,
+      ]);
+    }
   });
 }
 

@@ -82,6 +82,46 @@ describe("persistent planning conversation", () => {
     });
   }
 
+  it("keeps an implementing feature distinct from cancellation while planning remains frozen", async () => {
+    await render({
+      loadChat: () =>
+        Promise.resolve({
+          ...initial,
+          feature: { ...initial.feature, state: "implementing" },
+          turns: [],
+        }),
+    });
+    expect(container.textContent).toContain("In progress");
+    expect(container.textContent).not.toContain("Cancelled ·");
+    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.disabled).toBe(true);
+  });
+
+  it("updates execution status without an active planning turn or a manual refresh", async () => {
+    vi.useFakeTimers();
+    const loadChat = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ...initial,
+        feature: { ...initial.feature, state: "implementing" },
+        turns: [],
+      })
+      .mockResolvedValue({
+        ...initial,
+        feature: { ...initial.feature, state: "in_review" },
+        turns: [],
+      });
+    try {
+      await render({ loadChat });
+      expect(container.textContent).toContain("In progress");
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      expect(container.textContent).toContain("In review");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("stops only the explicitly selected pending turn and preserves the accepted message", async () => {
     let chat = initial;
     const cancelTurn = vi.fn(() => {

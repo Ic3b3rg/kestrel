@@ -15,7 +15,8 @@ const DEFAULT_DATABASE_PORT = 54_320;
 const DEFAULT_WEB_PORT = 3_000;
 const DEFAULT_PWA_PORT = 5_173;
 const DEFAULT_STARTUP_TIMEOUT_MS = 60_000;
-const PROCESS_STOP_TIMEOUT_MS = 5_000;
+// Container teardown has bounded Docker operations, followed by the queue drain.
+const PROCESS_STOP_TIMEOUT_MS = 90_000;
 
 function readPositiveInteger(environment, key, defaultValue, maximum = 65_535) {
   const value = environment[key] ?? String(defaultValue);
@@ -297,6 +298,20 @@ async function main() {
   }
 
   const docker = await resolveDocker(environment);
+  let executionImage = environment.KESTREL_FACTORY_EXECUTION_IMAGE;
+  if (executionImage === undefined) {
+    try {
+      executionImage = (await readFile(join(stateRoot, "factory-execution-image"), "utf8")).trim();
+    } catch (error) {
+      if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT") throw error;
+    }
+  }
+  if (executionImage !== undefined && !/^sha256:[a-f0-9]{64}$/u.test(executionImage))
+    throw new Error(
+      "KESTREL_FACTORY_EXECUTION_IMAGE must be an immutable image ID; run npm run factory:prepare",
+    );
+  if (executionImage !== undefined) webEnvironment.KESTREL_FACTORY_EXECUTION_IMAGE = executionImage;
+  webEnvironment.KESTREL_FACTORY_DOCKER_EXECUTABLE = docker;
   const compose = ["compose", "-f", "compose.yaml", "-f", "compose.local.yaml"];
   const dockerEnvironment = {
     ...environmentForDocker(docker, environment),

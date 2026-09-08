@@ -274,8 +274,12 @@ const stop = (signal) => {
     console.error("npm error Lifecycle script failed");
   }
   record("stop", signal);
-  if (server) server.close(() => process.exit(0));
-  else process.exit(0);
+  const finish = () => setTimeout(() => {
+    record("stopped", signal);
+    process.exit(0);
+  }, service === "web" ? 5_500 : 0);
+  if (server) server.close(finish);
+  else finish();
 };
 process.once("SIGINT", () => stop("SIGINT"));
 process.once("SIGTERM", () => stop("SIGTERM"));
@@ -330,7 +334,7 @@ setInterval(() => undefined, 1_000);
                 `Timed out waiting for npm to exit (code=${String(child.exitCode)}, signal=${String(child.signalCode)}): ${output}`,
               ),
             ),
-          2_000,
+          8_000,
         );
       }),
     ]);
@@ -433,6 +437,11 @@ setInterval(() => undefined, 1_000);
         .map((entry) => entry.service)
         .sort(),
     ).toEqual(["pwa", "web", "worker"]);
+    expect(
+      entries.some(
+        (entry) => entry.kind === "npm" && entry.phase === "stopped" && entry.service === "web",
+      ),
+    ).toBe(true);
     const web = entries.find(
       (entry) => entry.kind === "npm" && entry.phase === "start" && entry.service === "web",
     );

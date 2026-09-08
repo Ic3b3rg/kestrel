@@ -297,12 +297,15 @@ export function FeatureBoardPanel({
       !online ||
       loading ||
       error !== null ||
-      (publication?.state !== "pending" && publication?.state !== "publishing")
+      (publication?.state !== "pending" &&
+        publication?.state !== "publishing" &&
+        board?.feature.state !== "queued" &&
+        board?.feature.state !== "implementing")
     )
       return;
     const timer = window.setTimeout(() => setGeneration((value) => value + 1), 1000);
     return () => window.clearTimeout(timer);
-  }, [online, loading, error, publication, generation]);
+  }, [online, loading, error, publication, board, generation]);
   const retry = async () => {
     if (!online || submitting.current) return;
     attempt.current ??= { requestId: crypto.randomUUID() };
