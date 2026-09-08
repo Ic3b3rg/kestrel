@@ -96,6 +96,15 @@ async function boardFor(client: PoolClient, feature: FeatureRow): Promise<Factor
     summary,
     createdAt,
   });
+  const gate =
+    feature.state === "gated"
+      ? (
+          await client.query<{ question: string; decision: string | null }>(
+            "SELECT question, decision FROM factory_human_gates WHERE feature_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1",
+            [feature.id],
+          )
+        ).rows[0]
+      : undefined;
   const items = rows.rows.map((row) => {
     const definition = approved?.workItems.find(({ key }) => key === row.key);
     if (definition === undefined) throw new Error("An approved Work Item definition is missing");
@@ -122,8 +131,12 @@ async function boardFor(client: PoolClient, feature: FeatureRow): Promise<Factor
             : feature.state === "gated"
               ? {
                   kind: "human_gate",
-                  explanation:
-                    "This feature needs your decision. Inspect its execution attempt for the question and retained evidence.",
+                  explanation: (gate?.decision === "requires_plan_change"
+                    ? "The approved plan must change. Execution remains paused. "
+                    : "Your decision is needed: "
+                  )
+                    .concat(gate?.question ?? "Open execution to inspect the retained attempt.")
+                    .slice(0, 2000),
                 }
               : dependencies.length > 0
                 ? {

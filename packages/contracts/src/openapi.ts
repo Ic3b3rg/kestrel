@@ -1,5 +1,6 @@
 import { z, type ZodType } from "zod";
 import { FactoryExecutionSchema, FactoryExecutionRunSchema } from "./factory-execution.js";
+import { FactoryGateSchema, ResolveFactoryGateCommandSchema } from "./factory-gates.js";
 import {
   StartPlanningFeatureCommandSchema,
   PlanningFeatureStartedSchema,
@@ -181,6 +182,8 @@ const factoryComponents = {
   SelectPlanningSkillsCommand: asComponentSchema(asJsonSchema(SelectPlanningSkillsCommandSchema)),
   FactoryExecution: asComponentSchema(asJsonSchema(FactoryExecutionSchema)),
   FactoryExecutionRun: asComponentSchema(asJsonSchema(FactoryExecutionRunSchema)),
+  FactoryGate: asComponentSchema(asJsonSchema(FactoryGateSchema)),
+  ResolveFactoryGateCommand: asComponentSchema(asJsonSchema(ResolveFactoryGateCommandSchema)),
   FactoryGitHubIssues: asComponentSchema(asJsonSchema(FactoryGitHubIssuesSchema)),
   FactoryIssueImports: asComponentSchema(asJsonSchema(FactoryIssueImportsSchema)),
   ImportFactoryIssuesCommand: asComponentSchema(asJsonSchema(ImportFactoryIssuesCommandSchema)),
@@ -1017,6 +1020,25 @@ export const openApiDocument = sortJson({
         { in: "path", name: "runId", required: true, schema: { type: "string", format: "uuid" } },
       ],
       get: factoryRead("readFactoryExecutionRun", "FactoryExecutionRun"),
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/execution/gates/{gateId}": {
+      parameters: [
+        ...factoryParameters(),
+        { in: "path", name: "gateId", required: true, schema: { type: "string", format: "uuid" } },
+      ],
+      get: factoryRead("readFactoryGate", "FactoryGate"),
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/execution/gates/{gateId}/resolve": {
+      parameters: [
+        ...factoryParameters(),
+        { in: "path", name: "gateId", required: true, schema: { type: "string", format: "uuid" } },
+      ],
+      post: factoryTurnMutation(
+        "resolveFactoryGate",
+        "ResolveFactoryGateCommand",
+        "FactoryGate",
+        200,
+      ),
     },
     "/api/v1/projects/{projectId}/features/{featureId}/cancel": {
       parameters: factoryParameters(),
