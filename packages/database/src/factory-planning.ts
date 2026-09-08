@@ -1,5 +1,6 @@
 import {
   FeatureSchema,
+  PlanningSkillDigestsSchema,
   FeaturePlanDocumentSchema,
   PlanningContextSchema,
   PlanningMessageSchema,
@@ -13,8 +14,15 @@ import {
   type SendPlanningMessageCommand,
   type FeaturePlanDocument,
   type ImportedFactoryIssue,
+  type PlanningSkillBundle,
 } from "@kestrel/contracts";
 import type { PoolClient } from "pg";
+import {
+  planningSkillSelection,
+  readPlanningSkills,
+  resolvePlanningSkillInvocation,
+  retainedSkillSummaries,
+} from "./factory-skills.js";
 
 import type { DatabasePool } from "./pool.js";
 import { factoryImportsFor } from "./factory-issue-imports.js";
@@ -44,6 +52,7 @@ export interface FeatureRow {
   title: string;
   state: string;
   planning_context: unknown;
+  skill_selection_version: number;
   runtime_thread_id: string | null;
   latest_plan_version: number | null;
   approved_plan_version: number | null;
@@ -61,6 +70,7 @@ export interface ClaimedPlanningTurn {
   expectedPlanVersion: number | null;
   previousPlan: FeaturePlanDocument | null;
   imports?: ImportedFactoryIssue[];
+  skills?: PlanningSkillBundle[];
   messages: FeatureChat["messages"];
   source: { repositoryId: string; identity: string } | null;
 }
@@ -96,9 +106,10 @@ export async function claimPlanningTurn(
     feature_id: string;
     purpose: "conversation" | "plan";
     expected_plan_version: number | null;
+    skill_digests: unknown;
   }>(
     `UPDATE factory_planning_turns SET state = 'running', started_at = clock_timestamp()
-     WHERE id = $1 AND state = 'queued' RETURNING feature_id, purpose, expected_plan_version`,
+     WHERE id = $1 AND state = 'queued' RETURNING feature_id, purpose, expected_plan_version, skill_digests`,
     [turnId],
   );
   const claimed = result.rows[0];
@@ -118,6 +129,14 @@ export async function claimPlanningTurn(
     [row.project_id],
   );
   const attached = source.rows[0];
+  const skills = await readPlanningSkills(pool, claimed.skill_digests);
+  const previousSkills = await pool.query<{ skill_digests: unknown }>(
+    "SELECT skill_digests FROM factory_planning_turns WHERE feature_id = $1 AND id <> $2 ORDER BY created_at DESC, id DESC LIMIT 1",
+    [featureId, turnId],
+  );
+  const sameSkills =
+    JSON.stringify(previousSkills.rows[0]?.skill_digests ?? []) ===
+    JSON.stringify(claimed.skill_digests);
   const previous =
     claimed.purpose === "plan" && claimed.expected_plan_version !== null
       ? await pool.query<{ document: unknown }>(
@@ -129,7 +148,8 @@ export async function claimPlanningTurn(
     id: turnId,
     featureId,
     projectId: chat.feature.projectId,
-    threadId: claimed.purpose === "plan" ? null : row.runtime_thread_id,
+    threadId: claimed.purpose === "plan" || !sameSkills ? null : row.runtime_thread_id,
+    skills,
     purpose: claimed.purpose,
     expectedPlanVersion: claimed.expected_plan_version,
     previousPlan:
@@ -253,6 +273,8 @@ interface TurnRow {
   completed_at: Date | null;
   purpose: "conversation" | "plan";
   expected_plan_version: number | null;
+  skill_digests: unknown;
+  requested_skill_selection_version: number | null;
 }
 
 async function inTransaction<T>(
@@ -364,6 +386,10 @@ export async function readFactoryChat(
       [featureId],
     ),
   ]);
+  const summaries = await retainedSkillSummaries(
+    pool,
+    turns.rows.map(({ skill_digests }) => skill_digests),
+  );
   return {
     schemaVersion: 1,
     feature: mapFactoryFeature(row),
@@ -385,10 +411,14 @@ export async function readFactoryChat(
         createdAt: turn.created_at.toISOString(),
         startedAt: turn.started_at?.toISOString() ?? null,
         completedAt: turn.completed_at?.toISOString() ?? null,
+        skills: PlanningSkillDigestsSchema.parse(turn.skill_digests).map((digest) =>
+          summaries.get(digest),
+        ),
       }),
     ),
     context:
       row.planning_context === null ? null : PlanningContextSchema.parse(row.planning_context),
+    skills: await planningSkillSelection(pool, featureId, row.skill_selection_version),
   };
 }
 
@@ -409,8 +439,9 @@ export async function acceptPlanningMessage(
       content: string;
       purpose: string;
       expected_plan_version: number | null;
+      requested_skill_selection_version: number | null;
     }>(
-      `SELECT turn.id, turn.message_id, message.content, turn.purpose, turn.expected_plan_version FROM factory_planning_turns AS turn
+      `SELECT turn.id, turn.message_id, message.content, turn.purpose, turn.expected_plan_version, turn.requested_skill_selection_version FROM factory_planning_turns AS turn
        JOIN factory_planning_messages AS message ON message.id = turn.message_id
        WHERE turn.feature_id = $1 AND turn.request_id = $2`,
       [featureId, command.requestId],
@@ -420,12 +451,21 @@ export async function acceptPlanningMessage(
       if (
         existing.content !== command.text ||
         existing.purpose !== purpose ||
-        existing.expected_plan_version !== expectedVersion
+        existing.expected_plan_version !== expectedVersion ||
+        existing.requested_skill_selection_version !== (command.skillSelectionVersion ?? null)
       )
         throw new FactoryError("conflict");
       return { schemaVersion: 1, turnId: existing.id, messageId: existing.message_id };
     }
     if (row.state !== "planning") throw new FactoryError("conflict");
+    if (
+      command.skillSelectionVersion !== undefined &&
+      command.skillSelectionVersion !== row.skill_selection_version
+    )
+      throw new FactoryError(
+        "conflict",
+        "The selected Skills changed. Refresh before sending this message.",
+      );
     if (planIntent !== undefined) {
       if (row.latest_plan_version !== expectedVersion) throw new FactoryError("conflict");
       if ((row.latest_plan_version ?? 0) >= 200) throw new FactoryError("plan_limit");
@@ -445,6 +485,26 @@ export async function acceptPlanningMessage(
       [featureId],
     );
     if (Number(turnCount.rows[0]?.count) >= 400) throw new FactoryError("conversation_limit");
+    const selection = await planningSkillSelection(client, featureId, row.skill_selection_version);
+    const selected = selection.skills.map(({ contentDigest }) => contentDigest);
+    const skillDigests = await resolvePlanningSkillInvocation(client, command.text, selected);
+    if (JSON.stringify(selected) !== JSON.stringify(skillDigests)) {
+      if (row.skill_selection_version >= 1000)
+        throw new FactoryError("conflict", "The Skill selection limit was reached");
+      await client.query(
+        "INSERT INTO factory_feature_skill_selections (feature_id,version,request_id,digests) VALUES ($1,$2,$3,$4::jsonb)",
+        [
+          featureId,
+          row.skill_selection_version + 1,
+          command.requestId,
+          JSON.stringify(skillDigests),
+        ],
+      );
+      await client.query(
+        "UPDATE factory_features SET skill_selection_version = skill_selection_version + 1, runtime_thread_id = NULL WHERE id = $1",
+        [featureId],
+      );
+    }
     const inserted = await client.query<{ id: string }>(
       "INSERT INTO factory_planning_messages (feature_id, role, content) VALUES ($1, 'user', $2) RETURNING id",
       [featureId, command.text],
@@ -452,8 +512,16 @@ export async function acceptPlanningMessage(
     const messageId = inserted.rows[0]?.id;
     if (messageId === undefined) throw new Error("Planning message was not persisted");
     const turn = await client.query<{ id: string }>(
-      "INSERT INTO factory_planning_turns (feature_id, message_id, request_id, purpose, expected_plan_version) VALUES ($1, $2, $3, $4, $5) RETURNING id",
-      [featureId, messageId, command.requestId, purpose, expectedVersion],
+      "INSERT INTO factory_planning_turns (feature_id, message_id, request_id, purpose, expected_plan_version, skill_digests, requested_skill_selection_version) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7) RETURNING id",
+      [
+        featureId,
+        messageId,
+        command.requestId,
+        purpose,
+        expectedVersion,
+        JSON.stringify(skillDigests),
+        command.skillSelectionVersion ?? null,
+      ],
     );
     const turnId = turn.rows[0]?.id;
     if (turnId === undefined) throw new Error("Planning turn was not persisted");
@@ -544,8 +612,16 @@ export async function retryPlanningTurn(
     )
       throw new FactoryError("conflict");
     const inserted = await client.query<{ id: string }>(
-      "INSERT INTO factory_planning_turns (feature_id, message_id, request_id, purpose, expected_plan_version) VALUES ($1, $2, $3, $4, $5) RETURNING id",
-      [featureId, original.message_id, requestId, original.purpose, original.expected_plan_version],
+      "INSERT INTO factory_planning_turns (feature_id, message_id, request_id, purpose, expected_plan_version, skill_digests, requested_skill_selection_version) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7) RETURNING id",
+      [
+        featureId,
+        original.message_id,
+        requestId,
+        original.purpose,
+        original.expected_plan_version,
+        JSON.stringify(original.skill_digests),
+        original.requested_skill_selection_version,
+      ],
     );
     const newTurnId = inserted.rows[0]?.id;
     if (newTurnId === undefined) throw new Error("Retry was not persisted");

@@ -1,3 +1,4 @@
+import { readPlanningSkills, skillSummary } from "./factory-skills.js";
 import {
   FactoryBoardSchema,
   FeaturePlanDocumentSchema,
@@ -487,7 +488,7 @@ export async function completeGeneratedFactoryPlan(
   render: FactoryPlanArtifactRenderer,
 ): Promise<void> {
   const document = FeaturePlanDocumentSchema.parse(plan);
-  const context = PlanningContextSchema.parse(sourceContext);
+  let context = PlanningContextSchema.parse(sourceContext);
   const errors = validateFeaturePlan(document);
   if (errors.length > 0) throw new FactoryError("invalid_plan", errors.slice(0, 8).join("; "));
   await withFactoryFeature(pool, turn.projectId, turn.featureId, async (client, feature) => {
@@ -496,8 +497,9 @@ export async function completeGeneratedFactoryPlan(
       purpose: string;
       expected_plan_version: number | null;
       request_id: string;
+      skill_digests: unknown;
     }>(
-      "SELECT state, purpose, expected_plan_version, request_id FROM factory_planning_turns WHERE id = $1 AND feature_id = $2 FOR UPDATE",
+      "SELECT state, purpose, expected_plan_version, request_id, skill_digests FROM factory_planning_turns WHERE id = $1 AND feature_id = $2 FOR UPDATE",
       [turn.id, turn.featureId],
     );
     const current = selected.rows[0];
@@ -512,6 +514,13 @@ export async function completeGeneratedFactoryPlan(
     )
       throw new FactoryError("conflict");
     if ((feature.latest_plan_version ?? 0) >= 200) throw new FactoryError("plan_limit");
+    const skills = (await readPlanningSkills(client, current.skill_digests)).map(skillSummary);
+    const sourceFacts = { ...context };
+    delete sourceFacts.skills;
+    context = PlanningContextSchema.parse({
+      ...sourceFacts,
+      ...(skills.length === 0 ? {} : { skills }),
+    });
     const imports = await assertFactoryPlanImports(client, turn.featureId, document, false);
     const version = (feature.latest_plan_version ?? 0) + 1;
     const artifacts = render({ title: feature.title, version, plan: document, context, imports });

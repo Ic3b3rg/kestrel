@@ -3,7 +3,7 @@ import { z } from "zod";
 export const PlanningSkillDigestSchema = z.string().regex(/^[a-f0-9]{64}$/u);
 export const PlanningSkillSourceSchema = z.strictObject({
   kind: z.literal("host"),
-  label: z.string().min(1).max(160),
+  label: z.string().min(1).max(255),
   candidateId: PlanningSkillDigestSchema,
 });
 export const PlanningSkillSummarySchema = z.strictObject({
@@ -64,9 +64,9 @@ export const PlanningSkillCandidatesSchema = z.strictObject({
   configured: z.boolean(),
   candidates: z
     .array(
-      z.strictObject({ candidateId: PlanningSkillDigestSchema, label: z.string().min(1).max(160) }),
+      z.strictObject({ candidateId: PlanningSkillDigestSchema, label: z.string().min(1).max(255) }),
     )
-    .max(200),
+    .max(256),
 });
 export const PlanningSkillCatalogSchema = z.strictObject({
   schemaVersion: z.literal(1),

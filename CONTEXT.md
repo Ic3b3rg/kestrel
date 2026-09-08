@@ -266,6 +266,10 @@ _Avoid_: Change Proposal, GitHub Issue, pull request
 A durable Feature-scoped conversation inside Kestrel that resolves goals, scope, trade-offs, and the Feature Plan before delegated development proceeds.
 _Avoid_: Review Thread, prompt, task description
 
+**Planning Skill**:
+A named procedure imported into Kestrel as retained instructions and supported Markdown references. A Planning Session selects exact versions to guide questions and plan generation within existing planning authority; accepted turns and generated Feature Plans preserve their provenance.
+_Avoid_: Agent Runtime, execution authority, executable plugin
+
 **Provider Invocation**:
 A future provider-side interaction by an authorized human, such as a command or review conversation, that creates or resumes Kestrel work. It never grants development-execution authority by itself.
 _Avoid_: Provider Review Input, Provider Synchronization, Run Trigger, webhook delivery

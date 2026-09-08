@@ -40,6 +40,7 @@ export interface StartStackOptions {
   githubFixture?: string;
   gitHubRemoteMappings?: Readonly<Record<string, string>>;
   repositoryRoot?: string;
+  planningSkillRoot?: string;
   reviewRevisionMaxBytes?: number;
   reviewRevisionMaxObjects?: number;
   sessionSigningKey?: string;
@@ -153,6 +154,10 @@ export async function startStack(options: StartStackOptions = {}): Promise<Runni
     throw new Error("Black-box repository root setup failed");
   }
   const repositoryRoot = await realpath(configuredRepositoryRoot);
+  const planningSkillRoot =
+    options.planningSkillRoot === undefined ? undefined : await realpath(options.planningSkillRoot);
+  if (planningSkillRoot !== undefined && !isContained(repositoryRoot, planningSkillRoot))
+    throw new Error("The test Skill root must be within its disposable mounted repository root");
   const generatedGitToolsRoot = await mkdtemp(join(tmpdir(), "kestrel-black-box-git-tools-"));
   const gitRecorder = join(generatedGitToolsRoot, "git-recorder");
   const githubFixture = join(generatedGitToolsRoot, "factory-gh");
@@ -202,6 +207,10 @@ process.exit(result.status ?? 1);
     KESTREL_MIGRATOR_DATABASE_PASSWORD: randomBytes(32).toString("base64url"),
     KESTREL_RUNTIME_DATABASE_PASSWORD: randomBytes(32).toString("base64url"),
     KESTREL_TEST_REPOSITORY_ROOT: repositoryRoot,
+    KESTREL_TEST_PLANNING_SKILL_ROOT:
+      planningSkillRoot === undefined
+        ? ""
+        : `/fixtures/repositories/${relative(repositoryRoot, planningSkillRoot).split(sep).join("/")}`,
     KESTREL_TEST_GIT_RECORDER: gitRecorder,
     KESTREL_TEST_GH_FIXTURE: githubFixture,
     KESTREL_TEST_GH_EXECUTABLE:
