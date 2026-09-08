@@ -183,6 +183,9 @@ test.describe("Factory planning chat", () => {
     const opener = page.getByRole("button", { name: "Open navigation", exact: true });
     await opener.focus();
     await page.keyboard.press("Enter");
+    await expect(
+      page.getByRole("dialog", { name: "Workspace navigation", exact: true }),
+    ).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(opener).toBeFocused();
     await page.keyboard.press("Enter");
