@@ -22,6 +22,7 @@ import {
 } from "./api.js";
 import { planningRequestError } from "./FeatureNavigation.js";
 import { DocumentInspector, failures, pendingTurn } from "./PlanningDetails.js";
+import { ProposedDocumentsInspector } from "./FeaturePlanDocuments.js";
 import {
   emptyFeaturePlan,
   FeaturePlanDocumentView,
@@ -73,6 +74,10 @@ function planErrors(plan: FeaturePlanDocument): string[] {
     maxConcurrentProjects: "Concurrent Projects",
     maxActiveFeaturesPerProject: "Active features per Project",
     attemptTimeoutSeconds: "Attempt limit",
+    proposedDocuments: "Proposed document",
+    path: "Path",
+    markdown: "Markdown",
+    workItemKey: "Owning Work Item",
   };
   return parsed.error.issues.map(
     (issue) =>
@@ -106,6 +111,9 @@ function PlanArtifacts({ version }: { version: FeaturePlanVersion }) {
         label="Plan source documents"
         emptyMessage="No source snapshot was recorded for this plan version."
       />
+      {(version.document.proposedDocuments?.length ?? 0) === 0 ? null : (
+        <ProposedDocumentsInspector version={version} />
+      )}
     </div>
   );
 }

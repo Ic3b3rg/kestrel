@@ -4412,6 +4412,11 @@
                   "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
                   "type": "string"
                 },
+                "generatedPlanVersion": {
+                  "maximum": 200,
+                  "minimum": 1,
+                  "type": "integer"
+                },
                 "id": {
                   "format": "uuid",
                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
@@ -4922,6 +4927,57 @@
             "minLength": 1,
             "type": "string"
           },
+          "proposedDocuments": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "key": {
+                  "maxLength": 48,
+                  "minLength": 1,
+                  "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$",
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "glossary",
+                    "adr"
+                  ],
+                  "type": "string"
+                },
+                "markdown": {
+                  "maxLength": 32000,
+                  "minLength": 1,
+                  "pattern": "^[^\\x00]*$",
+                  "type": "string"
+                },
+                "path": {
+                  "maxLength": 512,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "pathIsProvisional": {
+                  "type": "boolean"
+                },
+                "workItemKey": {
+                  "maxLength": 48,
+                  "minLength": 1,
+                  "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "key",
+                "kind",
+                "path",
+                "pathIsProvisional",
+                "markdown",
+                "workItemKey"
+              ],
+              "type": "object"
+            },
+            "maxItems": 4,
+            "type": "array"
+          },
           "scope": {
             "additionalProperties": false,
             "properties": {
@@ -5158,6 +5214,57 @@
                 "maxLength": 4000,
                 "minLength": 1,
                 "type": "string"
+              },
+              "proposedDocuments": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "key": {
+                      "maxLength": 48,
+                      "minLength": 1,
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$",
+                      "type": "string"
+                    },
+                    "kind": {
+                      "enum": [
+                        "glossary",
+                        "adr"
+                      ],
+                      "type": "string"
+                    },
+                    "markdown": {
+                      "maxLength": 32000,
+                      "minLength": 1,
+                      "pattern": "^[^\\x00]*$",
+                      "type": "string"
+                    },
+                    "path": {
+                      "maxLength": 512,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "pathIsProvisional": {
+                      "type": "boolean"
+                    },
+                    "workItemKey": {
+                      "maxLength": 48,
+                      "minLength": 1,
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "kind",
+                    "path",
+                    "pathIsProvisional",
+                    "markdown",
+                    "workItemKey"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 4,
+                "type": "array"
               },
               "scope": {
                 "additionalProperties": false,
@@ -5789,6 +5896,57 @@
                         "maxLength": 4000,
                         "minLength": 1,
                         "type": "string"
+                      },
+                      "proposedDocuments": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "key": {
+                              "maxLength": 48,
+                              "minLength": 1,
+                              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$",
+                              "type": "string"
+                            },
+                            "kind": {
+                              "enum": [
+                                "glossary",
+                                "adr"
+                              ],
+                              "type": "string"
+                            },
+                            "markdown": {
+                              "maxLength": 32000,
+                              "minLength": 1,
+                              "pattern": "^[^\\x00]*$",
+                              "type": "string"
+                            },
+                            "path": {
+                              "maxLength": 512,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "pathIsProvisional": {
+                              "type": "boolean"
+                            },
+                            "workItemKey": {
+                              "maxLength": 48,
+                              "minLength": 1,
+                              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "key",
+                            "kind",
+                            "path",
+                            "pathIsProvisional",
+                            "markdown",
+                            "workItemKey"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 4,
+                        "type": "array"
                       },
                       "scope": {
                         "additionalProperties": false,
@@ -26118,6 +26276,57 @@
                 "maxLength": 4000,
                 "minLength": 1,
                 "type": "string"
+              },
+              "proposedDocuments": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "key": {
+                      "maxLength": 48,
+                      "minLength": 1,
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$",
+                      "type": "string"
+                    },
+                    "kind": {
+                      "enum": [
+                        "glossary",
+                        "adr"
+                      ],
+                      "type": "string"
+                    },
+                    "markdown": {
+                      "maxLength": 32000,
+                      "minLength": 1,
+                      "pattern": "^[^\\x00]*$",
+                      "type": "string"
+                    },
+                    "path": {
+                      "maxLength": 512,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "pathIsProvisional": {
+                      "type": "boolean"
+                    },
+                    "workItemKey": {
+                      "maxLength": 48,
+                      "minLength": 1,
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "kind",
+                    "path",
+                    "pathIsProvisional",
+                    "markdown",
+                    "workItemKey"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 4,
+                "type": "array"
               },
               "scope": {
                 "additionalProperties": false,

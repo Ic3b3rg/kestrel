@@ -59,6 +59,31 @@ const initial: FeaturePlans = {
   generation: null,
   versions: [{ version: 1, author: "operator", createdAt }],
 };
+const proposedVersion: FeaturePlanVersion = {
+  ...version,
+  sourceContext: { commitId: "a".repeat(40), documents: [], notice: "Sources for version 1." },
+  document: {
+    ...version.document,
+    proposedDocuments: [
+      {
+        key: "glossary",
+        kind: "glossary",
+        path: "CONTEXT.md",
+        pathIsProvisional: false,
+        markdown: "# Report\nA saved report has a title.\n",
+        workItemKey: "W1",
+      },
+      {
+        key: "adr",
+        kind: "adr",
+        path: "docs/adr/NNNN-search.md",
+        pathIsProvisional: true,
+        markdown: "# Decision\nSearch titles.\n",
+        workItemKey: "W1",
+      },
+    ],
+  },
+};
 const imported: FactoryIssueImports = {
   schemaVersion: 1,
   feature: initial.feature,
@@ -151,6 +176,62 @@ describe("displayed plan authority", () => {
     await render({ loadImports: () => Promise.resolve(imported) });
     expect(button("Approve version 1").disabled).toBe(true);
     expect(container.textContent).toContain("Assign #42 · Search archived reports to a Work Item");
+  });
+
+  it("inspects proposed Markdown and the sources frozen with the displayed version", async () => {
+    await render({ loadPlans: () => Promise.resolve({ ...initial, current: proposedVersion }) });
+    await click("Proposed documents");
+    expect(document.body.textContent).toContain("Proposed documents · version 1");
+    expect(document.body.textContent).toContain("A saved report has a title.");
+    expect(document.body.textContent).toContain("Provisional path");
+    expect(document.body.textContent).toContain("Owning Work Item: W1");
+    await click("Sources supplied for this plan");
+    expect(document.body.textContent).toContain("Sources for version 1.");
+    expect(document.body.textContent).toContain("a".repeat(40));
+  });
+
+  it("revises Markdown and removes a proposal in a new plan version", async () => {
+    const savePlan = vi.fn().mockResolvedValue({ ...proposedVersion, version: 2 });
+    await render({
+      loadPlans: () => Promise.resolve({ ...initial, current: proposedVersion }),
+      savePlan,
+    });
+    await click("Edit draft");
+    const field = container.querySelector<HTMLTextAreaElement>("#proposal-markdown-0");
+    expect(field).not.toBeNull();
+    if (field === null) return;
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- called with its concrete textarea.
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+    if (setter === undefined) throw new Error("Native setter unavailable");
+    await act(async () => {
+      setter.call(field, "# Report\nA named, saved report.\n");
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      await Promise.resolve();
+    });
+    const remove = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Remove proposed document 2"]',
+    );
+    expect(remove).not.toBeNull();
+    await act(async () => {
+      remove?.click();
+      await Promise.resolve();
+    });
+    await click("Save new version");
+    expect(savePlan.mock.calls[0]?.[2]).toMatchObject({
+      expectedVersion: 1,
+      plan: {
+        proposedDocuments: [
+          {
+            ...proposedVersion.document.proposedDocuments?.[0],
+            markdown: "# Report\nA named, saved report.\n",
+          },
+        ],
+      },
+    });
+    expect(proposedVersion.document.proposedDocuments).toHaveLength(2);
+    expect(proposedVersion.document.proposedDocuments?.[0]?.markdown).toBe(
+      "# Report\nA saved report has a title.\n",
+    );
   });
 
   it("links an imported issue through a normal field without replacing the approved intent", async () => {

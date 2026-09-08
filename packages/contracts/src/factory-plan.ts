@@ -32,6 +32,17 @@ export const FactoryWorkItemDefinitionSchema = z.strictObject({
   verification: z.array(FactoryVerificationCommandSchema).min(1).max(12),
 });
 
+export const FeaturePlanProposedDocumentSchema = z.strictObject({
+  key,
+  kind: z.enum(["glossary", "adr"]),
+  path: z.string().min(1).max(512),
+  pathIsProvisional: z.boolean(),
+  // Preserve the proposed bytes, including Markdown indentation and the final newline.
+  markdown: z.string().min(1).max(32_000).regex(withoutNul),
+  workItemKey: key,
+});
+export type FeaturePlanProposedDocument = z.infer<typeof FeaturePlanProposedDocumentSchema>;
+
 export const FeaturePlanDocumentSchema = z.strictObject({
   objective: text(4000),
   scope: z.strictObject({
@@ -48,8 +59,15 @@ export const FeaturePlanDocumentSchema = z.strictObject({
     maxActiveFeaturesPerProject: z.literal(1),
     attemptTimeoutSeconds: z.int().min(60).max(7200),
   }),
+  // Omission remains meaningful for historical JSON and its existing detail budget.
+  proposedDocuments: z.array(FeaturePlanProposedDocumentSchema).max(4).optional(),
 });
 export type FeaturePlanDocument = z.infer<typeof FeaturePlanDocumentSchema>;
+
+/** New model output makes the document decision explicit; old persisted plans remain readable. */
+export const GeneratedFeaturePlanDocumentSchema = FeaturePlanDocumentSchema.extend({
+  proposedDocuments: z.array(FeaturePlanProposedDocumentSchema).max(4),
+});
 
 /** Validate the small, ordered dependency graph without changing the Operator's displayed order. */
 export function validateFeaturePlan(plan: FeaturePlanDocument): string[] {
@@ -67,6 +85,37 @@ export function validateFeaturePlan(plan: FeaturePlanDocument): string[] {
     if (positions.has(item.key)) errors.push(`Duplicate Work Item key: ${item.key}`);
     positions.set(item.key, index);
   });
+  const documentKeys = new Set<string>();
+  const documentPaths = new Set<string>();
+  let markdownBytes = 0;
+  for (const document of plan.proposedDocuments ?? []) {
+    if (documentKeys.has(document.key))
+      errors.push(`Duplicate proposed document key: ${document.key}`);
+    documentKeys.add(document.key);
+    if (documentPaths.has(document.path))
+      errors.push(`Duplicate proposed document path: ${document.path}`);
+    documentPaths.add(document.path);
+    if (!positions.has(document.workItemKey))
+      errors.push(
+        `Unknown Work Item ${document.workItemKey} for proposed document ${document.key}`,
+      );
+    if (
+      document.path !== document.path.trim() ||
+      // eslint-disable-next-line no-control-regex -- Paths cannot contain control bytes or drive/URL separators.
+      /[\\:\x00-\x1f\x7f]/u.test(document.path) ||
+      !/\.md$/iu.test(document.path) ||
+      document.path
+        .split("/")
+        .some((part) => ["", ".", "..", ".git", ".kestrel"].includes(part.toLowerCase()))
+    )
+      errors.push(
+        `Proposed document ${document.key} must use a safe relative Project Markdown path`,
+      );
+    if (document.markdown.trim().length === 0)
+      errors.push(`Proposed document ${document.key} needs Markdown content`);
+    markdownBytes += new TextEncoder().encode(document.markdown).length;
+  }
+  if (markdownBytes > 32_000) errors.push("Proposed Markdown exceeds 32,000 UTF-8 bytes");
   const covered = new Set<string>();
   const imported = new Set<string>();
   plan.workItems.forEach((item, index) => {
