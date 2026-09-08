@@ -30,11 +30,14 @@ powered-off workstation cannot execute work.
 1. As the Operator, I can open an authorized repository and select its Project from a stable
    sidebar.
 2. I can switch between Projects without losing each Project's selected feature or chat history.
-3. I can start and name a feature Planning Session inside Kestrel.
+3. Selecting a Project opens its Kanban. **+ New** in To do or **Start plan** in the sidebar opens a
+   blank Planning Session composer immediately. The first accepted prompt creates the Feature; the
+   model then names it automatically, and an Operator rename takes precedence.
 4. I can discuss requirements in natural language, with questions grounded in that Project's
    documents.
 5. I can inspect the source documents used for planning, including CONTEXT, ADRs, repository
-   instructions, and relevant specifications.
+   instructions, and relevant specifications. I can import and select planning Skills in the chat,
+   inspect their retained instructions, and see which versions guided a turn and its generated plan.
 6. I can reload the browser and recover accepted messages and current work from durable storage.
 7. I can see that a model is working, needs authentication, has exhausted usage, or has failed,
    without guessing from an empty chat.

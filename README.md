@@ -123,6 +123,28 @@ source commit under **Project documents**. Dirty files and untracked files are n
 omitted documents are disclosed. The planning runtime has read-only authority and does not create
 issues or implement changes.
 
+Open **Skills** in a feature chat to import a procedure from the workstation, inspect its `SKILL.md`
+and local Markdown references, and choose **Use selected Skills**. The host process must first be
+started with `KESTREL_PLANNING_SKILL_ROOT` set to an absolute, authorized Skill directory:
+
+```bash
+KESTREL_PLANNING_SKILL_ROOT="$HOME/.agents/skills" npm run dev
+```
+
+The browser chooses a discovered candidate; it cannot supply a filesystem path. Importing never runs
+an installer or Skill script. After import, `$skill-name` or `/skill-name` in a message also selects
+that procedure. Unknown names return an actionable error without accepting the message. A selected
+Skill guides questions and plan generation within Kestrel's planning authority; proposed issue or
+document changes still require plan approval.
+
+Each accepted message and generated plan retains its exact Skill versions. Updating an import
+changes the catalog for future selections; it leaves existing selections, turns, and approved
+artifacts intact. **Retry planning** reuses the original turn's versions. Use the **Used
+$skill-name** buttons to inspect historical instructions. Select at most eight Skills per
+conversation; a bundle contains at most 32 files and 128 KiB of Markdown, with 256 KiB allowed
+across the selected bundles. See [planning Skill imports](./docs/factory-v01/planning-skills.md) for
+supported references and errors.
+
 Before saving the first plan, open **GitHub issues** to select up to 20 existing open issues from
 the Project's attached GitHub repository. Discovery reads at most five pages of 20 results and
 discloses its limit. Kestrel retains the selected title, original Markdown body, URL,

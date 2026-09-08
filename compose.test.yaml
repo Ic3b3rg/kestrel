@@ -9,6 +9,7 @@ services:
       GITHUB_TOKEN: provider-client-canary
       GIT_ASKPASS: /fixtures/repositories/kestrel/.git/kestrel-command-canary
       LOCAL_GIT_EXECUTABLE: /fixtures/git-tools/git-recorder
+      KESTREL_PLANNING_SKILL_ROOT: ${KESTREL_TEST_PLANNING_SKILL_ROOT:-}
       KESTREL_GH_EXECUTABLE: ${KESTREL_TEST_GH_EXECUTABLE:-gh}
       LOCAL_REPOSITORY_ROOTS: '["/fixtures/repositories"]'
       REVIEW_REVISION_MAX_BYTES: ${KESTREL_TEST_REVIEW_MAX_BYTES:-10485760}

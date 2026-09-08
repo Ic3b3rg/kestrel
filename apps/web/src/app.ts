@@ -6,6 +6,7 @@ import { ApiErrorSchema } from "@kestrel/contracts";
 import type { DatabasePool, DiagnosticJobSender } from "@kestrel/database";
 
 import { registerDiagnosticRoutes } from "./routes/diagnostics.js";
+import { registerPlanningSkillRoutes } from "./routes/factory-skills.js";
 import { registerFactoryPlanningRoutes } from "./routes/factory-planning.js";
 import { registerFactoryIssueRoutes } from "./routes/factory-issues.js";
 import { registerFactoryExecutionRoutes } from "./routes/factory-execution.js";
@@ -232,6 +233,7 @@ export async function buildApp({
 
   registerDiagnosticRoutes(app, pool, boss, eventRetentionLimit);
   registerFactoryPlanningRoutes(app, pool, boss);
+  registerPlanningSkillRoutes(app, pool);
   registerFactoryIssueRoutes(app, pool, factoryGitHub);
   registerFactoryExecutionRoutes(app, pool);
   registerEventRoutes(app, eventPool);

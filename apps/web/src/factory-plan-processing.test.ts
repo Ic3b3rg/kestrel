@@ -341,46 +341,71 @@ describe("structured Feature Plan processing", () => {
     });
   });
 
-  it("bounds the full transcript and prompt while freezing exactly the retained documents and their disclosure", async () => {
-    turn.messages = Array.from({ length: 8 }, (_, index) => ({
-      id: randomUUID(),
-      role: "user",
-      content: `Decision ${String(index)}: ${"λ".repeat(12_000)}`,
-      createdAt: "2026-09-07T18:00:00.000Z",
-    }));
-    context.documents = Array.from({ length: 10 }, (_, index) => ({
-      path: `docs/spec-${String(index)}.md`,
-      objectId: "abcdef1234567890abcdef1234567890abcdef12",
-      content: "π".repeat(24_000),
-    }));
-    context.notice = "AGENTS.md was not found in the committed source.";
-    const originalContext = structuredClone(context);
-    await processor().process({ turnId: turn.id });
-    const input = runTurn.mock.calls[0]?.[0];
-    const retained = vi.mocked(savePlanningContext).mock.calls[0]?.[2];
-    if (input === undefined || retained === undefined)
-      throw new Error("Planning fixture did not reach the runtime");
-    expect(Buffer.byteLength(input.prompt)).toBeLessThanOrEqual(240_000);
-    const transcript = input.prompt
-      .split("<conversation>\n")[1]
-      ?.split("\n</conversation>")[0]
-      ?.split("\n")
-      .at(-1);
-    expect(transcript).toBeDefined();
-    expect(Buffer.byteLength(transcript ?? "")).toBeLessThanOrEqual(60_000);
-    expect(input.prompt).not.toContain("Decision 0:");
-    expect(input.prompt).toContain("Decision 7:");
-    expect(input.prompt).toContain("Earlier conversation was omitted");
-    expect(retained.commitId).toBe(context.commitId);
-    expect(retained.documents.length).toBeGreaterThan(0);
-    expect(retained.documents.length).toBeLessThan(context.documents.length);
-    expect(retained.notice).toContain("Some committed documents were omitted");
-    expect(retained.notice).toContain(context.notice);
-    expect(input.prompt).toContain(JSON.stringify(retained.documents));
-    expect(input.prompt).toContain(retained.notice);
-    expect(generated.mock.calls[0]?.[3]).toEqual(retained);
-    expect(context).toEqual(originalContext);
-  });
+  it.each([false, true])(
+    "bounds the transcript and Project context with selected Skills: %s",
+    async (withSkills) => {
+      if (withSkills)
+        turn.skills = Array.from({ length: 2 }, (_, index) => ({
+          name: `planning-${String(index)}`,
+          description: "Retain every instruction while trimming Project documents.",
+          contentDigest: String(index).repeat(64),
+          source: {
+            kind: "host",
+            label: `planning-${String(index)}`,
+            candidateId: String(index).repeat(64),
+          },
+          files: [
+            { path: "SKILL.md", content: `Procedure ${String(index)}: ${"a".repeat(100_000)}` },
+          ],
+        }));
+      turn.messages = Array.from({ length: 8 }, (_, index) => ({
+        id: randomUUID(),
+        role: "user",
+        content: `Decision ${String(index)}: ${"λ".repeat(12_000)}`,
+        createdAt: "2026-09-07T18:00:00.000Z",
+      }));
+      context.documents = Array.from({ length: 10 }, (_, index) => ({
+        path: `docs/spec-${String(index)}.md`,
+        objectId: "abcdef1234567890abcdef1234567890abcdef12",
+        content: "π".repeat(24_000),
+      }));
+      context.notice = "AGENTS.md was not found in the committed source.";
+      const originalContext = structuredClone(context);
+      await processor().process({ turnId: turn.id });
+      const input = runTurn.mock.calls[0]?.[0];
+      const retained = vi.mocked(savePlanningContext).mock.calls[0]?.[2];
+      if (input === undefined || retained === undefined)
+        throw new Error("Planning fixture did not reach the runtime");
+      const skillBytes = withSkills ? Buffer.byteLength(JSON.stringify(turn.skills)) : 0;
+      expect(Buffer.byteLength(input.prompt)).toBeLessThanOrEqual(240_000 + skillBytes);
+      expect(Buffer.byteLength(input.prompt)).toBeLessThanOrEqual(512 * 1024);
+      for (const skill of turn.skills ?? []) {
+        expect(input.prompt).toContain(JSON.stringify(skill));
+        expect(
+          retained.skills?.some((summary) => summary.contentDigest === skill.contentDigest),
+        ).toBe(true);
+      }
+      const transcript = input.prompt
+        .split("<conversation>\n")[1]
+        ?.split("\n</conversation>")[0]
+        ?.split("\n")
+        .at(-1);
+      expect(transcript).toBeDefined();
+      expect(Buffer.byteLength(transcript ?? "")).toBeLessThanOrEqual(60_000);
+      expect(input.prompt).not.toContain("Decision 0:");
+      expect(input.prompt).toContain("Decision 7:");
+      expect(input.prompt).toContain("Earlier conversation was omitted");
+      expect(retained.commitId).toBe(context.commitId);
+      expect(retained.documents.length).toBeGreaterThan(0);
+      expect(retained.documents.length).toBeLessThan(context.documents.length);
+      expect(retained.notice).toContain("Some committed documents were omitted");
+      expect(retained.notice).toContain(context.notice);
+      expect(input.prompt).toContain(JSON.stringify(retained.documents));
+      expect(input.prompt).toContain(retained.notice);
+      expect(generated.mock.calls[0]?.[3]).toEqual(retained);
+      expect(context).toEqual(originalContext);
+    },
+  );
 
   it("does not rewrite or expose host paths embedded in an otherwise valid generated plan", async () => {
     runTurn.mockImplementation((input) =>
