@@ -18,6 +18,19 @@ const identity: FactoryGitHubIdentity = {
 const directories: string[] = [];
 const marker = "<!-- kestrel-publication:v1:fixture-operation -->";
 
+async function stopEscapedChild(directory: string) {
+  const text = await readFile(join(directory, "escaped.pid"), "utf8").catch(() => undefined);
+  if (text === undefined) return;
+  const pid = Number(text);
+  if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error("Invalid fixture child identity");
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+  }
+  await rm(join(directory, "escaped.pid"), { force: true });
+}
+
 async function fixture(mode = "ok") {
   const directory = await mkdtemp(join(tmpdir(), "kestrel-factory-gh-"));
   directories.push(directory);
@@ -50,6 +63,7 @@ async function fixture(mode = "ok") {
 import { readFileSync, writeFileSync, appendFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {spawn} from 'node:child_process';
 const directory = dirname(fileURLToPath(import.meta.url));
 const statePath = join(directory, 'state.json');
 const state = JSON.parse(readFileSync(statePath, 'utf8'));
@@ -103,6 +117,11 @@ if (url.pathname === base && method === 'POST') {
   const issue = {...state.issues[0], id:'599', number:99, title:body.title, body:body.body, html_url:'https://github.com/owner/notes/issues/99'};
   state.issues.push(issue);
   if (state.mode === 'create_timeout') hang();
+  else if (state.mode === 'escaped_descendant') {
+    const escaped = spawn(process.execPath, ['-e', "require('node:fs').writeFileSync(process.argv[1], String(process.pid)); setInterval(() => {}, 1000);", join(directory, 'escaped.pid')], {detached:true, stdio:['ignore', 1, 2]});
+    escaped.unref();
+    hang();
+  }
   else if (state.mode === 'disconnected') { writeFileSync(statePath, JSON.stringify(state)); process.stderr.write('private provider transport failed'); process.exit(1); }
   else if (state.mode === 'stdout_overflow') { writeFileSync(statePath, JSON.stringify(state)); process.stdout.write('x'.repeat(3 * 1024 * 1024)); }
   else if (state.mode === 'stderr_overflow') { writeFileSync(statePath, JSON.stringify(state)); process.stderr.write('x'.repeat(64 * 1024)); }
@@ -165,9 +184,21 @@ if (url.pathname === base && method === 'POST') {
     throw new Error("Fixture did not persist its POST before the readiness deadline");
   };
   return {
+    directory,
     adapter: createFactoryGitHubAdapter({ executable }),
     state,
     waitForPost,
+    waitForEscapedChild: async () => {
+      const deadline = performance.now() + 4_000;
+      while (performance.now() < deadline) {
+        const pid = Number(
+          await readFile(join(directory, "escaped.pid"), "utf8").catch(() => undefined),
+        );
+        if (Number.isSafeInteger(pid) && pid > 0) return pid;
+        await delay(20);
+      }
+      throw new Error("Fixture descendant did not become ready");
+    },
     expireAfterPost: async <T>(operation: (signal: AbortSignal) => Promise<T>): Promise<T> => {
       // Freeze only the parent deadline; the fixture remains a real subprocess.
       vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
@@ -203,7 +234,10 @@ afterEach(async () => {
   vi.useRealTimers();
   vi.unstubAllEnvs();
   await Promise.all(
-    directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
+    directories.splice(0).map(async (directory) => {
+      await stopEscapedChild(directory);
+      await rm(directory, { recursive: true, force: true });
+    }),
   );
 });
 
@@ -577,6 +611,37 @@ describe("Factory GitHub subprocess boundary", () => {
     }
     expect(await pending).toEqual({ state: "uncertain", failure: "cancelled" });
   });
+
+  it.each(["cancelled", "timeout"] as const)(
+    "settles an uncertain %s write while an escaped descendant holds its pipes open",
+    async (failure) => {
+      const { adapter, calls, directory, waitForEscapedChild } =
+        await fixture("escaped_descendant");
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      const controller = new AbortController();
+      const pending = adapter.createIssue(
+        identity,
+        { title: "Export", body: marker },
+        controller.signal,
+      );
+      let result: unknown;
+      try {
+        const pid = await waitForEscapedChild();
+        if (failure === "cancelled") controller.abort();
+        else await vi.runOnlyPendingTimersAsync();
+        result = await Promise.race([pending, delay(1_000, "did not settle")]);
+        expect(() => process.kill(pid, 0)).not.toThrow();
+      } finally {
+        controller.abort();
+        await stopEscapedChild(directory);
+        await pending;
+        vi.useRealTimers();
+      }
+      expect(result).toEqual({ state: "uncertain", failure });
+      expect(await adapter.findIssue(identity, marker)).toMatchObject({ state: "found" });
+      expect((await calls()).filter((call) => call.args.includes("POST"))).toHaveLength(1);
+    },
+  );
 
   it("does not inherit token overrides or unrelated secrets into the host CLI", async () => {
     for (const name of [

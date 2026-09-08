@@ -59,6 +59,7 @@ function acquisitionPool(
     projectCount?: number;
     proposalCount?: number;
     staleAcquiringRevision?: boolean;
+    approvedFeaturePlan?: boolean;
   } = {},
 ) {
   const statements: string[] = [];
@@ -72,6 +73,12 @@ function acquisitionPool(
     }
     if (normalized.startsWith("SELECT id FROM installations")) {
       return { rowCount: 1, rows: [{ id: installationId }] };
+    }
+    if (normalized.includes("FROM factory_feature_verifications AS certificate")) {
+      return {
+        rowCount: options.approvedFeaturePlan === true ? 1 : 0,
+        rows: options.approvedFeaturePlan === true ? [{ id: revisionId }] : [],
+      };
     }
     if (normalized.startsWith("SELECT count(*) AS project_count")) {
       return { rowCount: 1, rows: [{ project_count: String(options.projectCount ?? 0) }] };
@@ -310,6 +317,59 @@ function acquisitionPool(
 }
 
 describe("Review Revision persistence", () => {
+  it.each([true, false])(
+    "validates the approved Feature origin before retention: matching=%s",
+    async (matching) => {
+      const database = acquisitionPool({ existingSource: true, approvedFeaturePlan: matching });
+      const approvedFeaturePlan = {
+        featureId: "018f0f89-9a24-7cc4-9860-3fda5f75d697",
+        approvedVersion: 2,
+        certificateId: "018f0f89-9a25-7cc4-9860-3fda5f75d697",
+        approvalId: "018f0f89-9a26-7cc4-9860-3fda5f75d697",
+      };
+      const result = beginReviewRevision(database.pool, {
+        actorId: operatorId,
+        correlationId: "0c14b018-0260-4aa0-a5e9-61d212b948ce",
+        changeIntent: "Review authorization boundaries",
+        expectedProjectId: projectId,
+        approvedFeaturePlan,
+        maxBytes: 1_048_576,
+        maxObjects: 1_000,
+        base: { objectId: "a".repeat(40), ref: "refs/heads/main" },
+        head: { objectId: "b".repeat(40), ref: "refs/heads/review-source" },
+        source: {
+          displayName: "kestrel",
+          githubRepository: null,
+          objectFormat: "sha1",
+          relativePath: "kestrel",
+          repositoryId: "018f0f89-9a1e-7d64-a5dd-18cc3e317401",
+          rootId: "018f0f89-9a1f-72ae-82c4-ef8ee27d6932",
+          sourceIdentity: "c".repeat(64),
+        },
+      });
+      if (matching) {
+        await expect(result).resolves.toMatchObject({
+          changeIntent: {
+            sources: [
+              {
+                id: "approved_feature_plan",
+                kind: "approved_feature_plan",
+                version: "2",
+                text: "Review authorization boundaries",
+                provenance: { kind: "approved_feature_plan", ...approvedFeaturePlan },
+              },
+            ],
+          },
+        });
+      } else {
+        await expect(result).rejects.toMatchObject({ code: "change_proposal_mismatch" });
+        expect(database.statements).not.toContain(
+          expect.stringMatching(/^INSERT INTO (change_intents|review_revisions)/u),
+        );
+        expect(database.statements.at(-1)).toBe("ROLLBACK");
+      }
+    },
+  );
   it.each([
     { existingSource: false, expectedProjectInsertions: 1 },
     { existingSource: true, expectedProjectInsertions: 0 },
