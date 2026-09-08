@@ -8,6 +8,7 @@ import { z } from "zod";
 
 import {
   FeaturePlanDocumentSchema,
+  NamedPlanningReplySchema,
   type FeaturePlanDocument,
   type PlanningContext,
 } from "@kestrel/contracts";
@@ -175,6 +176,39 @@ afterEach(async () => {
 });
 afterAll(async () => {
   await pool.end();
+});
+
+it("requests and persists a descriptive title in the real planning turn's structured reply", async () => {
+  turn.purpose = "conversation";
+  turn.needsTitle = true;
+  turn.threadId = null;
+  const reply = {
+    title: "Export saved notes",
+    text: "Should the export include every saved note?",
+  };
+  runTurn.mockResolvedValue({
+    threadId: "new-thread",
+    turnId: "named-turn",
+    text: JSON.stringify(reply),
+  });
+  await processor().process({ turnId: turn.id });
+  expect(runTurn.mock.calls[0]?.[0].outputSchema).toEqual(
+    z.toJSONSchema(NamedPlanningReplySchema, { target: "draft-7" }),
+  );
+  expect(runTurn.mock.calls[0]?.[0].prompt).toContain("short descriptive title");
+  expect(completePlanningTurn).toHaveBeenCalledWith(pool, turn, reply);
+  expect(generated).not.toHaveBeenCalled();
+});
+
+it.each([
+  "plain text without a title",
+  JSON.stringify({ title: "x".repeat(81), text: "A question?" }),
+])("retains the usable placeholder when the naming reply is invalid: %s", async (text) => {
+  turn.purpose = "conversation";
+  turn.needsTitle = true;
+  runTurn.mockResolvedValue({ threadId: "new-thread", turnId: "named-turn", text });
+  await processor().process({ turnId: turn.id });
+  expect(completePlanningTurn).toHaveBeenCalledWith(pool, turn, { failure: "invalid_response" });
 });
 
 describe("structured Feature Plan processing", () => {

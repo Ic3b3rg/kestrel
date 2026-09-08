@@ -96,6 +96,57 @@ describe("persistent planning conversation", () => {
     expect(container.querySelector<HTMLTextAreaElement>("textarea")?.disabled).toBe(true);
   });
 
+  it("renames during a pending reply and retries the identical command after an uncertain response", async () => {
+    let current = initial;
+    const renamed = { ...initial.feature, title: "Operator report search" };
+    const renameFeature = vi
+      .fn<NonNullable<FeatureChatPanelProps["renameFeature"]>>()
+      .mockRejectedValueOnce(new Error("Response lost"))
+      .mockImplementationOnce(() => {
+        current = { ...initial, feature: renamed };
+        return Promise.resolve(renamed);
+      });
+    const onFeatureRead = vi.fn();
+    await render({ loadChat: () => Promise.resolve(current), renameFeature, onFeatureRead });
+    const trigger = button("Rename feature");
+    await act(async () => {
+      trigger.focus();
+      trigger.click();
+      await Promise.resolve();
+    });
+    const input = document.querySelector<HTMLInputElement>('input[id="feature-name"]');
+    if (input === null) throw new Error("Feature name input unavailable");
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
+        input,
+        renamed.title,
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      button("Save name").click();
+      await Promise.resolve();
+    });
+    expect(input.disabled).toBe(true);
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      "could not be confirmed",
+    );
+    await act(async () => {
+      button("Retry rename").click();
+      await Promise.resolve();
+    });
+    expect(renameFeature).toHaveBeenCalledTimes(2);
+    expect(renameFeature.mock.calls[0]).toEqual(renameFeature.mock.calls[1]);
+    expect(renameFeature.mock.calls[0]?.slice(0, 2)).toEqual([projectId, featureId]);
+    expect(renameFeature.mock.calls[0]?.[2].title).toBe(renamed.title);
+    expect(renameFeature.mock.calls[0]?.[2].requestId).toMatch(/^[a-f0-9-]{36}$/u);
+    expect(container.querySelector("h1")?.textContent).toBe(renamed.title);
+    expect(onFeatureRead).toHaveBeenCalledWith(renamed);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    await vi.waitFor(() => expect(document.activeElement).toBe(trigger));
+  });
+
   it("updates execution status without an active planning turn or a manual refresh", async () => {
     vi.useFakeTimers();
     const loadChat = vi

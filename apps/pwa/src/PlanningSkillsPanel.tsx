@@ -127,15 +127,22 @@ export function SkillProvenance({
 type Attempt =
   | { kind: "import"; command: InstallPlanningSkillCommand }
   | { kind: "select"; command: SelectPlanningSkillsCommand };
-export interface PlanningSkillsPanelProps {
+interface PlanningSkillsCommonProps {
   projectId: string;
-  featureId: string;
   online: boolean;
   editable: boolean;
   selection: FeaturePlanningSkills;
-  onChanged: () => void;
   onAuthenticationError: (error: unknown) => boolean;
 }
+export type PlanningSkillsPanelProps = PlanningSkillsCommonProps &
+  (
+    | { featureId: string; onChanged: () => void; onDraftSelection?: never }
+    | {
+        featureId?: never;
+        onChanged?: never;
+        onDraftSelection: (skills: PlanningSkillSummary[]) => void;
+      }
+  );
 export function PlanningSkillsPanel({
   projectId,
   featureId,
@@ -143,6 +150,7 @@ export function PlanningSkillsPanel({
   editable,
   selection,
   onChanged,
+  onDraftSelection,
   onAuthenticationError,
 }: PlanningSkillsPanelProps) {
   const [open, setOpen] = useState(false);
@@ -228,9 +236,18 @@ export function PlanningSkillsPanel({
           setPreview(bundle);
         }
       } else {
-        await selectPlanningSkills(projectId, featureId, current.command);
+        if (onDraftSelection !== undefined) {
+          const skills = current.command.digests.map((digest) =>
+            available.find((skill) => skill.contentDigest === digest),
+          );
+          if (skills.some((skill) => skill === undefined))
+            throw new Error("The selected Skill is unavailable");
+          onDraftSelection(skills.filter((skill) => skill !== undefined));
+        } else {
+          await selectPlanningSkills(projectId, featureId, current.command);
+        }
         if (alive.current) {
-          onChanged();
+          onChanged?.();
           setOpen(false);
         }
       }

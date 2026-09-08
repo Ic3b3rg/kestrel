@@ -7,6 +7,7 @@ import { z } from "zod";
 import {
   DEFAULT_FACTORY_LIMITS,
   FeaturePlanDocumentSchema,
+  NamedPlanningReplySchema,
   KestrelIdSchema,
   PlanningSkillSummarySchema,
   type PlanningContext,
@@ -92,6 +93,11 @@ function promptFor(turn: ClaimedPlanningTurn, context: PlanningContext): string 
         ]
       : [
           "You are the Kestrel planning assistant. Conduct a concise requirements grilling conversation in the Operator's language.",
+          ...(turn.needsTitle === true
+            ? [
+                "Return JSON matching the supplied schema with a short descriptive title for this Feature (at most 80 characters, in the Operator's language) and text containing your full planning reply. The title is navigation metadata, not approval. Follow the selected planning procedures in the text field.",
+              ]
+            : []),
           (turn.skills?.length ?? 0) === 0
             ? "Ask the most consequential unresolved question, explain relevant tradeoffs, and record agreed decisions. Cite supplied documents by relative path when supporting a question."
             : "Follow the selected planning procedures below to structure the questions and agreed decisions. Cite supplied Project documents and retained Skill references where relevant.",
@@ -246,9 +252,11 @@ export function createFactoryPlanningProcessor({
           prompt,
           ...(turn.purpose === "plan"
             ? { outputSchema: z.toJSONSchema(FeaturePlanDocumentSchema, { target: "draft-7" }) }
-            : turn.threadId === null
-              ? {}
-              : { threadId: turn.threadId }),
+            : turn.needsTitle === true
+              ? { outputSchema: z.toJSONSchema(NamedPlanningReplySchema, { target: "draft-7" }) }
+              : turn.threadId === null
+                ? {}
+                : { threadId: turn.threadId }),
           signal,
           onThread: (threadId) => savePlanningThread(pool, turn, threadId),
         });
@@ -263,6 +271,19 @@ export function createFactoryPlanningProcessor({
             throw new CodexPlanningError("invalid_response");
           await completeGeneratedFactoryPlan(pool, turn, plan, context, renderFeaturePlanArtifacts);
         } else {
+          if (turn.needsTitle === true) {
+            let named: z.infer<typeof NamedPlanningReplySchema>;
+            try {
+              named = NamedPlanningReplySchema.parse(JSON.parse(result.text));
+            } catch {
+              throw new CodexPlanningError("invalid_response");
+            }
+            await completePlanningTurn(pool, turn, {
+              title: publicText(named.title, cwd),
+              text: publicText(named.text, cwd),
+            });
+            return;
+          }
           const text = publicText(result.text, cwd).trim();
           if (text.length === 0 || text.length > 32_000)
             throw new CodexPlanningError("invalid_response");

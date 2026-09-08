@@ -2,6 +2,8 @@ import { Button } from "./components/ui/button.js";
 import { WorkspaceSuspendedContext } from "./components/ui/workspace-suspension.js";
 import { FeatureNavigation } from "./FeatureNavigation.js";
 import { FeatureChatPanel } from "./FeatureChatPanel.js";
+import { ProjectFactoryWorkspace } from "./ProjectFactoryWorkspace.js";
+import { NewPlanningWorkspace } from "./NewPlanningWorkspace.js";
 import { readFeatureNavigation, saveFeatureNavigation } from "./feature-navigation.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -272,7 +274,11 @@ export function App() {
       if (
         planDirty &&
         !sameFeature &&
-        !window.confirm("Discard unsaved plan edits and leave this feature?")
+        !window.confirm(
+          route.kind === "planning"
+            ? "Discard this unsent prompt and leave planning?"
+            : "Discard unsaved plan edits and leave this feature?",
+        )
       )
         return;
       const path = appPath(nextRoute);
@@ -284,6 +290,14 @@ export function App() {
     },
     [planDirty, route],
   );
+
+  const planningStarted = useCallback((feature: Feature) => {
+    setPlanDirty(false);
+    setProjectFeatureIds((current) => ({ ...current, [feature.projectId]: feature.id }));
+    const next = { kind: "feature" as const, projectId: feature.projectId, featureId: feature.id };
+    window.history.replaceState(window.history.state, "", appPath(next));
+    setRoute(next);
+  }, []);
 
   useEffect(() => {
     const handlePopState = (event: PopStateEvent) => {
@@ -303,7 +317,11 @@ export function App() {
         planDirty &&
         route.kind !== "not_found" &&
         !sameFeature &&
-        !window.confirm("Discard unsaved plan edits and leave this feature?")
+        !window.confirm(
+          route.kind === "planning"
+            ? "Discard this unsent prompt and leave planning?"
+            : "Discard unsaved plan edits and leave this feature?",
+        )
       ) {
         restoringHistory.current = true;
         window.history.go(historyPosition.current - nextPosition);
@@ -830,7 +848,7 @@ export function App() {
           navigate({
             kind: "project",
             projectId: selectedProject.id,
-            ...(proposalId === null ? {} : { proposalId }),
+            ...(proposalId === null ? { view: "pull_requests" as const } : { proposalId }),
           })
         }
         error={null}
@@ -928,7 +946,20 @@ export function App() {
           />
         );
       case "project":
-        if (projectWorkspace !== null) return projectWorkspace;
+        if (selectedProject !== null) {
+          if (route.proposalId !== undefined || route.view === "pull_requests")
+            return projectWorkspace;
+          return (
+            <ProjectFactoryWorkspace
+              key={selectedProject.id}
+              projectId={selectedProject.id}
+              projectName={projectLabel(selectedProject)}
+              online={online}
+              onNavigate={navigate}
+              onAuthenticationError={handleAuthenticationBoundaryError}
+            />
+          );
+        }
         if (projectInbox === null && projectLoading) {
           return (
             <section className="workspace-state" aria-busy="true">
@@ -953,6 +984,22 @@ export function App() {
               Back to Projects
             </Button>
           </section>
+        );
+      case "planning":
+        return (
+          <NewPlanningWorkspace
+            key={`${route.projectId}/${route.requestId}`}
+            projectId={route.projectId}
+            projectName={
+              navigationProject === undefined ? "Project" : projectLabel(navigationProject)
+            }
+            requestId={route.requestId}
+            online={online}
+            onStarted={planningStarted}
+            onNavigate={navigate}
+            onAuthenticationError={handleAuthenticationBoundaryError}
+            onDraftDirtyChange={setPlanDirty}
+          />
         );
       case "feature":
         return (

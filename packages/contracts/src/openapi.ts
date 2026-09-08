@@ -2,6 +2,12 @@ import { z, type ZodType } from "zod";
 import { FactoryExecutionSchema, FactoryExecutionRunSchema } from "./factory-execution.js";
 import { FactoryGateSchema, ResolveFactoryGateCommandSchema } from "./factory-gates.js";
 import {
+  StartPlanningFeatureCommandSchema,
+  PlanningFeatureStartedSchema,
+  PlanningFeatureRequestSchema,
+  RenameFactoryFeatureCommandSchema,
+} from "./factory-start.js";
+import {
   PlanningSkillBundleSchema,
   PlanningSkillCandidatesSchema,
   PlanningSkillCatalogSchema,
@@ -164,6 +170,10 @@ export const reviewWorkflowAcceptedJsonSchema = asJsonSchema(ReviewWorkflowAccep
 export const startReviewWorkflowCommandJsonSchema = asJsonSchema(StartReviewWorkflowCommandSchema);
 
 const factoryComponents = {
+  StartPlanningFeatureCommand: asComponentSchema(asJsonSchema(StartPlanningFeatureCommandSchema)),
+  PlanningFeatureStarted: asComponentSchema(asJsonSchema(PlanningFeatureStartedSchema)),
+  PlanningFeatureRequest: asComponentSchema(asJsonSchema(PlanningFeatureRequestSchema)),
+  RenameFactoryFeatureCommand: asComponentSchema(asJsonSchema(RenameFactoryFeatureCommandSchema)),
   PlanningSkillBundle: asComponentSchema(asJsonSchema(PlanningSkillBundleSchema)),
   PlanningSkillCandidates: asComponentSchema(asJsonSchema(PlanningSkillCandidatesSchema)),
   PlanningSkillCatalog: asComponentSchema(asJsonSchema(PlanningSkillCatalogSchema)),
@@ -1036,6 +1046,39 @@ export const openApiDocument = sortJson({
         "cancelFactoryFeature",
         "CancelFeatureCommand",
         "FactoryBoard",
+        200,
+      ),
+    },
+    "/api/v1/projects/{projectId}/planning": {
+      parameters: [
+        {
+          in: "path",
+          name: "projectId",
+          required: true,
+          schema: { type: "string", format: "uuid" },
+        },
+      ],
+      post: factoryTurnMutation(
+        "startPlanningFeature",
+        "StartPlanningFeatureCommand",
+        "PlanningFeatureStarted",
+      ),
+    },
+    "/api/v1/projects/{projectId}/planning/{requestId}": {
+      parameters: ["projectId", "requestId"].map((name) => ({
+        in: "path",
+        name,
+        required: true,
+        schema: { type: "string", format: "uuid" },
+      })),
+      get: factoryRead("readPlanningFeatureRequest", "PlanningFeatureRequest"),
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/title": {
+      parameters: factoryParameters(),
+      post: factoryTurnMutation(
+        "renameFactoryFeature",
+        "RenameFactoryFeatureCommand",
+        "Feature",
         200,
       ),
     },

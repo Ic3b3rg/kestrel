@@ -61,11 +61,19 @@ async function openFeature(page: Page, title: string): Promise<void> {
   await repositoryDialog.getByLabel("Repository", { exact: true }).selectOption(repositoryId);
   await repositoryDialog.getByRole("button", { name: "Open selected Project" }).click();
   await expect(repositoryDialog).toHaveCount(0);
-  await page.getByRole("button", { name: "New feature", exact: true }).click();
-  const featureDialog = page.getByRole("dialog", { name: "New feature", exact: true });
+  await page.getByRole("button", { name: "New plan", exact: true }).click();
+  await page.getByLabel("Describe the change", { exact: true }).fill(title);
+  await page.getByRole("main").getByRole("button", { name: "Start plan", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { level: 1, name: "New plan", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Rename feature", exact: true }).click();
+  const featureDialog = page.getByRole("dialog", { name: "Rename feature", exact: true });
   await featureDialog.getByLabel("Feature name", { exact: true }).fill(title);
-  await featureDialog.getByRole("button", { name: "Create feature", exact: true }).click();
+  await featureDialog.getByRole("button", { name: "Save name", exact: true }).click();
+  await expect(featureDialog).toHaveCount(0);
   await expect(page.getByRole("heading", { level: 1, name: title })).toBeVisible();
+  await expect(page.getByText("Codex is unavailable", { exact: true })).toBeVisible();
 }
 
 async function seedPlan(page: Page): Promise<string> {
@@ -205,6 +213,25 @@ test.describe("Feature plan approval", () => {
     await expect(
       stalePage.getByRole("region", { name: "Feature execution", exact: true }),
     ).toBeVisible();
+    await stalePage
+      .getByRole("navigation", { name: "Projects", exact: true })
+      .getByRole("link", { name: /kestrel/u })
+      .click();
+    await expect(stalePage).toHaveURL(`${stack.pwaUrl}/projects/${projectId}`);
+    await expect(stalePage.getByRole("button", { name: /^Open planning chat:/u })).toHaveCount(0);
+    const projectItem = stalePage.getByRole("button", {
+      name: /^Open Work Item: Search saved reports ·/u,
+    });
+    await expect(projectItem).toContainText("After W1");
+    await stalePage.screenshot({
+      path: test.info().outputPath("factory-project-board-approved.png"),
+      animations: "disabled",
+    });
+    await projectItem.click();
+    await expect(stalePage.getByRole("tab", { name: "Board", exact: true })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
     await stalePage.getByRole("button", { name: "2. Search saved reports", exact: true }).click();
     const item = stalePage.getByRole("dialog", { name: "Search saved reports", exact: true });
     await expect(
