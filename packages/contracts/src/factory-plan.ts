@@ -186,6 +186,7 @@ export const FactoryActivitySchema = z.strictObject({
     "execution_started",
     "execution_blocked",
     "item_verified",
+    "gate_answered",
   ]),
   summary: text(2000),
   createdAt: z.iso.datetime(),

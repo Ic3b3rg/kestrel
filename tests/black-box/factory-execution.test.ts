@@ -70,6 +70,7 @@ describe("Factory execution authority", () => {
       state: "not_approved",
       failure: null,
       question: null,
+      gate: null,
       revision: null,
       workItems: [],
     });

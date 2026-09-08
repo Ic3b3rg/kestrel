@@ -517,6 +517,7 @@ export function FeatureChatPanel({
             online={online}
             onAuthenticationError={onAuthenticationError}
             onViewPlan={() => selectView("plan")}
+            onFeatureChanged={() => void refresh()}
           />
         </TabsContent>
       </Tabs>
