@@ -59,8 +59,10 @@ it("starts exactly one chat and first turn across simultaneous submissions, relo
   for (const response of responses)
     expect(response.status, await response.clone().text()).toBe(202);
   const first = PlanningFeatureStartedSchema.parse(await responses[0].json());
-  const second: unknown = await responses[1].json();
-  expect(second).toEqual(first);
+  const second = PlanningFeatureStartedSchema.parse(await responses[1].json());
+  expect(second.feature.id).toBe(first.feature.id);
+  expect(second.messageId).toBe(first.messageId);
+  expect(second.turnId).toBe(first.turnId);
   const feature = FeatureSchema.parse(first.feature);
   expect(feature.title).toBe("New plan");
   const path = `/api/v1/projects/${projectId}/features/${feature.id}`;

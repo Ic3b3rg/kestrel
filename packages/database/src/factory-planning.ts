@@ -389,56 +389,52 @@ export async function readFactoryChat(
   featureId: string,
 ): Promise<FeatureChat> {
   await reconcilePlanningTurns(pool);
-  const result = await pool.query<FeatureRow>(
-    `SELECT *, (${FEATURE_FAMILY}) AS project_id FROM factory_features WHERE (${FEATURE_FAMILY}) = (${PROJECT_FAMILY}) AND id = $2`,
-    [projectId, featureId],
-  );
-  const row = result.rows[0];
-  if (row === undefined) throw new FactoryError("not_found");
-  const [messages, turns] = await Promise.all([
-    pool.query<MessageRow>(
-      "SELECT id, role, content, created_at FROM factory_planning_messages WHERE feature_id = $1 ORDER BY created_at, id LIMIT 200",
-      [featureId],
-    ),
-    pool.query<TurnRow>(
-      "SELECT * FROM factory_planning_turns WHERE feature_id = $1 ORDER BY created_at, id LIMIT 400",
-      [featureId],
-    ),
-  ]);
-  const summaries = await retainedSkillSummaries(
-    pool,
-    turns.rows.map(({ skill_digests }) => skill_digests),
-  );
-  return {
-    schemaVersion: 1,
-    feature: mapFactoryFeature(row),
-    messages: messages.rows.map((message) =>
-      PlanningMessageSchema.parse({
-        id: message.id,
-        role: message.role,
-        content: message.content,
-        createdAt: message.created_at.toISOString(),
-      }),
-    ),
-    turns: turns.rows.map((turn) =>
-      PlanningTurnSchema.parse({
-        id: turn.id,
-        messageId: turn.message_id,
-        state: turn.state,
-        failure: turn.failure,
-        question: turn.question,
-        createdAt: turn.created_at.toISOString(),
-        startedAt: turn.started_at?.toISOString() ?? null,
-        completedAt: turn.completed_at?.toISOString() ?? null,
-        skills: PlanningSkillDigestsSchema.parse(turn.skill_digests).map((digest) =>
-          summaries.get(digest),
-        ),
-      }),
-    ),
-    context:
-      row.planning_context === null ? null : PlanningContextSchema.parse(row.planning_context),
-    skills: await planningSkillSelection(pool, featureId, row.skill_selection_version),
-  };
+  return withFactoryFeature(pool, projectId, featureId, async (client, row) => {
+    const [messages, turns] = await Promise.all([
+      client.query<MessageRow>(
+        "SELECT id, role, content, created_at FROM factory_planning_messages WHERE feature_id = $1 ORDER BY created_at, id LIMIT 200",
+        [featureId],
+      ),
+      client.query<TurnRow>(
+        "SELECT * FROM factory_planning_turns WHERE feature_id = $1 ORDER BY created_at, id LIMIT 400",
+        [featureId],
+      ),
+    ]);
+    const summaries = await retainedSkillSummaries(
+      client,
+      turns.rows.map(({ skill_digests }) => skill_digests),
+    );
+    return {
+      schemaVersion: 1,
+      feature: mapFactoryFeature(row),
+      messages: messages.rows.map((message) =>
+        PlanningMessageSchema.parse({
+          id: message.id,
+          role: message.role,
+          content: message.content,
+          createdAt: message.created_at.toISOString(),
+        }),
+      ),
+      turns: turns.rows.map((turn) =>
+        PlanningTurnSchema.parse({
+          id: turn.id,
+          messageId: turn.message_id,
+          state: turn.state,
+          failure: turn.failure,
+          question: turn.question,
+          createdAt: turn.created_at.toISOString(),
+          startedAt: turn.started_at?.toISOString() ?? null,
+          completedAt: turn.completed_at?.toISOString() ?? null,
+          skills: PlanningSkillDigestsSchema.parse(turn.skill_digests).map((digest) =>
+            summaries.get(digest),
+          ),
+        }),
+      ),
+      context:
+        row.planning_context === null ? null : PlanningContextSchema.parse(row.planning_context),
+      skills: await planningSkillSelection(client, featureId, row.skill_selection_version),
+    };
+  });
 }
 
 export async function acceptPlanningMessage(

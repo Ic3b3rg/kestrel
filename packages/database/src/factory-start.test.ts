@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { completePlanningTurn, type FeatureRow } from "./factory-planning.js";
+import { completePlanningTurn, readFactoryChat, type FeatureRow } from "./factory-planning.js";
 import { startPlanningFeature } from "./factory-start.js";
 import type * as skillModule from "./factory-skills.js";
 
@@ -40,6 +40,71 @@ const feature: FeatureRow = {
   created_at: new Date("2026-09-08T10:00:00.000Z"),
   updated_at: new Date("2026-09-08T10:00:00.000Z"),
 };
+
+it("reads the first reply and generated title consistently when naming finishes during a chat read", async () => {
+  let completed = false;
+  let locked = false;
+  let completionWaiting = false;
+  const query = vi.fn((sql: string) => {
+    if (sql === "COMMIT" || sql === "ROLLBACK") {
+      locked = false;
+      if (completionWaiting) completed = true;
+    }
+    if (sql.includes("FROM factory_features") && sql.includes("AND id = $2")) {
+      locked = sql.includes("FOR UPDATE") || sql.includes("FOR SHARE");
+      const row = { ...feature, title: completed ? "Saved report search" : "New plan" };
+      // The completing worker needs the same Feature lock. Without it, its atomic
+      // title/message/turn write becomes visible between this read's queries.
+      if (locked) completionWaiting = true;
+      else completed = true;
+      return Promise.resolve({ rowCount: 1, rows: [row] });
+    }
+    if (sql.includes("FROM factory_planning_messages")) {
+      const rows = [
+        { id: messageId, role: "user", content: command.text, created_at: feature.created_at },
+      ];
+      if (completed)
+        rows.push({
+          id: actorId,
+          role: "assistant",
+          content: "Which reports need searching?",
+          created_at: feature.updated_at,
+        });
+      return Promise.resolve({ rowCount: rows.length, rows });
+    }
+    if (sql.includes("FROM factory_planning_turns"))
+      return Promise.resolve({
+        rowCount: 1,
+        rows: [
+          {
+            id: turnId,
+            message_id: messageId,
+            state: completed ? "completed" : "running",
+            failure: null,
+            question: null,
+            created_at: feature.created_at,
+            started_at: feature.created_at,
+            completed_at: completed ? feature.updated_at : null,
+            skill_digests: [],
+          },
+        ],
+      });
+    return Promise.resolve({ rowCount: 0, rows: [] });
+  });
+  const pool = { query, connect: () => Promise.resolve({ query, release: vi.fn() }) } as never;
+  const duringCompletion = await readFactoryChat(pool, projectId, featureId);
+  if (duringCompletion.turns[0]?.state === "completed") {
+    expect(duringCompletion.feature.title).toBe("Saved report search");
+    expect(duringCompletion.messages.at(-1)?.role).toBe("assistant");
+  } else {
+    expect(duringCompletion.feature.title).toBe("New plan");
+    expect(duringCompletion.messages.map(({ role }) => role)).toEqual(["user"]);
+  }
+  const afterCompletion = await readFactoryChat(pool, projectId, featureId);
+  expect(afterCompletion.feature.title).toBe("Saved report search");
+  expect(afterCompletion.messages.at(-1)?.role).toBe("assistant");
+  expect(afterCompletion.turns[0]?.state).toBe("completed");
+});
 
 function startFixture(existing?: Record<string, unknown>) {
   const query = vi.fn((sql: string, parameters?: unknown[]) => {
