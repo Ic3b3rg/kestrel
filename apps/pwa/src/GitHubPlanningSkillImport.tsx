@@ -11,6 +11,7 @@ import {
   previewGitHubPlanningSkill,
 } from "./factory-github-skills-api.js";
 import { Button } from "./components/ui/button.js";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "./components/ui/dialog.js";
 import { Input } from "./components/ui/input.js";
 import { Label } from "./components/ui/label.js";
 import { NativeSelect } from "./components/ui/native-select.js";
@@ -20,12 +21,14 @@ export interface GitHubPlanningSkillImportProps {
   online: boolean;
   onInstalled: (bundle: GitHubPlanningSkillBundle) => void;
   onAuthenticationError: (error: unknown) => boolean;
+  dialog?: { open: boolean; onOpenChange: (open: boolean) => void };
 }
 
 export function GitHubPlanningSkillImport({
   online,
   onInstalled,
   onAuthenticationError,
+  dialog,
 }: GitHubPlanningSkillImportProps) {
   const id = useId();
   const suspended = useContext(WorkspaceSuspendedContext);
@@ -149,7 +152,7 @@ export function GitHubPlanningSkillImport({
     if (result !== null) onInstalled(result);
   };
   const file = preview?.files.find(({ path }) => path === filePath) ?? preview?.files[0];
-  return (
+  const content = (
     <section className="grid min-w-0 gap-4 rounded-lg border p-4" aria-labelledby={`${id}-title`}>
       <div>
         <h3 id={`${id}-title`} className="font-semibold">
@@ -312,5 +315,19 @@ export function GitHubPlanningSkillImport({
         </div>
       )}
     </section>
+  );
+  return dialog === undefined ? (
+    content
+  ) : (
+    <Dialog open={dialog.open && online} onOpenChange={dialog.onOpenChange}>
+      <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-3xl">
+        <DialogTitle>Import a planning Skill</DialogTitle>
+        <DialogDescription>Choose a procedure to use in Kestrel's planning chat.</DialogDescription>
+        {content}
+        <Button variant="outline" onClick={() => dialog.onOpenChange(false)}>
+          Back to Skills
+        </Button>
+      </DialogContent>
+    </Dialog>
   );
 }

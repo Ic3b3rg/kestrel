@@ -53,20 +53,21 @@ afterEach(async () => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
-async function render(online = true) {
+async function render(online = true, open?: boolean) {
   await act(async () => {
     root.render(
       createElement(GitHubPlanningSkillImport, {
         online,
         onInstalled: installed,
         onAuthenticationError: authentication,
+        ...(open === undefined ? {} : { dialog: { open, onOpenChange: vi.fn() } }),
       }),
     );
     await Promise.resolve();
   });
 }
 function button(label: string) {
-  return [...container.querySelectorAll("button")].find(
+  return [...document.body.querySelectorAll("button")].find(
     (element) => element.textContent.trim() === label,
   );
 }
@@ -152,6 +153,32 @@ it("previews full provenance and inert files, then retries exactly the reviewed 
     "/api/v1/planning-skills/github/install",
     "/api/v1/planning-skills/github/install",
   ]);
+});
+
+it("retains the reviewed version and uncertain install request when its dialog closes and reopens", async () => {
+  const commands: unknown[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn<typeof fetch>((input, options) => {
+      if (requestUrl(input).endsWith("/install")) {
+        commands.push(requestBody(options));
+        if (commands.length === 1) return Promise.reject(new TypeError("Response lost"));
+      }
+      return Promise.resolve(Response.json(bundle));
+    }),
+  );
+  await render(true, true);
+  expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+  await click("Preview Skill");
+  await click("Install reviewed version");
+  await render(true, false);
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  await render(true, true);
+  expect(document.body.textContent).toContain(bundle.source.commitId);
+  await click("Retry installation");
+  expect(commands).toHaveLength(2);
+  expect(commands[0]).toEqual(commands[1]);
+  expect(installed).toHaveBeenCalledExactlyOnceWith(bundle);
 });
 
 it("discards a slow preview when the requested ref changes", async () => {

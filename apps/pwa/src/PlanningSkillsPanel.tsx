@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "./compone
 import { Label } from "./components/ui/label.js";
 import { NativeSelect } from "./components/ui/native-select.js";
 import { planningRequestError } from "./FeatureNavigation.js";
+import { GitHubPlanningSkillImport } from "./GitHubPlanningSkillImport.js";
 import {
   fetchPlanningSkill,
   fetchPlanningSkillCandidates,
@@ -33,6 +34,22 @@ function SkillContents({ bundle }: { bundle: PlanningSkillBundle }) {
         Imported from {bundle.source.label} · retained version{" "}
         <code title={bundle.contentDigest}>{bundle.contentDigest.slice(0, 12)}</code>
       </p>
+      {bundle.source.kind === "github" ? (
+        <dl className="grid min-w-0 gap-2 text-xs text-muted-foreground">
+          <div>
+            <dt className="font-medium">Skill entry</dt>
+            <dd className="break-all">{bundle.source.path}</dd>
+          </div>
+          <div>
+            <dt className="font-medium">Requested ref</dt>
+            <dd className="break-all">{bundle.source.requestedRef}</dd>
+          </div>
+          <div>
+            <dt className="font-medium">Resolved commit</dt>
+            <dd className="break-all font-mono">{bundle.source.commitId}</dd>
+          </div>
+        </dl>
+      ) : null}
       <Label htmlFor="skill-reference">Instructions and references</Label>
       <NativeSelect
         id="skill-reference"
@@ -146,6 +163,7 @@ export function PlanningSkillsPanel({
   onAuthenticationError,
 }: PlanningSkillsPanelProps) {
   const [open, setOpen] = useState(false);
+  const [githubOpen, setGitHubOpen] = useState(false);
   const [catalog, setCatalog] = useState<PlanningSkillSummary[]>([]);
   const [candidates, setCandidates] = useState<Array<{ candidateId: string; label: string }>>([]);
   const [configured, setConfigured] = useState(false);
@@ -268,7 +286,7 @@ export function PlanningSkillsPanel({
         Skills{selection.skills.length === 0 ? "" : ` (${String(selection.skills.length)})`}
       </Button>
       <Dialog
-        open={open && online}
+        open={open && online && !githubOpen}
         onOpenChange={(value) => {
           if (!pending) setOpen(value);
         }}
@@ -376,6 +394,19 @@ export function PlanningSkillsPanel({
                     </Button>
                   </div>
                   <div className="grid gap-3 border-t pt-4">
+                    <h3 className="font-medium">Add a Skill</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Start with the grilling procedures or choose a Skill from a GitHub repository.
+                    </p>
+                    <Button
+                      variant="outline"
+                      disabled={pending}
+                      onClick={() => setGitHubOpen(true)}
+                    >
+                      Import from GitHub
+                    </Button>
+                  </div>
+                  <div className="grid gap-3 border-t pt-4">
                     <h3 className="font-medium">Import from the workstation</h3>
                     {configured ? (
                       <>
@@ -436,6 +467,26 @@ export function PlanningSkillsPanel({
           )}
         </DialogContent>
       </Dialog>
+      <GitHubPlanningSkillImport
+        online={online}
+        dialog={{ open: open && githubOpen, onOpenChange: setGitHubOpen }}
+        onAuthenticationError={onAuthenticationError}
+        onInstalled={() => {
+          void fetchPlanningSkillCatalog()
+            .then((installed) => {
+              if (alive.current) setCatalog(installed.skills);
+            })
+            .catch((failure: unknown) => {
+              if (alive.current && !onAuthenticationError(failure))
+                setError(
+                  planningRequestError(
+                    failure,
+                    "The Skill was installed. Reopen Skills to refresh the catalog.",
+                  ),
+                );
+            });
+        }}
+      />
     </>
   );
 }

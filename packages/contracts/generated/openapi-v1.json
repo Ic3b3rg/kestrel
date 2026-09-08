@@ -4240,28 +4240,83 @@
                           "type": "string"
                         },
                         "source": {
-                          "additionalProperties": false,
-                          "properties": {
-                            "candidateId": {
-                              "pattern": "^[a-f0-9]{64}$",
-                              "type": "string"
+                          "oneOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "candidateId": {
+                                  "pattern": "^[a-f0-9]{64}$",
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "const": "host",
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "maxLength": 255,
+                                  "minLength": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "label",
+                                "candidateId"
+                              ],
+                              "type": "object"
                             },
-                            "kind": {
-                              "const": "host",
-                              "type": "string"
-                            },
-                            "label": {
-                              "maxLength": 255,
-                              "minLength": 1,
-                              "type": "string"
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "candidateId": {
+                                  "pattern": "^[a-f0-9]{64}$",
+                                  "type": "string"
+                                },
+                                "commitId": {
+                                  "pattern": "^[a-f0-9]{40}$",
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "const": "github",
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "maxLength": 255,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "owner": {
+                                  "pattern": "^[a-z0-9][a-z0-9-]{0,38}$",
+                                  "type": "string"
+                                },
+                                "path": {
+                                  "maxLength": 512,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "repository": {
+                                  "pattern": "^[a-z0-9_.-]{1,100}$",
+                                  "type": "string"
+                                },
+                                "requestedRef": {
+                                  "maxLength": 255,
+                                  "minLength": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "label",
+                                "candidateId",
+                                "owner",
+                                "repository",
+                                "path",
+                                "requestedRef",
+                                "commitId"
+                              ],
+                              "type": "object"
                             }
-                          },
-                          "required": [
-                            "kind",
-                            "label",
-                            "candidateId"
-                          ],
-                          "type": "object"
+                          ]
                         }
                       },
                       "required": [
@@ -4411,28 +4466,83 @@
                       "type": "string"
                     },
                     "source": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "candidateId": {
-                          "pattern": "^[a-f0-9]{64}$",
-                          "type": "string"
+                      "oneOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "candidateId": {
+                              "pattern": "^[a-f0-9]{64}$",
+                              "type": "string"
+                            },
+                            "kind": {
+                              "const": "host",
+                              "type": "string"
+                            },
+                            "label": {
+                              "maxLength": 255,
+                              "minLength": 1,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "label",
+                            "candidateId"
+                          ],
+                          "type": "object"
                         },
-                        "kind": {
-                          "const": "host",
-                          "type": "string"
-                        },
-                        "label": {
-                          "maxLength": 255,
-                          "minLength": 1,
-                          "type": "string"
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "candidateId": {
+                              "pattern": "^[a-f0-9]{64}$",
+                              "type": "string"
+                            },
+                            "commitId": {
+                              "pattern": "^[a-f0-9]{40}$",
+                              "type": "string"
+                            },
+                            "kind": {
+                              "const": "github",
+                              "type": "string"
+                            },
+                            "label": {
+                              "maxLength": 255,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "owner": {
+                              "pattern": "^[a-z0-9][a-z0-9-]{0,38}$",
+                              "type": "string"
+                            },
+                            "path": {
+                              "maxLength": 512,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "repository": {
+                              "pattern": "^[a-z0-9_.-]{1,100}$",
+                              "type": "string"
+                            },
+                            "requestedRef": {
+                              "maxLength": 255,
+                              "minLength": 1,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "label",
+                            "candidateId",
+                            "owner",
+                            "repository",
+                            "path",
+                            "requestedRef",
+                            "commitId"
+                          ],
+                          "type": "object"
                         }
-                      },
-                      "required": [
-                        "kind",
-                        "label",
-                        "candidateId"
-                      ],
-                      "type": "object"
+                      ]
                     }
                   },
                   "required": [
@@ -4542,28 +4652,83 @@
                         "type": "string"
                       },
                       "source": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "candidateId": {
-                            "pattern": "^[a-f0-9]{64}$",
-                            "type": "string"
+                        "oneOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "candidateId": {
+                                "pattern": "^[a-f0-9]{64}$",
+                                "type": "string"
+                              },
+                              "kind": {
+                                "const": "host",
+                                "type": "string"
+                              },
+                              "label": {
+                                "maxLength": 255,
+                                "minLength": 1,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "label",
+                              "candidateId"
+                            ],
+                            "type": "object"
                           },
-                          "kind": {
-                            "const": "host",
-                            "type": "string"
-                          },
-                          "label": {
-                            "maxLength": 255,
-                            "minLength": 1,
-                            "type": "string"
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "candidateId": {
+                                "pattern": "^[a-f0-9]{64}$",
+                                "type": "string"
+                              },
+                              "commitId": {
+                                "pattern": "^[a-f0-9]{40}$",
+                                "type": "string"
+                              },
+                              "kind": {
+                                "const": "github",
+                                "type": "string"
+                              },
+                              "label": {
+                                "maxLength": 255,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "owner": {
+                                "pattern": "^[a-z0-9][a-z0-9-]{0,38}$",
+                                "type": "string"
+                              },
+                              "path": {
+                                "maxLength": 512,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "repository": {
+                                "pattern": "^[a-z0-9_.-]{1,100}$",
+                                "type": "string"
+                              },
+                              "requestedRef": {
+                                "maxLength": 255,
+                                "minLength": 1,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "label",
+                              "candidateId",
+                              "owner",
+                              "repository",
+                              "path",
+                              "requestedRef",
+                              "commitId"
+                            ],
+                            "type": "object"
                           }
-                        },
-                        "required": [
-                          "kind",
-                          "label",
-                          "candidateId"
-                        ],
-                        "type": "object"
+                        ]
                       }
                     },
                     "required": [
@@ -5255,28 +5420,83 @@
                           "type": "string"
                         },
                         "source": {
-                          "additionalProperties": false,
-                          "properties": {
-                            "candidateId": {
-                              "pattern": "^[a-f0-9]{64}$",
-                              "type": "string"
+                          "oneOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "candidateId": {
+                                  "pattern": "^[a-f0-9]{64}$",
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "const": "host",
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "maxLength": 255,
+                                  "minLength": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "label",
+                                "candidateId"
+                              ],
+                              "type": "object"
                             },
-                            "kind": {
-                              "const": "host",
-                              "type": "string"
-                            },
-                            "label": {
-                              "maxLength": 255,
-                              "minLength": 1,
-                              "type": "string"
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "candidateId": {
+                                  "pattern": "^[a-f0-9]{64}$",
+                                  "type": "string"
+                                },
+                                "commitId": {
+                                  "pattern": "^[a-f0-9]{40}$",
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "const": "github",
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "maxLength": 255,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "owner": {
+                                  "pattern": "^[a-z0-9][a-z0-9-]{0,38}$",
+                                  "type": "string"
+                                },
+                                "path": {
+                                  "maxLength": 512,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "repository": {
+                                  "pattern": "^[a-z0-9_.-]{1,100}$",
+                                  "type": "string"
+                                },
+                                "requestedRef": {
+                                  "maxLength": 255,
+                                  "minLength": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "label",
+                                "candidateId",
+                                "owner",
+                                "repository",
+                                "path",
+                                "requestedRef",
+                                "commitId"
+                              ],
+                              "type": "object"
                             }
-                          },
-                          "required": [
-                            "kind",
-                            "label",
-                            "candidateId"
-                          ],
-                          "type": "object"
+                          ]
                         }
                       },
                       "required": [
@@ -5355,28 +5575,83 @@
                   "type": "string"
                 },
                 "source": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "candidateId": {
-                      "pattern": "^[a-f0-9]{64}$",
-                      "type": "string"
+                  "oneOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "candidateId": {
+                          "pattern": "^[a-f0-9]{64}$",
+                          "type": "string"
+                        },
+                        "kind": {
+                          "const": "host",
+                          "type": "string"
+                        },
+                        "label": {
+                          "maxLength": 255,
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "label",
+                        "candidateId"
+                      ],
+                      "type": "object"
                     },
-                    "kind": {
-                      "const": "host",
-                      "type": "string"
-                    },
-                    "label": {
-                      "maxLength": 255,
-                      "minLength": 1,
-                      "type": "string"
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "candidateId": {
+                          "pattern": "^[a-f0-9]{64}$",
+                          "type": "string"
+                        },
+                        "commitId": {
+                          "pattern": "^[a-f0-9]{40}$",
+                          "type": "string"
+                        },
+                        "kind": {
+                          "const": "github",
+                          "type": "string"
+                        },
+                        "label": {
+                          "maxLength": 255,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "owner": {
+                          "pattern": "^[a-z0-9][a-z0-9-]{0,38}$",
+                          "type": "string"
+                        },
+                        "path": {
+                          "maxLength": 512,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "repository": {
+                          "pattern": "^[a-z0-9_.-]{1,100}$",
+                          "type": "string"
+                        },
+                        "requestedRef": {
+                          "maxLength": 255,
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "label",
+                        "candidateId",
+                        "owner",
+                        "repository",
+                        "path",
+                        "requestedRef",
+                        "commitId"
+                      ],
+                      "type": "object"
                     }
-                  },
-                  "required": [
-                    "kind",
-                    "label",
-                    "candidateId"
-                  ],
-                  "type": "object"
+                  ]
                 }
               },
               "required": [
@@ -5776,28 +6051,83 @@
                                   "type": "string"
                                 },
                                 "source": {
-                                  "additionalProperties": false,
-                                  "properties": {
-                                    "candidateId": {
-                                      "pattern": "^[a-f0-9]{64}$",
-                                      "type": "string"
+                                  "oneOf": [
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "candidateId": {
+                                          "pattern": "^[a-f0-9]{64}$",
+                                          "type": "string"
+                                        },
+                                        "kind": {
+                                          "const": "host",
+                                          "type": "string"
+                                        },
+                                        "label": {
+                                          "maxLength": 255,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "label",
+                                        "candidateId"
+                                      ],
+                                      "type": "object"
                                     },
-                                    "kind": {
-                                      "const": "host",
-                                      "type": "string"
-                                    },
-                                    "label": {
-                                      "maxLength": 255,
-                                      "minLength": 1,
-                                      "type": "string"
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "candidateId": {
+                                          "pattern": "^[a-f0-9]{64}$",
+                                          "type": "string"
+                                        },
+                                        "commitId": {
+                                          "pattern": "^[a-f0-9]{40}$",
+                                          "type": "string"
+                                        },
+                                        "kind": {
+                                          "const": "github",
+                                          "type": "string"
+                                        },
+                                        "label": {
+                                          "maxLength": 255,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        },
+                                        "owner": {
+                                          "pattern": "^[a-z0-9][a-z0-9-]{0,38}$",
+                                          "type": "string"
+                                        },
+                                        "path": {
+                                          "maxLength": 512,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        },
+                                        "repository": {
+                                          "pattern": "^[a-z0-9_.-]{1,100}$",
+                                          "type": "string"
+                                        },
+                                        "requestedRef": {
+                                          "maxLength": 255,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "label",
+                                        "candidateId",
+                                        "owner",
+                                        "repository",
+                                        "path",
+                                        "requestedRef",
+                                        "commitId"
+                                      ],
+                                      "type": "object"
                                     }
-                                  },
-                                  "required": [
-                                    "kind",
-                                    "label",
-                                    "candidateId"
-                                  ],
-                                  "type": "object"
+                                  ]
                                 }
                               },
                               "required": [
@@ -5994,28 +6324,83 @@
                           "type": "string"
                         },
                         "source": {
-                          "additionalProperties": false,
-                          "properties": {
-                            "candidateId": {
-                              "pattern": "^[a-f0-9]{64}$",
-                              "type": "string"
+                          "oneOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "candidateId": {
+                                  "pattern": "^[a-f0-9]{64}$",
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "const": "host",
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "maxLength": 255,
+                                  "minLength": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "label",
+                                "candidateId"
+                              ],
+                              "type": "object"
                             },
-                            "kind": {
-                              "const": "host",
-                              "type": "string"
-                            },
-                            "label": {
-                              "maxLength": 255,
-                              "minLength": 1,
-                              "type": "string"
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "candidateId": {
+                                  "pattern": "^[a-f0-9]{64}$",
+                                  "type": "string"
+                                },
+                                "commitId": {
+                                  "pattern": "^[a-f0-9]{40}$",
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "const": "github",
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "maxLength": 255,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "owner": {
+                                  "pattern": "^[a-z0-9][a-z0-9-]{0,38}$",
+                                  "type": "string"
+                                },
+                                "path": {
+                                  "maxLength": 512,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "repository": {
+                                  "pattern": "^[a-z0-9_.-]{1,100}$",
+                                  "type": "string"
+                                },
+                                "requestedRef": {
+                                  "maxLength": 255,
+                                  "minLength": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "label",
+                                "candidateId",
+                                "owner",
+                                "repository",
+                                "path",
+                                "requestedRef",
+                                "commitId"
+                              ],
+                              "type": "object"
                             }
-                          },
-                          "required": [
-                            "kind",
-                            "label",
-                            "candidateId"
-                          ],
-                          "type": "object"
+                          ]
                         }
                       },
                       "required": [
@@ -6145,6 +6530,108 @@
         "required": [
           "requestId",
           "expectedVersion"
+        ],
+        "type": "object"
+      },
+      "GitHubPlanningSkillBundle": {
+        "additionalProperties": false,
+        "properties": {
+          "contentDigest": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "description": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "content": {
+                  "maxLength": 131072,
+                  "type": "string"
+                },
+                "path": {
+                  "maxLength": 512,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "content"
+              ],
+              "type": "object"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "type": "array"
+          },
+          "name": {
+            "maxLength": 64,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "type": "string"
+          },
+          "source": {
+            "additionalProperties": false,
+            "properties": {
+              "candidateId": {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              "commitId": {
+                "pattern": "^[a-f0-9]{40}$",
+                "type": "string"
+              },
+              "kind": {
+                "const": "github",
+                "type": "string"
+              },
+              "label": {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              "owner": {
+                "pattern": "^[a-z0-9][a-z0-9-]{0,38}$",
+                "type": "string"
+              },
+              "path": {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              "repository": {
+                "pattern": "^[a-z0-9_.-]{1,100}$",
+                "type": "string"
+              },
+              "requestedRef": {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "label",
+              "candidateId",
+              "owner",
+              "repository",
+              "path",
+              "requestedRef",
+              "commitId"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "contentDigest",
+          "source",
+          "files"
         ],
         "type": "object"
       },
@@ -6578,6 +7065,25 @@
         "required": [
           "requestId",
           "issueNumbers"
+        ],
+        "type": "object"
+      },
+      "InstallGitHubPlanningSkillCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "digest": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "digest"
         ],
         "type": "object"
       },
@@ -7179,28 +7685,83 @@
             "type": "string"
           },
           "source": {
-            "additionalProperties": false,
-            "properties": {
-              "candidateId": {
-                "pattern": "^[a-f0-9]{64}$",
-                "type": "string"
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "candidateId": {
+                    "pattern": "^[a-f0-9]{64}$",
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "host",
+                    "type": "string"
+                  },
+                  "label": {
+                    "maxLength": 255,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "label",
+                  "candidateId"
+                ],
+                "type": "object"
               },
-              "kind": {
-                "const": "host",
-                "type": "string"
-              },
-              "label": {
-                "maxLength": 255,
-                "minLength": 1,
-                "type": "string"
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "candidateId": {
+                    "pattern": "^[a-f0-9]{64}$",
+                    "type": "string"
+                  },
+                  "commitId": {
+                    "pattern": "^[a-f0-9]{40}$",
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "github",
+                    "type": "string"
+                  },
+                  "label": {
+                    "maxLength": 255,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "owner": {
+                    "pattern": "^[a-z0-9][a-z0-9-]{0,38}$",
+                    "type": "string"
+                  },
+                  "path": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "repository": {
+                    "pattern": "^[a-z0-9_.-]{1,100}$",
+                    "type": "string"
+                  },
+                  "requestedRef": {
+                    "maxLength": 255,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "label",
+                  "candidateId",
+                  "owner",
+                  "repository",
+                  "path",
+                  "requestedRef",
+                  "commitId"
+                ],
+                "type": "object"
               }
-            },
-            "required": [
-              "kind",
-              "label",
-              "candidateId"
-            ],
-            "type": "object"
+            ]
           }
         },
         "required": [
@@ -7279,28 +7840,83 @@
                   "type": "string"
                 },
                 "source": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "candidateId": {
-                      "pattern": "^[a-f0-9]{64}$",
-                      "type": "string"
+                  "oneOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "candidateId": {
+                          "pattern": "^[a-f0-9]{64}$",
+                          "type": "string"
+                        },
+                        "kind": {
+                          "const": "host",
+                          "type": "string"
+                        },
+                        "label": {
+                          "maxLength": 255,
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "label",
+                        "candidateId"
+                      ],
+                      "type": "object"
                     },
-                    "kind": {
-                      "const": "host",
-                      "type": "string"
-                    },
-                    "label": {
-                      "maxLength": 255,
-                      "minLength": 1,
-                      "type": "string"
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "candidateId": {
+                          "pattern": "^[a-f0-9]{64}$",
+                          "type": "string"
+                        },
+                        "commitId": {
+                          "pattern": "^[a-f0-9]{40}$",
+                          "type": "string"
+                        },
+                        "kind": {
+                          "const": "github",
+                          "type": "string"
+                        },
+                        "label": {
+                          "maxLength": 255,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "owner": {
+                          "pattern": "^[a-z0-9][a-z0-9-]{0,38}$",
+                          "type": "string"
+                        },
+                        "path": {
+                          "maxLength": 512,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "repository": {
+                          "pattern": "^[a-z0-9_.-]{1,100}$",
+                          "type": "string"
+                        },
+                        "requestedRef": {
+                          "maxLength": 255,
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "label",
+                        "candidateId",
+                        "owner",
+                        "repository",
+                        "path",
+                        "requestedRef",
+                        "commitId"
+                      ],
+                      "type": "object"
                     }
-                  },
-                  "required": [
-                    "kind",
-                    "label",
-                    "candidateId"
-                  ],
-                  "type": "object"
+                  ]
                 }
               },
               "required": [
@@ -7345,6 +7961,63 @@
           "messageId"
         ],
         "type": "object"
+      },
+      "PreviewGitHubPlanningSkillCommand": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "starter",
+                "type": "string"
+              },
+              "starter": {
+                "const": "grilling-starter",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "starter"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "github",
+                "type": "string"
+              },
+              "owner": {
+                "pattern": "^[a-z0-9][a-z0-9-]{0,38}$",
+                "type": "string"
+              },
+              "path": {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              "ref": {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              "repository": {
+                "pattern": "^[a-z0-9_.-]{1,100}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "owner",
+              "repository",
+              "path",
+              "ref"
+            ],
+            "type": "object"
+          }
+        ]
       },
       "ProjectInbox": {
         "additionalProperties": false,
@@ -26403,6 +27076,280 @@
               }
             },
             "description": "Current durable Factory state"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          }
+        }
+      }
+    },
+    "/api/v1/planning-skills/github/install": {
+      "post": {
+        "operationId": "installGitHubPlanningSkill",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Origin",
+            "required": true,
+            "schema": {
+              "format": "uri",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Kestrel-CSRF",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstallGitHubPlanningSkillCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubPlanningSkillBundle"
+                }
+              }
+            },
+            "description": "Durable Factory result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          }
+        }
+      }
+    },
+    "/api/v1/planning-skills/github/preview": {
+      "post": {
+        "operationId": "previewGitHubPlanningSkill",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Origin",
+            "required": true,
+            "schema": {
+              "format": "uri",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Kestrel-CSRF",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewGitHubPlanningSkillCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubPlanningSkillBundle"
+                }
+              }
+            },
+            "description": "Durable Factory result"
           },
           "400": {
             "content": {

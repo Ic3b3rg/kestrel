@@ -3,6 +3,9 @@ import { FactoryExecutionSchema, FactoryExecutionRunSchema } from "./factory-exe
 import { FactoryGateSchema, ResolveFactoryGateCommandSchema } from "./factory-gates.js";
 import {
   PlanningSkillBundleSchema,
+  GitHubPlanningSkillBundleSchema,
+  PreviewGitHubPlanningSkillCommandSchema,
+  InstallGitHubPlanningSkillCommandSchema,
   PlanningSkillCandidatesSchema,
   PlanningSkillCatalogSchema,
   FeaturePlanningSkillsSchema,
@@ -164,6 +167,13 @@ export const reviewWorkflowAcceptedJsonSchema = asJsonSchema(ReviewWorkflowAccep
 export const startReviewWorkflowCommandJsonSchema = asJsonSchema(StartReviewWorkflowCommandSchema);
 
 const factoryComponents = {
+  GitHubPlanningSkillBundle: asComponentSchema(asJsonSchema(GitHubPlanningSkillBundleSchema)),
+  PreviewGitHubPlanningSkillCommand: asComponentSchema(
+    asJsonSchema(PreviewGitHubPlanningSkillCommandSchema),
+  ),
+  InstallGitHubPlanningSkillCommand: asComponentSchema(
+    asJsonSchema(InstallGitHubPlanningSkillCommandSchema),
+  ),
   PlanningSkillBundle: asComponentSchema(asJsonSchema(PlanningSkillBundleSchema)),
   PlanningSkillCandidates: asComponentSchema(asJsonSchema(PlanningSkillCandidatesSchema)),
   PlanningSkillCatalog: asComponentSchema(asJsonSchema(PlanningSkillCatalogSchema)),
@@ -1740,6 +1750,22 @@ export const openApiDocument = sortJson({
           },
         },
       },
+    },
+    "/api/v1/planning-skills/github/preview": {
+      post: factoryTurnMutation(
+        "previewGitHubPlanningSkill",
+        "PreviewGitHubPlanningSkillCommand",
+        "GitHubPlanningSkillBundle",
+        200,
+      ),
+    },
+    "/api/v1/planning-skills/github/install": {
+      post: factoryTurnMutation(
+        "installGitHubPlanningSkill",
+        "InstallGitHubPlanningSkillCommand",
+        "GitHubPlanningSkillBundle",
+        201,
+      ),
     },
     "/api/v1/planning-skills": {
       get: factoryRead("readPlanningSkillCatalog", "PlanningSkillCatalog"),
