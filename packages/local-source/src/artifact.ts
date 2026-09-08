@@ -945,6 +945,15 @@ export async function readRetainedFile(
   return object.content;
 }
 
+/** Verified retained metadata for source inspectors; no artifact filesystem path escapes. */
+export async function readRetainedSourceManifest(
+  config: LocalSourceConfig,
+  input: ReadRetainedChangeOverviewFactsInput,
+) {
+  const { manifest } = await readRetainedManifest(config, input);
+  return manifest;
+}
+
 export async function readRetainedChangeOverviewFacts(
   config: LocalSourceConfig,
   input: ReadRetainedChangeOverviewFactsInput,
