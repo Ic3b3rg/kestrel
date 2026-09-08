@@ -98,13 +98,19 @@ export async function verificationModule<T>(stack: ModuleStack, source: string):
   ) as T;
 }
 
-export async function createVerificationFixture() {
+export async function createVerificationFixture(
+  options: Pick<
+    NonNullable<Parameters<typeof startStack>[0]>,
+    "githubFixture" | "gitHubRemoteMappings"
+  > = {},
+) {
   const source = await createGitFixture();
   let stack: RunningStack;
   try {
     stack = await startStack({
       repositoryRoot: source.rootPath,
-      githubFixture: factoryGitHubFixture,
+      ...options,
+      githubFixture: options.githubFixture ?? factoryGitHubFixture,
     });
   } catch (error) {
     await source.close();
