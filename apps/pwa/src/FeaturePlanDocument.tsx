@@ -3,6 +3,7 @@ import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
 import {
   DEFAULT_FACTORY_LIMITS,
   type FeaturePlanDocument,
+  type FeaturePlanProposedDocument,
   type ImportedFactoryIssue,
 } from "@kestrel/contracts";
 import { ImportedIssueReference } from "./FeatureGitHubIssuesPanel.js";
@@ -209,6 +210,105 @@ function VerificationFields({
         />
       </div>
     </div>
+  );
+}
+
+function ProposedDocumentFields({
+  plan,
+  onChange,
+}: {
+  plan: FeaturePlanDocument;
+  onChange: (plan: FeaturePlanDocument) => void;
+}) {
+  const documents = plan.proposedDocuments ?? [];
+  if (documents.length === 0) return null;
+  const update = (index: number, change: Partial<FeaturePlanProposedDocument>) =>
+    onChange({
+      ...plan,
+      proposedDocuments: documents.map((document, position) =>
+        position === index ? { ...document, ...change } : document,
+      ),
+    });
+  return (
+    <section className="plan-editor-section" aria-labelledby="plan-documents-title">
+      <h3 id="plan-documents-title">Proposed Project documents</h3>
+      <p>
+        Revise or remove these proposals before saving a new version. Each document is applied by
+        its owning Work Item after approval.
+      </p>
+      {documents.map((document, index) => (
+        <section
+          key={document.key}
+          className="space-y-3"
+          aria-label={`Edit proposed document ${String(index + 1)}`}
+        >
+          <h4>
+            {document.kind === "adr" ? "ADR" : "Glossary"} · {document.key}
+          </h4>
+          <div>
+            <Label htmlFor={`proposal-path-${String(index)}`}>Proposed path {index + 1}</Label>
+            <Input
+              id={`proposal-path-${String(index)}`}
+              maxLength={512}
+              value={document.path}
+              onChange={(event) => update(index, { path: event.target.value })}
+            />
+          </div>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={document.pathIsProvisional}
+              onChange={(event) => update(index, { pathIsProvisional: event.target.checked })}
+            />
+            Path is provisional
+          </label>
+          <div>
+            <Label htmlFor={`proposal-work-item-${String(index)}`}>
+              Owning Work Item {index + 1}
+            </Label>
+            <NativeSelect
+              id={`proposal-work-item-${String(index)}`}
+              value={document.workItemKey}
+              onChange={(event) => update(index, { workItemKey: event.target.value })}
+            >
+              {plan.workItems.some(({ key }) => key === document.workItemKey) ? null : (
+                <option value={document.workItemKey}>Update this Work Item reference</option>
+              )}
+              {plan.workItems.map(({ key, title }) => (
+                <option key={key} value={key}>
+                  {key} · {title}
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
+          <div>
+            <Label htmlFor={`proposal-markdown-${String(index)}`}>
+              Proposed Markdown {index + 1}
+            </Label>
+            <Textarea
+              id={`proposal-markdown-${String(index)}`}
+              rows={8}
+              maxLength={32_000}
+              value={document.markdown}
+              onChange={(event) => update(index, { markdown: event.target.value })}
+            />
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            aria-label={`Remove proposed document ${String(index + 1)}`}
+            onClick={() =>
+              onChange({
+                ...plan,
+                proposedDocuments: documents.filter((_, position) => position !== index),
+              })
+            }
+          >
+            Remove proposed document
+          </Button>
+        </section>
+      ))}
+    </section>
   );
 }
 
@@ -547,6 +647,7 @@ export function FeaturePlanEditor({
           Add Work Item
         </Button>
       </section>
+      <ProposedDocumentFields plan={plan} onChange={onChange} />
       <section className="plan-editor-section" aria-labelledby="plan-limits-title">
         <h3 id="plan-limits-title">Execution limits</h3>
         <div className="plan-scope-grid">
@@ -712,6 +813,21 @@ export function FeaturePlanDocumentView({
           ))}
         </ol>
       </section>
+      {(plan.proposedDocuments?.length ?? 0) === 0 ? null : (
+        <section>
+          <h3>Proposed Project documents</h3>
+          <p>Inspect their Markdown and sources using Proposed documents above.</p>
+          <ul>
+            {plan.proposedDocuments?.map((document) => (
+              <li key={document.key}>
+                <code>{document.path}</code> ·{" "}
+                {document.pathIsProvisional ? "Provisional path" : "Proposed path"} · Work Item{" "}
+                {document.workItemKey}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <section className="plan-frozen-limits">
         <h3>Execution limits</h3>
         <p>

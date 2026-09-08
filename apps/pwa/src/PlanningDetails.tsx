@@ -67,9 +67,6 @@ export function DocumentInspector({
   label?: string;
   emptyMessage?: string;
 }) {
-  const [selectedPath, setSelectedPath] = useState("");
-  const selected =
-    context?.documents.find(({ path }) => path === selectedPath) ?? context?.documents[0];
   return (
     <Dialog>
       <DialogTrigger asChild>
@@ -84,45 +81,62 @@ export function DocumentInspector({
           Committed Markdown read for this conversation. These documents remain unchanged by
           planning.
         </DialogDescription>
-        {context?.notice === null || context?.notice === undefined ? null : (
-          <p className="planning-notice">{context.notice}</p>
-        )}
-        {context?.commitId === null || context?.commitId === undefined ? null : (
-          <p className="planning-source-commit">
-            Source commit <code>{context.commitId}</code>
-          </p>
-        )}
-        <SkillProvenance skills={context?.skills ?? []} />
-        {context === null ? (
-          <p>{emptyMessage}</p>
-        ) : context.documents.length === 0 ? (
-          <p>No committed Markdown documents were available for this turn.</p>
-        ) : (
-          <div className="planning-documents-layout">
-            <div className="planning-document-list" role="group" aria-label="Choose a document">
-              {context.documents.map((document) => (
-                <Button
-                  key={document.path}
-                  variant={document.path === selected?.path ? "secondary" : "ghost"}
-                  className="justify-start whitespace-normal text-left"
-                  aria-pressed={document.path === selected?.path}
-                  onClick={() => setSelectedPath(document.path)}
-                >
-                  {document.path}
-                </Button>
-              ))}
-            </div>
-            {selected === undefined ? null : (
-              <section className="planning-document" aria-label={selected.path}>
-                <h3>{selected.path}</h3>
-                <pre tabIndex={0} aria-label={`Contents of ${selected.path}`}>
-                  {selected.content}
-                </pre>
-              </section>
-            )}
-          </div>
-        )}
+        <ProjectDocumentContents context={context} emptyMessage={emptyMessage} />
       </DialogContent>
     </Dialog>
+  );
+}
+
+export function ProjectDocumentContents({
+  context,
+  emptyMessage,
+}: {
+  context: FeatureChat["context"];
+  emptyMessage: string;
+}) {
+  const [selectedPath, setSelectedPath] = useState("");
+  const selected =
+    context?.documents.find(({ path }) => path === selectedPath) ?? context?.documents[0];
+  return (
+    <>
+      {context?.notice === null || context?.notice === undefined ? null : (
+        <p className="planning-notice">{context.notice}</p>
+      )}
+      {context?.commitId === null || context?.commitId === undefined ? null : (
+        <p className="planning-source-commit">
+          Source commit <code>{context.commitId}</code>
+        </p>
+      )}
+      <SkillProvenance skills={context?.skills ?? []} />
+      {context === null ? (
+        <p>{emptyMessage}</p>
+      ) : context.documents.length === 0 ? (
+        <p>No committed Markdown documents were available for this turn.</p>
+      ) : (
+        <div className="planning-documents-layout">
+          <div className="planning-document-list" role="group" aria-label="Choose a document">
+            {context.documents.map((document) => (
+              <Button
+                key={document.path}
+                variant={document.path === selected?.path ? "secondary" : "ghost"}
+                className="justify-start whitespace-normal text-left"
+                aria-pressed={document.path === selected?.path}
+                onClick={() => setSelectedPath(document.path)}
+              >
+                {document.path}
+              </Button>
+            ))}
+          </div>
+          {selected === undefined ? null : (
+            <section className="planning-document" aria-label={selected.path}>
+              <h3>{selected.path}</h3>
+              <pre tabIndex={0} aria-label={`Contents of ${selected.path}`}>
+                {selected.content}
+              </pre>
+            </section>
+          )}
+        </div>
+      )}
+    </>
   );
 }

@@ -4,21 +4,26 @@ import { z } from "zod";
 import {
   ApiErrorSchema,
   FeaturePlanningSkillsSchema,
+  GitHubPlanningSkillBundleSchema,
+  InstallGitHubPlanningSkillCommandSchema,
   InstallPlanningSkillCommandSchema,
   KestrelIdSchema,
   PlanningSkillBundleSchema,
   PlanningSkillCandidatesSchema,
   PlanningSkillCatalogSchema,
   PlanningSkillDigestSchema,
+  PreviewGitHubPlanningSkillCommandSchema,
   SelectPlanningSkillsCommandSchema,
 } from "@kestrel/contracts";
 import {
   installPlanningSkill,
+  installGitHubPlanningSkill,
   listPlanningSkills,
   readPlanningSkill,
   readPlanningSkillInstall,
   readFeaturePlanningSkills,
   saveFeaturePlanningSkills,
+  retainGitHubPlanningSkill,
   type DatabasePool,
 } from "@kestrel/database";
 import { AUTHENTICATED_MUTATION_ROUTE_CONFIG } from "../authentication.js";
@@ -27,6 +32,11 @@ import {
   enumerateHostSkillCandidates,
   loadHostSkillBundle,
 } from "../factory-skill-bundles.js";
+import {
+  FactoryGitHubSkillBundleError,
+  loadGitHubPlanningStarter,
+  loadGitHubSkillBundle,
+} from "../factory-github-skill-bundles.js";
 import { factoryError } from "./factory-planning.js";
 
 const jsonSchema = (schema: z.ZodType) => z.toJSONSchema(schema, { target: "draft-7" });
@@ -50,6 +60,36 @@ function configuredRoot(): string | undefined {
   return root;
 }
 function reject(request: FastifyRequest, reply: FastifyReply, error: unknown) {
+  if (error instanceof z.ZodError)
+    return reply.code(400).send(
+      ApiErrorSchema.parse({
+        schemaVersion: 1,
+        code: "INVALID_REQUEST",
+        message: "The Skill request does not match the supported source or bundle format",
+        correlationId: request.id,
+      }),
+    );
+  if (error instanceof FactoryGitHubSkillBundleError) {
+    const status = [
+      "invalid_source",
+      "missing_dependency",
+      "unsupported_dependency",
+      "reserved_path",
+    ].includes(error.code)
+      ? 400
+      : error.code === "source_unavailable"
+        ? 404
+        : 503;
+    return reply.code(status).send(
+      ApiErrorSchema.parse({
+        schemaVersion: 1,
+        code:
+          status === 503 ? "SERVICE_UNAVAILABLE" : status === 404 ? "NOT_FOUND" : "INVALID_REQUEST",
+        message: error.message,
+        correlationId: request.id,
+      }),
+    );
+  }
   if (error instanceof FactorySkillBundleError) {
     const status =
       error.code === "root_unavailable" ? 503 : error.code === "candidate_not_found" ? 404 : 400;
@@ -67,6 +107,65 @@ function reject(request: FastifyRequest, reply: FastifyReply, error: unknown) {
   return reply.code(failure.status).send(failure.body);
 }
 export function registerPlanningSkillRoutes(app: FastifyInstance, pool: DatabasePool): void {
+  app.post(
+    "/api/v1/planning-skills/github/preview",
+    {
+      bodyLimit: 4096,
+      config: AUTHENTICATED_MUTATION_ROUTE_CONFIG,
+      schema: {
+        body: jsonSchema(PreviewGitHubPlanningSkillCommandSchema),
+        response: { ...errors, 200: jsonSchema(GitHubPlanningSkillBundleSchema) },
+      },
+    },
+    async (request, reply) => {
+      const controller = new AbortController();
+      const deadline = AbortSignal.timeout(120_000);
+      const signal = AbortSignal.any([controller.signal, deadline]);
+      const aborted = () => controller.abort();
+      const closed = () => {
+        if (!reply.raw.writableEnded) controller.abort();
+      };
+      request.raw.once("aborted", aborted);
+      reply.raw.once("close", closed);
+      try {
+        const command = PreviewGitHubPlanningSkillCommandSchema.parse(request.body);
+        const bundle =
+          command.kind === "starter"
+            ? await loadGitHubPlanningStarter({ signal })
+            : await loadGitHubSkillBundle(command, { signal });
+        if (signal.aborted)
+          throw new FactoryGitHubSkillBundleError(deadline.aborted ? "timeout" : "cancelled");
+        return await retainGitHubPlanningSkill(pool, bundle);
+      } catch (error) {
+        return await reject(request, reply, error);
+      } finally {
+        request.raw.off("aborted", aborted);
+        reply.raw.off("close", closed);
+      }
+    },
+  );
+  app.post(
+    "/api/v1/planning-skills/github/install",
+    {
+      bodyLimit: 1024,
+      config: AUTHENTICATED_MUTATION_ROUTE_CONFIG,
+      schema: {
+        body: jsonSchema(InstallGitHubPlanningSkillCommandSchema),
+        response: { ...errors, 201: jsonSchema(GitHubPlanningSkillBundleSchema) },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const command = InstallGitHubPlanningSkillCommandSchema.parse(request.body);
+        const actorId = request.operatorSession?.operator.id;
+        if (actorId === undefined)
+          throw new Error("Authenticated GitHub Skill install has no Operator");
+        return await reply.code(201).send(await installGitHubPlanningSkill(pool, actorId, command));
+      } catch (error) {
+        return reject(request, reply, error);
+      }
+    },
+  );
   app.get(
     "/api/v1/planning-skills",
     { schema: { response: { ...errors, 200: jsonSchema(PlanningSkillCatalogSchema) } } },

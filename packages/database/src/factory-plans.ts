@@ -417,6 +417,12 @@ export async function readFactoryPlans(
   });
 }
 
+function planRequestContent(document: FeaturePlanDocument): string {
+  const comparable = { ...document };
+  if (comparable.proposedDocuments?.length === 0) delete comparable.proposedDocuments;
+  return JSON.stringify(comparable);
+}
+
 export function saveFactoryPlan(
   pool: DatabasePool,
   projectId: string,
@@ -426,8 +432,6 @@ export function saveFactoryPlan(
   render: FactoryPlanArtifactRenderer,
 ): Promise<FeaturePlanVersion> {
   const document = FeaturePlanDocumentSchema.parse(command.plan);
-  const errors = validateFeaturePlan(document);
-  if (errors.length > 0) throw new FactoryError("invalid_plan", errors.slice(0, 8).join("; "));
   return withFactoryFeature(pool, projectId, featureId, async (client, feature) => {
     const duplicate = await client.query<PlanRow>(
       "SELECT * FROM factory_plan_versions WHERE feature_id = $1 AND request_id = $2",
@@ -439,12 +443,16 @@ export function saveFactoryPlan(
         existing.author !== "operator" ||
         existing.created_by !== actorId ||
         existing.based_on_version !== command.expectedVersion ||
-        JSON.stringify(FeaturePlanDocumentSchema.parse(existing.document)) !==
-          JSON.stringify(document)
+        planRequestContent(FeaturePlanDocumentSchema.parse(existing.document)) !==
+          planRequestContent(document)
       )
         throw new FactoryError("conflict");
       return planVersion(existing, feature.project_id);
     }
+    // An accepted legacy request can gain an explicit empty array on replay. Its
+    // original artifact remains authoritative, including at the old byte limit.
+    const errors = validateFeaturePlan(document);
+    if (errors.length > 0) throw new FactoryError("invalid_plan", errors.slice(0, 8).join("; "));
     if (feature.state !== "planning" || feature.latest_plan_version !== command.expectedVersion)
       throw new FactoryError("conflict");
     const pending = await client.query(
