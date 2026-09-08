@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type SyntheticEvent } from "react";
-import { RefreshCw, Send, Square } from "lucide-react";
-import type { Feature, FeatureChat, SendPlanningMessageCommand } from "@kestrel/contracts";
+import { Pencil, RefreshCw, Send, Square } from "lucide-react";
+import type {
+  Feature,
+  FeatureChat,
+  RenameFactoryFeatureCommand,
+  SendPlanningMessageCommand,
+} from "@kestrel/contracts";
 
 import {
   ApiClientError,
@@ -20,6 +25,15 @@ import { FeatureGitHubIssuesPanel } from "./FeatureGitHubIssuesPanel.js";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs.js";
 import { Label } from "./components/ui/label.js";
 import { Textarea } from "./components/ui/textarea.js";
+import { Input } from "./components/ui/input.js";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+  DialogTrigger,
+} from "./components/ui/dialog.js";
+import { renameFactoryFeature } from "./factory-start-api.js";
 
 const ignoreDirtyChange = () => undefined;
 const featureStatus: Record<Feature["state"], string> = {
@@ -36,6 +50,116 @@ type Attempt =
   | { kind: "retry"; turnId: string; requestId: string }
   | { kind: "cancel"; turnId: string };
 
+function FeatureTitleControl({
+  feature,
+  online,
+  onRenamed,
+  onAuthenticationError,
+  rename,
+}: {
+  feature: Feature;
+  online: boolean;
+  onRenamed: (feature: Feature) => void;
+  onAuthenticationError: (error: unknown) => boolean;
+  rename: typeof renameFactoryFeature;
+}) {
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState(feature.title);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const attempt = useRef<RenameFactoryFeatureCommand | null>(null);
+  const submitting = useRef(false);
+  const alive = useRef(true);
+  const enabled = useRef(online);
+  enabled.current = online;
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+  const submit = async (event: SyntheticEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!online || submitting.current || title.trim() === "") return;
+    submitting.current = true;
+    setPending(true);
+    setError(null);
+    attempt.current ??= { requestId: crypto.randomUUID(), title: title.trim() };
+    try {
+      const result = await rename(feature.projectId, feature.id, attempt.current);
+      if (!alive.current) return;
+      if (result.id !== feature.id) throw new Error("A different Feature was returned");
+      if (!enabled.current) {
+        setError("Reconnect and retry to confirm the saved name.");
+        return;
+      }
+      attempt.current = null;
+      onRenamed(result);
+      setOpen(false);
+    } catch (failure) {
+      if (alive.current && !onAuthenticationError(failure))
+        setError(
+          planningRequestError(
+            failure,
+            "The name could not be confirmed. Retry the same rename safely.",
+          ),
+        );
+    } finally {
+      submitting.current = false;
+      if (alive.current) setPending(false);
+    }
+  };
+  return (
+    <Dialog
+      open={open && online}
+      onOpenChange={(value) => {
+        if (!pending) setOpen(value);
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={!online}
+          onClick={() => {
+            if (attempt.current === null) setTitle(feature.title);
+            setOpen(true);
+          }}
+        >
+          <Pencil aria-hidden="true" /> Rename feature
+        </Button>
+      </DialogTrigger>
+      <DialogContent
+        className="sm:max-w-md"
+        showCloseButton={!pending}
+        onInteractOutside={(event) => {
+          if (pending) event.preventDefault();
+        }}
+        onEscapeKeyDown={(event) => {
+          if (pending) event.preventDefault();
+        }}
+      >
+        <DialogTitle>Rename feature</DialogTitle>
+        <DialogDescription>Your name will be kept when Kestrel replies.</DialogDescription>
+        <form className="grid gap-4" onSubmit={(event) => void submit(event)}>
+          <Label htmlFor="feature-name">Feature name</Label>
+          <Input
+            id="feature-name"
+            value={title}
+            maxLength={160}
+            disabled={pending || error !== null}
+            onChange={(event) => setTitle(event.currentTarget.value)}
+          />
+          {error === null ? null : <p role="alert">{error}</p>}
+          <Button type="submit" disabled={!online || pending || title.trim() === ""}>
+            {pending ? "Saving…" : error === null ? "Save name" : "Retry rename"}
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export interface FeatureChatPanelProps {
   projectId: string;
   projectName: string;
@@ -51,6 +175,7 @@ export interface FeatureChatPanelProps {
   sendMessage?: typeof sendPlanningMessage;
   retryTurn?: typeof retryPlanningTurn;
   cancelTurn?: typeof cancelPlanningTurn;
+  renameFeature?: typeof renameFactoryFeature;
 }
 
 export function FeatureChatPanel({
@@ -68,6 +193,7 @@ export function FeatureChatPanel({
   sendMessage = sendPlanningMessage,
   retryTurn = retryPlanningTurn,
   cancelTurn = cancelPlanningTurn,
+  renameFeature = renameFactoryFeature,
 }: FeatureChatPanelProps) {
   const [chat, setChat] = useState<FeatureChat | null>(null);
   const [reading, setReading] = useState(true);
@@ -237,6 +363,17 @@ export function FeatureChatPanel({
             {projectName}
           </a>
           <h1 id="feature-title">{chat.feature.title}</h1>
+          <FeatureTitleControl
+            feature={chat.feature}
+            online={online}
+            rename={renameFeature}
+            onAuthenticationError={onAuthenticationError}
+            onRenamed={(feature) => {
+              setChat((current) => (current === null ? current : { ...current, feature }));
+              onFeatureRead(feature);
+              void refresh();
+            }}
+          />
           <p>{featureStatus[chat.feature.state]}</p>
         </div>
         <div className="feature-planning-actions">
