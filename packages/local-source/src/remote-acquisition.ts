@@ -33,7 +33,7 @@ const ACQUISITION_LOCAL_CONFIG_KEYS = new Set([
   "extensions.objectformat",
 ]);
 const HOST_ENVIRONMENT_KEYS = ["HOME", "PATH", "TMPDIR", "XDG_CONFIG_HOME"] as const;
-const SAFE_GIT_CONFIG_ARGUMENTS = [
+export const SAFE_GIT_CONFIG_ARGUMENTS = [
   "-c",
   "core.hooksPath=/dev/null",
   "-c",
@@ -147,7 +147,7 @@ async function directoryStorageBytes(rootPath: string, stopAfter: number): Promi
   return total;
 }
 
-function safeFetchEnvironment(
+export function safeFetchEnvironment(
   credentialConfig: readonly CredentialConfigEntry[],
 ): NodeJS.ProcessEnv {
   const environment: NodeJS.ProcessEnv = {
@@ -458,7 +458,7 @@ async function verifyAcquisitionBudget(
   }
 }
 
-async function readCredentialConfiguration(
+export async function readCredentialConfiguration(
   config: LocalSourceConfig,
   signal?: AbortSignal,
 ): Promise<readonly CredentialConfigEntry[]> {

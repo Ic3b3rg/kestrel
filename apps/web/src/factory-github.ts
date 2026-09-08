@@ -103,6 +103,14 @@ export class FactoryGitHubError extends Error {
   }
 }
 
+export {
+  response as readFactoryGitHubHttpResponse,
+  httpFailure as factoryGitHubHttpFailure,
+  nextPage as nextFactoryGitHubPage,
+  failedWrite as failedFactoryGitHubWrite,
+  hasMarker as hasFactoryGitHubMarker,
+};
+
 const providerId = z
   .string()
   .regex(/^[1-9][0-9]*$/u)
