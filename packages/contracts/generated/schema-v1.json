@@ -2295,179 +2295,720 @@
           "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
           "type": "string"
         },
-        "gate": {
-          "anyOf": [
-            {
-              "additionalProperties": false,
-              "properties": {
-                "approvedVersion": {
-                  "maximum": 200,
-                  "minimum": 1,
-                  "type": "integer"
-                },
-                "canResume": {
-                  "type": "boolean"
-                },
-                "createdAt": {
-                  "format": "date-time",
-                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
-                  "type": "string"
-                },
-                "featureId": {
-                  "format": "uuid",
-                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-                  "type": "string"
-                },
-                "id": {
-                  "format": "uuid",
-                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-                  "type": "string"
-                },
-                "question": {
-                  "maxLength": 4000,
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "reason": {
-                  "enum": [
-                    "unavailable",
-                    "authentication",
-                    "usage_limit",
-                    "sandbox_unavailable",
-                    "source_unavailable",
-                    "source_changed",
-                    "permission_required",
-                    "input_required",
-                    "timeout",
-                    "cancelled",
-                    "interrupted",
-                    "invalid_response",
-                    "verification_failed",
-                    "revision_changed",
-                    "stop_unconfirmed"
-                  ],
-                  "type": "string"
-                },
-                "requiredDecision": {
-                  "enum": [
-                    "clarify_within_plan",
-                    "retry_within_plan",
-                    "inspect_workspace",
-                    "inspect_environment"
-                  ],
-                  "type": "string"
-                },
-                "resolution": {
-                  "anyOf": [
-                    {
-                      "additionalProperties": false,
-                      "properties": {
-                        "answer": {
-                          "maxLength": 4000,
-                          "minLength": 1,
-                          "pattern": "\\S",
-                          "type": "string"
-                        },
-                        "decision": {
-                          "enum": [
-                            "resume_within_plan",
-                            "requires_plan_change"
-                          ],
-                          "type": "string"
-                        },
-                        "operatorId": {
-                          "format": "uuid",
-                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-                          "type": "string"
-                        },
-                        "requestId": {
-                          "format": "uuid",
-                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-                          "type": "string"
-                        },
-                        "resolvedAt": {
-                          "format": "date-time",
-                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "requestId",
-                        "operatorId",
-                        "decision",
-                        "answer",
-                        "resolvedAt"
-                      ],
-                      "type": "object"
+        "finalVerification": {
+          "additionalProperties": false,
+          "properties": {
+            "certificate": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "approvedVersion": {
+                      "maximum": 200,
+                      "minimum": 1,
+                      "type": "integer"
                     },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "resumeBlockedReason": {
-                  "anyOf": [
-                    {
-                      "enum": [
-                        "unconfirmed_stop",
-                        "workspace_uncertain",
-                        "cancelled",
-                        "stale_gate",
-                        "attempt_limit",
-                        "plan_change_required",
-                        "already_resolved"
-                      ],
+                    "createdAt": {
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
                       "type": "string"
                     },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "runId": {
-                  "format": "uuid",
-                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-                  "type": "string"
-                },
-                "schemaVersion": {
-                  "const": 1,
-                  "type": "number"
-                },
-                "successorRunId": {
-                  "anyOf": [
-                    {
+                    "evidenceIds": {
+                      "items": {
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      "maxItems": 480,
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "featureId": {
                       "format": "uuid",
                       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
                       "type": "string"
                     },
-                    {
+                    "id": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                      "type": "string"
+                    },
+                    "manifest": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "command": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "args": {
+                                "items": {
+                                  "maxLength": 2048,
+                                  "pattern": "^[^\\x00]*$",
+                                  "type": "string"
+                                },
+                                "maxItems": 32,
+                                "type": "array"
+                              },
+                              "cwd": {
+                                "maxLength": 256,
+                                "minLength": 1,
+                                "pattern": "^[^\\x00]*$",
+                                "type": "string"
+                              },
+                              "program": {
+                                "maxLength": 128,
+                                "minLength": 1,
+                                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._+-]*$",
+                                "type": "string"
+                              },
+                              "timeoutSeconds": {
+                                "maximum": 7200,
+                                "minimum": 1,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "program",
+                              "args",
+                              "cwd",
+                              "timeoutSeconds"
+                            ],
+                            "type": "object"
+                          },
+                          "origins": {
+                            "items": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "position": {
+                                  "maximum": 12,
+                                  "minimum": 1,
+                                  "type": "integer"
+                                },
+                                "workItemKey": {
+                                  "maxLength": 48,
+                                  "minLength": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "workItemKey",
+                                "position"
+                              ],
+                              "type": "object"
+                            },
+                            "maxItems": 480,
+                            "minItems": 1,
+                            "type": "array"
+                          },
+                          "position": {
+                            "maximum": 480,
+                            "minimum": 1,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "position",
+                          "command",
+                          "origins"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 480,
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "manifestDigest": {
+                      "pattern": "^[a-f0-9]{64}$",
+                      "type": "string"
+                    },
+                    "revision": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "baseCommitId": {
+                          "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                          "type": "string"
+                        },
+                        "branch": {
+                          "maxLength": 200,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "headCommitId": {
+                          "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                          "type": "string"
+                        },
+                        "treeId": {
+                          "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "baseCommitId",
+                        "headCommitId",
+                        "treeId",
+                        "branch"
+                      ],
+                      "type": "object"
+                    },
+                    "runId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                      "type": "string"
+                    },
+                    "source": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "identity": {
+                          "maxLength": 512,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "repositoryId": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "repositoryId",
+                        "identity"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "featureId",
+                    "approvedVersion",
+                    "runId",
+                    "source",
+                    "revision",
+                    "manifest",
+                    "manifestDigest",
+                    "evidenceIds",
+                    "createdAt"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "progress": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "checked": {
+                      "maximum": 480,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "passed": {
+                      "maximum": 480,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "round": {
+                      "maximum": 3,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "total": {
+                      "maximum": 480,
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "round",
+                    "checked",
+                    "passed",
+                    "total"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "runs": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "attempt": {
+                    "maximum": 20,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "completedAt": {
+                    "anyOf": [
+                      {
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "createdAt": {
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                    "type": "string"
+                  },
+                  "failure": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "unavailable",
+                          "authentication",
+                          "usage_limit",
+                          "sandbox_unavailable",
+                          "source_unavailable",
+                          "source_changed",
+                          "permission_required",
+                          "input_required",
+                          "timeout",
+                          "cancelled",
+                          "interrupted",
+                          "invalid_response",
+                          "verification_failed",
+                          "revision_changed",
+                          "stop_unconfirmed"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "id": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                    "type": "string"
+                  },
+                  "purpose": {
+                    "const": "feature_verification",
+                    "type": "string"
+                  },
+                  "startedAt": {
+                    "anyOf": [
+                      {
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "state": {
+                    "enum": [
+                      "queued",
+                      "running",
+                      "verifying",
+                      "stopping",
+                      "verified",
+                      "blocked",
+                      "cancelled",
+                      "interrupted"
+                    ],
+                    "type": "string"
+                  },
+                  "workItemId": {
+                    "type": "null"
+                  },
+                  "writerStopped": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "id",
+                  "attempt",
+                  "state",
+                  "failure",
+                  "writerStopped",
+                  "createdAt",
+                  "startedAt",
+                  "completedAt",
+                  "purpose",
+                  "workItemId"
+                ],
+                "type": "object"
+              },
+              "maxItems": 20,
+              "type": "array"
+            }
+          },
+          "required": [
+            "runs",
+            "certificate",
+            "progress"
+          ],
+          "type": "object"
+        },
+        "gate": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "approvedVersion": {
+                      "maximum": 200,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "canResume": {
+                      "type": "boolean"
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                      "type": "string"
+                    },
+                    "featureId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                      "type": "string"
+                    },
+                    "id": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                      "type": "string"
+                    },
+                    "purpose": {
+                      "const": "work_item",
+                      "type": "string"
+                    },
+                    "question": {
+                      "maxLength": 4000,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "reason": {
+                      "enum": [
+                        "unavailable",
+                        "authentication",
+                        "usage_limit",
+                        "sandbox_unavailable",
+                        "source_unavailable",
+                        "source_changed",
+                        "permission_required",
+                        "input_required",
+                        "timeout",
+                        "cancelled",
+                        "interrupted",
+                        "invalid_response",
+                        "verification_failed",
+                        "revision_changed",
+                        "stop_unconfirmed"
+                      ],
+                      "type": "string"
+                    },
+                    "requiredDecision": {
+                      "enum": [
+                        "clarify_within_plan",
+                        "retry_within_plan",
+                        "inspect_workspace",
+                        "inspect_environment"
+                      ],
+                      "type": "string"
+                    },
+                    "resolution": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "answer": {
+                              "maxLength": 4000,
+                              "minLength": 1,
+                              "pattern": "\\S",
+                              "type": "string"
+                            },
+                            "decision": {
+                              "enum": [
+                                "resume_within_plan",
+                                "requires_plan_change"
+                              ],
+                              "type": "string"
+                            },
+                            "operatorId": {
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                              "type": "string"
+                            },
+                            "requestId": {
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                              "type": "string"
+                            },
+                            "resolvedAt": {
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "requestId",
+                            "operatorId",
+                            "decision",
+                            "answer",
+                            "resolvedAt"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "resumeBlockedReason": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "unconfirmed_stop",
+                            "workspace_uncertain",
+                            "cancelled",
+                            "stale_gate",
+                            "attempt_limit",
+                            "plan_change_required",
+                            "already_resolved"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "runId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                      "type": "string"
+                    },
+                    "schemaVersion": {
+                      "const": 1,
+                      "type": "number"
+                    },
+                    "successorRunId": {
+                      "anyOf": [
+                        {
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "workItemId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "schemaVersion",
+                    "id",
+                    "featureId",
+                    "runId",
+                    "approvedVersion",
+                    "reason",
+                    "question",
+                    "requiredDecision",
+                    "createdAt",
+                    "resolution",
+                    "successorRunId",
+                    "canResume",
+                    "resumeBlockedReason",
+                    "workItemId"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "approvedVersion": {
+                      "maximum": 200,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "canResume": {
+                      "type": "boolean"
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                      "type": "string"
+                    },
+                    "featureId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                      "type": "string"
+                    },
+                    "id": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                      "type": "string"
+                    },
+                    "purpose": {
+                      "const": "feature_verification",
+                      "type": "string"
+                    },
+                    "question": {
+                      "maxLength": 4000,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "reason": {
+                      "enum": [
+                        "unavailable",
+                        "authentication",
+                        "usage_limit",
+                        "sandbox_unavailable",
+                        "source_unavailable",
+                        "source_changed",
+                        "permission_required",
+                        "input_required",
+                        "timeout",
+                        "cancelled",
+                        "interrupted",
+                        "invalid_response",
+                        "verification_failed",
+                        "revision_changed",
+                        "stop_unconfirmed"
+                      ],
+                      "type": "string"
+                    },
+                    "requiredDecision": {
+                      "enum": [
+                        "clarify_within_plan",
+                        "retry_within_plan",
+                        "inspect_workspace",
+                        "inspect_environment"
+                      ],
+                      "type": "string"
+                    },
+                    "resolution": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "answer": {
+                              "maxLength": 4000,
+                              "minLength": 1,
+                              "pattern": "\\S",
+                              "type": "string"
+                            },
+                            "decision": {
+                              "enum": [
+                                "resume_within_plan",
+                                "requires_plan_change"
+                              ],
+                              "type": "string"
+                            },
+                            "operatorId": {
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                              "type": "string"
+                            },
+                            "requestId": {
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                              "type": "string"
+                            },
+                            "resolvedAt": {
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "requestId",
+                            "operatorId",
+                            "decision",
+                            "answer",
+                            "resolvedAt"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "resumeBlockedReason": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "unconfirmed_stop",
+                            "workspace_uncertain",
+                            "cancelled",
+                            "stale_gate",
+                            "attempt_limit",
+                            "plan_change_required",
+                            "already_resolved"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "runId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                      "type": "string"
+                    },
+                    "schemaVersion": {
+                      "const": 1,
+                      "type": "number"
+                    },
+                    "successorRunId": {
+                      "anyOf": [
+                        {
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "workItemId": {
                       "type": "null"
                     }
-                  ]
-                },
-                "workItemId": {
-                  "format": "uuid",
-                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-                  "type": "string"
+                  },
+                  "required": [
+                    "schemaVersion",
+                    "id",
+                    "featureId",
+                    "runId",
+                    "approvedVersion",
+                    "reason",
+                    "question",
+                    "requiredDecision",
+                    "createdAt",
+                    "resolution",
+                    "successorRunId",
+                    "canResume",
+                    "resumeBlockedReason",
+                    "purpose",
+                    "workItemId"
+                  ],
+                  "type": "object"
                 }
-              },
-              "required": [
-                "schemaVersion",
-                "id",
-                "featureId",
-                "workItemId",
-                "runId",
-                "approvedVersion",
-                "reason",
-                "question",
-                "requiredDecision",
-                "createdAt",
-                "resolution",
-                "successorRunId",
-                "canResume",
-                "resumeBlockedReason"
-              ],
-              "type": "object"
+              ]
             },
             {
               "type": "null"
@@ -2610,6 +3151,10 @@
                       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
                       "type": "string"
                     },
+                    "purpose": {
+                      "const": "work_item",
+                      "type": "string"
+                    },
                     "startedAt": {
                       "anyOf": [
                         {
@@ -2646,14 +3191,14 @@
                   },
                   "required": [
                     "id",
-                    "workItemId",
                     "attempt",
                     "state",
                     "failure",
                     "writerStopped",
                     "createdAt",
                     "startedAt",
-                    "completedAt"
+                    "completedAt",
+                    "workItemId"
                   ],
                   "type": "object"
                 },
@@ -2684,480 +3229,12 @@
       "type": "object"
     },
     "FactoryExecutionRun": {
-      "additionalProperties": false,
-      "properties": {
-        "acceptedCommands": {
-          "items": {
-            "additionalProperties": false,
-            "properties": {
-              "args": {
-                "items": {
-                  "maxLength": 2048,
-                  "pattern": "^[^\\x00]*$",
-                  "type": "string"
-                },
-                "maxItems": 32,
-                "type": "array"
-              },
-              "cwd": {
-                "maxLength": 256,
-                "minLength": 1,
-                "pattern": "^[^\\x00]*$",
-                "type": "string"
-              },
-              "program": {
-                "maxLength": 128,
-                "minLength": 1,
-                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._+-]*$",
-                "type": "string"
-              },
-              "timeoutSeconds": {
-                "maximum": 7200,
-                "minimum": 1,
-                "type": "integer"
-              }
-            },
-            "required": [
-              "program",
-              "args",
-              "cwd",
-              "timeoutSeconds"
-            ],
-            "type": "object"
-          },
-          "maxItems": 12,
-          "minItems": 1,
-          "type": "array"
-        },
-        "activity": {
-          "items": {
-            "additionalProperties": false,
-            "properties": {
-              "createdAt": {
-                "format": "date-time",
-                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
-                "type": "string"
-              },
-              "id": {
-                "format": "uuid",
-                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-                "type": "string"
-              },
-              "kind": {
-                "enum": [
-                  "runtime",
-                  "command",
-                  "file_change",
-                  "question",
-                  "verification",
-                  "lifecycle"
-                ],
-                "type": "string"
-              },
-              "summary": {
-                "maxLength": 2000,
-                "minLength": 1,
-                "type": "string"
-              }
-            },
-            "required": [
-              "id",
-              "kind",
-              "summary",
-              "createdAt"
-            ],
-            "type": "object"
-          },
-          "maxItems": 100,
-          "type": "array"
-        },
-        "approvedVersion": {
-          "maximum": 200,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "attempt": {
-          "maximum": 20,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "completedAt": {
-          "anyOf": [
-            {
-              "format": "date-time",
-              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "createdAt": {
-          "format": "date-time",
-          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
-          "type": "string"
-        },
-        "failure": {
-          "anyOf": [
-            {
-              "enum": [
-                "unavailable",
-                "authentication",
-                "usage_limit",
-                "sandbox_unavailable",
-                "source_unavailable",
-                "source_changed",
-                "permission_required",
-                "input_required",
-                "timeout",
-                "cancelled",
-                "interrupted",
-                "invalid_response",
-                "verification_failed",
-                "revision_changed",
-                "stop_unconfirmed"
-              ],
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "featureId": {
-          "format": "uuid",
-          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-          "type": "string"
-        },
-        "gate": {
-          "anyOf": [
-            {
-              "additionalProperties": false,
-              "properties": {
-                "approvedVersion": {
-                  "maximum": 200,
-                  "minimum": 1,
-                  "type": "integer"
-                },
-                "canResume": {
-                  "type": "boolean"
-                },
-                "createdAt": {
-                  "format": "date-time",
-                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
-                  "type": "string"
-                },
-                "featureId": {
-                  "format": "uuid",
-                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-                  "type": "string"
-                },
-                "id": {
-                  "format": "uuid",
-                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-                  "type": "string"
-                },
-                "question": {
-                  "maxLength": 4000,
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "reason": {
-                  "enum": [
-                    "unavailable",
-                    "authentication",
-                    "usage_limit",
-                    "sandbox_unavailable",
-                    "source_unavailable",
-                    "source_changed",
-                    "permission_required",
-                    "input_required",
-                    "timeout",
-                    "cancelled",
-                    "interrupted",
-                    "invalid_response",
-                    "verification_failed",
-                    "revision_changed",
-                    "stop_unconfirmed"
-                  ],
-                  "type": "string"
-                },
-                "requiredDecision": {
-                  "enum": [
-                    "clarify_within_plan",
-                    "retry_within_plan",
-                    "inspect_workspace",
-                    "inspect_environment"
-                  ],
-                  "type": "string"
-                },
-                "resolution": {
-                  "anyOf": [
-                    {
-                      "additionalProperties": false,
-                      "properties": {
-                        "answer": {
-                          "maxLength": 4000,
-                          "minLength": 1,
-                          "pattern": "\\S",
-                          "type": "string"
-                        },
-                        "decision": {
-                          "enum": [
-                            "resume_within_plan",
-                            "requires_plan_change"
-                          ],
-                          "type": "string"
-                        },
-                        "operatorId": {
-                          "format": "uuid",
-                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-                          "type": "string"
-                        },
-                        "requestId": {
-                          "format": "uuid",
-                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-                          "type": "string"
-                        },
-                        "resolvedAt": {
-                          "format": "date-time",
-                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "requestId",
-                        "operatorId",
-                        "decision",
-                        "answer",
-                        "resolvedAt"
-                      ],
-                      "type": "object"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "resumeBlockedReason": {
-                  "anyOf": [
-                    {
-                      "enum": [
-                        "unconfirmed_stop",
-                        "workspace_uncertain",
-                        "cancelled",
-                        "stale_gate",
-                        "attempt_limit",
-                        "plan_change_required",
-                        "already_resolved"
-                      ],
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "runId": {
-                  "format": "uuid",
-                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-                  "type": "string"
-                },
-                "schemaVersion": {
-                  "const": 1,
-                  "type": "number"
-                },
-                "successorRunId": {
-                  "anyOf": [
-                    {
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "workItemId": {
-                  "format": "uuid",
-                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-                  "type": "string"
-                }
-              },
-              "required": [
-                "schemaVersion",
-                "id",
-                "featureId",
-                "workItemId",
-                "runId",
-                "approvedVersion",
-                "reason",
-                "question",
-                "requiredDecision",
-                "createdAt",
-                "resolution",
-                "successorRunId",
-                "canResume",
-                "resumeBlockedReason"
-              ],
-              "type": "object"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "id": {
-          "format": "uuid",
-          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-          "type": "string"
-        },
-        "question": {
-          "anyOf": [
-            {
-              "maxLength": 4000,
-              "minLength": 1,
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "revision": {
-          "anyOf": [
-            {
-              "additionalProperties": false,
-              "properties": {
-                "baseCommitId": {
-                  "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
-                  "type": "string"
-                },
-                "branch": {
-                  "maxLength": 200,
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "headCommitId": {
-                  "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
-                  "type": "string"
-                },
-                "treeId": {
-                  "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
-                  "type": "string"
-                }
-              },
-              "required": [
-                "baseCommitId",
-                "headCommitId",
-                "treeId",
-                "branch"
-              ],
-              "type": "object"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "runtime": {
-          "anyOf": [
-            {
-              "additionalProperties": false,
-              "properties": {
-                "containerId": {
-                  "anyOf": [
-                    {
-                      "maxLength": 128,
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "kind": {
-                  "const": "codex",
-                  "type": "string"
-                },
-                "model": {
-                  "maxLength": 200,
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "threadId": {
-                  "anyOf": [
-                    {
-                      "maxLength": 256,
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "turnId": {
-                  "anyOf": [
-                    {
-                      "maxLength": 256,
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                }
-              },
-              "required": [
-                "kind",
-                "model",
-                "threadId",
-                "turnId",
-                "containerId"
-              ],
-              "type": "object"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "schemaVersion": {
-          "const": 1,
-          "type": "number"
-        },
-        "startedAt": {
-          "anyOf": [
-            {
-              "format": "date-time",
-              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "state": {
-          "enum": [
-            "queued",
-            "running",
-            "verifying",
-            "stopping",
-            "verified",
-            "blocked",
-            "cancelled",
-            "interrupted"
-          ],
-          "type": "string"
-        },
-        "verification": {
-          "items": {
-            "additionalProperties": false,
-            "properties": {
-              "command": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "acceptedCommands": {
+              "items": {
                 "additionalProperties": false,
                 "properties": {
                   "args": {
@@ -3195,299 +3272,2076 @@
                 ],
                 "type": "object"
               },
-              "createdAt": {
-                "format": "date-time",
-                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
-                "type": "string"
-              },
-              "durationMs": {
-                "maximum": 9007199254740991,
-                "minimum": 0,
-                "type": "integer"
-              },
-              "exitCode": {
-                "anyOf": [
-                  {
-                    "maximum": 9007199254740991,
-                    "minimum": -9007199254740991,
-                    "type": "integer"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "headCommitId": {
-                "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
-                "type": "string"
-              },
-              "id": {
-                "format": "uuid",
-                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-                "type": "string"
-              },
-              "outcome": {
-                "enum": [
-                  "passed",
-                  "failed",
-                  "timeout",
-                  "cancelled",
-                  "unavailable"
-                ],
-                "type": "string"
-              },
-              "position": {
-                "maximum": 12,
-                "minimum": 1,
-                "type": "integer"
-              },
-              "round": {
-                "maximum": 3,
-                "minimum": 1,
-                "type": "integer"
-              },
-              "stderr": {
-                "maxLength": 8192,
-                "type": "string"
-              },
-              "stderrTruncated": {
-                "type": "boolean"
-              },
-              "stdout": {
-                "maxLength": 8192,
-                "type": "string"
-              },
-              "stdoutTruncated": {
-                "type": "boolean"
-              },
-              "treeId": {
-                "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
-                "type": "string"
-              }
+              "maxItems": 12,
+              "minItems": 1,
+              "type": "array"
             },
-            "required": [
-              "id",
-              "round",
-              "position",
-              "command",
-              "headCommitId",
-              "treeId",
-              "outcome",
-              "exitCode",
-              "stdout",
-              "stderr",
-              "stdoutTruncated",
-              "stderrTruncated",
-              "durationMs",
-              "createdAt"
-            ],
-            "type": "object"
-          },
-          "maxItems": 36,
-          "type": "array"
-        },
-        "workItemId": {
-          "format": "uuid",
-          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-          "type": "string"
-        },
-        "writerStopped": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "id",
-        "workItemId",
-        "attempt",
-        "state",
-        "failure",
-        "writerStopped",
-        "createdAt",
-        "startedAt",
-        "completedAt",
-        "schemaVersion",
-        "featureId",
-        "approvedVersion",
-        "question",
-        "revision",
-        "runtime",
-        "acceptedCommands",
-        "activity",
-        "verification"
-      ],
-      "type": "object"
-    },
-    "FactoryGate": {
-      "additionalProperties": false,
-      "properties": {
-        "approvedVersion": {
-          "maximum": 200,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "canResume": {
-          "type": "boolean"
-        },
-        "createdAt": {
-          "format": "date-time",
-          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
-          "type": "string"
-        },
-        "featureId": {
-          "format": "uuid",
-          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-          "type": "string"
-        },
-        "id": {
-          "format": "uuid",
-          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-          "type": "string"
-        },
-        "question": {
-          "maxLength": 4000,
-          "minLength": 1,
-          "type": "string"
-        },
-        "reason": {
-          "enum": [
-            "unavailable",
-            "authentication",
-            "usage_limit",
-            "sandbox_unavailable",
-            "source_unavailable",
-            "source_changed",
-            "permission_required",
-            "input_required",
-            "timeout",
-            "cancelled",
-            "interrupted",
-            "invalid_response",
-            "verification_failed",
-            "revision_changed",
-            "stop_unconfirmed"
-          ],
-          "type": "string"
-        },
-        "requiredDecision": {
-          "enum": [
-            "clarify_within_plan",
-            "retry_within_plan",
-            "inspect_workspace",
-            "inspect_environment"
-          ],
-          "type": "string"
-        },
-        "resolution": {
-          "anyOf": [
-            {
-              "additionalProperties": false,
-              "properties": {
-                "answer": {
-                  "maxLength": 4000,
-                  "minLength": 1,
-                  "pattern": "\\S",
-                  "type": "string"
+            "activity": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "createdAt": {
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                    "type": "string"
+                  },
+                  "id": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "runtime",
+                      "command",
+                      "file_change",
+                      "question",
+                      "verification",
+                      "lifecycle"
+                    ],
+                    "type": "string"
+                  },
+                  "summary": {
+                    "maxLength": 2000,
+                    "minLength": 1,
+                    "type": "string"
+                  }
                 },
-                "decision": {
-                  "enum": [
-                    "resume_within_plan",
-                    "requires_plan_change"
-                  ],
-                  "type": "string"
-                },
-                "operatorId": {
-                  "format": "uuid",
-                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-                  "type": "string"
-                },
-                "requestId": {
-                  "format": "uuid",
-                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-                  "type": "string"
-                },
-                "resolvedAt": {
+                "required": [
+                  "id",
+                  "kind",
+                  "summary",
+                  "createdAt"
+                ],
+                "type": "object"
+              },
+              "maxItems": 100,
+              "type": "array"
+            },
+            "approvedVersion": {
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "attempt": {
+              "maximum": 20,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "completedAt": {
+              "anyOf": [
+                {
                   "format": "date-time",
                   "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
                   "type": "string"
+                },
+                {
+                  "type": "null"
                 }
-              },
-              "required": [
-                "requestId",
-                "operatorId",
-                "decision",
-                "answer",
-                "resolvedAt"
-              ],
-              "type": "object"
+              ]
             },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "resumeBlockedReason": {
-          "anyOf": [
-            {
-              "enum": [
-                "unconfirmed_stop",
-                "workspace_uncertain",
-                "cancelled",
-                "stale_gate",
-                "attempt_limit",
-                "plan_change_required",
-                "already_resolved"
-              ],
+            "createdAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
               "type": "string"
             },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "runId": {
-          "format": "uuid",
-          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-          "type": "string"
-        },
-        "schemaVersion": {
-          "const": 1,
-          "type": "number"
-        },
-        "successorRunId": {
-          "anyOf": [
-            {
+            "failure": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "unavailable",
+                    "authentication",
+                    "usage_limit",
+                    "sandbox_unavailable",
+                    "source_unavailable",
+                    "source_changed",
+                    "permission_required",
+                    "input_required",
+                    "timeout",
+                    "cancelled",
+                    "interrupted",
+                    "invalid_response",
+                    "verification_failed",
+                    "revision_changed",
+                    "stop_unconfirmed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "featureId": {
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
               "type": "string"
             },
-            {
+            "gate": {
+              "anyOf": [
+                {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "approvedVersion": {
+                          "maximum": 200,
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "canResume": {
+                          "type": "boolean"
+                        },
+                        "createdAt": {
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                          "type": "string"
+                        },
+                        "featureId": {
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                          "type": "string"
+                        },
+                        "id": {
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                          "type": "string"
+                        },
+                        "purpose": {
+                          "const": "work_item",
+                          "type": "string"
+                        },
+                        "question": {
+                          "maxLength": 4000,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "reason": {
+                          "enum": [
+                            "unavailable",
+                            "authentication",
+                            "usage_limit",
+                            "sandbox_unavailable",
+                            "source_unavailable",
+                            "source_changed",
+                            "permission_required",
+                            "input_required",
+                            "timeout",
+                            "cancelled",
+                            "interrupted",
+                            "invalid_response",
+                            "verification_failed",
+                            "revision_changed",
+                            "stop_unconfirmed"
+                          ],
+                          "type": "string"
+                        },
+                        "requiredDecision": {
+                          "enum": [
+                            "clarify_within_plan",
+                            "retry_within_plan",
+                            "inspect_workspace",
+                            "inspect_environment"
+                          ],
+                          "type": "string"
+                        },
+                        "resolution": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "answer": {
+                                  "maxLength": 4000,
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "decision": {
+                                  "enum": [
+                                    "resume_within_plan",
+                                    "requires_plan_change"
+                                  ],
+                                  "type": "string"
+                                },
+                                "operatorId": {
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                  "type": "string"
+                                },
+                                "requestId": {
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                  "type": "string"
+                                },
+                                "resolvedAt": {
+                                  "format": "date-time",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "requestId",
+                                "operatorId",
+                                "decision",
+                                "answer",
+                                "resolvedAt"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "resumeBlockedReason": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "unconfirmed_stop",
+                                "workspace_uncertain",
+                                "cancelled",
+                                "stale_gate",
+                                "attempt_limit",
+                                "plan_change_required",
+                                "already_resolved"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "runId": {
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                          "type": "string"
+                        },
+                        "schemaVersion": {
+                          "const": 1,
+                          "type": "number"
+                        },
+                        "successorRunId": {
+                          "anyOf": [
+                            {
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "workItemId": {
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "schemaVersion",
+                        "id",
+                        "featureId",
+                        "runId",
+                        "approvedVersion",
+                        "reason",
+                        "question",
+                        "requiredDecision",
+                        "createdAt",
+                        "resolution",
+                        "successorRunId",
+                        "canResume",
+                        "resumeBlockedReason",
+                        "workItemId"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "approvedVersion": {
+                          "maximum": 200,
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "canResume": {
+                          "type": "boolean"
+                        },
+                        "createdAt": {
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                          "type": "string"
+                        },
+                        "featureId": {
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                          "type": "string"
+                        },
+                        "id": {
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                          "type": "string"
+                        },
+                        "purpose": {
+                          "const": "feature_verification",
+                          "type": "string"
+                        },
+                        "question": {
+                          "maxLength": 4000,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "reason": {
+                          "enum": [
+                            "unavailable",
+                            "authentication",
+                            "usage_limit",
+                            "sandbox_unavailable",
+                            "source_unavailable",
+                            "source_changed",
+                            "permission_required",
+                            "input_required",
+                            "timeout",
+                            "cancelled",
+                            "interrupted",
+                            "invalid_response",
+                            "verification_failed",
+                            "revision_changed",
+                            "stop_unconfirmed"
+                          ],
+                          "type": "string"
+                        },
+                        "requiredDecision": {
+                          "enum": [
+                            "clarify_within_plan",
+                            "retry_within_plan",
+                            "inspect_workspace",
+                            "inspect_environment"
+                          ],
+                          "type": "string"
+                        },
+                        "resolution": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "answer": {
+                                  "maxLength": 4000,
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "decision": {
+                                  "enum": [
+                                    "resume_within_plan",
+                                    "requires_plan_change"
+                                  ],
+                                  "type": "string"
+                                },
+                                "operatorId": {
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                  "type": "string"
+                                },
+                                "requestId": {
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                  "type": "string"
+                                },
+                                "resolvedAt": {
+                                  "format": "date-time",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "requestId",
+                                "operatorId",
+                                "decision",
+                                "answer",
+                                "resolvedAt"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "resumeBlockedReason": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "unconfirmed_stop",
+                                "workspace_uncertain",
+                                "cancelled",
+                                "stale_gate",
+                                "attempt_limit",
+                                "plan_change_required",
+                                "already_resolved"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "runId": {
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                          "type": "string"
+                        },
+                        "schemaVersion": {
+                          "const": 1,
+                          "type": "number"
+                        },
+                        "successorRunId": {
+                          "anyOf": [
+                            {
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "workItemId": {
+                          "type": "null"
+                        }
+                      },
+                      "required": [
+                        "schemaVersion",
+                        "id",
+                        "featureId",
+                        "runId",
+                        "approvedVersion",
+                        "reason",
+                        "question",
+                        "requiredDecision",
+                        "createdAt",
+                        "resolution",
+                        "successorRunId",
+                        "canResume",
+                        "resumeBlockedReason",
+                        "purpose",
+                        "workItemId"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "purpose": {
+              "const": "work_item",
+              "type": "string"
+            },
+            "question": {
+              "anyOf": [
+                {
+                  "maxLength": 4000,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "revision": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "baseCommitId": {
+                      "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                      "type": "string"
+                    },
+                    "branch": {
+                      "maxLength": 200,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "headCommitId": {
+                      "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                      "type": "string"
+                    },
+                    "treeId": {
+                      "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "baseCommitId",
+                    "headCommitId",
+                    "treeId",
+                    "branch"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "runtime": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "containerId": {
+                      "anyOf": [
+                        {
+                          "maxLength": 128,
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "kind": {
+                      "const": "codex",
+                      "type": "string"
+                    },
+                    "model": {
+                      "maxLength": 200,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "threadId": {
+                      "anyOf": [
+                        {
+                          "maxLength": 256,
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "turnId": {
+                      "anyOf": [
+                        {
+                          "maxLength": 256,
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "model",
+                    "threadId",
+                    "turnId",
+                    "containerId"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "schemaVersion": {
+              "const": 1,
+              "type": "number"
+            },
+            "startedAt": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "state": {
+              "enum": [
+                "queued",
+                "running",
+                "verifying",
+                "stopping",
+                "verified",
+                "blocked",
+                "cancelled",
+                "interrupted"
+              ],
+              "type": "string"
+            },
+            "verification": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "command": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "args": {
+                        "items": {
+                          "maxLength": 2048,
+                          "pattern": "^[^\\x00]*$",
+                          "type": "string"
+                        },
+                        "maxItems": 32,
+                        "type": "array"
+                      },
+                      "cwd": {
+                        "maxLength": 256,
+                        "minLength": 1,
+                        "pattern": "^[^\\x00]*$",
+                        "type": "string"
+                      },
+                      "program": {
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._+-]*$",
+                        "type": "string"
+                      },
+                      "timeoutSeconds": {
+                        "maximum": 7200,
+                        "minimum": 1,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "program",
+                      "args",
+                      "cwd",
+                      "timeoutSeconds"
+                    ],
+                    "type": "object"
+                  },
+                  "createdAt": {
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                    "type": "string"
+                  },
+                  "durationMs": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "exitCode": {
+                    "anyOf": [
+                      {
+                        "maximum": 9007199254740991,
+                        "minimum": -9007199254740991,
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "headCommitId": {
+                    "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                    "type": "string"
+                  },
+                  "id": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                    "type": "string"
+                  },
+                  "outcome": {
+                    "enum": [
+                      "passed",
+                      "failed",
+                      "timeout",
+                      "cancelled",
+                      "unavailable"
+                    ],
+                    "type": "string"
+                  },
+                  "position": {
+                    "maximum": 12,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "round": {
+                    "maximum": 3,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "stderr": {
+                    "maxLength": 8192,
+                    "type": "string"
+                  },
+                  "stderrTruncated": {
+                    "type": "boolean"
+                  },
+                  "stdout": {
+                    "maxLength": 8192,
+                    "type": "string"
+                  },
+                  "stdoutTruncated": {
+                    "type": "boolean"
+                  },
+                  "treeId": {
+                    "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "round",
+                  "position",
+                  "command",
+                  "headCommitId",
+                  "treeId",
+                  "outcome",
+                  "exitCode",
+                  "stdout",
+                  "stderr",
+                  "stdoutTruncated",
+                  "stderrTruncated",
+                  "durationMs",
+                  "createdAt"
+                ],
+                "type": "object"
+              },
+              "maxItems": 36,
+              "type": "array"
+            },
+            "workItemId": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "writerStopped": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id",
+            "attempt",
+            "state",
+            "failure",
+            "writerStopped",
+            "createdAt",
+            "startedAt",
+            "completedAt",
+            "workItemId",
+            "schemaVersion",
+            "featureId",
+            "approvedVersion",
+            "question",
+            "revision",
+            "runtime",
+            "activity",
+            "acceptedCommands",
+            "verification"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "acceptedCommands": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "args": {
+                    "items": {
+                      "maxLength": 2048,
+                      "pattern": "^[^\\x00]*$",
+                      "type": "string"
+                    },
+                    "maxItems": 32,
+                    "type": "array"
+                  },
+                  "cwd": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\x00]*$",
+                    "type": "string"
+                  },
+                  "program": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._+-]*$",
+                    "type": "string"
+                  },
+                  "timeoutSeconds": {
+                    "maximum": 7200,
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "program",
+                  "args",
+                  "cwd",
+                  "timeoutSeconds"
+                ],
+                "type": "object"
+              },
+              "maxItems": 480,
+              "minItems": 1,
+              "type": "array"
+            },
+            "activity": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "createdAt": {
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                    "type": "string"
+                  },
+                  "id": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "runtime",
+                      "command",
+                      "file_change",
+                      "question",
+                      "verification",
+                      "lifecycle"
+                    ],
+                    "type": "string"
+                  },
+                  "summary": {
+                    "maxLength": 2000,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "kind",
+                  "summary",
+                  "createdAt"
+                ],
+                "type": "object"
+              },
+              "maxItems": 100,
+              "type": "array"
+            },
+            "approvedVersion": {
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "attempt": {
+              "maximum": 20,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "completedAt": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "createdAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "type": "string"
+            },
+            "failure": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "unavailable",
+                    "authentication",
+                    "usage_limit",
+                    "sandbox_unavailable",
+                    "source_unavailable",
+                    "source_changed",
+                    "permission_required",
+                    "input_required",
+                    "timeout",
+                    "cancelled",
+                    "interrupted",
+                    "invalid_response",
+                    "verification_failed",
+                    "revision_changed",
+                    "stop_unconfirmed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "featureId": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "gate": {
+              "anyOf": [
+                {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "approvedVersion": {
+                          "maximum": 200,
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "canResume": {
+                          "type": "boolean"
+                        },
+                        "createdAt": {
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                          "type": "string"
+                        },
+                        "featureId": {
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                          "type": "string"
+                        },
+                        "id": {
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                          "type": "string"
+                        },
+                        "purpose": {
+                          "const": "work_item",
+                          "type": "string"
+                        },
+                        "question": {
+                          "maxLength": 4000,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "reason": {
+                          "enum": [
+                            "unavailable",
+                            "authentication",
+                            "usage_limit",
+                            "sandbox_unavailable",
+                            "source_unavailable",
+                            "source_changed",
+                            "permission_required",
+                            "input_required",
+                            "timeout",
+                            "cancelled",
+                            "interrupted",
+                            "invalid_response",
+                            "verification_failed",
+                            "revision_changed",
+                            "stop_unconfirmed"
+                          ],
+                          "type": "string"
+                        },
+                        "requiredDecision": {
+                          "enum": [
+                            "clarify_within_plan",
+                            "retry_within_plan",
+                            "inspect_workspace",
+                            "inspect_environment"
+                          ],
+                          "type": "string"
+                        },
+                        "resolution": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "answer": {
+                                  "maxLength": 4000,
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "decision": {
+                                  "enum": [
+                                    "resume_within_plan",
+                                    "requires_plan_change"
+                                  ],
+                                  "type": "string"
+                                },
+                                "operatorId": {
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                  "type": "string"
+                                },
+                                "requestId": {
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                  "type": "string"
+                                },
+                                "resolvedAt": {
+                                  "format": "date-time",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "requestId",
+                                "operatorId",
+                                "decision",
+                                "answer",
+                                "resolvedAt"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "resumeBlockedReason": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "unconfirmed_stop",
+                                "workspace_uncertain",
+                                "cancelled",
+                                "stale_gate",
+                                "attempt_limit",
+                                "plan_change_required",
+                                "already_resolved"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "runId": {
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                          "type": "string"
+                        },
+                        "schemaVersion": {
+                          "const": 1,
+                          "type": "number"
+                        },
+                        "successorRunId": {
+                          "anyOf": [
+                            {
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "workItemId": {
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "schemaVersion",
+                        "id",
+                        "featureId",
+                        "runId",
+                        "approvedVersion",
+                        "reason",
+                        "question",
+                        "requiredDecision",
+                        "createdAt",
+                        "resolution",
+                        "successorRunId",
+                        "canResume",
+                        "resumeBlockedReason",
+                        "workItemId"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "approvedVersion": {
+                          "maximum": 200,
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "canResume": {
+                          "type": "boolean"
+                        },
+                        "createdAt": {
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                          "type": "string"
+                        },
+                        "featureId": {
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                          "type": "string"
+                        },
+                        "id": {
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                          "type": "string"
+                        },
+                        "purpose": {
+                          "const": "feature_verification",
+                          "type": "string"
+                        },
+                        "question": {
+                          "maxLength": 4000,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "reason": {
+                          "enum": [
+                            "unavailable",
+                            "authentication",
+                            "usage_limit",
+                            "sandbox_unavailable",
+                            "source_unavailable",
+                            "source_changed",
+                            "permission_required",
+                            "input_required",
+                            "timeout",
+                            "cancelled",
+                            "interrupted",
+                            "invalid_response",
+                            "verification_failed",
+                            "revision_changed",
+                            "stop_unconfirmed"
+                          ],
+                          "type": "string"
+                        },
+                        "requiredDecision": {
+                          "enum": [
+                            "clarify_within_plan",
+                            "retry_within_plan",
+                            "inspect_workspace",
+                            "inspect_environment"
+                          ],
+                          "type": "string"
+                        },
+                        "resolution": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "answer": {
+                                  "maxLength": 4000,
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "decision": {
+                                  "enum": [
+                                    "resume_within_plan",
+                                    "requires_plan_change"
+                                  ],
+                                  "type": "string"
+                                },
+                                "operatorId": {
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                  "type": "string"
+                                },
+                                "requestId": {
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                  "type": "string"
+                                },
+                                "resolvedAt": {
+                                  "format": "date-time",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "requestId",
+                                "operatorId",
+                                "decision",
+                                "answer",
+                                "resolvedAt"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "resumeBlockedReason": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "unconfirmed_stop",
+                                "workspace_uncertain",
+                                "cancelled",
+                                "stale_gate",
+                                "attempt_limit",
+                                "plan_change_required",
+                                "already_resolved"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "runId": {
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                          "type": "string"
+                        },
+                        "schemaVersion": {
+                          "const": 1,
+                          "type": "number"
+                        },
+                        "successorRunId": {
+                          "anyOf": [
+                            {
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "workItemId": {
+                          "type": "null"
+                        }
+                      },
+                      "required": [
+                        "schemaVersion",
+                        "id",
+                        "featureId",
+                        "runId",
+                        "approvedVersion",
+                        "reason",
+                        "question",
+                        "requiredDecision",
+                        "createdAt",
+                        "resolution",
+                        "successorRunId",
+                        "canResume",
+                        "resumeBlockedReason",
+                        "purpose",
+                        "workItemId"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "initialRevision": {
+              "additionalProperties": false,
+              "properties": {
+                "baseCommitId": {
+                  "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                  "type": "string"
+                },
+                "branch": {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "headCommitId": {
+                  "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                  "type": "string"
+                },
+                "treeId": {
+                  "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "baseCommitId",
+                "headCommitId",
+                "treeId",
+                "branch"
+              ],
+              "type": "object"
+            },
+            "purpose": {
+              "const": "feature_verification",
+              "type": "string"
+            },
+            "question": {
+              "anyOf": [
+                {
+                  "maxLength": 4000,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "revision": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "baseCommitId": {
+                      "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                      "type": "string"
+                    },
+                    "branch": {
+                      "maxLength": 200,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "headCommitId": {
+                      "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                      "type": "string"
+                    },
+                    "treeId": {
+                      "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "baseCommitId",
+                    "headCommitId",
+                    "treeId",
+                    "branch"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "runtime": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "containerId": {
+                      "anyOf": [
+                        {
+                          "maxLength": 128,
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "kind": {
+                      "const": "codex",
+                      "type": "string"
+                    },
+                    "model": {
+                      "maxLength": 200,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "threadId": {
+                      "anyOf": [
+                        {
+                          "maxLength": 256,
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "turnId": {
+                      "anyOf": [
+                        {
+                          "maxLength": 256,
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "model",
+                    "threadId",
+                    "turnId",
+                    "containerId"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "schemaVersion": {
+              "const": 1,
+              "type": "number"
+            },
+            "startedAt": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "state": {
+              "enum": [
+                "queued",
+                "running",
+                "verifying",
+                "stopping",
+                "verified",
+                "blocked",
+                "cancelled",
+                "interrupted"
+              ],
+              "type": "string"
+            },
+            "verification": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "command": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "args": {
+                        "items": {
+                          "maxLength": 2048,
+                          "pattern": "^[^\\x00]*$",
+                          "type": "string"
+                        },
+                        "maxItems": 32,
+                        "type": "array"
+                      },
+                      "cwd": {
+                        "maxLength": 256,
+                        "minLength": 1,
+                        "pattern": "^[^\\x00]*$",
+                        "type": "string"
+                      },
+                      "program": {
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._+-]*$",
+                        "type": "string"
+                      },
+                      "timeoutSeconds": {
+                        "maximum": 7200,
+                        "minimum": 1,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "program",
+                      "args",
+                      "cwd",
+                      "timeoutSeconds"
+                    ],
+                    "type": "object"
+                  },
+                  "createdAt": {
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                    "type": "string"
+                  },
+                  "durationMs": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "exitCode": {
+                    "anyOf": [
+                      {
+                        "maximum": 9007199254740991,
+                        "minimum": -9007199254740991,
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "headCommitId": {
+                    "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                    "type": "string"
+                  },
+                  "id": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                    "type": "string"
+                  },
+                  "outcome": {
+                    "enum": [
+                      "passed",
+                      "failed",
+                      "timeout",
+                      "cancelled",
+                      "unavailable"
+                    ],
+                    "type": "string"
+                  },
+                  "position": {
+                    "maximum": 480,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "round": {
+                    "maximum": 3,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "stderr": {
+                    "maxLength": 8192,
+                    "type": "string"
+                  },
+                  "stderrTruncated": {
+                    "type": "boolean"
+                  },
+                  "stdout": {
+                    "maxLength": 8192,
+                    "type": "string"
+                  },
+                  "stdoutTruncated": {
+                    "type": "boolean"
+                  },
+                  "treeId": {
+                    "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "round",
+                  "position",
+                  "command",
+                  "headCommitId",
+                  "treeId",
+                  "outcome",
+                  "exitCode",
+                  "stdout",
+                  "stderr",
+                  "stdoutTruncated",
+                  "stderrTruncated",
+                  "durationMs",
+                  "createdAt"
+                ],
+                "type": "object"
+              },
+              "maxItems": 1440,
+              "type": "array"
+            },
+            "verificationManifest": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "command": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "args": {
+                        "items": {
+                          "maxLength": 2048,
+                          "pattern": "^[^\\x00]*$",
+                          "type": "string"
+                        },
+                        "maxItems": 32,
+                        "type": "array"
+                      },
+                      "cwd": {
+                        "maxLength": 256,
+                        "minLength": 1,
+                        "pattern": "^[^\\x00]*$",
+                        "type": "string"
+                      },
+                      "program": {
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._+-]*$",
+                        "type": "string"
+                      },
+                      "timeoutSeconds": {
+                        "maximum": 7200,
+                        "minimum": 1,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "program",
+                      "args",
+                      "cwd",
+                      "timeoutSeconds"
+                    ],
+                    "type": "object"
+                  },
+                  "origins": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "position": {
+                          "maximum": 12,
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "workItemKey": {
+                          "maxLength": 48,
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "workItemKey",
+                        "position"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 480,
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "position": {
+                    "maximum": 480,
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "position",
+                  "command",
+                  "origins"
+                ],
+                "type": "object"
+              },
+              "maxItems": 480,
+              "minItems": 1,
+              "type": "array"
+            },
+            "workItemId": {
+              "type": "null"
+            },
+            "writerStopped": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id",
+            "attempt",
+            "state",
+            "failure",
+            "writerStopped",
+            "createdAt",
+            "startedAt",
+            "completedAt",
+            "purpose",
+            "workItemId",
+            "schemaVersion",
+            "featureId",
+            "approvedVersion",
+            "question",
+            "revision",
+            "runtime",
+            "activity",
+            "acceptedCommands",
+            "verificationManifest",
+            "initialRevision",
+            "verification"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "FactoryGate": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "approvedVersion": {
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "canResume": {
+              "type": "boolean"
+            },
+            "createdAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "type": "string"
+            },
+            "featureId": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "id": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "purpose": {
+              "const": "work_item",
+              "type": "string"
+            },
+            "question": {
+              "maxLength": 4000,
+              "minLength": 1,
+              "type": "string"
+            },
+            "reason": {
+              "enum": [
+                "unavailable",
+                "authentication",
+                "usage_limit",
+                "sandbox_unavailable",
+                "source_unavailable",
+                "source_changed",
+                "permission_required",
+                "input_required",
+                "timeout",
+                "cancelled",
+                "interrupted",
+                "invalid_response",
+                "verification_failed",
+                "revision_changed",
+                "stop_unconfirmed"
+              ],
+              "type": "string"
+            },
+            "requiredDecision": {
+              "enum": [
+                "clarify_within_plan",
+                "retry_within_plan",
+                "inspect_workspace",
+                "inspect_environment"
+              ],
+              "type": "string"
+            },
+            "resolution": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "answer": {
+                      "maxLength": 4000,
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    },
+                    "decision": {
+                      "enum": [
+                        "resume_within_plan",
+                        "requires_plan_change"
+                      ],
+                      "type": "string"
+                    },
+                    "operatorId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    },
+                    "resolvedAt": {
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "requestId",
+                    "operatorId",
+                    "decision",
+                    "answer",
+                    "resolvedAt"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "resumeBlockedReason": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "unconfirmed_stop",
+                    "workspace_uncertain",
+                    "cancelled",
+                    "stale_gate",
+                    "attempt_limit",
+                    "plan_change_required",
+                    "already_resolved"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "runId": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "schemaVersion": {
+              "const": 1,
+              "type": "number"
+            },
+            "successorRunId": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "workItemId": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "schemaVersion",
+            "id",
+            "featureId",
+            "runId",
+            "approvedVersion",
+            "reason",
+            "question",
+            "requiredDecision",
+            "createdAt",
+            "resolution",
+            "successorRunId",
+            "canResume",
+            "resumeBlockedReason",
+            "workItemId"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "approvedVersion": {
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "canResume": {
+              "type": "boolean"
+            },
+            "createdAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "type": "string"
+            },
+            "featureId": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "id": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "purpose": {
+              "const": "feature_verification",
+              "type": "string"
+            },
+            "question": {
+              "maxLength": 4000,
+              "minLength": 1,
+              "type": "string"
+            },
+            "reason": {
+              "enum": [
+                "unavailable",
+                "authentication",
+                "usage_limit",
+                "sandbox_unavailable",
+                "source_unavailable",
+                "source_changed",
+                "permission_required",
+                "input_required",
+                "timeout",
+                "cancelled",
+                "interrupted",
+                "invalid_response",
+                "verification_failed",
+                "revision_changed",
+                "stop_unconfirmed"
+              ],
+              "type": "string"
+            },
+            "requiredDecision": {
+              "enum": [
+                "clarify_within_plan",
+                "retry_within_plan",
+                "inspect_workspace",
+                "inspect_environment"
+              ],
+              "type": "string"
+            },
+            "resolution": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "answer": {
+                      "maxLength": 4000,
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    },
+                    "decision": {
+                      "enum": [
+                        "resume_within_plan",
+                        "requires_plan_change"
+                      ],
+                      "type": "string"
+                    },
+                    "operatorId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    },
+                    "resolvedAt": {
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "requestId",
+                    "operatorId",
+                    "decision",
+                    "answer",
+                    "resolvedAt"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "resumeBlockedReason": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "unconfirmed_stop",
+                    "workspace_uncertain",
+                    "cancelled",
+                    "stale_gate",
+                    "attempt_limit",
+                    "plan_change_required",
+                    "already_resolved"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "runId": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "schemaVersion": {
+              "const": 1,
+              "type": "number"
+            },
+            "successorRunId": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "workItemId": {
               "type": "null"
             }
-          ]
-        },
-        "workItemId": {
-          "format": "uuid",
-          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-          "type": "string"
+          },
+          "required": [
+            "schemaVersion",
+            "id",
+            "featureId",
+            "runId",
+            "approvedVersion",
+            "reason",
+            "question",
+            "requiredDecision",
+            "createdAt",
+            "resolution",
+            "successorRunId",
+            "canResume",
+            "resumeBlockedReason",
+            "purpose",
+            "workItemId"
+          ],
+          "type": "object"
         }
-      },
-      "required": [
-        "schemaVersion",
-        "id",
-        "featureId",
-        "workItemId",
-        "runId",
-        "approvedVersion",
-        "reason",
-        "question",
-        "requiredDecision",
-        "createdAt",
-        "resolution",
-        "successorRunId",
-        "canResume",
-        "resumeBlockedReason"
-      ],
-      "type": "object"
+      ]
     },
     "FactoryGitHubIssues": {
       "additionalProperties": false,

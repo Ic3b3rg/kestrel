@@ -597,7 +597,7 @@ it("shows cumulative verification separately and opens its Feature-scoped eviden
   expect(section?.textContent).toContain("Pass 3 · 1 of 1 checks recorded · 0 passed");
   expect(section?.textContent).toContain("No final verification record yet");
   expect(container.textContent).toContain(finalGate.question);
-  await click("Final attempt 1", true);
+  await click("Final attempt 1");
   expect(section?.textContent).toContain("REPORTS-1 · command 1");
   expect(section?.textContent).toContain("REPORTS-2 · command 1");
   expect(section?.textContent).toContain(head);
