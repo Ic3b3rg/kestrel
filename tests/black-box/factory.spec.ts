@@ -25,10 +25,22 @@ async function openProject(page: Page, name: string): Promise<void> {
 }
 
 async function createFeature(page: Page, title: string): Promise<void> {
-  await page.getByRole("button", { name: "New feature", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "New feature", exact: true });
+  await page.getByRole("button", { name: "New plan", exact: true }).click();
+  await page.getByLabel("Describe the change", { exact: true }).fill(title);
+  await page.getByRole("main").getByRole("button", { name: "Start plan", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { level: 1, name: "New plan", exact: true }),
+  ).toBeVisible();
+  await renameFeature(page, title);
+}
+
+async function renameFeature(page: Page, title: string): Promise<void> {
+  await page.getByRole("button", { name: "Rename feature", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Rename feature", exact: true });
   await dialog.getByLabel("Feature name", { exact: true }).fill(title);
-  await dialog.getByRole("button", { name: "Create feature", exact: true }).click();
+  await dialog.getByRole("button", { name: "Save name", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("heading", { level: 1, name: title, exact: true })).toBeVisible();
 }
 
 test.describe("Factory planning chat", () => {
@@ -59,7 +71,7 @@ test.describe("Factory planning chat", () => {
     await fixture?.close();
   });
 
-  test("saves a real conversation, reconciles uncertain commands, and restores each Project chat", async ({
+  test("starts from the Project board, reconciles first prompts, and retains each Project chat", async ({
     page,
   }) => {
     if (stack === undefined) throw new Error("Factory browser stack is unavailable");
@@ -72,28 +84,56 @@ test.describe("Factory planning chat", () => {
     if (projectId === undefined) throw new Error("The opened Project has no identity");
 
     const creationIds: string[] = [];
-    await page.route(`**/api/v1/projects/${projectId}/features`, async (route) => {
+    let loseLookup = false;
+    await page.route(`**/api/v1/projects/${projectId}/planning/*`, async (route) => {
+      if (loseLookup) {
+        loseLookup = false;
+        await route.abort("failed");
+      } else await route.continue();
+    });
+    await page.route(`**/api/v1/projects/${projectId}/planning`, async (route) => {
       if (route.request().method() !== "POST") return route.continue();
       const body = route.request().postDataJSON() as { requestId: string };
       creationIds.push(body.requestId);
       if (creationIds.length === 1) {
         await route.fetch();
+        loseLookup = true;
         await route.abort("failed");
       } else await route.continue();
     });
-    await createFeature(page, featureTitle);
-    const creationDialog = page.getByRole("dialog", { name: "New feature", exact: true });
-    await expect(creationDialog.getByRole("alert")).toContainText("could not confirm");
-    await creationDialog.getByRole("button", { name: "Retry creation", exact: true }).click();
+    for (const column of ["To do", "In progress", "In review", "Completed"])
+      await expect(page.getByRole("region", { name: column, exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "New plan", exact: true }).click();
+    const draftUrl = page.url();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await page.reload();
+    await expect(page).toHaveURL(draftUrl);
+    await page.setViewportSize({ width: 375, height: 812 });
+    await expect(page.getByLabel("Describe the change", { exact: true })).toBeFocused();
+    await page.screenshot({
+      path: test.info().outputPath("factory-new-plan-narrow.png"),
+      animations: "disabled",
+    });
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    await page.getByLabel("Describe the change", { exact: true }).fill(requestText);
+    await page.keyboard.press("Control+Enter");
     await expect(
-      page.getByRole("heading", { level: 1, name: featureTitle, exact: true }),
+      page.getByRole("alert").filter({ hasText: "could not confirm your first message" }),
     ).toBeVisible();
+    await expect(page.getByLabel("Describe the change", { exact: true })).toHaveValue(requestText);
+    await page.getByRole("button", { name: "Retry", exact: true }).click();
+    await expect(
+      page.getByRole("heading", { level: 1, name: "New plan", exact: true }),
+    ).toBeVisible();
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await renameFeature(page, featureTitle);
     expect(creationIds).toHaveLength(2);
     expect(new Set(creationIds).size).toBe(1);
     const featureUrl = page.url();
     const featureId = new URL(featureUrl).pathname.split("/")[4];
     if (featureId === undefined) throw new Error("The created feature has no identity");
     const chatEndpoint = `/api/v1/projects/${projectId}/features/${featureId}`;
+    await expect(page.getByText("Codex is unavailable", { exact: true })).toBeVisible();
 
     const messageIds: string[] = [];
     await page.route(`**${chatEndpoint}/messages`, async (route) => {
@@ -104,7 +144,8 @@ test.describe("Factory planning chat", () => {
         await route.abort("failed");
       } else await route.continue();
     });
-    await page.getByLabel("Message", { exact: true }).fill(requestText);
+    const followup = "Include archived reports and preserve their content.";
+    await page.getByLabel("Message", { exact: true }).fill(followup);
     await page.getByRole("button", { name: "Send message", exact: true }).click();
     await expect(page.getByRole("alert").filter({ hasText: "could not confirm" })).toBeVisible();
     await page.getByRole("button", { name: "Retry send", exact: true }).click();
@@ -112,7 +153,7 @@ test.describe("Factory planning chat", () => {
     await expect(
       page
         .getByRole("list", { name: "Conversation", exact: true })
-        .getByText(requestText, { exact: true }),
+        .getByText(followup, { exact: true }),
     ).toBeVisible();
     await expect(page.getByText("Codex is unavailable", { exact: true })).toBeVisible();
     expect(messageIds).toHaveLength(2);
@@ -125,8 +166,8 @@ test.describe("Factory planning chat", () => {
         }, chatEndpoint),
       );
     const firstChat = await readChat();
-    expect(firstChat.messages).toHaveLength(1);
-    expect(firstChat.turns).toHaveLength(1);
+    expect(firstChat.messages).toHaveLength(2);
+    expect(firstChat.turns).toHaveLength(2);
     expect(firstChat.turns[0]?.state).toBe("failed");
     expect(firstChat.context?.documents.some(({ path }) => path === "README.md")).toBe(true);
     const features = FeatureListSchema.parse(
@@ -159,9 +200,15 @@ test.describe("Factory planning chat", () => {
       page.getByRole("heading", { level: 1, name: "Clarify report export" }),
     ).toBeVisible();
     const secondUrl = page.url();
+    const secondProjectUrl =
+      new URL(secondUrl).origin + (new URL(secondUrl).pathname.split("/features/")[0] ?? "");
     await page
       .getByRole("navigation", { name: "Projects", exact: true })
       .getByRole("link", { name: /kestrel/u })
+      .click();
+    await expect(page).toHaveURL(`${stack.pwaUrl}/projects/${projectId}`);
+    await page
+      .getByRole("button", { name: `Open planning chat: ${featureTitle}`, exact: true })
       .click();
     await expect(page).toHaveURL(featureUrl);
     await expect(
@@ -170,9 +217,9 @@ test.describe("Factory planning chat", () => {
         .getByText(requestText, { exact: true }),
     ).toBeVisible();
     await page.getByRole("button", { name: "Retry planning", exact: true }).click();
-    await expect.poll(async () => (await readChat()).turns.length).toBe(2);
+    await expect.poll(async () => (await readChat()).turns.length).toBe(3);
     await expect(page.getByText("Codex is unavailable", { exact: true })).toBeVisible();
-    expect((await readChat()).messages).toHaveLength(1);
+    expect((await readChat()).messages).toHaveLength(2);
     await page.screenshot({
       path: test.info().outputPath("factory-chat-desktop.png"),
       animations: "disabled",
@@ -212,6 +259,10 @@ test.describe("Factory planning chat", () => {
     await page
       .getByRole("navigation", { name: "Projects", exact: true })
       .getByRole("link", { name: /falcon/u })
+      .click();
+    await expect(page).toHaveURL(secondProjectUrl);
+    await page
+      .getByRole("button", { name: "Open planning chat: Clarify report export", exact: true })
       .click();
     await expect(page).toHaveURL(secondUrl);
     await expect(

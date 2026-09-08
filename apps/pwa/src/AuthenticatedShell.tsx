@@ -79,6 +79,7 @@ function WorkspaceShell(props: AuthenticatedShellProps) {
   const currentProjectId =
     props.route.kind === "project" ||
     props.route.kind === "feature" ||
+    props.route.kind === "planning" ||
     props.route.kind === "settings"
       ? props.route.projectId
       : undefined;
@@ -159,11 +160,10 @@ function WorkspaceShell(props: AuthenticatedShellProps) {
                   <SidebarMenu>
                     {props.inbox.projects.map((project) => {
                       const selected = currentProjectId === project.id;
-                      const featureId = props.projectFeatureIds?.[project.id];
-                      const projectRoute: NavigableRoute =
-                        featureId === undefined
-                          ? { kind: "project", projectId: project.id }
-                          : { kind: "feature", projectId: project.id, featureId };
+                      const projectRoute: NavigableRoute = {
+                        kind: "project",
+                        projectId: project.id,
+                      };
                       return (
                         <SidebarMenuItem key={project.id}>
                           <SidebarMenuButton

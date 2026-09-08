@@ -58,8 +58,8 @@ it("starts exactly one chat and first turn across simultaneous submissions, relo
   const responses = await Promise.all([post(collection, command), post(collection, command)]);
   for (const response of responses)
     expect(response.status, await response.clone().text()).toBe(202);
-  const first = PlanningFeatureStartedSchema.parse(await responses[0]?.json());
-  const second: unknown = await responses[1]?.json();
+  const first = PlanningFeatureStartedSchema.parse(await responses[0].json());
+  const second: unknown = await responses[1].json();
   expect(second).toEqual(first);
   const feature = FeatureSchema.parse(first.feature);
   expect(feature.title).toBe("New plan");
@@ -67,6 +67,7 @@ it("starts exactly one chat and first turn across simultaneous submissions, relo
   const read = async () => FeatureChatSchema.parse(await (await running().fetchApi(path)).json());
   expect((await read()).messages.map(({ content }) => content)).toEqual([command.text]);
   expect((await read()).turns).toHaveLength(1);
+  expect((await read()).feature.state).toBe("planning");
   expect((await post(collection, { ...command, text: "A different request" })).status).toBe(409);
   const rename = { requestId: randomUUID(), title: "Saved report search" };
   const renamed = await post(`${path}/title`, rename);
@@ -92,13 +93,19 @@ it("starts exactly one chat and first turn across simultaneous submissions, relo
 
 it("leaves no abandoned Feature when the first prompt or Skill selection is rejected", async () => {
   const path = `/api/v1/projects/${projectId}/planning`;
-  const before = await (await running().fetchApi(`/api/v1/projects/${projectId}/features`)).json();
+  const before: unknown = await (
+    await running().fetchApi(`/api/v1/projects/${projectId}/features`)
+  ).json();
   const invalid = {
     requestId: randomUUID(),
     text: "$missing-skill Plan this change.",
     skillDigests: [],
   };
   expect((await post(path, { ...invalid, text: "   " })).status).toBe(400);
+  expect(
+    (await post(path, { ...invalid, text: "Plan report search", title: "A mandatory title" }))
+      .status,
+  ).toBe(400);
   expect((await post(path, invalid)).status).toBe(409);
   expect(await (await running().fetchApi(`${path}/${invalid.requestId}`)).json()).toEqual({
     schemaVersion: 1,
@@ -107,4 +114,21 @@ it("leaves no abandoned Feature when the first prompt or Skill selection is reje
   expect(await (await running().fetchApi(`/api/v1/projects/${projectId}/features`)).json()).toEqual(
     before,
   );
+});
+
+it("retains legacy Feature-creation idempotency after an explicit rename", async () => {
+  const collection = `/api/v1/projects/${projectId}/features`;
+  const create = { requestId: randomUUID(), title: "Original navigation title" };
+  const created = await post(collection, create);
+  expect(created.status, await created.clone().text()).toBe(201);
+  const feature = FeatureSchema.parse(await created.json());
+  const rename = { requestId: randomUUID(), title: "Operator's improved title" };
+  expect((await post(`${collection}/${feature.id}/title`, rename)).status).toBe(200);
+  const replay = await post(collection, create);
+  expect(replay.status, await replay.clone().text()).toBe(201);
+  expect(FeatureSchema.parse(await replay.json())).toMatchObject({
+    id: feature.id,
+    title: rename.title,
+  });
+  expect((await post(collection, { ...create, title: rename.title })).status).toBe(409);
 });

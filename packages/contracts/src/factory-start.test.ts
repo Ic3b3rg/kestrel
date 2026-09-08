@@ -43,3 +43,13 @@ it("requires a complete durable first-message result and an explicit rename", ()
     }).title,
   ).toBe("Saved report search");
 });
+
+it("accepts browser-generated UUID4 request identities for both first prompts and renames", () => {
+  const requestId = "2f949de3-f0cf-420c-8104-a7e32cc74251";
+  expect(
+    StartPlanningFeatureCommandSchema.parse({ requestId, text: "Plan report search" }).requestId,
+  ).toBe(requestId);
+  expect(
+    RenameFactoryFeatureCommandSchema.parse({ requestId, title: "Report search" }).requestId,
+  ).toBe(requestId);
+});

@@ -50,6 +50,8 @@ export interface FeatureRow {
   id: string;
   project_id: string;
   title: string;
+  title_source: "operator" | "pending" | "assistant";
+  initial_title: string | null;
   state: string;
   planning_context: unknown;
   skill_selection_version: number;
@@ -71,6 +73,7 @@ export interface ClaimedPlanningTurn {
   previousPlan: FeaturePlanDocument | null;
   imports?: ImportedFactoryIssue[];
   skills?: PlanningSkillBundle[];
+  needsTitle?: boolean;
   messages: FeatureChat["messages"];
   source: { repositoryId: string; identity: string } | null;
 }
@@ -148,7 +151,11 @@ export async function claimPlanningTurn(
     id: turnId,
     featureId,
     projectId: chat.feature.projectId,
-    threadId: claimed.purpose === "plan" || !sameSkills ? null : row.runtime_thread_id,
+    threadId:
+      claimed.purpose === "plan" || row.title_source === "pending" || !sameSkills
+        ? null
+        : row.runtime_thread_id,
+    needsTitle: claimed.purpose === "conversation" && row.title_source === "pending",
     skills,
     purpose: claimed.purpose,
     expectedPlanVersion: claimed.expected_plan_version,
@@ -201,7 +208,7 @@ export async function isPlanningTurnRunning(pool: DatabasePool, turnId: string):
 export async function completePlanningTurn(
   pool: DatabasePool,
   turn: ClaimedPlanningTurn,
-  outcome: { text: string } | { failure: PlanningFailure; question?: string },
+  outcome: { text: string; title?: string } | { failure: PlanningFailure; question?: string },
 ): Promise<void> {
   await withFactoryFeature(pool, turn.projectId, turn.featureId, async (client) => {
     const completed = await client.query(
@@ -222,6 +229,15 @@ export async function completePlanningTurn(
         VALUES ($1, 'assistant', $2, $3)`,
         [turn.featureId, outcome.text, turn.id],
       );
+      if (
+        turn.purpose === "conversation" &&
+        turn.needsTitle === true &&
+        outcome.title !== undefined
+      )
+        await client.query(
+          "UPDATE factory_features SET title = $2, title_source = 'assistant' WHERE id = $1 AND title_source = 'pending'",
+          [turn.featureId, outcome.title],
+        );
     } else {
       if (outcome.question !== undefined && outcome.question.trim().length > 0) {
         await client.query(
@@ -331,7 +347,10 @@ export async function createFactoryFeature(
     );
     const duplicate = existing.rows[0];
     if (duplicate !== undefined) {
-      if (duplicate.project_id !== canonicalProjectId || duplicate.title !== command.title)
+      if (
+        duplicate.project_id !== canonicalProjectId ||
+        (duplicate.initial_title ?? duplicate.title) !== command.title
+      )
         throw new FactoryError("conflict");
       return mapFactoryFeature(duplicate);
     }
@@ -341,7 +360,7 @@ export async function createFactoryFeature(
     );
     if (Number(count.rows[0]?.count) >= 200) throw new FactoryError("feature_limit");
     const result = await client.query<FeatureRow>(
-      `INSERT INTO factory_features (project_id, created_by, request_id, title) VALUES ($1, $2, $3, $4)
+      `INSERT INTO factory_features (project_id, created_by, request_id, title, initial_title) VALUES ($1, $2, $3, $4, $4)
        ON CONFLICT (created_by, request_id) DO NOTHING RETURNING *`,
       [canonicalProjectId, actorId, command.requestId, command.title],
     );
@@ -430,112 +449,129 @@ export async function acceptPlanningMessage(
   command: SendPlanningMessageCommand,
   planIntent?: { expectedVersion: number | null },
 ): Promise<PlanningTurnAccepted> {
-  return withFactoryFeature(pool, projectId, featureId, async (client, row) => {
-    const purpose = planIntent === undefined ? "conversation" : "plan";
-    const expectedVersion = planIntent?.expectedVersion ?? null;
-    const duplicate = await client.query<{
-      id: string;
-      message_id: string;
-      content: string;
-      purpose: string;
-      expected_plan_version: number | null;
-      requested_skill_selection_version: number | null;
-    }>(
-      `SELECT turn.id, turn.message_id, message.content, turn.purpose, turn.expected_plan_version, turn.requested_skill_selection_version FROM factory_planning_turns AS turn
+  return withFactoryFeature(pool, projectId, featureId, (client, row) =>
+    acceptPlanningMessageForFeature(client, boss, row, command, planIntent),
+  );
+}
+
+/** Accept within the caller's transaction and already locked/new Feature. */
+export async function acceptPlanningMessageForFeature(
+  client: PoolClient,
+  boss: DiagnosticJobSender,
+  row: FeatureRow,
+  command: SendPlanningMessageCommand,
+  planIntent?: { expectedVersion: number | null },
+  initialSkillDigests?: string[],
+): Promise<PlanningTurnAccepted> {
+  const featureId = row.id;
+  const purpose = planIntent === undefined ? "conversation" : "plan";
+  const expectedVersion = planIntent?.expectedVersion ?? null;
+  const duplicate = await client.query<{
+    id: string;
+    message_id: string;
+    content: string;
+    purpose: string;
+    expected_plan_version: number | null;
+    requested_skill_selection_version: number | null;
+  }>(
+    `SELECT turn.id, turn.message_id, message.content, turn.purpose, turn.expected_plan_version, turn.requested_skill_selection_version FROM factory_planning_turns AS turn
        JOIN factory_planning_messages AS message ON message.id = turn.message_id
        WHERE turn.feature_id = $1 AND turn.request_id = $2`,
-      [featureId, command.requestId],
-    );
-    const existing = duplicate.rows[0];
-    if (existing !== undefined) {
-      if (
-        existing.content !== command.text ||
-        existing.purpose !== purpose ||
-        existing.expected_plan_version !== expectedVersion ||
-        existing.requested_skill_selection_version !== (command.skillSelectionVersion ?? null)
-      )
-        throw new FactoryError("conflict");
-      return { schemaVersion: 1, turnId: existing.id, messageId: existing.message_id };
-    }
-    if (row.state !== "planning") throw new FactoryError("conflict");
+    [featureId, command.requestId],
+  );
+  const existing = duplicate.rows[0];
+  if (existing !== undefined) {
     if (
-      command.skillSelectionVersion !== undefined &&
-      command.skillSelectionVersion !== row.skill_selection_version
+      existing.content !== command.text ||
+      existing.purpose !== purpose ||
+      existing.expected_plan_version !== expectedVersion ||
+      existing.requested_skill_selection_version !== (command.skillSelectionVersion ?? null)
     )
-      throw new FactoryError(
-        "conflict",
-        "The selected Skills changed. Refresh before sending this message.",
-      );
-    if (planIntent !== undefined) {
-      if (row.latest_plan_version !== expectedVersion) throw new FactoryError("conflict");
-      if ((row.latest_plan_version ?? 0) >= 200) throw new FactoryError("plan_limit");
-    }
-    const active = await client.query(
-      "SELECT id FROM factory_planning_turns WHERE feature_id = $1 AND state IN ('queued', 'running')",
+      throw new FactoryError("conflict");
+    return { schemaVersion: 1, turnId: existing.id, messageId: existing.message_id };
+  }
+  if (row.state !== "planning") throw new FactoryError("conflict");
+  if (
+    command.skillSelectionVersion !== undefined &&
+    command.skillSelectionVersion !== row.skill_selection_version
+  )
+    throw new FactoryError(
+      "conflict",
+      "The selected Skills changed. Refresh before sending this message.",
+    );
+  if (planIntent !== undefined) {
+    if (row.latest_plan_version !== expectedVersion) throw new FactoryError("conflict");
+    if ((row.latest_plan_version ?? 0) >= 200) throw new FactoryError("plan_limit");
+  }
+  const active = await client.query(
+    "SELECT id FROM factory_planning_turns WHERE feature_id = $1 AND state IN ('queued', 'running')",
+    [featureId],
+  );
+  const count = await client.query<{ count: string }>(
+    "SELECT count(*) FROM factory_planning_messages WHERE feature_id = $1",
+    [featureId],
+  );
+  if (active.rowCount !== 0) throw new FactoryError("conflict");
+  if (Number(count.rows[0]?.count) >= 199) throw new FactoryError("conversation_limit");
+  if (
+    initialSkillDigests !== undefined &&
+    (row.skill_selection_version !== 0 || Number(count.rows[0]?.count) !== 0)
+  )
+    throw new FactoryError("conflict", "Initial Skills belong only to the first planning message");
+  const turnCount = await client.query<{ count: string }>(
+    "SELECT count(*) FROM factory_planning_turns WHERE feature_id = $1",
+    [featureId],
+  );
+  if (Number(turnCount.rows[0]?.count) >= 400) throw new FactoryError("conversation_limit");
+  const selection = await planningSkillSelection(client, featureId, row.skill_selection_version);
+  const selected = selection.skills.map(({ contentDigest }) => contentDigest);
+  const skillDigests = await resolvePlanningSkillInvocation(
+    client,
+    command.text,
+    initialSkillDigests ?? selected,
+  );
+  if (JSON.stringify(selected) !== JSON.stringify(skillDigests)) {
+    if (row.skill_selection_version >= 1000)
+      throw new FactoryError("conflict", "The Skill selection limit was reached");
+    await client.query(
+      "INSERT INTO factory_feature_skill_selections (feature_id,version,request_id,digests) VALUES ($1,$2,$3,$4::jsonb)",
+      [featureId, row.skill_selection_version + 1, command.requestId, JSON.stringify(skillDigests)],
+    );
+    await client.query(
+      "UPDATE factory_features SET skill_selection_version = skill_selection_version + 1, runtime_thread_id = NULL WHERE id = $1",
       [featureId],
     );
-    const count = await client.query<{ count: string }>(
-      "SELECT count(*) FROM factory_planning_messages WHERE feature_id = $1",
-      [featureId],
-    );
-    if (active.rowCount !== 0) throw new FactoryError("conflict");
-    if (Number(count.rows[0]?.count) >= 199) throw new FactoryError("conversation_limit");
-    const turnCount = await client.query<{ count: string }>(
-      "SELECT count(*) FROM factory_planning_turns WHERE feature_id = $1",
-      [featureId],
-    );
-    if (Number(turnCount.rows[0]?.count) >= 400) throw new FactoryError("conversation_limit");
-    const selection = await planningSkillSelection(client, featureId, row.skill_selection_version);
-    const selected = selection.skills.map(({ contentDigest }) => contentDigest);
-    const skillDigests = await resolvePlanningSkillInvocation(client, command.text, selected);
-    if (JSON.stringify(selected) !== JSON.stringify(skillDigests)) {
-      if (row.skill_selection_version >= 1000)
-        throw new FactoryError("conflict", "The Skill selection limit was reached");
-      await client.query(
-        "INSERT INTO factory_feature_skill_selections (feature_id,version,request_id,digests) VALUES ($1,$2,$3,$4::jsonb)",
-        [
-          featureId,
-          row.skill_selection_version + 1,
-          command.requestId,
-          JSON.stringify(skillDigests),
-        ],
-      );
-      await client.query(
-        "UPDATE factory_features SET skill_selection_version = skill_selection_version + 1, runtime_thread_id = NULL WHERE id = $1",
-        [featureId],
-      );
-    }
-    const inserted = await client.query<{ id: string }>(
-      "INSERT INTO factory_planning_messages (feature_id, role, content) VALUES ($1, 'user', $2) RETURNING id",
-      [featureId, command.text],
-    );
-    const messageId = inserted.rows[0]?.id;
-    if (messageId === undefined) throw new Error("Planning message was not persisted");
-    const turn = await client.query<{ id: string }>(
-      "INSERT INTO factory_planning_turns (feature_id, message_id, request_id, purpose, expected_plan_version, skill_digests, requested_skill_selection_version) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7) RETURNING id",
-      [
-        featureId,
-        messageId,
-        command.requestId,
-        purpose,
-        expectedVersion,
-        JSON.stringify(skillDigests),
-        command.skillSelectionVersion ?? null,
-      ],
-    );
-    const turnId = turn.rows[0]?.id;
-    if (turnId === undefined) throw new Error("Planning turn was not persisted");
-    const jobId = await boss.send(
-      FACTORY_PLANNING_QUEUE,
-      { turnId },
-      { db: pgBossDatabase(client), id: turnId },
-    );
-    if (jobId !== turnId) throw new Error("Planning turn was not durably queued");
-    await client.query("UPDATE factory_features SET updated_at = clock_timestamp() WHERE id = $1", [
+  }
+  const inserted = await client.query<{ id: string }>(
+    "INSERT INTO factory_planning_messages (feature_id, role, content) VALUES ($1, 'user', $2) RETURNING id",
+    [featureId, command.text],
+  );
+  const messageId = inserted.rows[0]?.id;
+  if (messageId === undefined) throw new Error("Planning message was not persisted");
+  const turn = await client.query<{ id: string }>(
+    "INSERT INTO factory_planning_turns (feature_id, message_id, request_id, purpose, expected_plan_version, skill_digests, requested_skill_selection_version) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7) RETURNING id",
+    [
       featureId,
-    ]);
-    return { schemaVersion: 1, turnId, messageId };
-  });
+      messageId,
+      command.requestId,
+      purpose,
+      expectedVersion,
+      JSON.stringify(skillDigests),
+      command.skillSelectionVersion ?? null,
+    ],
+  );
+  const turnId = turn.rows[0]?.id;
+  if (turnId === undefined) throw new Error("Planning turn was not persisted");
+  const jobId = await boss.send(
+    FACTORY_PLANNING_QUEUE,
+    { turnId },
+    { db: pgBossDatabase(client), id: turnId },
+  );
+  if (jobId !== turnId) throw new Error("Planning turn was not durably queued");
+  await client.query("UPDATE factory_features SET updated_at = clock_timestamp() WHERE id = $1", [
+    featureId,
+  ]);
+  return { schemaVersion: 1, turnId, messageId };
 }
 
 export async function cancelPlanningTurn(

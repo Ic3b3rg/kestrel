@@ -2,7 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
-import { FeatureChatSchema } from "@kestrel/contracts";
+import { FeatureChatSchema, FeatureListSchema } from "@kestrel/contracts";
 import { startStack, TEST_OPERATOR_CREDENTIALS, type RunningStack } from "./support/compose.js";
 import { createGitFixture, type GitFixture } from "./support/git-fixture.js";
 
@@ -52,18 +52,8 @@ test.describe("Planning Skills in the chat", () => {
     await repositoryDialog.getByLabel("Repository", { exact: true }).selectOption(repositoryId);
     await repositoryDialog.getByRole("button", { name: "Open selected Project" }).click();
     await expect(repositoryDialog).toHaveCount(0);
-    await page.getByRole("button", { name: "New feature", exact: true }).click();
-    const creation = page.getByRole("dialog", { name: "New feature", exact: true });
-    await creation.getByLabel("Feature name", { exact: true }).fill("Recover saved reports");
-    await creation.getByRole("button", { name: "Create feature", exact: true }).click();
-    await expect(
-      page.getByRole("heading", { name: "Recover saved reports", level: 1 }),
-    ).toBeVisible();
-    const path = `/api/v1${new URL(page.url()).pathname}`;
-    const chat = async () =>
-      FeatureChatSchema.parse(
-        await page.evaluate(async (path) => (await fetch(path)).json() as Promise<unknown>, path),
-      );
+    const featuresPath = `/api/v1${new URL(page.url()).pathname}/features`;
+    await page.getByRole("button", { name: "New plan", exact: true }).click();
     await page.getByRole("button", { name: "Skills", exact: true }).click();
     const skills = page.getByRole("dialog", { name: "Planning Skills", exact: true });
     await skills.getByLabel("Host Skill to import").selectOption({ label: "recovery-checklist" });
@@ -81,11 +71,25 @@ test.describe("Planning Skills in the chat", () => {
     await skills.getByRole("button", { name: "Use selected Skills" }).click();
     await expect(skills).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Skills (1)", exact: true })).toBeVisible();
+    expect(
+      FeatureListSchema.parse(
+        await page.evaluate(
+          async (path) => (await fetch(path)).json() as Promise<unknown>,
+          featuresPath,
+        ),
+      ).features,
+    ).toEqual([]);
     await page
-      .getByLabel("Message", { exact: true })
+      .getByLabel("Describe the change", { exact: true })
       .fill("$recovery-checklist Help me specify recovering saved reports.");
-    await page.getByRole("button", { name: "Send message", exact: true }).click();
+    await page.getByRole("main").getByRole("button", { name: "Start plan", exact: true }).click();
     await expect(page.getByText("Codex is unavailable", { exact: true })).toBeVisible();
+    const path = `/api/v1${new URL(page.url()).pathname}`;
+    const chat = async () =>
+      FeatureChatSchema.parse(
+        await page.evaluate(async (path) => (await fetch(path)).json() as Promise<unknown>, path),
+      );
+    expect((await chat()).skills?.version).toBe(1);
     const original = (await chat()).turns[0]?.skills?.[0];
     expect(original?.name).toBe("recovery-checklist");
     if (original === undefined) throw new Error("The accepted turn did not retain its Skill");

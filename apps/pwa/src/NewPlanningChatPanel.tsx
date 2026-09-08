@@ -1,4 +1,4 @@
-import { useId, useState, type SyntheticEvent } from "react";
+import { useId, useState, type ReactNode, type SyntheticEvent } from "react";
 import { ArrowLeft, ArrowUp } from "lucide-react";
 import { Button } from "./components/ui/button.js";
 import { Label } from "./components/ui/label.js";
@@ -9,6 +9,10 @@ export interface NewPlanningChatPanelProps {
   online: boolean;
   pending: boolean;
   error: string | null;
+  locked?: boolean;
+  pendingMessage?: string;
+  tools?: ReactNode;
+  onDraftChange?: (text: string) => void;
   onSubmit: (text: string) => void;
   onBack: () => void;
 }
@@ -18,6 +22,10 @@ export function NewPlanningChatPanel({
   online,
   pending,
   error,
+  locked = false,
+  pendingMessage = "Saving your first message…",
+  tools,
+  onDraftChange,
   onSubmit,
   onBack,
 }: NewPlanningChatPanelProps) {
@@ -60,11 +68,14 @@ export function NewPlanningChatPanel({
               rows={5}
               maxLength={16_000}
               value={draft}
-              disabled={pending}
+              disabled={pending || locked}
               aria-describedby={helpId}
               placeholder="A feature, a problem, or an idea…"
               className="max-h-80 min-h-32 resize-y border-0 bg-transparent p-1 shadow-none focus-visible:ring-0 dark:bg-transparent"
-              onChange={(event) => setDraft(event.currentTarget.value)}
+              onChange={(event) => {
+                setDraft(event.currentTarget.value);
+                onDraftChange?.(event.currentTarget.value);
+              }}
               onKeyDown={(event) => {
                 if (
                   event.key === "Enter" &&
@@ -77,7 +88,10 @@ export function NewPlanningChatPanel({
               }}
             />
             <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-              <p className="text-xs text-muted-foreground">Ctrl or ⌘ + Enter to send</p>
+              <div className="flex flex-wrap items-center gap-3">
+                {tools}
+                <p className="text-xs text-muted-foreground">Ctrl or ⌘ + Enter to send</p>
+              </div>
               <Button type="submit" disabled={!online || pending || draft.trim() === ""}>
                 {pending ? "Starting…" : error === null ? "Start plan" : "Retry"}
                 <ArrowUp aria-hidden="true" />
@@ -88,7 +102,7 @@ export function NewPlanningChatPanel({
             {!online
               ? "Reconnect to start this plan. Your draft stays here."
               : pending
-                ? "Saving your first message…"
+                ? pendingMessage
                 : "You will review and approve the plan before implementation starts."}
           </p>
           {error === null ? null : (

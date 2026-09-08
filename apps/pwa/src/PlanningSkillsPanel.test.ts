@@ -34,6 +34,58 @@ vi.mock("./factory-skills-api.js", () => ({
   selectPlanningSkills: fixtures.selection,
 }));
 
+it("selects retained Skills for the first prompt without creating or mutating a Feature", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  fixtures.catalog.mockReset().mockResolvedValue({ schemaVersion: 1, skills: [fixtures.bundle] });
+  fixtures.selection.mockClear();
+  const onDraftSelection = vi.fn();
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      await Promise.resolve(
+        root.render(
+          createElement(PlanningSkillsPanel, {
+            projectId: "01900000-0000-7000-8000-000000000001",
+            online: true,
+            editable: true,
+            selection: { schemaVersion: 1, version: 0, skills: [] },
+            onDraftSelection,
+            onAuthenticationError: () => false,
+          }),
+        ),
+      );
+    });
+    await act(async () => {
+      await Promise.resolve(
+        [...container.querySelectorAll("button")]
+          .find((button) => button.textContent.trim() === "Skills")
+          ?.click(),
+      );
+    });
+    await act(async () => {
+      await Promise.resolve(
+        document.querySelector<HTMLInputElement>('[aria-label="Use $grilling"]')?.click(),
+      );
+    });
+    await act(async () => {
+      await Promise.resolve(
+        [...document.querySelectorAll("button")]
+          .find((button) => button.textContent.trim() === "Use selected Skills")
+          ?.click(),
+      );
+    });
+    expect(onDraftSelection).toHaveBeenCalledWith([fixtures.bundle]);
+    expect(fixtures.selection).not.toHaveBeenCalled();
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  }
+});
+
 it("previews retained instructions and retries the same uncertain import before selecting the Skill", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   fixtures.catalog
