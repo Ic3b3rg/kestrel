@@ -260,6 +260,7 @@ test.describe("local-first Project flow", () => {
       .getByRole("link", { name: /kestrel/u })
       .click();
 
+    await page.getByRole("button", { name: "Pull requests", exact: true }).click();
     await page.getByText("Project menu", { exact: true }).click();
     const localTrigger = page.getByRole("button", { name: "Compare committed refs" });
     const publicInput = page.getByLabel("Public GitHub pull request URL");

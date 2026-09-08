@@ -5,6 +5,20 @@ import { appPath, readAppRoute } from "./app-route.js";
 const projectId = "018f0f89-949a-75a8-8f61-6df78a843b1e";
 
 describe("authenticated app routing", () => {
+  it("restores a blank planning request without inventing a Feature", () => {
+    const requestId = "fe68a0da-b3bf-4a88-8e53-28a6af91897d";
+    const route = { kind: "planning" as const, projectId, requestId };
+    expect(readAppRoute(`/projects/${projectId}/planning/${requestId}`)).toEqual(route);
+    expect(appPath(route)).toBe(`/projects/${projectId}/planning/${requestId}`);
+    expect(readAppRoute(`/projects/${projectId}/planning/not-a-request`)).toEqual({
+      kind: "not_found",
+    });
+  });
+  it("keeps pull requests as an explicit secondary Project view", () => {
+    const route = { kind: "project" as const, projectId, view: "pull_requests" as const };
+    expect(readAppRoute(`/projects/${projectId}`, "?view=pull_requests")).toEqual(route);
+    expect(appPath(route)).toBe(`/projects/${projectId}?view=pull_requests`);
+  });
   it.each(["plan", "board"] as const)("restores the %s view of a feature", (view) => {
     const featureId = "018f0f89-9192-755f-aa96-f72094c734df";
     const path = `/projects/${projectId}/features/${featureId}`;

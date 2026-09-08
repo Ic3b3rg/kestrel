@@ -1,11 +1,12 @@
 # Planning Skill imports
 
-The Operator imports and selects Skills inside the Feature's Kestrel chat. A Skill supplies planning
-instructions; it does not acquire the runtime authority described by those instructions. The host
-configuration authorizes one absolute directory through `KESTREL_PLANNING_SKILL_ROOT`. Each direct
-child directory is an import candidate. Candidate responses disclose names and opaque identities,
-not host paths. An unconfigured source leaves the installed catalog and retained instructions
-usable.
+The Operator imports and selects Skills inside Kestrel's planning composer or an existing Feature
+chat. Before the first prompt, selection remains in the composer; accepting that prompt freezes the
+selection together with the new Feature and first turn. A Skill supplies planning instructions; it
+does not acquire the runtime authority described by those instructions. The host configuration
+authorizes one absolute directory through `KESTREL_PLANNING_SKILL_ROOT`. Each direct child directory
+is an import candidate. Candidate responses disclose names and opaque identities, not host paths. An
+unconfigured source leaves the installed catalog and retained instructions usable.
 
 ## Import contract
 

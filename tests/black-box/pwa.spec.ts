@@ -64,6 +64,7 @@ async function openProjectWorkspace(page: Page, label = "openai/openai-node"): P
   await expect(link).toBeVisible();
   await link.click();
   await expect(page.getByRole("heading", { level: 1, name: label, exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Pull requests", exact: true }).click();
   await page.getByText("Repository details", { exact: true }).click();
   const saved = page.locator(".saved-changes");
   if (await saved.count()) {
