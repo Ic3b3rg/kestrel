@@ -41,7 +41,7 @@ export interface CodexExecutionQuestion {
   question: string;
 }
 export interface CodexExecutionLifecycle {
-  beforeContainerCreate(name: string): Promise<void>;
+  beforeContainerCreate(name: string, daemonId?: string): Promise<void>;
   onContainer(container: { name: string; id: string }): Promise<void>;
   onStopped(container: { name: string; id: string | null }): Promise<void>;
 }
@@ -245,6 +245,90 @@ async function processOutput(
   });
 }
 
+function daemonIdentity(value: string): string {
+  if (!/^[A-Za-z0-9][A-Za-z0-9:._-]{0,255}$/u.test(value))
+    throw new CodexExecutionError("sandbox_unavailable", undefined, "daemon_identity_unavailable");
+  return value;
+}
+
+/** Teardown only: recovery cannot create a container or reconnect to an executor. */
+export function createCodexExecutionContainerRecovery(
+  options: { dockerExecutable?: string } = {},
+): (
+  container: { name: string; id: string | null; daemonId?: string | null },
+  onIdentified: (id: string) => Promise<void>,
+  signal: AbortSignal,
+) => Promise<{ name: string; id: string }> {
+  return async (container, onIdentified, signal) => {
+    const deadline = AbortSignal.any([signal, AbortSignal.timeout(10_000)]);
+    const cli = async (args: readonly string[]) => {
+      const result = await processOutput(options.dockerExecutable ?? "docker", args, deadline);
+      if (result.exitCode !== 0 || result.stdoutTruncated || result.stderrTruncated)
+        throw new Error("Docker operation was not confirmed");
+      return result.stdout.trim();
+    };
+    const find = async (filter: string): Promise<string | null> => {
+      const found = await cli([
+        "container",
+        "ls",
+        "--all",
+        "--no-trunc",
+        "--filter",
+        filter,
+        "--format",
+        "{{.ID}}",
+      ]);
+      if (found === "") return null;
+      if (!/^[a-f0-9]{64}$/u.test(found)) throw new Error("Container lookup was ambiguous");
+      return found;
+    };
+    try {
+      if (
+        !/^kestrel-factory-[a-f0-9-]{32,64}$/u.test(container.name) ||
+        (container.id !== null && !/^[a-f0-9]{64}$/u.test(container.id))
+      )
+        throw new Error("Invalid persisted container identity");
+      const daemonId = daemonIdentity(await cli(["info", "--format", "{{.ID}}"]));
+      if (container.daemonId != null && daemonIdentity(container.daemonId) !== daemonId)
+        throw new Error("Docker daemon identity changed");
+      const assertDaemon = async () => {
+        if (daemonIdentity(await cli(["info", "--format", "{{.ID}}"])) !== daemonId)
+          throw new Error("Docker daemon identity changed");
+      };
+      const byName = await find(`name=^/${container.name}$`);
+      const id = container.id ?? byName;
+      // A suspended owner can still complete a create that was reserved before fencing.
+      // Absence without a persisted/discovered ID is not evidence of teardown.
+      if (id === null || (byName !== null && byName !== id))
+        throw new Error("Container identity was not confirmed");
+      const byId = await find(`id=${id}`);
+      if (byId !== null && byId !== id) throw new Error("Container identity changed");
+      if (byId !== null) {
+        const state = record(JSON.parse(await cli(["inspect", "--format", CONTAINER_INSPECT, id])));
+        if (
+          state.id !== id ||
+          state.name !== `/${container.name}` ||
+          record(state.labels)["kestrel.factory.execution"] !== container.name
+        )
+          throw new Error("Container ownership changed");
+      } else if (container.id === null || byName !== null || container.daemonId == null) {
+        throw new Error("Discovered container disappeared before ownership was verified");
+      }
+      // Commit this witness before the irreversible removal. A restarted reconciler can
+      // then prove this same ID absent if the process dies before recording stopped_at.
+      await withCancellation(onIdentified(id), deadline);
+      await assertDaemon();
+      if (byId !== null) await cli(["rm", "--force", id]);
+      if ((await find(`name=^/${container.name}$`)) !== null || (await find(`id=${id}`)) !== null)
+        throw new Error("Container teardown was not confirmed");
+      await assertDaemon();
+      return { name: container.name, id };
+    } catch {
+      throw new CodexExecutionError("stop_unconfirmed");
+    }
+  };
+}
+
 class ExecutionContainer {
   readonly name: string;
   readonly #docker: string;
@@ -254,6 +338,7 @@ class ExecutionContainer {
   readonly #control: string;
   readonly #gitDirectory: string | undefined;
   #id: string | null = null;
+  #daemonId: string | null = null;
   #reserved = false;
   #mounts: { source: string; target: string; readonly: boolean }[] = [];
 
@@ -290,6 +375,13 @@ class ExecutionContainer {
   }
   async inspect(): Promise<Record<string, unknown>> {
     return record(JSON.parse(await this.cli(["inspect", "--format", CONTAINER_INSPECT, this.id])));
+  }
+  async assertDaemon(signal?: AbortSignal): Promise<void> {
+    if (
+      this.#daemonId === null ||
+      daemonIdentity(await this.cli(["info", "--format", "{{.ID}}"], signal)) !== this.#daemonId
+    )
+      throw new CodexExecutionError("sandbox_unavailable", undefined, "daemon_identity_changed");
   }
   async create(command: readonly string[], commandCwd: string, signal: AbortSignal): Promise<void> {
     const program = command[0];
@@ -332,9 +424,14 @@ class ExecutionContainer {
         throw new CodexExecutionError("permission_required");
       this.#mounts.push({ source, target: `/workspace/${name}`, readonly: true });
     }
+    this.#daemonId = daemonIdentity(await this.cli(["info", "--format", "{{.ID}}"], signal));
     this.#reserved = true;
-    await withCancellation(this.#lifecycle.beforeContainerCreate(this.name), signal);
+    await withCancellation(
+      this.#lifecycle.beforeContainerCreate(this.name, this.#daemonId),
+      signal,
+    );
     checkAbort(signal);
+    await this.assertDaemon(signal);
     const id = await this.cli(
       [
         "create",
@@ -383,6 +480,7 @@ class ExecutionContainer {
     );
     if (!/^[a-f0-9]{64}$/u.test(id)) throw new CodexExecutionError("invalid_response");
     this.#id = id;
+    await this.assertDaemon(signal);
     await withCancellation(this.#lifecycle.onContainer({ name: this.name, id }), signal);
     const state = await this.inspect();
     const actualMounts = state.mounts;
@@ -419,6 +517,7 @@ class ExecutionContainer {
     checkAbort(signal);
   }
   async startExecutor(signal: AbortSignal): Promise<void> {
+    await this.assertDaemon(signal);
     await this.cli(["start", this.id], signal);
     await this.cli(["exec", this.id, "node", "-e", READY], signal).catch(() => {
       throw new CodexExecutionError("sandbox_unavailable", undefined, "executor_unavailable");
@@ -427,7 +526,9 @@ class ExecutionContainer {
   async verify(
     signal: AbortSignal,
   ): Promise<Omit<CodexVerificationResult, "processId" | "durationMs">> {
+    await this.assertDaemon(signal);
     const output = await processOutput(this.#docker, ["start", "--attach", this.id], signal);
+    await this.assertDaemon(signal);
     const state = await this.inspect();
     if (state.status !== "exited")
       throw new CodexExecutionError("sandbox_unavailable", undefined, "verification_not_started");
@@ -485,6 +586,7 @@ class ExecutionContainer {
   async stop(): Promise<void> {
     if (!this.#reserved) return;
     try {
+      await this.assertDaemon();
       if (this.#id === null) {
         const id = await this.cli([
           "container",
@@ -511,6 +613,7 @@ class ExecutionContainer {
           throw new Error("Container identity changed");
         // Removing the exact private PID namespace is the writer-lifetime boundary.
         // Stopping only Codex, its socket, or a docker-exec client is insufficient.
+        await this.assertDaemon();
         await this.cli(["rm", "--force", this.#id]);
       }
       const remaining = await this.cli([
@@ -524,6 +627,7 @@ class ExecutionContainer {
         "{{.ID}}",
       ]);
       if (remaining !== "") throw new Error("Container still present");
+      await this.assertDaemon();
       await withCancellation(
         this.#lifecycle.onStopped({ name: this.name, id: this.#id }),
         AbortSignal.timeout(10_000),

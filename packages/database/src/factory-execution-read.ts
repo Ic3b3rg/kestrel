@@ -10,6 +10,7 @@ import type { PoolClient } from "pg";
 
 import { FactoryError, withFactoryFeature } from "./factory-planning.js";
 import type { DatabasePool } from "./pool.js";
+import { factoryGateForRun } from "./factory-gates.js";
 
 export interface ExecutionRunRow {
   id: string;
@@ -28,6 +29,7 @@ export interface ExecutionRunRow {
   started_at: Date | null;
   completed_at: Date | null;
   reservation_released_at: Date | null;
+  resume_gate_id: string | null;
 }
 
 function summary(row: ExecutionRunRow) {
@@ -105,6 +107,7 @@ export function readFactoryExecution(
       state,
       failure: latest?.failure ?? null,
       question: latest?.question ?? null,
+      gate: latest === undefined ? null : await factoryGateForRun(client, feature, latest.id),
       revision: await factoryWorkspaceRevision(client, featureId),
       workItems: items.rows.map((item) => ({
         id: item.id,
@@ -121,7 +124,7 @@ export function readFactoryExecutionRun(
   featureId: string,
   runId: string,
 ): Promise<FactoryExecutionRun> {
-  return withFactoryFeature(pool, projectId, featureId, async (client) => {
+  return withFactoryFeature(pool, projectId, featureId, async (client, feature) => {
     const result = await client.query<ExecutionRunRow>(
       "SELECT * FROM factory_execution_runs WHERE id = $1 AND feature_id = $2",
       [runId, featureId],
@@ -147,6 +150,7 @@ export function readFactoryExecutionRun(
       featureId,
       approvedVersion: row.plan_version,
       question: row.question,
+      gate: await factoryGateForRun(client, feature, runId),
       runtime: row.runtime,
       revision: row.revision,
       acceptedCommands: row.accepted_commands,

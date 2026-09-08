@@ -12,6 +12,7 @@ import { fetchFactoryExecution, fetchFactoryExecutionRun } from "./factory-execu
 import { planningRequestError } from "./FeatureNavigation.js";
 import { Button } from "./components/ui/button.js";
 import { WorkspaceSuspendedContext } from "./components/ui/workspace-suspension.js";
+import { FactoryGatePanel, GateAnswer } from "./FactoryGatePanel.js";
 
 type FactoryVerificationCommand = FactoryExecutionRun["acceptedCommands"][number];
 
@@ -199,6 +200,7 @@ function RunDetails({ run }: { run: FactoryExecutionRun }) {
     <div className="min-w-0 space-y-4 rounded-md border bg-muted/30 p-3">
       <p className="text-sm font-medium">Approved plan · version {run.approvedVersion}</p>
       <ExecutionProblem failure={run.failure} question={run.question} />
+      {run.gate == null ? null : <GateAnswer gate={run.gate} />}
       <p className="text-sm text-muted-foreground">
         {run.writerStopped
           ? "Execution environment stopped."
@@ -264,6 +266,7 @@ export interface FeatureExecutionPanelProps {
   projectId: string;
   featureId: string;
   online?: boolean;
+  onGateResolved?: () => void;
   onAuthenticationError?: (error: unknown) => boolean;
 }
 
@@ -277,6 +280,7 @@ function ExecutionPanel({
   projectId,
   featureId,
   online = true,
+  onGateResolved,
   onAuthenticationError = ignoreAuthenticationError,
 }: FeatureExecutionPanelProps) {
   const suspended = useContext(WorkspaceSuspendedContext);
@@ -332,7 +336,8 @@ function ExecutionPanel({
             cached.state !== selected.state ||
             cached.failure !== selected.failure ||
             cached.writerStopped !== selected.writerStopped ||
-            cached.completedAt !== selected.completedAt
+            cached.completedAt !== selected.completedAt ||
+            cached.gate != null
           ) {
             const detail = await fetchFactoryExecutionRun(
               projectId,
@@ -410,7 +415,29 @@ function ExecutionPanel({
               ? "Cancellation requested"
               : phaseLabels[execution.state]}
           </p>
-          <ExecutionProblem failure={execution.failure} question={execution.question} />
+          <ExecutionProblem
+            failure={
+              execution.gate != null &&
+              ["input_required", "permission_required"].includes(execution.failure ?? "")
+                ? null
+                : execution.failure
+            }
+            question={execution.gate == null ? execution.question : null}
+          />
+          {execution.gate == null ? null : (
+            <FactoryGatePanel
+              key={execution.gate.id}
+              projectId={projectId}
+              gate={execution.gate}
+              active={active}
+              onAuthenticationError={onAuthenticationError}
+              onResolved={() => {
+                cachedRun.current = null;
+                setGeneration((value) => value + 1);
+                onGateResolved?.();
+              }}
+            />
+          )}
           {!stopUnconfirmed || execution.failure === "stop_unconfirmed" ? null : (
             <ExecutionProblem failure="stop_unconfirmed" question={null} />
           )}

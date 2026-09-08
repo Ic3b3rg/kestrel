@@ -181,6 +181,7 @@ beforeEach(async () => {
     specMarkdown: "# Approved scope\nNo provider writes.",
     context: { commitId: base, documents: [], notice: null },
     source: { repositoryId: candidate.repositoryId, identity: inspection.sourceIdentity },
+    gateResolution: null,
     completed: [],
   };
   vi.mocked(claimFactoryExecution).mockImplementation((_pool, id, ownerInstanceId) => {
@@ -295,6 +296,90 @@ afterEach(async () => {
 afterAll(async () => {
   await pool.end();
 });
+
+it("resumes only the recorded question in a fresh turn while retaining the frozen plan and checks", async () => {
+  run.attempt = 2;
+  run.gateResolution = {
+    id: randomUUID(),
+    runId: randomUUID(),
+    approvedVersion: run.version,
+    reason: "input_required",
+    question: "Should the returned value be a number?",
+    answer: "Keep the existing numeric type within the approved requirements.",
+  };
+  await processor().process({ runId: run.id });
+  const input = runTurn.mock.calls[0]?.[0];
+  if (input === undefined) throw new Error("No implementation turn started");
+  const context = JSON.parse(input.prompt.split("\n").at(-1) ?? "null") as {
+    gateResolution: unknown;
+    requirements: unknown;
+    workItem: unknown;
+    limits: unknown;
+  };
+  expect(context.gateResolution).toEqual(run.gateResolution);
+  expect(context.requirements).toEqual(run.plan.acceptance);
+  expect(context.workItem).toEqual(run.plan.workItems[0]);
+  expect(context.limits).toEqual(run.plan.limits);
+  expect(input).not.toHaveProperty("threadId");
+  expect(runVerification).toHaveBeenCalledOnce();
+  expect(finishFactoryExecution).toHaveBeenCalledWith(
+    pool,
+    expect.anything(),
+    expect.objectContaining({ verified: true, writerStopped: true }),
+  );
+});
+
+it.each(["uncommitted_changes", "unrecorded_checkpoint"])(
+  "preserves %s after an interrupted attempt and refuses to replay runtime side effects",
+  async (boundary) => {
+    if (boundary === "uncommitted_changes") {
+      runTurn.mockImplementation((input) =>
+        container(input, input.requestId, async () => {
+          await writeFile(join(input.cwd, "value.mjs"), "partial attempt bytes\n");
+          return {
+            threadId: "first",
+            turnId: "first",
+            text: JSON.stringify({
+              status: "input_required",
+              summary: "A choice remains",
+              question: "Which existing behavior should remain?",
+            }),
+          };
+        }),
+      );
+    } else {
+      vi.mocked(recordFactoryExecutionCheckpoint).mockRejectedValueOnce(
+        new Error("Process lost before recording its Git checkpoint"),
+      );
+    }
+    await processor().process({ runId: run.id });
+    const first = runTurn.mock.calls[0]?.[0];
+    if (first === undefined) throw new Error("No first attempt");
+    const retained = await readFile(join(first.cwd, "value.mjs"), "utf8");
+    const retainedHead = await git(first.cwd, "rev-parse", "HEAD");
+    const previousRunId = run.id;
+    run.id = "01991c36-7f90-7000-8000-000000000002";
+    run.attempt = 2;
+    run.gateResolution = {
+      id: randomUUID(),
+      runId: previousRunId,
+      approvedVersion: run.version,
+      reason: "input_required",
+      question: "Which existing behavior should remain?",
+      answer: "Keep the existing approved numeric behavior.",
+    };
+    await processor().process({ runId: run.id });
+    expect(runTurn).toHaveBeenCalledTimes(1);
+    expect(runVerification).not.toHaveBeenCalled();
+    expect(await readFile(join(first.cwd, "value.mjs"), "utf8")).toBe(retained);
+    expect(await git(first.cwd, "rev-parse", "HEAD")).toBe(retainedHead);
+    expect(finishFactoryExecution).toHaveBeenLastCalledWith(
+      pool,
+      expect.objectContaining({ id: run.id }),
+      expect.objectContaining({ verified: false, writerStopped: true, failure: "source_changed" }),
+    );
+  },
+);
 
 it("claims, freezes source, closes implementation, checkpoints and verifies exact argv before finishing", async () => {
   await processor().process({ runId: run.id });

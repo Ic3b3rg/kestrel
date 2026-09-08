@@ -72,6 +72,11 @@ function WorkItemCard({
           {item.blocking === null ? null : (
             <span className="factory-card-blocking">{blockingLabels[item.blocking.kind]}</span>
           )}
+          {item.blocking?.kind === "human_gate" ? (
+            <span className="line-clamp-3 text-sm text-muted-foreground">
+              {item.blocking.explanation}
+            </span>
+          ) : null}
         </Button>
       </DialogTrigger>
       <DialogContent className="factory-item-dialog max-h-[85dvh] overflow-y-auto sm:max-w-2xl">
@@ -230,6 +235,7 @@ export interface FeatureBoardPanelProps {
   online: boolean;
   onAuthenticationError: (error: unknown) => boolean;
   onViewPlan: () => void;
+  onFeatureChanged?: () => void;
   loadBoard?: typeof fetchFactoryBoard;
   loadPublication?: typeof fetchFactoryIssuePublication;
   retryPublication?: typeof retryFactoryIssuePublication;
@@ -241,6 +247,7 @@ export function FeatureBoardPanel({
   online,
   onAuthenticationError,
   onViewPlan,
+  onFeatureChanged,
   loadBoard = fetchFactoryBoard,
   loadPublication = fetchFactoryIssuePublication,
   retryPublication = retryFactoryIssuePublication,
@@ -401,6 +408,10 @@ export function FeatureBoardPanel({
               featureId={featureId}
               online={online}
               onAuthenticationError={onAuthenticationError}
+              onGateResolved={() => {
+                setGeneration((value) => value + 1);
+                onFeatureChanged?.();
+              }}
             />
           )}
           <div className="factory-board">
