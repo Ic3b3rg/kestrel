@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode, type SyntheticEvent } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode, type SyntheticEvent } from "react";
 import { ArrowLeft, ArrowUp } from "lucide-react";
 import { Button } from "./components/ui/button.js";
 import { Label } from "./components/ui/label.js";
@@ -30,9 +30,14 @@ export function NewPlanningChatPanel({
   onBack,
 }: NewPlanningChatPanelProps) {
   const [draft, setDraft] = useState("");
+  const composer = useRef<HTMLTextAreaElement>(null);
   const composerId = useId();
   const titleId = useId();
   const helpId = useId();
+  useEffect(() => {
+    if (!pending && !locked && document.activeElement === document.body)
+      composer.current?.focus({ preventScroll: true });
+  }, [pending, locked]);
   const submit = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
     const text = draft.trim();
@@ -62,6 +67,7 @@ export function NewPlanningChatPanel({
               Describe the change
             </Label>
             <Textarea
+              ref={composer}
               id={composerId}
               autoFocus
               name="prompt"

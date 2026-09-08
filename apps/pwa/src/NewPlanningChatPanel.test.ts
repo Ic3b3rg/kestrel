@@ -97,6 +97,18 @@ describe("blank planning conversation", () => {
     expect(onSubmit.mock.calls[1]).toEqual(["Let people search saved reports."]);
   });
 
+  it("focuses the composer after its saved-request check without stealing focus from another control", async () => {
+    await render({ pending: true });
+    textarea().blur();
+    await render();
+    expect(document.activeElement).toBe(textarea());
+    await render({ pending: true });
+    const back = container.querySelector("button");
+    back?.focus();
+    await render();
+    expect(document.activeElement).toBe(back);
+  });
+
   it("allows an offline draft while blocking its submission until reconnection", async () => {
     const onSubmit = vi.fn();
     await render({ online: false, onSubmit });

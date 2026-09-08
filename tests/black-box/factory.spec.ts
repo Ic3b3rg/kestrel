@@ -133,7 +133,14 @@ test.describe("Factory planning chat", () => {
     const featureId = new URL(featureUrl).pathname.split("/")[4];
     if (featureId === undefined) throw new Error("The created feature has no identity");
     const chatEndpoint = `/api/v1/projects/${projectId}/features/${featureId}`;
-    await expect(page.getByText("Codex is unavailable", { exact: true })).toBeVisible();
+    const unavailableReply = (message: string) =>
+      page
+        .getByRole("list", { name: "Conversation", exact: true })
+        .getByRole("listitem")
+        .filter({ has: page.getByText(message, { exact: true }) })
+        .getByRole("status")
+        .getByText("Codex is unavailable", { exact: true });
+    await expect(unavailableReply(requestText)).toBeVisible();
 
     const messageIds: string[] = [];
     await page.route(`**${chatEndpoint}/messages`, async (route) => {
@@ -155,7 +162,7 @@ test.describe("Factory planning chat", () => {
         .getByRole("list", { name: "Conversation", exact: true })
         .getByText(followup, { exact: true }),
     ).toBeVisible();
-    await expect(page.getByText("Codex is unavailable", { exact: true })).toBeVisible();
+    await expect(unavailableReply(followup)).toBeVisible();
     expect(messageIds).toHaveLength(2);
     expect(new Set(messageIds).size).toBe(1);
     const readChat = async () =>
@@ -192,7 +199,7 @@ test.describe("Factory planning chat", () => {
         .getByRole("list", { name: "Conversation", exact: true })
         .getByText(requestText, { exact: true }),
     ).toBeVisible();
-    await expect(page.getByText("Codex is unavailable", { exact: true })).toBeVisible();
+    await expect(unavailableReply(followup)).toBeVisible();
 
     await openProject(page, "falcon");
     await createFeature(page, "Clarify report export");
@@ -218,7 +225,7 @@ test.describe("Factory planning chat", () => {
     ).toBeVisible();
     await page.getByRole("button", { name: "Retry planning", exact: true }).click();
     await expect.poll(async () => (await readChat()).turns.length).toBe(3);
-    await expect(page.getByText("Codex is unavailable", { exact: true })).toBeVisible();
+    await expect(unavailableReply(followup)).toBeVisible();
     expect((await readChat()).messages).toHaveLength(2);
     await page.screenshot({
       path: test.info().outputPath("factory-chat-desktop.png"),
