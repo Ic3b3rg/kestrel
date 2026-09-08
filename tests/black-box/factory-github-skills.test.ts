@@ -3,11 +3,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   FactoryIssuePublicationSchema,
   FeatureChatSchema,
+  FeatureListSchema,
   FeaturePlanningSkillsSchema,
   FeatureSchema,
   GitHubPlanningSkillBundleSchema,
   LocalRepositoryInventorySchema,
   PlanningSkillCatalogSchema,
+  PlanningFeatureStartedSchema,
   ProjectUpsertedSchema,
 } from "@kestrel/contracts";
 import { startStack, type RunningStack } from "./support/compose.js";
@@ -166,6 +168,23 @@ describe("pinned GitHub planning Skill imports", () => {
       digests: [preview.contentDigest],
     };
     expect((await post(`${path}/skills`, choose)).status).toBe(409);
+    const collection = `/api/v1/projects/${projectId}/features`;
+    const beforeFeatures = FeatureListSchema.parse(await (await stack.fetchApi(collection)).json());
+    const firstMessage = {
+      requestId: randomUUID(),
+      text: "Clarify the report requirements.",
+      skillDigests: [preview.contentDigest],
+    };
+    const rejectedStart = await post(`/api/v1/projects/${projectId}/planning`, firstMessage);
+    expect(rejectedStart.status, await rejectedStart.clone().text()).toBe(409);
+    expect(FeatureListSchema.parse(await (await stack.fetchApi(collection)).json())).toEqual(
+      beforeFeatures,
+    );
+    expect(
+      await (
+        await stack.fetchApi(`/api/v1/projects/${projectId}/planning/${firstMessage.requestId}`)
+      ).json(),
+    ).toMatchObject({ feature: null });
     const beforeInstall = await calls();
     const install = await post(`${endpoint}/install`, {
       requestId: randomUUID(),
@@ -174,6 +193,21 @@ describe("pinned GitHub planning Skill imports", () => {
     expect(install.status, await install.clone().text()).toBe(201);
     expect(GitHubPlanningSkillBundleSchema.parse(await install.json())).toEqual(preview);
     expect(await calls()).toEqual(beforeInstall);
+    const acceptedStart = await post(`/api/v1/projects/${projectId}/planning`, firstMessage);
+    expect(acceptedStart.status, await acceptedStart.clone().text()).toBe(202);
+    const started = PlanningFeatureStartedSchema.parse(await acceptedStart.json());
+    const duplicateStart = await post(`/api/v1/projects/${projectId}/planning`, firstMessage);
+    expect(duplicateStart.status).toBe(202);
+    const duplicate = PlanningFeatureStartedSchema.parse(await duplicateStart.json());
+    expect([duplicate.feature.id, duplicate.messageId, duplicate.turnId]).toEqual([
+      started.feature.id,
+      started.messageId,
+      started.turnId,
+    ]);
+    const startedChat = FeatureChatSchema.parse(
+      await (await stack.fetchApi(`${collection}/${started.feature.id}`)).json(),
+    );
+    expect(startedChat.skills?.skills[0]?.contentDigest).toBe(preview.contentDigest);
     const selected = await post(`${path}/skills`, choose);
     expect(selected.status, await selected.clone().text()).toBe(200);
     expect(FeaturePlanningSkillsSchema.parse(await selected.json()).skills[0]?.contentDigest).toBe(

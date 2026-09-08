@@ -4,6 +4,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
   FeaturePlanVersionSchema,
+  FeaturePlanDocumentSchema,
+  validateFeaturePlan,
   FeaturePlansSchema,
   FeatureSchema,
   FactoryBoardSchema,
@@ -96,6 +98,44 @@ describe("versioned Factory plans", () => {
     const feature = FeatureSchema.parse(await response.json());
     return `/api/v1/projects/${projectId}/features/${feature.id}`;
   }
+
+  it("replays a historical plan at the detail limit without inserting an empty proposal array", async () => {
+    const path = await featurePath("Preserve a full historical plan");
+    const original = structuredClone(plan);
+    const item = original.workItems[0];
+    if (item === undefined) throw new Error("Missing plan fixture");
+    // Keep each published issue within its own body limit while filling the aggregate plan budget.
+    original.workItems = Array.from({ length: 12 }, (_, index) => ({
+      ...structuredClone(item),
+      key: `step-${String(index + 1)}`,
+      title: `Implement step ${String(index + 1)}`,
+      description: "x".repeat(index === 11 ? 1 : 8_000),
+    }));
+    const last = original.workItems.at(-1);
+    if (last === undefined) throw new Error("Missing final Work Item");
+    last.description = "x".repeat(96_000 - Buffer.byteLength(JSON.stringify(original)) + 1);
+    expect(Buffer.byteLength(JSON.stringify(original))).toBe(96_000);
+    expect(validateFeaturePlan(FeaturePlanDocumentSchema.parse(original))).toEqual([]);
+    const command = { requestId: randomUUID(), expectedVersion: null, plan: original };
+    const created = await post(`${path}/plans`, command);
+    expect(created.status, await created.clone().text()).toBe(201);
+    const version = FeaturePlanVersionSchema.parse(await created.json());
+    const repeated = await post(`${path}/plans`, {
+      ...command,
+      plan: { ...original, proposedDocuments: [] },
+    });
+    expect(repeated.status, await repeated.clone().text()).toBe(201);
+    expect(await repeated.json()).toEqual(version);
+    expect(version.document).not.toHaveProperty("proposedDocuments");
+    const newOversized = await post(`${path}/plans`, {
+      requestId: randomUUID(),
+      expectedVersion: 1,
+      plan: { ...original, proposedDocuments: [] },
+    });
+    expect(newOversized.status).toBe(400);
+    expect((await post(`${path}/plans/1/approve`, { requestId: randomUUID() })).status).toBe(200);
+    expect(await (await stack.fetchApi(`${path}/plans/1`)).json()).toEqual(version);
+  });
 
   it("saves append-only draft versions and rejects an edit from a stale tab", async () => {
     const path = await featurePath("Save searches");
@@ -337,6 +377,19 @@ describe("versioned Factory plans", () => {
         documents: [{ path: "CONTEXT.md", objectId: "b".repeat(40), content: "# Saved searches" }],
         notice: null,
       };
+      const generatedPlan: FeaturePlanDocument = {
+        ...plan,
+        proposedDocuments: [
+          {
+            key: "search-glossary",
+            kind: "glossary",
+            path: "CONTEXT.md",
+            pathIsProvisional: false,
+            markdown: "# Saved search\nA saved search retains a name and filters.\n",
+            workItemKey: "save",
+          },
+        ],
+      };
       // Drive the durable completion seam with a controlled model result; no runtime or queue is faked in production.
       const turnJson = await stack.executeWebModule(`
         import { createPool, claimPlanningTurn } from "@kestrel/database";
@@ -360,8 +413,8 @@ describe("versioned Factory plans", () => {
         import { renderFeaturePlanArtifacts } from "./apps/web/dist/factory-plan-artifacts.js";
         const pool = createPool(process.env.DATABASE_URL);
         try {
-          await completeGeneratedFactoryPlan(pool, ${turnJson}, ${JSON.stringify(plan)}, ${JSON.stringify(context)}, renderFeaturePlanArtifacts);
-          await completeGeneratedFactoryPlan(pool, ${turnJson}, ${JSON.stringify(plan)}, ${JSON.stringify(context)}, renderFeaturePlanArtifacts);
+          await completeGeneratedFactoryPlan(pool, ${turnJson}, ${JSON.stringify(generatedPlan)}, ${JSON.stringify(context)}, renderFeaturePlanArtifacts);
+          await completeGeneratedFactoryPlan(pool, ${turnJson}, ${JSON.stringify(generatedPlan)}, ${JSON.stringify(context)}, renderFeaturePlanArtifacts);
         } finally { await pool.end(); }
       `);
       const saved = FeaturePlansSchema.parse(await (await stack.fetchApi(`${path}/plans`)).json());
@@ -373,17 +426,31 @@ describe("versioned Factory plans", () => {
         cancel ? ["user"] : ["user", "assistant"],
       );
       if (!cancel) {
+        expect(chat.messages.find(({ role }) => role === "assistant")?.generatedPlanVersion).toBe(
+          2,
+        );
+        expect(saved.current?.document.proposedDocuments).toEqual(generatedPlan.proposedDocuments);
         expect(saved.current?.sourceContext).toEqual(context);
         expect(saved.current?.planMarkdown).toContain(context.commitId);
         expect(saved.current?.author).toBe("assistant");
         const version = saved.current;
-        expect((await post(`${path}/plans/2/approve`, { requestId: randomUUID() })).status).toBe(
+        const edited = await post(`${path}/plans`, {
+          requestId: randomUUID(),
+          expectedVersion: 2,
+          plan: { ...plan, proposedDocuments: [] },
+        });
+        expect(edited.status).toBe(201);
+        expect((await post(`${path}/plans/3/approve`, { requestId: randomUUID() })).status).toBe(
           200,
         );
         await stack.executeSql(
           `UPDATE factory_features SET planning_context = NULL WHERE id = '${featureId}';`,
         );
         expect(await (await stack.fetchApi(`${path}/plans/2`)).json()).toEqual(version);
+        const history = FeatureChatSchema.parse(await (await stack.fetchApi(path)).json());
+        expect(
+          history.messages.find(({ role }) => role === "assistant")?.generatedPlanVersion,
+        ).toBe(2);
       }
     }
   });

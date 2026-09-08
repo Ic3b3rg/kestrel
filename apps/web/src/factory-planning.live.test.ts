@@ -12,6 +12,7 @@ import {
   FeatureChatSchema,
   PlanningSkillBundleSchema,
   PlanningSkillCandidatesSchema,
+  GitHubPlanningSkillBundleSchema,
   FeatureListSchema,
   FeatureSchema,
   FeaturePlanVersionSchema,
@@ -46,6 +47,7 @@ import { hashPassword } from "./password.js";
 import { createLocalRepositoryService } from "./routes/local-repository-sources.js";
 import { createDatabaseProjectService } from "./routes/projects.js";
 import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME } from "./session.js";
+import { GRILLING_STARTER } from "./factory-skill-composition.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -70,7 +72,7 @@ async function executable(name: string): Promise<string> {
 describe.runIf(process.env.KESTREL_LIVE_CODEX === "1")(
   "Factory planning live HTTP conformance",
   () => {
-    it("saves and resumes chat, generates a versioned plan and approves its board through real Codex", async () => {
+    it("uses the pinned GitHub grilling starter with real Codex to name, resume and approve a plan with proposed documents", async () => {
       const [docker, git, codex] = await Promise.all([
         executable("docker"),
         executable("git"),
@@ -279,7 +281,7 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX === "1")(
               ...(body === undefined ? {} : { "content-type": "application/json" }),
             },
             ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-            signal: AbortSignal.timeout(5_000),
+            signal: AbortSignal.timeout(path.endsWith("/github/preview") ? 120_000 : 5_000),
           });
         const inventory = LocalRepositoryInventorySchema.parse(
           await (await request("/api/v1/local-repository-sources")).json(),
@@ -304,12 +306,27 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX === "1")(
         expect(imported.status).toBe(201);
         const skill = PlanningSkillBundleSchema.parse(await imported.json());
         expect(skill.files.map((file) => file.path)).toEqual(["SKILL.md", "unicode-checklist.md"]);
+        const previewed = await request("/api/v1/planning-skills/github/preview", {
+          kind: "starter",
+          starter: "grilling-starter",
+        });
+        expect(previewed.status, await previewed.clone().text()).toBe(200);
+        const starter = GitHubPlanningSkillBundleSchema.parse(await previewed.json());
+        expect(starter.source.commitId).toBe(GRILLING_STARTER.source.ref);
+        expect(starter.files.some(({ path }) => path.endsWith("CONTEXT-FORMAT.md"))).toBe(true);
+        expect(starter.files.some(({ path }) => path.endsWith("ADR-FORMAT.md"))).toBe(true);
+        const installed = await request("/api/v1/planning-skills/github/install", {
+          requestId: randomUUID(),
+          digest: starter.contentDigest,
+        });
+        expect(installed.status).toBe(201);
+        expect(await installed.json()).toEqual(starter);
         const firstText =
           "Voglio esportare le note. Fai una domanda breve sul requisito mancante, citando CONTEXT.md.";
         const creation = await request(`/api/v1/projects/${opened.project.id}/planning`, {
           requestId: randomUUID(),
           text: firstText,
-          skillDigests: [skill.contentDigest],
+          skillDigests: [skill.contentDigest, starter.contentDigest],
         });
         expect(creation.status).toBe(202);
         const started = PlanningFeatureStartedSchema.parse(await creation.json());
@@ -319,7 +336,7 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX === "1")(
         const readChat = async () => FeatureChatSchema.parse(await (await request(path)).json());
         for (const text of [
           firstText,
-          "Confermo Markdown e tutte le note. I caratteri accentati e le emoji devono restare identici. Registra la decisione e chiedi un ultimo criterio verificabile, in modo breve.",
+          "Confermo Markdown e tutte le note nell’ordine attuale. Titoli, corpi, caratteri accentati ed emoji devono restare identici, senza modificare le note salvate. Registra la decisione: proponi un glossario per Note ed Export e un ADR sulla scelta di Markdown, seguendo i formati della Skill. La numerazione ADR è provvisoria perché non hai l’inventario completo. Chiedi un ultimo criterio verificabile, in modo breve.",
         ]) {
           let accepted = {
             schemaVersion: 1 as const,
@@ -379,6 +396,10 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX === "1")(
           chat.turns.every((turn) => turn.skills?.[0]?.contentDigest === skill.contentDigest),
         ).toBe(true);
         expect(chat.context?.skills?.[0]?.contentDigest).toBe(skill.contentDigest);
+        expect(
+          chat.turns.every((turn) => turn.skills?.[1]?.contentDigest === starter.contentDigest),
+        ).toBe(true);
+        expect(chat.context?.skills?.[1]?.contentDigest).toBe(starter.contentDigest);
         expect(chat.context?.commitId).toBe(commitOutput.trim());
         expect(
           chat.context?.documents.find(({ path: documentPath }) => documentPath === "CONTEXT.md")
@@ -474,16 +495,46 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX === "1")(
         expect(plans.current?.planMarkdown).toContain(commitOutput.trim());
         expect(plans.current?.sourceContext?.skills?.[0]?.contentDigest).toBe(skill.contentDigest);
         expect(plans.current?.planMarkdown).toContain(skill.contentDigest);
+        expect(plans.current?.sourceContext?.skills?.[1]?.contentDigest).toBe(
+          starter.contentDigest,
+        );
+        expect(plans.current?.planMarkdown).toContain(starter.contentDigest);
+        expect(plans.current?.document.proposedDocuments?.map(({ kind }) => kind)).toEqual(
+          expect.arrayContaining(["glossary", "adr"]),
+        );
+        expect(
+          plans.current?.document.proposedDocuments?.find(({ kind }) => kind === "adr")
+            ?.pathIsProvisional,
+        ).toBe(true);
         expect(JSON.stringify(plans.current?.document.acceptance)).toMatch(
           /unicode|emoji|accent/iu,
         );
         expect(plans.current?.document.workItems.length).toBeGreaterThan(0);
         expect(plans.current?.document.limits.attemptTimeoutSeconds).toBe(1800);
-        const approval = await request(`${path}/plans/2/approve`, { requestId: randomUUID() });
+        if (plans.current === null) throw new Error("No generated plan was retained");
+        const originalGeneratedPlan = plans.current;
+        const revision = await request(`${path}/plans`, {
+          requestId: randomUUID(),
+          expectedVersion: 2,
+          plan: {
+            ...originalGeneratedPlan.document,
+            objective: "Export all saved notes to unchanged Markdown",
+          },
+        });
+        expect(revision.status).toBe(201);
+        expect(FeaturePlanVersionSchema.parse(await revision.json()).version).toBe(3);
+        const generatedReply = (await readChat()).messages.find(
+          ({ generatedPlanVersion }) => generatedPlanVersion === 2,
+        );
+        expect(generatedReply?.role).toBe("assistant");
+        expect(await (await request(`${path}/plans/2`)).json()).toEqual(originalGeneratedPlan);
+        const approval = await request(`${path}/plans/3/approve`, { requestId: randomUUID() });
         expect(approval.status).toBe(200);
         const board = FactoryBoardSchema.parse(await approval.json());
         expect(board.feature.state).toBe("queued");
-        expect(board.columns[0]?.items).toHaveLength(plans.current?.document.workItems.length ?? 0);
+        expect(board.columns[0]?.items).toHaveLength(
+          originalGeneratedPlan.document.workItems.length,
+        );
         expect(board.columns.slice(1).every(({ items }) => items.length === 0)).toBe(true);
 
         const race = PlanningFeatureStartedSchema.parse(
@@ -531,6 +582,6 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX === "1")(
         await runDocker(["rm", "--force", container]).catch(() => undefined);
         await rm(directory, { recursive: true, force: true });
       }
-    }, 270_000);
+    }, 390_000);
   },
 );

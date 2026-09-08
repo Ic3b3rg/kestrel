@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FeaturePlanVersion } from "@kestrel/contracts";
 import { fetchFeaturePlanVersion } from "./api.js";
 import { planningRequestError } from "./FeatureNavigation.js";
-import { DocumentInspector } from "./PlanningDetails.js";
+import { ProjectDocumentContents } from "./PlanningDetails.js";
 import { Button } from "./components/ui/button.js";
 import {
   Dialog,
@@ -21,11 +21,6 @@ function ProposedDocumentContents({ version }: { version: FeaturePlanVersion }) 
         {version.version}. Applying these proposals belongs to their owning Work Items after
         approval.
       </p>
-      <DocumentInspector
-        context={version.sourceContext}
-        label="Sources supplied for this plan"
-        emptyMessage="No source snapshot was recorded for this plan version."
-      />
       {documents.length === 0 ? (
         <p>This plan version has no proposed Project documents.</p>
       ) : (
@@ -57,19 +52,90 @@ function ProposedDocumentContents({ version }: { version: FeaturePlanVersion }) 
   );
 }
 
+function usePlanDocumentView() {
+  const [sources, setSources] = useState(false);
+  const sourceButton = useRef<HTMLButtonElement>(null);
+  const backButton = useRef<HTMLButtonElement>(null);
+  const focusRequested = useRef(false);
+  const changeView = (next: boolean) => {
+    focusRequested.current = true;
+    setSources(next);
+  };
+  useEffect(() => {
+    if (!focusRequested.current) return;
+    focusRequested.current = false;
+    (sources ? backButton : sourceButton).current?.focus();
+  }, [sources]);
+  return {
+    sources,
+    sourceButton,
+    backButton,
+    changeView,
+    reset() {
+      focusRequested.current = false;
+      setSources(false);
+    },
+    onEscapeKeyDown: (event: KeyboardEvent) => {
+      if (!sources) return;
+      event.preventDefault();
+      changeView(false);
+    },
+  };
+}
+
+function PlanDocumentContents({
+  version,
+  view,
+}: {
+  version: FeaturePlanVersion;
+  view: ReturnType<typeof usePlanDocumentView>;
+}) {
+  return view.sources ? (
+    <>
+      <Button variant="outline" ref={view.backButton} onClick={() => view.changeView(false)}>
+        Back to proposed documents
+      </Button>
+      <ProjectDocumentContents
+        context={version.sourceContext}
+        emptyMessage="No source snapshot was recorded for this plan version."
+      />
+    </>
+  ) : (
+    <>
+      <Button variant="outline" ref={view.sourceButton} onClick={() => view.changeView(true)}>
+        Sources supplied for this plan
+      </Button>
+      <ProposedDocumentContents version={version} />
+    </>
+  );
+}
+
 export function ProposedDocumentsInspector({ version }: { version: FeaturePlanVersion }) {
+  const view = usePlanDocumentView();
   return (
-    <Dialog>
+    <Dialog
+      onOpenChange={(open) => {
+        if (!open) view.reset();
+      }}
+    >
       <DialogTrigger asChild>
         <Button variant="outline">Proposed documents</Button>
       </DialogTrigger>
-      <DialogContent className="planning-documents-dialog max-h-[85dvh] overflow-y-auto sm:max-w-4xl">
-        <DialogTitle>Proposed documents · version {version.version}</DialogTitle>
+      <DialogContent
+        onEscapeKeyDown={view.onEscapeKeyDown}
+        className="planning-documents-dialog max-h-[85dvh] overflow-y-auto sm:max-w-4xl"
+      >
+        <DialogTitle>
+          {view.sources
+            ? "Sources supplied for this plan"
+            : `Proposed documents · version ${String(version.version)}`}
+        </DialogTitle>
         <DialogDescription>
-          Draft Markdown retained with this immutable plan, separate from committed Project
-          documents.
+          {view.sources
+            ? "The committed Project documents and Skills supplied when this plan was created."
+            : "Draft Markdown retained with this immutable plan, separate from committed Project documents."}
         </DialogDescription>
-        <ProposedDocumentContents version={version} />
+        <PlanDocumentContents version={version} view={view} />
       </DialogContent>
     </Dialog>
   );
@@ -91,6 +157,7 @@ export function GeneratedPlanDocuments({
   loadVersion?: typeof fetchFeaturePlanVersion;
 }) {
   const [open, setOpen] = useState(false);
+  const view = usePlanDocumentView();
   const [version, setVersion] = useState<FeaturePlanVersion | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -122,17 +189,31 @@ export function GeneratedPlanDocuments({
     attempt,
   ]);
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) view.reset();
+      }}
+    >
       <DialogTrigger asChild>
         <Button variant="outline" size="sm" disabled={!online}>
           Inspect plan {versionNumber} documents
         </Button>
       </DialogTrigger>
-      <DialogContent className="planning-documents-dialog max-h-[85dvh] overflow-y-auto sm:max-w-4xl">
-        <DialogTitle>Proposed documents · version {versionNumber}</DialogTitle>
+      <DialogContent
+        onEscapeKeyDown={view.onEscapeKeyDown}
+        className="planning-documents-dialog max-h-[85dvh] overflow-y-auto sm:max-w-4xl"
+      >
+        <DialogTitle>
+          {view.sources
+            ? "Sources supplied for this plan"
+            : `Proposed documents · version ${String(versionNumber)}`}
+        </DialogTitle>
         <DialogDescription>
-          The exact plan generated by this reply. Later drafts do not change its documents or
-          sources.
+          {view.sources
+            ? "The committed Project documents and Skills supplied when this plan was created."
+            : "The exact plan generated by this reply. Later drafts do not change its documents or sources."}
         </DialogDescription>
         {error !== null ? (
           <div role="alert">
@@ -148,7 +229,7 @@ export function GeneratedPlanDocuments({
         ) : version === null ? (
           <p role="status">Loading proposed documents…</p>
         ) : (
-          <ProposedDocumentContents version={version} />
+          <PlanDocumentContents version={version} view={view} />
         )}
       </DialogContent>
     </Dialog>

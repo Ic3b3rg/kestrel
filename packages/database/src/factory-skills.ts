@@ -286,17 +286,7 @@ export async function saveFeaturePlanningSkills(
         "Wait for the current planning reply before changing Skills",
       );
     const digests = PlanningSkillDigestsSchema.parse(command.digests);
-    if (digests.length > 0) {
-      const installed = await client.query<{ digest: string }>(
-        "SELECT DISTINCT digest FROM factory_planning_skill_installs WHERE digest = ANY($1::text[])",
-        [digests],
-      );
-      if (installed.rows.length !== digests.length)
-        throw new FactoryError(
-          "conflict",
-          "Install the previewed Skill before selecting it for planning",
-        );
-    }
+    await requireInstalledPlanningSkills(client, digests);
     const skills = await readPlanningSkills(client, digests);
     const version = command.expectedVersion + 1;
     await client.query(
@@ -310,6 +300,23 @@ export async function saveFeaturePlanningSkills(
     return { schemaVersion: 1, version, skills: skills.map(skillSummary) };
   });
 }
+
+async function requireInstalledPlanningSkills(
+  client: PoolClient,
+  digests: string[],
+): Promise<void> {
+  if (digests.length === 0) return;
+  const installed = await client.query<{ digest: string }>(
+    "SELECT DISTINCT digest FROM factory_planning_skill_installs WHERE digest = ANY($1::text[])",
+    [digests],
+  );
+  if (installed.rows.length !== digests.length)
+    throw new FactoryError(
+      "conflict",
+      "Install the previewed Skill before selecting it for planning",
+    );
+}
+
 export async function resolvePlanningSkillInvocation(
   client: PoolClient,
   text: string,
@@ -336,6 +343,7 @@ export async function resolvePlanningSkillInvocation(
   }
   if (digests.length > 8)
     throw new FactoryError("conflict", "Select at most eight Skills for one planning turn");
+  await requireInstalledPlanningSkills(client, digests);
   await readPlanningSkills(client, digests);
   return digests;
 }

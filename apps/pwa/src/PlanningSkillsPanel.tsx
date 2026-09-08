@@ -63,6 +63,7 @@ function SkillContents({ bundle }: { bundle: PlanningSkillBundle }) {
         ))}
       </NativeSelect>
       <pre
+        tabIndex={0}
         aria-label="Retained Skill instructions"
         className="max-h-[45dvh] overflow-auto whitespace-pre-wrap break-words rounded-md border bg-background p-4 text-sm leading-relaxed"
       >
@@ -172,6 +173,19 @@ export function PlanningSkillsPanel({
 }: PlanningSkillsPanelProps) {
   const [open, setOpen] = useState(false);
   const [githubOpen, setGitHubOpen] = useState(false);
+  const skillsButton = useRef<HTMLButtonElement>(null);
+  const importButton = useRef<HTMLButtonElement>(null);
+  const returningToSkills = useRef(false);
+  const returnToSkills = () => {
+    returningToSkills.current = true;
+    setGitHubOpen(false);
+  };
+  useEffect(() => {
+    if (!githubOpen && returningToSkills.current) {
+      returningToSkills.current = false;
+      importButton.current?.focus();
+    }
+  }, [githubOpen]);
   const [catalog, setCatalog] = useState<PlanningSkillSummary[]>([]);
   const [candidates, setCandidates] = useState<Array<{ candidateId: string; label: string }>>([]);
   const [configured, setConfigured] = useState(false);
@@ -292,6 +306,7 @@ export function PlanningSkillsPanel({
   return (
     <>
       <Button
+        ref={skillsButton}
         variant="outline"
         disabled={!online}
         onClick={() => {
@@ -302,191 +317,235 @@ export function PlanningSkillsPanel({
         <BookOpen aria-hidden="true" />
         Skills{selection.skills.length === 0 ? "" : ` (${String(selection.skills.length)})`}
       </Button>
-      <Dialog
-        open={open && online && !githubOpen}
-        onOpenChange={(value) => {
-          if (!pending) setOpen(value);
-        }}
-      >
-        <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-3xl">
-          <DialogTitle>Planning Skills</DialogTitle>
-          <DialogDescription>
-            Choose the procedures that guide this conversation. Inspect their instructions before
-            using them.
-          </DialogDescription>
-          {error === null ? null : (
-            <div role="alert" className="grid gap-2 text-sm">
-              <p>{error}</p>
-              {attempt.current === null ? null : (
-                <Button variant="outline" disabled={pending} onClick={() => void run()}>
-                  {attempt.current.kind === "import" ? "Retry import" : "Retry selection"}
-                </Button>
-              )}
-            </div>
-          )}
-          {preview === null ? (
-            <>
-              {loading ? (
-                <p role="status">Loading Skills…</p>
-              ) : (
-                <div className="grid gap-4">
-                  <div className="grid gap-2">
-                    {available.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">
-                        Import a Skill below to give your planning chat a procedure to follow.
-                      </p>
-                    ) : (
-                      available.map((skill) => (
-                        <div
-                          key={skill.contentDigest}
-                          className="flex items-start gap-3 rounded-md border p-3"
-                        >
-                          <input
-                            type="checkbox"
-                            className="mt-1 size-4 accent-primary"
-                            aria-label={`Use $${skill.name}${available.filter((item) => item.name === skill.name).length > 1 ? ` version ${skill.contentDigest.slice(0, 8)}` : ""}`}
-                            checked={selected.includes(skill.contentDigest)}
-                            disabled={!editable || pending || attempt.current !== null}
-                            onChange={(event) => {
-                              const checked = event.currentTarget.checked;
-                              setSelected((current) =>
-                                checked
-                                  ? [
-                                      ...current.filter(
-                                        (digest) =>
-                                          !available.some(
-                                            (item) =>
-                                              item.name === skill.name &&
-                                              item.contentDigest === digest,
-                                          ),
-                                      ),
-                                      skill.contentDigest,
-                                    ]
-                                  : current.filter((digest) => digest !== skill.contentDigest),
-                              );
-                            }}
-                          />
-                          <div className="min-w-0 flex-1">
-                            <p className="font-medium">${skill.name}</p>
-                            <p className="text-sm text-muted-foreground">{skill.description}</p>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              {skill.source.label} · {skill.contentDigest.slice(0, 8)}
-                              {catalog.some((item) => item.contentDigest === skill.contentDigest)
-                                ? ""
-                                : " · retained selection"}
-                            </p>
-                          </div>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            disabled={pending}
-                            onClick={() => inspect(skill.contentDigest)}
-                          >
-                            Inspect ${skill.name}
-                          </Button>
-                        </div>
-                      ))
-                    )}
-                    {!editable ? (
-                      <p className="text-sm text-muted-foreground">
-                        Skills can be changed while planning, after the current reply finishes.
-                      </p>
-                    ) : null}
-                    <Button
-                      disabled={
-                        !editable || pending || attempt.current !== null || selected.length > 8
-                      }
-                      onClick={() =>
-                        void run({
-                          kind: "select",
-                          command: {
-                            requestId: crypto.randomUUID(),
-                            expectedVersion: selection.version,
-                            digests: selected,
-                          },
-                        })
-                      }
-                    >
-                      Use selected Skills
-                    </Button>
-                  </div>
-                  <div className="grid gap-3 border-t pt-4">
-                    <h3 className="font-medium">Add a Skill</h3>
-                    <p className="text-sm text-muted-foreground">
-                      Start with the grilling procedures or choose a Skill from a GitHub repository.
-                    </p>
-                    <Button
-                      variant="outline"
-                      disabled={pending}
-                      onClick={() => setGitHubOpen(true)}
-                    >
-                      Import from GitHub
-                    </Button>
-                  </div>
-                  <div className="grid gap-3 border-t pt-4">
-                    <h3 className="font-medium">Import from the workstation</h3>
-                    {configured ? (
-                      <>
-                        <Label htmlFor="host-skill-candidate">Available Skills</Label>
-                        <NativeSelect
-                          id="host-skill-candidate"
-                          aria-label="Host Skill to import"
-                          value={candidate}
-                          disabled={pending || attempt.current !== null}
-                          onChange={(event) => setCandidate(event.currentTarget.value)}
-                        >
-                          <option value="">Choose a Skill</option>
-                          {candidates.map((item) => (
-                            <option key={item.candidateId} value={item.candidateId}>
-                              {item.label}
-                            </option>
-                          ))}
-                        </NativeSelect>
-                        <Button
-                          variant="outline"
-                          disabled={candidate === "" || pending || attempt.current !== null}
-                          onClick={() =>
-                            void run({
-                              kind: "import",
-                              command: { requestId: crypto.randomUUID(), candidateId: candidate },
-                            })
-                          }
-                        >
-                          {pending ? "Importing…" : "Import Skill"}
-                        </Button>
-                        <p className="text-xs text-muted-foreground">
-                          Imports retain SKILL.md and supported local Markdown references. No
-                          installer or Skill script runs.
-                        </p>
-                      </>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">
-                        The workstation has no authorized Skill folder yet. Set{" "}
-                        <code>KESTREL_PLANNING_SKILL_ROOT</code> when starting Kestrel, then import
-                        Skills here.
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="grid gap-4">
-              <Button
-                variant="ghost"
-                className="justify-self-start"
-                onClick={() => setPreview(null)}
-              >
-                Back to Skills
-              </Button>
-              <SkillContents bundle={preview} />
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+
       <GitHubPlanningSkillImport
         online={online}
-        dialog={{ open: open && githubOpen, onOpenChange: setGitHubOpen }}
+        render={(importContent) => (
+          <Dialog
+            open={open && online}
+            onOpenChange={(value) => {
+              if (!pending) setOpen(value);
+            }}
+          >
+            <DialogContent
+              className="max-h-[85dvh] overflow-y-auto sm:max-w-3xl"
+              onEscapeKeyDown={(event) => {
+                if (githubOpen) {
+                  event.preventDefault();
+                  returnToSkills();
+                }
+              }}
+              onCloseAutoFocus={(event) => {
+                event.preventDefault();
+                skillsButton.current?.focus();
+              }}
+            >
+              <DialogTitle>
+                {githubOpen ? "Import a planning Skill" : "Planning Skills"}
+              </DialogTitle>
+              <DialogDescription>
+                {githubOpen
+                  ? "Choose a procedure to use in Kestrel’s planning chat."
+                  : "Choose the procedures that guide this conversation. Inspect their instructions before using them."}
+              </DialogDescription>
+              {githubOpen ? (
+                <>
+                  {importContent}
+                  <Button variant="outline" onClick={returnToSkills}>
+                    Back to Skills
+                  </Button>
+                </>
+              ) : (
+                <>
+                  {error === null ? null : (
+                    <div role="alert" className="grid gap-2 text-sm">
+                      <p>{error}</p>
+                      {attempt.current === null ? null : (
+                        <Button variant="outline" disabled={pending} onClick={() => void run()}>
+                          {attempt.current.kind === "import" ? "Retry import" : "Retry selection"}
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                  {preview === null ? (
+                    <>
+                      {loading ? (
+                        <p role="status">Loading Skills…</p>
+                      ) : (
+                        <div className="grid gap-4">
+                          <div className="grid gap-2">
+                            {available.length === 0 ? (
+                              <p className="text-sm text-muted-foreground">
+                                Import a Skill below to give your planning chat a procedure to
+                                follow.
+                              </p>
+                            ) : (
+                              available.map((skill) => (
+                                <div
+                                  key={skill.contentDigest}
+                                  className="flex items-start gap-3 rounded-md border p-3"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    className="mt-1 size-4 accent-primary"
+                                    aria-label={`Use $${skill.name}${available.filter((item) => item.name === skill.name).length > 1 ? ` version ${skill.contentDigest.slice(0, 8)}` : ""}`}
+                                    checked={selected.includes(skill.contentDigest)}
+                                    disabled={!editable || pending || attempt.current !== null}
+                                    onChange={(event) => {
+                                      const checked = event.currentTarget.checked;
+                                      setSelected((current) =>
+                                        checked
+                                          ? [
+                                              ...current.filter(
+                                                (digest) =>
+                                                  !available.some(
+                                                    (item) =>
+                                                      item.name === skill.name &&
+                                                      item.contentDigest === digest,
+                                                  ),
+                                              ),
+                                              skill.contentDigest,
+                                            ]
+                                          : current.filter(
+                                              (digest) => digest !== skill.contentDigest,
+                                            ),
+                                      );
+                                    }}
+                                  />
+                                  <div className="min-w-0 flex-1">
+                                    <p className="font-medium">${skill.name}</p>
+                                    <p className="text-sm text-muted-foreground">
+                                      {skill.description}
+                                    </p>
+                                    <p className="mt-1 text-xs text-muted-foreground">
+                                      {skill.source.label} · {skill.contentDigest.slice(0, 8)}
+                                      {catalog.some(
+                                        (item) => item.contentDigest === skill.contentDigest,
+                                      )
+                                        ? ""
+                                        : " · retained selection"}
+                                    </p>
+                                  </div>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    disabled={pending}
+                                    onClick={() => inspect(skill.contentDigest)}
+                                  >
+                                    Inspect ${skill.name}
+                                  </Button>
+                                </div>
+                              ))
+                            )}
+                            {!editable ? (
+                              <p className="text-sm text-muted-foreground">
+                                Skills can be changed while planning, after the current reply
+                                finishes.
+                              </p>
+                            ) : null}
+                            <Button
+                              disabled={
+                                !editable ||
+                                pending ||
+                                attempt.current !== null ||
+                                selected.length > 8
+                              }
+                              onClick={() =>
+                                void run({
+                                  kind: "select",
+                                  command: {
+                                    requestId: crypto.randomUUID(),
+                                    expectedVersion: selection.version,
+                                    digests: selected,
+                                  },
+                                })
+                              }
+                            >
+                              Use selected Skills
+                            </Button>
+                          </div>
+                          <div className="grid gap-3 border-t pt-4">
+                            <h3 className="font-medium">Add a Skill</h3>
+                            <p className="text-sm text-muted-foreground">
+                              Start with the grilling procedures or choose a Skill from a GitHub
+                              repository.
+                            </p>
+                            <Button
+                              variant="outline"
+                              disabled={pending}
+                              ref={importButton}
+                              onClick={() => setGitHubOpen(true)}
+                            >
+                              Import from GitHub
+                            </Button>
+                          </div>
+                          <div className="grid gap-3 border-t pt-4">
+                            <h3 className="font-medium">Import from the workstation</h3>
+                            {configured ? (
+                              <>
+                                <Label htmlFor="host-skill-candidate">Available Skills</Label>
+                                <NativeSelect
+                                  id="host-skill-candidate"
+                                  aria-label="Host Skill to import"
+                                  value={candidate}
+                                  disabled={pending || attempt.current !== null}
+                                  onChange={(event) => setCandidate(event.currentTarget.value)}
+                                >
+                                  <option value="">Choose a Skill</option>
+                                  {candidates.map((item) => (
+                                    <option key={item.candidateId} value={item.candidateId}>
+                                      {item.label}
+                                    </option>
+                                  ))}
+                                </NativeSelect>
+                                <Button
+                                  variant="outline"
+                                  disabled={candidate === "" || pending || attempt.current !== null}
+                                  onClick={() =>
+                                    void run({
+                                      kind: "import",
+                                      command: {
+                                        requestId: crypto.randomUUID(),
+                                        candidateId: candidate,
+                                      },
+                                    })
+                                  }
+                                >
+                                  {pending ? "Importing…" : "Import Skill"}
+                                </Button>
+                                <p className="text-xs text-muted-foreground">
+                                  Imports retain SKILL.md and supported local Markdown references.
+                                  No installer or Skill script runs.
+                                </p>
+                              </>
+                            ) : (
+                              <p className="text-sm text-muted-foreground">
+                                The workstation has no authorized Skill folder yet. Set{" "}
+                                <code>KESTREL_PLANNING_SKILL_ROOT</code> when starting Kestrel, then
+                                import Skills here.
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="grid gap-4">
+                      <Button
+                        variant="ghost"
+                        className="justify-self-start"
+                        onClick={() => setPreview(null)}
+                      >
+                        Back to Skills
+                      </Button>
+                      <SkillContents bundle={preview} />
+                    </div>
+                  )}
+                </>
+              )}
+            </DialogContent>
+          </Dialog>
+        )}
         onAuthenticationError={onAuthenticationError}
         onInstalled={() => {
           void fetchPlanningSkillCatalog()

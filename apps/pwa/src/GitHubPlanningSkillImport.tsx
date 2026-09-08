@@ -1,4 +1,4 @@
-import { useContext, useEffect, useId, useRef, useState } from "react";
+import { useContext, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import {
   PreviewGitHubPlanningSkillCommandSchema,
   type GitHubPlanningSkillBundle,
@@ -22,6 +22,7 @@ export interface GitHubPlanningSkillImportProps {
   onInstalled: (bundle: GitHubPlanningSkillBundle) => void;
   onAuthenticationError: (error: unknown) => boolean;
   dialog?: { open: boolean; onOpenChange: (open: boolean) => void };
+  render?: (content: ReactNode) => ReactNode;
 }
 
 export function GitHubPlanningSkillImport({
@@ -29,6 +30,7 @@ export function GitHubPlanningSkillImport({
   onInstalled,
   onAuthenticationError,
   dialog,
+  render,
 }: GitHubPlanningSkillImportProps) {
   const id = useId();
   const suspended = useContext(WorkspaceSuspendedContext);
@@ -289,6 +291,7 @@ export function GitHubPlanningSkillImport({
             ))}
           </NativeSelect>
           <pre
+            tabIndex={0}
             aria-label="Previewed Skill instructions"
             className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md border bg-background p-3 text-sm"
           >
@@ -316,6 +319,7 @@ export function GitHubPlanningSkillImport({
       )}
     </section>
   );
+  if (render !== undefined) return render(content);
   return dialog === undefined ? (
     content
   ) : (

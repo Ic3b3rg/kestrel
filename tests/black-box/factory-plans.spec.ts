@@ -39,6 +39,24 @@ const plan: FeaturePlanDocument = {
       ],
     },
   ],
+  proposedDocuments: [
+    {
+      key: "report-glossary",
+      kind: "glossary",
+      path: "CONTEXT.md",
+      pathIsProvisional: false,
+      markdown: "# Report\nA saved report has a title and retained contents.\n",
+      workItemKey: "W1",
+    },
+    {
+      key: "title-search",
+      kind: "adr",
+      path: "docs/adr/0001-title-search.md",
+      pathIsProvisional: true,
+      markdown: "# Title search\nSearch titles while preserving report contents.\n",
+      workItemKey: "W2",
+    },
+  ],
   limits: { maxConcurrentProjects: 2, maxActiveFeaturesPerProject: 1, attemptTimeoutSeconds: 1800 },
 };
 
@@ -76,10 +94,16 @@ async function openFeature(page: Page, title: string): Promise<void> {
   await expect(page.getByText("Codex is unavailable", { exact: true })).toBeVisible();
 }
 
-async function seedPlan(page: Page): Promise<string> {
+async function seedPlan(
+  page: Page,
+  {
+    expectedVersion = null,
+    document: planDocument = plan,
+  }: { expectedVersion?: number | null; document?: FeaturePlanDocument } = {},
+): Promise<string> {
   const endpoint = `/api/v1${new URL(page.url()).pathname}/plans`;
   const saved = await page.evaluate(
-    async ({ endpoint, plan }) => {
+    async ({ endpoint, plan, expectedVersion }) => {
       const csrf = document.cookie
         .split("; ")
         .find((cookie) => cookie.startsWith("__Host-kestrel-csrf="))
@@ -88,16 +112,19 @@ async function seedPlan(page: Page): Promise<string> {
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Kestrel-CSRF": csrf },
-        body: JSON.stringify({ requestId: crypto.randomUUID(), expectedVersion: null, plan }),
+        body: JSON.stringify({ requestId: crypto.randomUUID(), expectedVersion, plan }),
       });
       if (response.status !== 201) throw new Error(`Plan seed failed: ${await response.text()}`);
       return response.json() as Promise<unknown>;
     },
-    { endpoint, plan },
+    { endpoint, plan: planDocument, expectedVersion },
   );
-  expect(FeaturePlanVersionSchema.parse(saved).version).toBe(1);
+  const version = (expectedVersion ?? 0) + 1;
+  expect(FeaturePlanVersionSchema.parse(saved).version).toBe(version);
   await page.getByRole("button", { name: "Load latest version", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Plan · version 1", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: `Plan · version ${String(version)}`, exact: true }),
+  ).toBeVisible();
   return endpoint;
 }
 
@@ -114,6 +141,89 @@ test.describe("Feature plan approval", () => {
     await fixture?.close();
   });
 
+  test("opens a generated reply's original documents after a later draft changes them", async ({
+    page,
+  }) => {
+    if (stack === undefined || fixture === undefined)
+      throw new Error("The planning stack is unavailable");
+    const glossary = plan.proposedDocuments?.[0];
+    if (glossary === undefined) throw new Error("No glossary fixture");
+    await login(page, stack.pwaUrl);
+    await openFeature(page, "Retain agreed report terminology");
+    await page.getByRole("tab", { name: "Plan", exact: true }).click();
+    await seedPlan(page);
+    const featureId = KestrelIdSchema.parse(new URL(page.url()).pathname.split("/")[4]);
+    const context = {
+      commitId: fixture.headObjectId,
+      documents: [],
+      notice: "Retained generation context for this fixture.",
+    };
+    // Controlled model completion exercises the production transaction; live model conformance is separate.
+    await stack.executeWebModule(`
+      import { createPool, claimPlanningTurn, completeGeneratedFactoryPlan } from "@kestrel/database";
+      import { renderFeaturePlanArtifacts } from "./apps/web/dist/factory-plan-artifacts.js";
+      const pool = createPool(process.env.DATABASE_URL);
+      try {
+        const message = await pool.query("INSERT INTO factory_planning_messages (feature_id,role,content) VALUES ($1,'user','Generate the agreed glossary and ADR') RETURNING id", ["${featureId}"]);
+        const turn = await pool.query("INSERT INTO factory_planning_turns (feature_id,message_id,request_id,purpose,expected_plan_version) VALUES ($1,$2,uuidv7(),'plan',1) RETURNING id", ["${featureId}",message.rows[0].id]);
+        const claimed = await claimPlanningTurn(pool,turn.rows[0].id);
+        await completeGeneratedFactoryPlan(pool,claimed,${JSON.stringify(plan)},${JSON.stringify(context)},renderFeaturePlanArtifacts);
+      } finally { await pool.end(); }
+    `);
+    await seedPlan(page, {
+      expectedVersion: 2,
+      document: {
+        ...plan,
+        proposedDocuments: [
+          {
+            ...glossary,
+            markdown: "# Report\nThis is the later draft, not the generated proposal.\n",
+          },
+        ],
+      },
+    });
+    await page.getByRole("tab", { name: "Chat", exact: true }).click();
+    await page.reload();
+    const opener = page.getByRole("button", { name: "Inspect plan 2 documents", exact: true });
+    await opener.focus();
+    await page.keyboard.press("Enter");
+    const dialog = page.getByRole("dialog", {
+      name: "Proposed documents · version 2",
+      exact: true,
+    });
+    await expect(dialog.getByLabel("Proposed contents of CONTEXT.md", { exact: true })).toHaveText(
+      glossary.markdown,
+    );
+    await expect(dialog).not.toContainText("This is the later draft");
+    await expect(
+      dialog.getByRole("region", { name: "Proposed docs/adr/0001-title-search.md", exact: true }),
+    ).toBeVisible();
+    await dialog
+      .getByRole("button", { name: "Sources supplied for this plan", exact: true })
+      .click();
+    const sources = page.getByRole("dialog", {
+      name: "Sources supplied for this plan",
+      exact: true,
+    });
+    await expect(sources).toContainText(context.commitId);
+    await expect(sources).toContainText(context.notice);
+    await expect(
+      sources.getByRole("button", { name: "Back to proposed documents", exact: true }),
+    ).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeVisible();
+    await expect(
+      dialog.getByRole("button", { name: "Sources supplied for this plan", exact: true }),
+    ).toBeFocused();
+    await page.screenshot({
+      path: test.info().outputPath("factory-generated-documents-desktop.png"),
+      animations: "disabled",
+    });
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    await page.keyboard.press("Escape");
+    await expect(opener).toBeFocused();
+  });
+
   test("edits normal plan fields, rejects stale approval, and retains the approved board", async ({
     page,
   }) => {
@@ -124,8 +234,21 @@ test.describe("Feature plan approval", () => {
     await page.getByRole("tab", { name: "Plan", exact: true }).click();
     const planUrl = page.url();
     expect(new URL(planUrl).searchParams.get("view")).toBe("plan");
-    await seedPlan(page);
+    const endpoint = await seedPlan(page);
+    await page.getByRole("button", { name: "Proposed documents", exact: true }).click();
+    const proposals = page.getByRole("dialog", {
+      name: "Proposed documents · version 1",
+      exact: true,
+    });
+    await expect(
+      proposals.getByLabel("Proposed contents of CONTEXT.md", { exact: true }),
+    ).toHaveText(plan.proposedDocuments?.[0]?.markdown ?? "");
+    await expect(proposals).toContainText("Provisional path");
+    await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "Edit draft", exact: true }).click();
+    const revisedGlossary = "# Report\nA named saved report remains readable after reload.\n";
+    await page.getByLabel("Proposed Markdown 1", { exact: true }).fill(revisedGlossary);
+    await page.getByRole("button", { name: "Remove proposed document 2", exact: true }).click();
     await page
       .getByLabel("Objective", { exact: true })
       .fill("Find saved reports by a case-insensitive title search.");
@@ -142,6 +265,35 @@ test.describe("Feature plan approval", () => {
     await expect(
       page.getByRole("heading", { name: "Plan · version 2", exact: true }),
     ).toBeVisible();
+    await page.getByRole("button", { name: "Proposed documents", exact: true }).click();
+    const revisedProposals = page.getByRole("dialog", {
+      name: "Proposed documents · version 2",
+      exact: true,
+    });
+    await expect(
+      revisedProposals.getByLabel("Proposed contents of CONTEXT.md", { exact: true }),
+    ).toHaveText(revisedGlossary);
+    await expect(
+      revisedProposals.getByRole("region", {
+        name: "Proposed docs/adr/0001-title-search.md",
+        exact: true,
+      }),
+    ).toHaveCount(0);
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.screenshot({
+      path: test.info().outputPath("factory-proposed-documents-narrow.png"),
+      animations: "disabled",
+    });
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    await page.keyboard.press("Escape");
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const original = FeaturePlanVersionSchema.parse(
+      await page.evaluate(
+        async (path) => (await fetch(path)).json() as Promise<unknown>,
+        `${endpoint}/1`,
+      ),
+    );
+    expect(original.document.proposedDocuments).toEqual(plan.proposedDocuments);
     const stalePage = await page.context().newPage();
     await stalePage.goto(planUrl);
     await expect(
