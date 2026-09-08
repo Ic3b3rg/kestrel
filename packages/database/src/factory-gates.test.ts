@@ -261,3 +261,53 @@ it("keeps an exact answer replay inspectable after cancellation without resuming
   ).toBeNull();
   expect(state.feature.state).toBe("cancelled");
 });
+
+it("resolves a Feature-scoped final gate once without moving a reviewed Work Item", async () => {
+  const state = storage();
+  Object.assign(state.gate, {
+    purpose: "feature_verification",
+    work_item_id: null,
+    board_column: null,
+    has_unverified_item: false,
+  });
+  const result = await resolveFactoryGate(
+    state.pool,
+    projectId,
+    featureId,
+    gateId,
+    operatorId,
+    answer,
+  );
+  expect(result).toMatchObject({
+    purpose: "feature_verification",
+    workItemId: null,
+    approvedVersion: 3,
+  });
+  expect(state.feature.state).toBe("queued");
+  expect(
+    await factoryGateForRetry(state.client as never, state.feature as never, runId),
+  ).toMatchObject({ id: gateId });
+  expect(
+    await resolveFactoryGate(state.pool, projectId, featureId, gateId, operatorId, answer),
+  ).toEqual(result);
+  expect(
+    state.query.mock.calls.filter(([sql]) => sql.includes("UPDATE factory_features")),
+  ).toHaveLength(1);
+  expect(state.query.mock.calls.some(([sql]) => sql.includes("UPDATE factory_work_items"))).toBe(
+    false,
+  );
+});
+
+it("does not resume a final gate while an approved Work Item no longer has retained completion", async () => {
+  const state = storage();
+  Object.assign(state.gate, {
+    purpose: "feature_verification",
+    work_item_id: null,
+    board_column: null,
+    has_unverified_item: true,
+  });
+  await expect(
+    resolveFactoryGate(state.pool, projectId, featureId, gateId, operatorId, answer),
+  ).rejects.toMatchObject({ code: "conflict" });
+  expect(state.feature.state).toBe("gated");
+});

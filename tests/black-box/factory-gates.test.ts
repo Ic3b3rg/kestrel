@@ -133,7 +133,8 @@ describe("Factory Human Gates over HTTP and PostgreSQL", () => {
         baseCommitId:run.context?.commitId ?? 'a'.repeat(40),headCommitId:run.context?.commitId ?? 'a'.repeat(40),treeId:'c'.repeat(40),objectFormat:'sha1',branch:'feature/gate-'+run.featureId,
       });
       const revision = await db.recordFactoryExecutionCheckpoint(pool,run,{expectedHead:workspace.headCommitId,headCommitId:'b'.repeat(40),treeId:'c'.repeat(40)});
-      await db.saveFactoryVerification(pool,run,{round:1,position:1,command:run.plan.workItems.find(item=>item.key===run.key).verification[0],headCommitId:revision.headCommitId,treeId:revision.treeId,outcome:'passed',exitCode:0,stdout:'Controlled ordering check passed',stderr:'',stdoutTruncated:false,stderrTruncated:false,durationMs:1});
+      const commands = run.purpose === 'feature_verification' ? run.verificationManifest.map(entry=>entry.command) : run.plan.workItems.find(item=>item.key===run.key).verification;
+      for (const [index,command] of commands.entries()) await db.saveFactoryVerification(pool,run,{round:1,position:index+1,command,headCommitId:revision.headCommitId,treeId:revision.treeId,outcome:'passed',exitCode:0,stdout:'Controlled ordering check passed',stderr:'',stdoutTruncated:false,stderrTruncated:false,durationMs:1});
       await db.finishFactoryExecution(pool,run,{verified:true,writerStopped:true,failure:null,question:null});
       console.log('null');
     `);
@@ -191,6 +192,9 @@ describe("Factory Human Gates over HTTP and PostgreSQL", () => {
       expect(original.key).toBe("order");
       gate = await block(original);
       await verify(required(claims.find((run) => run.featureId === other)));
+      const final = required((await claim([other]))[0]);
+      expect(final.purpose).toBe("feature_verification");
+      await verify(final);
       const board = FactoryBoardSchema.parse(
         await (await stack.fetchApi(`${path(projects.kestrel, first)}/board`)).json(),
       );

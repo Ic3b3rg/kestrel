@@ -53,7 +53,7 @@ const failureText: Record<FactoryExecutionFailure, string> = {
   invalid_response:
     "The runtime returned an invalid result. Successful implementation has not been confirmed.",
   verification_failed:
-    "Verification failed. This attempt has not confirmed the Work Item's acceptance outcomes.",
+    "Verification failed. This attempt has not confirmed the approved acceptance outcomes.",
   revision_changed:
     "Files changed while verification was being recorded. These checks do not confirm the current revision.",
   stop_unconfirmed:
@@ -211,6 +211,16 @@ function RunDetails({ run }: { run: FactoryExecutionRun }) {
         <ol className="grid gap-3">
           {run.acceptedCommands.map((command, index) => (
             <li key={index}>
+              {run.purpose !== "feature_verification" ? null : (
+                <p className="mb-2 break-words text-sm text-muted-foreground">
+                  {run.verificationManifest[index]?.origins
+                    .map(
+                      (origin) =>
+                        `${displayText(origin.workItemKey)} · command ${String(origin.position)}`,
+                    )
+                    .join("; ")}
+                </p>
+              )}
               <Command command={command} />
             </li>
           ))}
@@ -320,11 +330,13 @@ function ExecutionPanel({
         setExecution(result);
         poll =
           ["pending", "running", "stopping"].includes(result.state) ||
-          result.workItems.some((item) => item.runs.some(pendingRun));
+          result.workItems.some((item) => item.runs.some(pendingRun)) ||
+          result.finalVerification?.runs.some(pendingRun) === true;
         if (selectedRunId !== null) {
-          const selected = result.workItems
-            .flatMap((item) => item.runs)
-            .find((item) => item.id === selectedRunId);
+          const selected = [
+            ...result.workItems.flatMap((item) => item.runs),
+            ...(result.finalVerification?.runs ?? []),
+          ].find((item) => item.id === selectedRunId);
           if (selected === undefined)
             throw new InvalidServerResponseError(
               "The selected attempt is missing from this Feature",
@@ -346,7 +358,10 @@ function ExecutionPanel({
               controller.signal,
             );
             controller.signal.throwIfAborted();
-            if (detail.workItemId !== selected.workItemId)
+            if (
+              detail.workItemId !== selected.workItemId ||
+              (detail.purpose ?? "work_item") !== (selected.purpose ?? "work_item")
+            )
               throw new InvalidServerResponseError("The server returned a different Work Item");
             cachedRun.current = detail;
             setRun(detail);
@@ -375,12 +390,13 @@ function ExecutionPanel({
   }, [projectId, featureId, active, generation, selectedRunId, onAuthenticationError]);
   const stopUnconfirmed =
     execution?.failure === "stop_unconfirmed" ||
-    execution?.workItems.some((item) =>
-      item.runs.some(
-        (attempt) =>
-          !attempt.writerStopped && ["blocked", "cancelled", "interrupted"].includes(attempt.state),
-      ),
-    ) === true;
+    [
+      ...(execution?.workItems.flatMap((item) => item.runs) ?? []),
+      ...(execution?.finalVerification?.runs ?? []),
+    ].some(
+      (attempt) =>
+        !attempt.writerStopped && ["blocked", "cancelled", "interrupted"].includes(attempt.state),
+    );
   return (
     <section
       className="min-w-0 space-y-4 rounded-xl border bg-card p-4 text-card-foreground"
@@ -411,9 +427,16 @@ function ExecutionPanel({
       {execution === null ? null : (
         <>
           <p role="status" className="font-medium">
-            {execution.state === "cancelled" && stopUnconfirmed
-              ? "Cancellation requested"
-              : phaseLabels[execution.state]}
+            {execution.state === "cancelled"
+              ? stopUnconfirmed
+                ? "Cancellation requested"
+                : phaseLabels.cancelled
+              : execution.finalVerification?.certificate != null
+                ? "Final Feature revision verified"
+                : execution.state === "running" &&
+                    execution.finalVerification?.runs.some(pendingRun)
+                  ? "Verifying the cumulative Feature"
+                  : phaseLabels[execution.state]}
           </p>
           <ExecutionProblem
             failure={
@@ -460,6 +483,94 @@ function ExecutionPanel({
                 <Revision revision={execution.revision} />
               </div>
             </details>
+          )}
+          {execution.finalVerification === undefined ? null : (
+            <section
+              aria-label="Final Feature verification"
+              className="min-w-0 space-y-3 border-t pt-4"
+            >
+              <h4 className="font-semibold">Final Feature verification</h4>
+              {execution.finalVerification.certificate === null ? (
+                <p className="text-sm text-muted-foreground">
+                  No final verification record yet. Every approved check must pass on the same
+                  cumulative revision. Verified Work Items remain In review.
+                </p>
+              ) : (
+                <div className="space-y-2 text-sm">
+                  <p>
+                    All {execution.finalVerification.certificate.manifest.length} approved checks
+                    passed · plan version {execution.finalVerification.certificate.approvedVersion}.
+                  </p>
+                  <p className="text-muted-foreground">
+                    The final verification record is retained. No pull request has been published by
+                    this verification.
+                  </p>
+                  <details>
+                    <summary className="cursor-pointer rounded-sm focus-visible:outline focus-visible:outline-ring">
+                      Certified revision
+                    </summary>
+                    <div className="mt-3">
+                      <Revision revision={execution.finalVerification.certificate.revision} />
+                    </div>
+                  </details>
+                </div>
+              )}
+              {execution.finalVerification.progress === null ? null : (
+                <p role="status" className="text-sm">
+                  Pass {execution.finalVerification.progress.round} ·{" "}
+                  {execution.finalVerification.progress.checked} of{" "}
+                  {execution.finalVerification.progress.total} checks recorded ·{" "}
+                  {execution.finalVerification.progress.passed} passed
+                </p>
+              )}
+              {execution.finalVerification.runs.length > 0 ? (
+                <ol className="grid min-w-0 gap-2">
+                  {execution.finalVerification.runs.map((summary) => (
+                    <li key={summary.id} className="min-w-0 space-y-2">
+                      <Button
+                        variant="outline"
+                        className="h-auto w-full justify-start whitespace-normal text-left"
+                        aria-expanded={selectedRunId === summary.id}
+                        aria-controls={`${detailId}-${summary.id}`}
+                        onClick={() => {
+                          cachedRun.current = null;
+                          setRun(null);
+                          setSelectedRunId((selected) =>
+                            selected === summary.id ? null : summary.id,
+                          );
+                        }}
+                      >
+                        Final attempt {summary.attempt} ·{" "}
+                        {summary.state === "running"
+                          ? "Repairing within the approved plan"
+                          : runLabels[summary.state]}
+                      </Button>
+                      {selectedRunId !== summary.id ? null : (
+                        <section
+                          id={`${detailId}-${summary.id}`}
+                          aria-label={`Final attempt ${String(summary.attempt)} details`}
+                          className="min-w-0"
+                        >
+                          {run?.id === summary.id ? (
+                            <RunDetails run={run} />
+                          ) : !active ? (
+                            <p className="text-sm text-muted-foreground">
+                              Reconnect to load attempt details.
+                            </p>
+                          ) : loading ? (
+                            <p role="status">Loading attempt details…</p>
+                          ) : (
+                            <p className="text-sm text-muted-foreground">
+                              Attempt details are unavailable. Refresh to retry.
+                            </p>
+                          )}
+                        </section>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              ) : null}
+            </section>
           )}
           {execution.workItems.length === 0 ? (
             <p className="text-sm text-muted-foreground">No execution attempts yet.</p>

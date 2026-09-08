@@ -32,11 +32,10 @@ export const ResolveFactoryGateCommandSchema = z.strictObject({
 });
 export type ResolveFactoryGateCommand = z.infer<typeof ResolveFactoryGateCommandSchema>;
 
-export const FactoryGateSchema = z.strictObject({
+const gate = z.strictObject({
   schemaVersion: z.literal(1),
   id: KestrelIdSchema,
   featureId: KestrelIdSchema,
-  workItemId: KestrelIdSchema,
   runId: KestrelIdSchema,
   approvedVersion: z.int().min(1).max(200),
   reason: FactoryExecutionFailureSchema,
@@ -71,4 +70,8 @@ export const FactoryGateSchema = z.strictObject({
     ])
     .nullable(),
 });
+export const FactoryGateSchema = z.union([
+  gate.extend({ purpose: z.literal("work_item").optional(), workItemId: KestrelIdSchema }),
+  gate.extend({ purpose: z.literal("feature_verification"), workItemId: z.null() }),
+]);
 export type FactoryGate = z.infer<typeof FactoryGateSchema>;

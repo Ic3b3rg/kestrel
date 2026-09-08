@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, afterEach, beforeEach, expect, it, vi } from "vitest";
+import { factoryVerificationManifest } from "@kestrel/contracts";
 import type * as database from "@kestrel/database";
 import {
   claimFactoryExecution,
@@ -296,6 +297,242 @@ afterEach(async () => {
 afterAll(async () => {
   await pool.end();
 });
+
+it("rejects the cumulative Feature when W2 passes its own check but breaks W1", async () => {
+  const processing = processor();
+  await processing.process({ runId: run.id });
+  const first = run.plan.workItems[0];
+  if (first === undefined || storedWorkspace === null) throw new Error("Missing W1 checkpoint");
+  const second = {
+    ...first,
+    key: "later",
+    dependsOn: [first.key],
+    verification: [
+      {
+        program: "node",
+        args: [
+          "--input-type=module",
+          "-e",
+          "import { value } from './value.mjs'; if(value !== 3) process.exit(1)",
+        ],
+        cwd: ".",
+        timeoutSeconds: 10,
+      },
+    ],
+  };
+  run.plan.workItems.push(second);
+  run.completed = [{ key: first.key, revision: storedWorkspace }];
+  run.id = "01991c36-7f90-7000-8000-000000000002";
+  run.key = second.key;
+  runTurn.mockImplementation((input) =>
+    container(input, input.requestId, async () => {
+      await writeFile(join(input.cwd, "value.mjs"), "export const value = 3;\n");
+      return {
+        threadId: "thread",
+        turnId: "turn",
+        text: JSON.stringify({ status: "completed", summary: "W2 passes", question: null }),
+      };
+    }),
+  );
+  await processing.process({ runId: run.id });
+  expect(vi.mocked(finishFactoryExecution).mock.calls.at(-1)?.[2].verified).toBe(true);
+  Object.assign(run, {
+    id: "01991c36-7f90-7000-8000-000000000003",
+    purpose: "feature_verification",
+    workItemId: null,
+    verificationManifest: run.plan.workItems.flatMap((item) =>
+      item.verification.map((command) => ({
+        position: item.key === first.key ? 1 : 2,
+        command,
+        origins: [{ workItemKey: item.key, position: 1 }],
+      })),
+    ),
+    initialRevision: storedWorkspace,
+  });
+  events = [];
+  vi.mocked(saveFactoryVerification).mockClear();
+  runVerification.mockClear();
+  await processing.process({ runId: run.id });
+  expect(vi.mocked(finishFactoryExecution).mock.calls.at(-1)?.[2]).toMatchObject({
+    verified: false,
+    failure: "verification_failed",
+    writerStopped: true,
+  });
+  expect(vi.mocked(finishFactoryExecution).mock.calls.at(-1)?.[2].question).toContain(
+    "failed checks 1",
+  );
+  expect(vi.mocked(finishFactoryExecution).mock.calls.at(-1)?.[2].question).toContain(
+    "approved plan version 1",
+  );
+  expect(runVerification).toHaveBeenCalledTimes(6);
+  expect(vi.mocked(saveFactoryVerification).mock.calls[0]?.[2]).toMatchObject({
+    position: 1,
+    outcome: "failed",
+  });
+  expect(events.indexOf("verification")).toBeLessThan(events.indexOf("reserve:implementation"));
+}, 20_000);
+
+async function prepareFinalAttempt() {
+  const processing = processor();
+  await processing.process({ runId: run.id });
+  if (storedWorkspace === null) throw new Error("Missing verified workspace");
+  Object.assign(run, {
+    id: "01991c36-7f90-7000-8000-000000000003",
+    purpose: "feature_verification",
+    workItemId: null,
+    key: "Feature verification",
+    verificationManifest: factoryVerificationManifest(run.plan),
+    initialRevision: {
+      baseCommitId: storedWorkspace.baseCommitId,
+      headCommitId: storedWorkspace.headCommitId,
+      treeId: storedWorkspace.treeId,
+      branch: storedWorkspace.branch,
+    },
+  });
+  runTurn.mockClear();
+  runVerification.mockClear();
+  readConnection.mockClear();
+  vi.mocked(saveFactoryVerification).mockClear();
+  vi.mocked(recordFactoryExecutionCheckpoint).mockClear();
+  return processing;
+}
+
+it("checks more than 12 final commands without model access or an implementation replay", async () => {
+  const processing = await prepareFinalAttempt();
+  const original = run.plan.workItems[0];
+  if (original === undefined) throw new Error("Missing approved Work Item");
+  run.plan.workItems = Array.from({ length: 2 }, (_, item) => ({
+    ...original,
+    key: `W${String(item)}`,
+    verification: Array.from({ length: 7 }, (_, check) => ({
+      program: "node",
+      args: ["-e", `if (${String(item * 7 + check)} < 0) process.exit(1)`],
+      cwd: ".",
+      timeoutSeconds: 10,
+    })),
+  }));
+  run.verificationManifest = factoryVerificationManifest(run.plan);
+  readConnection.mockRejectedValue(new Error("Final checks do not require model access"));
+  await processing.process({ runId: run.id });
+  expect(runVerification).toHaveBeenCalledTimes(14);
+  expect(runTurn).not.toHaveBeenCalled();
+  expect(readConnection).not.toHaveBeenCalled();
+  expect(recordFactoryExecutionCheckpoint).not.toHaveBeenCalled();
+  expect(vi.mocked(finishFactoryExecution).mock.calls.at(-1)?.[2]).toMatchObject({
+    verified: true,
+    writerStopped: true,
+  });
+}, 20_000);
+
+it("rechecks earlier successes on the repair checkpoint and retains evidence from both heads", async () => {
+  const processing = await prepareFinalAttempt();
+  const original = run.plan.workItems[0];
+  if (original === undefined) throw new Error("Missing approved Work Item");
+  run.plan.workItems.push({
+    ...original,
+    key: "W2",
+    verification: [
+      {
+        program: "node",
+        args: [
+          "--input-type=module",
+          "-e",
+          "import { other } from './value.mjs'; if (other !== 9) process.exit(1)",
+        ],
+        cwd: ".",
+        timeoutSeconds: 10,
+      },
+    ],
+  });
+  run.verificationManifest = factoryVerificationManifest(run.plan);
+  runTurn.mockImplementation((input) =>
+    container(input, input.requestId, async () => {
+      await writeFile(
+        join(input.cwd, "value.mjs"),
+        "export const value = 2; export const other = 9;\n",
+      );
+      return {
+        threadId: "repair",
+        turnId: "repair",
+        text: JSON.stringify({
+          status: "completed",
+          summary: "The approved other value is present",
+          question: null,
+        }),
+      };
+    }),
+  );
+  await processing.process({ runId: run.id });
+  expect(runTurn).toHaveBeenCalledOnce();
+  expect(runTurn.mock.calls[0]?.[0].prompt).toContain("Do not replay Work Item implementations");
+  const checks = vi.mocked(saveFactoryVerification).mock.calls.map((call) => call[2]);
+  expect(checks.map(({ round, position, outcome }) => ({ round, position, outcome }))).toEqual([
+    { round: 1, position: 1, outcome: "passed" },
+    { round: 1, position: 2, outcome: "failed" },
+    { round: 2, position: 1, outcome: "passed" },
+    { round: 2, position: 2, outcome: "passed" },
+  ]);
+  expect(checks[0]?.headCommitId).not.toBe(checks[2]?.headCommitId);
+  expect(checks[2]?.headCommitId).toBe(checks[3]?.headCommitId);
+  expect(vi.mocked(finishFactoryExecution).mock.calls.at(-1)?.[2].verified).toBe(true);
+}, 20_000);
+
+it("preserves the final check evidence when cancellation arrives and grants no certificate", async () => {
+  const processing = await prepareFinalAttempt();
+  const cancellation = new AbortController();
+  const verify = runVerification.getMockImplementation();
+  if (verify === undefined) throw new Error("Missing verifier");
+  runVerification.mockImplementation(async (input) => {
+    const result = await verify(input);
+    cancellation.abort();
+    return result;
+  });
+  await processing.process({ runId: run.id }, cancellation.signal);
+  expect(saveFactoryVerification).toHaveBeenCalledOnce();
+  expect(runTurn).not.toHaveBeenCalled();
+  expect(vi.mocked(finishFactoryExecution).mock.calls.at(-1)?.[2]).toMatchObject({
+    verified: false,
+    writerStopped: true,
+  });
+}, 10_000);
+
+it("retains final verification ownership when successful output has no teardown proof", async () => {
+  const processing = await prepareFinalAttempt();
+  runVerification.mockImplementation(async (input) => {
+    await input.beforeContainerCreate(`kestrel-factory-${"a".repeat(32)}`);
+    await input.onContainer({ name: `kestrel-factory-${"a".repeat(32)}`, id: "a".repeat(64) });
+    return {
+      processId: input.processId,
+      exitCode: 0,
+      stdout: "Passed",
+      stderr: "",
+      stdoutTruncated: false,
+      stderrTruncated: false,
+      durationMs: 1,
+    };
+  });
+  await processing.process({ runId: run.id });
+  expect(saveFactoryVerification).toHaveBeenCalledOnce();
+  expect(vi.mocked(finishFactoryExecution).mock.calls.at(-1)?.[2]).toMatchObject({
+    verified: false,
+    writerStopped: false,
+    failure: "stop_unconfirmed",
+  });
+  expect(runTurn).not.toHaveBeenCalled();
+}, 10_000);
+
+it("will not replace the frozen final verification checkpoint", async () => {
+  const processing = await prepareFinalAttempt();
+  if (run.initialRevision === undefined) throw new Error("Missing initial revision");
+  run.initialRevision.headCommitId = "a".repeat(40);
+  await processing.process({ runId: run.id });
+  expect(runTurn).not.toHaveBeenCalled();
+  expect(runVerification).not.toHaveBeenCalled();
+  expect(vi.mocked(finishFactoryExecution).mock.calls.at(-1)?.[2]).toMatchObject({
+    verified: false,
+    failure: "revision_changed",
+  });
+}, 10_000);
 
 it.each([false, true])(
   "supplies only the claimed Work Item's approved documents: proposals=%s",

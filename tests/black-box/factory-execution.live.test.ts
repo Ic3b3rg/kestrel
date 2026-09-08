@@ -576,6 +576,43 @@ describe.runIf(process.env.KESTREL_LIVE_FACTORY_EXECUTION === "1")(
             await (await request(`${path}/execution`)).json(),
           );
           expect(execution.workItems.map((item) => item.runs.length)).toEqual([1, 1]);
+          const final = execution.finalVerification;
+          if (final === undefined || final.certificate === null)
+            throw new Error("The final cumulative verification record was not retained");
+          expect(final.runs).toHaveLength(1);
+          const finalRun = FactoryExecutionRunSchema.parse(
+            await (await request(`${path}/execution/runs/${final.certificate.runId}`)).json(),
+          );
+          expect(finalRun).toMatchObject({
+            purpose: "feature_verification",
+            workItemId: null,
+            state: "verified",
+            writerStopped: true,
+            runtime: null,
+            revision: execution.revision,
+          });
+          expect(finalRun.acceptedCommands).toEqual(
+            plan.workItems.flatMap((item) => item.verification),
+          );
+          expect(finalRun.verification).toHaveLength(2);
+          expect(
+            finalRun.verification.every(
+              (check) =>
+                check.outcome === "passed" &&
+                check.exitCode === 0 &&
+                check.headCommitId === execution.revision?.headCommitId &&
+                check.treeId === execution.revision.treeId,
+            ),
+          ).toBe(true);
+          expect(final.certificate.revision).toEqual(execution.revision);
+          expect(final.certificate.evidenceIds).toEqual(
+            finalRun.verification.map((check) => check.id),
+          );
+          expect(final.certificate.manifest.map(({ origins }) => origins)).toEqual([
+            [{ workItemKey: "value", position: 1 }],
+            [{ workItemKey: "label", position: 1 }],
+          ]);
+          expect(final.progress).toEqual({ round: 1, checked: 2, passed: 2, total: 2 });
           const details = await Promise.all(
             execution.workItems.map(async (item) =>
               FactoryExecutionRunSchema.parse(
@@ -595,6 +632,9 @@ describe.runIf(process.env.KESTREL_LIVE_FACTORY_EXECUTION === "1")(
           expect(details[0]?.completedAt).not.toBeNull();
           expect(Date.parse(details[1]?.startedAt ?? "")).toBeGreaterThanOrEqual(
             Date.parse(details[0]?.completedAt ?? ""),
+          );
+          expect(Date.parse(finalRun.startedAt ?? "")).toBeGreaterThanOrEqual(
+            Date.parse(details[1]?.completedAt ?? ""),
           );
           const board = FactoryBoardSchema.parse(await (await request(`${path}/board`)).json());
           expect(board.columns.map((column) => column.items.length)).toEqual([0, 0, 2, 0]);

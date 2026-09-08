@@ -56,7 +56,12 @@ function fixture(id: string | null = containerId) {
     }
     if (sql.includes("SELECT name, container_id,"))
       return {
-        rows: containers.map((container) => ({ ...container })),
+        rows: containers
+          .filter(
+            (container) => !sql.includes("stopped_at IS NULL") || container.stopped_at === null,
+          )
+          .slice(0, 40)
+          .map((container) => ({ ...container })),
         rowCount: containers.length,
       };
     if (sql.includes("UPDATE factory_execution_containers")) {
@@ -266,3 +271,31 @@ it.each(["running", "verifying", "verified", "blocked"])(
     expect(state.run.reservation_released_at).toBeNull();
   },
 );
+
+it("recovers a large final verification lifecycle in bounded batches without replaying reviewed Work Items", async () => {
+  const state = fixture();
+  Object.assign(state.run, { purpose: "feature_verification", work_item_id: null });
+  state.containers.splice(
+    0,
+    1,
+    ...Array.from({ length: 1442 }, (_, index) => ({
+      name: `kestrel-factory-${index.toString(16).padStart(32, "0")}`,
+      container_id: index.toString(16).padStart(64, "0"),
+      daemon_id: daemonId,
+      stopped_at: index < 1367 ? now : null,
+    })),
+  );
+  const recover = vi.fn<FactoryExecutionContainerRecovery>((container) => {
+    if (container.id === null) throw new Error("Missing container identity");
+    return Promise.resolve({ name: container.name, id: container.id });
+  });
+  expect(await recoverFactoryExecutions(state.pool, recover)).toEqual([]);
+  expect(recover).toHaveBeenCalledTimes(40);
+  expect(state.run.reservation_released_at).toBeNull();
+  expect(await recoverFactoryExecutions(state.pool, recover)).toEqual([runId]);
+  expect(recover).toHaveBeenCalledTimes(75);
+  expect(state.query.mock.calls.some(([sql]) => sql.includes("UPDATE factory_work_items"))).toBe(
+    false,
+  );
+  expect(state.run.accepted_commands).toEqual(["unchanged"]);
+});
