@@ -284,6 +284,7 @@ _Avoid_: Review Workflow, local session, external agent job
 
 **Human Gate**:
 A deliberate pause requiring the Operator to resolve a consequential question about a Feature's requirements, acceptance criteria, or authorized limits. It blocks that Project's queue while other Projects may continue.
+Its immutable question identifies the affected Work Item, execution attempt and approved plan version. An explicit answer may authorize one controlled retry within that plan; it cannot change the approved scope. The execution slot is released only after the prior environment is confirmed stopped.
 _Avoid_: Operator Attention, notification, routine confirmation
 
 **Sandbox**:

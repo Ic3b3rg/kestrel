@@ -42,7 +42,7 @@ async function freePort(): Promise<number> {
 describe.runIf(process.env.KESTREL_LIVE_FACTORY_EXECUTION === "1")(
   "Factory execution live HTTP conformance",
   () => {
-    it.each(["complete", "shutdown"])(
+    it.each(["complete", "shutdown", "recovery", "recovery_removed"])(
       "runs the real Factory server through %s with an isolated Operator checkout",
       async (scenario) => {
         const image = process.env.KESTREL_FACTORY_EXECUTION_IMAGE;
@@ -86,6 +86,7 @@ describe.runIf(process.env.KESTREL_LIVE_FACTORY_EXECUTION === "1")(
         let owner: ReturnType<typeof createPool> | undefined;
         let server: ChildProcess | undefined;
         let logs = "";
+        const serverGroups = new Set<number>();
         const eventsAbort = new AbortController();
         const shutdownServer = async () => {
           const child = server;
@@ -242,7 +243,9 @@ describe.runIf(process.env.KESTREL_LIVE_FACTORY_EXECUTION === "1")(
               cwd: rootDirectory,
               env: environment,
               stdio: ["ignore", "pipe", "pipe"],
+              detached: true,
             });
+            if (server.pid !== undefined) serverGroups.add(server.pid);
             for (const stream of [server.stdout, server.stderr])
               stream?.on("data", (chunk: Buffer) => {
                 logs = `${logs}${chunk.toString("utf8")}`.slice(-32_000);
@@ -332,7 +335,7 @@ describe.runIf(process.env.KESTREL_LIVE_FACTORY_EXECUTION === "1")(
                   {
                     program: "node",
                     args:
-                      scenario === "shutdown"
+                      scenario !== "complete"
                         ? [
                             "--eval",
                             "console.log('FACTORY_SHUTDOWN_CHECK_STARTED'); setInterval(() => {}, 1000)",
@@ -379,7 +382,7 @@ describe.runIf(process.env.KESTREL_LIVE_FACTORY_EXECUTION === "1")(
           ).toBe(201);
           const approved = await request(`${path}/plans/1/approve`, { requestId: randomUUID() });
           expect(approved.status, await approved.clone().text()).toBe(200);
-          if (scenario === "shutdown") {
+          if (scenario !== "complete") {
             await expect
               .poll(
                 async () => {
@@ -397,6 +400,110 @@ describe.runIf(process.env.KESTREL_LIVE_FACTORY_EXECUTION === "1")(
                 { timeout: 90_000, interval: 250 },
               )
               .toBe(true);
+            if (scenario === "recovery" || scenario === "recovery_removed") {
+              const abandoned = server;
+              if (abandoned?.pid === undefined) throw new Error("No owned server process");
+              const exited = new Promise<void>((resolveExit) =>
+                abandoned.once("close", () => resolveExit()),
+              );
+              process.kill(-abandoned.pid, "SIGKILL");
+              await exited;
+              server = undefined;
+              const interrupted = await owner.query<{
+                name: string;
+                container_id: string;
+                daemon_id: string;
+              }>(
+                "SELECT name, container_id, daemon_id FROM factory_execution_containers WHERE phase='verification' AND stopped_at IS NULL",
+              );
+              expect(interrupted.rows).toHaveLength(1);
+              const container = interrupted.rows[0]!;
+              expect(container.daemon_id).toBe(
+                (await runDocker(["info", "--format", "{{.ID}}"])).stdout.trim(),
+              );
+              if (scenario === "recovery_removed") {
+                // Same durable state as losing the controller after rm but before stopped_at.
+                await runDocker(["rm", "--force", container.container_id]);
+              }
+              await owner.query(
+                "UPDATE factory_execution_runs SET heartbeat_at=clock_timestamp()-interval '1 minute' WHERE reservation_released_at IS NULL",
+              );
+              await startServer();
+              const recovered = FactoryExecutionSchema.parse(
+                await (await request(`${path}/execution`)).json(),
+              );
+              expect(recovered.state).toBe("blocked");
+              expect(recovered.workItems.map((item) => item.runs.length)).toEqual([1, 0]);
+              expect(recovered.gate).toMatchObject({
+                approvedVersion: 1,
+                canResume: true,
+                reason: "interrupted",
+              });
+              expect(recovered.workItems[0]?.runs[0]?.writerStopped).toBe(true);
+              expect(
+                (
+                  await runDocker([
+                    "container",
+                    "ls",
+                    "--all",
+                    "--quiet",
+                    "--filter",
+                    `name=^/${container.name}$`,
+                  ])
+                ).stdout.trim(),
+              ).toBe("");
+              expect(
+                (
+                  await owner.query(
+                    "SELECT id FROM factory_execution_runs WHERE reservation_released_at IS NULL",
+                  )
+                ).rows,
+              ).toEqual([]);
+              expect(
+                (await runGit(["status", "--porcelain=v1", "--untracked-files=all"])).stdout,
+              ).toBe(sourceBefore);
+              expect(
+                createHash("sha256")
+                  .update(await readFile(join(repository, ".git", "index")))
+                  .digest("hex"),
+              ).toBe(indexBefore);
+              // An explicit answer alone authorizes one successor. Hold its delivery so
+              // this recovery conformance case cannot start an unrelated extra model run.
+              await owner.query(`CREATE FUNCTION hold_recovered_delivery() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.name='factory-execution-v1' THEN NEW.start_after=clock_timestamp()+interval '1 hour'; END IF; RETURN NEW; END $$;
+                CREATE TRIGGER hold_recovered_delivery BEFORE INSERT ON pgboss.job FOR EACH ROW EXECUTE FUNCTION hold_recovered_delivery();`);
+              const answer = {
+                requestId: randomUUID(),
+                expectedPlanVersion: 1,
+                decision: "resume_within_plan",
+                answer:
+                  "The verification process was interrupted. Retry within the same approved requirements and checks.",
+              };
+              expect(
+                (await request(`${path}/execution/gates/${recovered.gate!.id}/resolve`, answer))
+                  .status,
+              ).toBe(200);
+              await expect
+                .poll(
+                  async () =>
+                    FactoryExecutionSchema.parse(await (await request(`${path}/execution`)).json())
+                      .workItems[0]?.runs.length,
+                  { timeout: 10_000 },
+                )
+                .toBe(2);
+              expect(
+                (await request(`${path}/execution/gates/${recovered.gate!.id}/resolve`, answer))
+                  .status,
+              ).toBe(200);
+              expect(
+                (await request(`${path}/cancel`, { requestId: randomUUID(), expectedVersion: 1 }))
+                  .status,
+              ).toBe(200);
+              expect(
+                FactoryExecutionSchema.parse(await (await request(`${path}/execution`)).json())
+                  .state,
+              ).toBe("cancelled");
+              return;
+            }
             const events = await fetch(`${origin}/api/v1/events`, {
               headers: { Accept: "text/event-stream", Cookie: cookies.join("; ") },
               signal: eventsAbort.signal,
@@ -549,6 +656,13 @@ describe.runIf(process.env.KESTREL_LIVE_FACTORY_EXECUTION === "1")(
         } finally {
           eventsAbort.abort();
           await shutdownServer();
+          for (const pid of serverGroups) {
+            try {
+              process.kill(-pid, "SIGKILL");
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+            }
+          }
           if (owner !== undefined) {
             const containers = await owner
               .query<{ name: string }>("SELECT name FROM factory_execution_containers")

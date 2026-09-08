@@ -39,6 +39,11 @@ ALTER TABLE factory_execution_runs ADD COLUMN resume_gate_id uuid UNIQUE;
 ALTER TABLE factory_execution_runs ADD FOREIGN KEY (resume_gate_id, feature_id)
   REFERENCES factory_human_gates(id, feature_id);
 
+-- The daemon identity distinguishes confirmed teardown from looking at a different
+-- Docker context after restart. Existing records keep an unknown identity.
+ALTER TABLE factory_execution_containers ADD COLUMN daemon_id text
+  CHECK (char_length(daemon_id) BETWEEN 1 AND 256 AND daemon_id !~ '[[:cntrl:]]');
+
 GRANT SELECT, INSERT ON factory_human_gates TO kestrel_runtime;
 REVOKE UPDATE, DELETE ON factory_human_gates FROM kestrel_runtime;
 GRANT UPDATE (request_id, resolved_by, decision, answer, resolved_at) ON factory_human_gates TO kestrel_runtime;

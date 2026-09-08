@@ -2,7 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { FactoryExecution, FactoryExecutionRun } from "@kestrel/contracts";
+import type { FactoryExecution, FactoryExecutionRun, FactoryGate } from "@kestrel/contracts";
 import { FeatureExecutionPanel } from "./FeatureExecutionPanel.js";
 import { ApiClientError } from "./api.js";
 import { WorkspaceSuspendedContext } from "./components/ui/workspace-suspension.js";
@@ -102,11 +102,30 @@ const execution: FactoryExecution = {
     },
   ],
 };
+const gate: FactoryGate = {
+  schemaVersion: 1,
+  id: "018f0f89-949a-75a8-8f61-6df78a843b22",
+  featureId,
+  workItemId: itemId,
+  runId,
+  approvedVersion: 2,
+  reason: "input_required",
+  question: "Should archived notes appear in reports?",
+  requiredDecision: "clarify_within_plan",
+  createdAt,
+  resolution: null,
+  successorRunId: null,
+  canResume: true,
+  resumeBlockedReason: null,
+};
 let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.spyOn(document, "cookie", "get").mockReturnValue(
+    `__Host-kestrel-csrf=${"a".repeat(43)}.${"b".repeat(43)}`,
+  );
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -119,6 +138,7 @@ afterEach(async () => {
   container.remove();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 async function render(props: Partial<Parameters<typeof FeatureExecutionPanel>[0]> = {}) {
   await act(async () => {
@@ -132,7 +152,9 @@ async function click(label: string) {
   );
   if (button === undefined) throw new Error(`Button unavailable: ${label}`);
   await act(async () => {
-    button.click();
+    if (button.type === "submit" && button.form !== null) {
+      button.form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    } else button.click();
     await Promise.resolve();
   });
 }
@@ -140,6 +162,116 @@ async function click(label: string) {
 function requestUrl(input: RequestInfo | URL): string {
   return typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
 }
+
+async function answerGate(text: string) {
+  const input = container.querySelector("textarea");
+  if (input === null) throw new Error("Gate answer field missing");
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(input, text);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
+it("answers the visible gate once against its approved plan and preserves a lost-response retry", async () => {
+  const sent: unknown[] = [];
+  let current = gate;
+  const fetch = vi.fn<typeof globalThis.fetch>(async (url, options) => {
+    if (options?.method === "POST") {
+      const command = JSON.parse(String(options.body)) as { requestId: string; answer: string };
+      sent.push(command);
+      if (sent.length === 1) throw new TypeError("Response lost");
+      current = {
+        ...gate,
+        canResume: false,
+        resumeBlockedReason: "already_resolved",
+        resolution: {
+          requestId: command.requestId,
+          answer: command.answer,
+          operatorId: projectId,
+          decision: "resume_within_plan",
+          resolvedAt: createdAt,
+        },
+      };
+      return Response.json(current);
+    }
+    return Response.json(
+      requestUrl(url).endsWith(`/runs/${runId}`)
+        ? { ...run, gate: current }
+        : { ...execution, gate: current },
+    );
+  });
+  vi.stubGlobal("fetch", fetch);
+  const failures: unknown[] = [];
+  await render({
+    onAuthenticationError: (failure) => {
+      failures.push(failure);
+      return false;
+    },
+  });
+  expect(container.textContent).toContain("Your decision is needed");
+  expect(container.textContent).toContain("Other projects can continue");
+  await answerGate("Only active notes, as required by the approved plan.");
+  expect(
+    [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Save answer and resume"),
+    )?.disabled,
+    container.textContent,
+  ).toBe(false);
+  await click("Save answer and resume");
+  expect(sent, failures.map(String).join("\n")).toHaveLength(1);
+  expect(container.querySelector("textarea")?.disabled).toBe(true);
+  await click("Retry sending answer");
+  expect(sent).toHaveLength(2);
+  expect(sent[1]).toEqual(sent[0]);
+  expect(sent[0]).toMatchObject({
+    expectedPlanVersion: 2,
+    decision: "resume_within_plan",
+    answer: "Only active notes, as required by the approved plan.",
+  });
+  expect(container.textContent).toContain("Answer saved");
+});
+
+it("explains an unconfirmed stop and prevents a gate answer from restarting the writer", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      Response.json({
+        ...execution,
+        gate: { ...gate, canResume: false, resumeBlockedReason: "unconfirmed_stop" },
+      }),
+    ),
+  );
+  await render();
+  expect(container.textContent).toContain("The execution environment must be confirmed stopped");
+  await answerGate("Continue when it is stopped.");
+  const resume = [...container.querySelectorAll("button")].find((button) =>
+    button.textContent.includes("Save answer and resume"),
+  );
+  expect(resume?.disabled).toBe(true);
+});
+
+it.each(["cancelled", "stale_gate"] as const)(
+  "retains a %s gate without offering either new decision",
+  async (reason) => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          Response.json({
+            ...execution,
+            state: reason === "cancelled" ? "cancelled" : "blocked",
+            gate: { ...gate, canResume: false, resumeBlockedReason: reason },
+          }),
+        ),
+    );
+    await render();
+    expect(container.textContent).toContain(gate.question);
+    expect(container.querySelector("form")).toBeNull();
+    expect(container.textContent).not.toContain("This feature holds its Project queue");
+  },
+);
 
 it("loads an attempt only when selected and shows its exact checks as inert text", async () => {
   const fetch = vi.fn<typeof globalThis.fetch>((url) =>

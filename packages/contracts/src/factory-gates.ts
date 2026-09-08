@@ -25,7 +25,7 @@ const gateDecision = z.enum(["resume_within_plan", "requires_plan_change"]);
 const gateAnswer = z.string().trim().min(1).max(4000).regex(/\S/u);
 
 export const ResolveFactoryGateCommandSchema = z.strictObject({
-  requestId: KestrelIdSchema,
+  requestId: z.uuid(),
   expectedPlanVersion: z.int().min(1).max(200),
   decision: gateDecision,
   answer: gateAnswer,
@@ -50,7 +50,7 @@ export const FactoryGateSchema = z.strictObject({
   createdAt: z.iso.datetime(),
   resolution: z
     .strictObject({
-      requestId: KestrelIdSchema,
+      requestId: z.uuid(),
       operatorId: KestrelIdSchema,
       decision: gateDecision,
       answer: gateAnswer,
