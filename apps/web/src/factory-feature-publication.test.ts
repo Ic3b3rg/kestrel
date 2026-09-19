@@ -8,6 +8,7 @@ import {
 import * as database from "@kestrel/database";
 import * as source from "@kestrel/local-source";
 import { createFactoryFeaturePublicationProcessor } from "./factory-feature-publication.js";
+import type { FactoryFeatureGitHubAdapter } from "./factory-feature-github.js";
 import type { FactoryGitHubIdentity } from "./factory-github.js";
 
 vi.mock("@kestrel/database", async (original) => ({
@@ -189,7 +190,7 @@ function setup(change: Partial<database.ClaimedFactoryFeaturePublication> = {}) 
     shallowBaseCommitId: revision.baseCommitId,
   });
   const github = {
-    identify: vi.fn(() => Promise.resolve(identity)),
+    identify: vi.fn<FactoryFeatureGitHubAdapter["identify"]>(() => Promise.resolve(identity)),
     readTargetBranch: vi.fn(() => Promise.resolve("master")),
     readPullRequest: vi.fn(() => Promise.resolve(pull)),
     findPullRequest: vi.fn(() => Promise.resolve({ state: "found" as const, value: pull })),
@@ -203,7 +204,9 @@ function setup(change: Partial<database.ClaimedFactoryFeaturePublication> = {}) 
   };
   let remoteHead: string | null = null;
   const git = {
-    identifyRemote: vi.fn(() => Promise.resolve(remote)),
+    identifyRemote: vi.fn<typeof source.identifyFeaturePublicationRemote>(() =>
+      Promise.resolve(remote),
+    ),
     readRefs: vi.fn(() =>
       Promise.resolve({ targetHead: revision.baseCommitId, featureHead: remoteHead }),
     ),
@@ -246,6 +249,15 @@ it("persists the complete original operation and attempt before each provider wr
   });
   expect(prepared?.payload.body).toContain(issues[0]?.issue.url);
   expect(prepared?.payload.body).toContain(certificate.manifestDigest);
+  expect(github.identify.mock.calls[0]?.[0]).toEqual({
+    owner: identity.repository.owner,
+    name: identity.repository.name,
+  });
+  expect(git.identifyRemote.mock.calls[0]?.[2]).toEqual({
+    repository: { owner: identity.repository.owner, name: identity.repository.name },
+    remoteName: "origin",
+    targetRef: "refs/heads/master",
+  });
   expect(
     vi.mocked(database.prepareFactoryFeaturePublicationOperation).mock.invocationCallOrder[0],
   ).toBeLessThan(

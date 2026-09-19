@@ -191,7 +191,13 @@ export function createFactoryFeaturePublicationProcessor({
       },
     };
     await assertFeatureWorkspaceSnapshot(workspace, source.snapshot, { signal });
-    const identity = await github.identify(claim.identity.repository, signal);
+    const identity = await github.identify(
+      {
+        owner: claim.identity.repository.owner,
+        name: claim.identity.repository.name,
+      },
+      signal,
+    );
     if (
       identity.repository.id !== claim.identity.repository.id ||
       identity.repository.owner.toLowerCase() !== claim.identity.repository.owner.toLowerCase() ||
@@ -207,7 +213,10 @@ export function createFactoryFeaturePublicationProcessor({
         config,
         source,
         {
-          repository: identity.repository,
+          repository: {
+            owner: identity.repository.owner,
+            name: identity.repository.name,
+          },
           remoteName: "origin",
           targetRef: `refs/heads/${baseRef}`,
         },
