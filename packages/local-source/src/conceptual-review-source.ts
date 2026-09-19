@@ -1,4 +1,8 @@
-import { readRetainedFile, readRetainedSourceManifest } from "./artifact.js";
+import {
+  readRetainedFile,
+  readRetainedRevisionIdentity,
+  readRetainedSourceManifest,
+} from "./artifact.js";
 import type { LocalSourceConfig } from "./config.js";
 import { LocalSourceError } from "./errors.js";
 import type { GitTreeEntry } from "./git.js";
@@ -8,6 +12,7 @@ export interface ConceptualReviewSourceBinding {
   manifestDigest: string;
   expectedBaseCommitId: string;
   expectedHeadCommitId: string;
+  expectedHeadTreeId: string;
   side: "base" | "head";
 }
 
@@ -54,6 +59,7 @@ function assertBinding(input: unknown): asserts input is ConceptualReviewSourceB
     !/^[a-f0-9]{64}$/u.test(request["manifestDigest"]) ||
     !validCommitId(request["expectedBaseCommitId"]) ||
     !validCommitId(request["expectedHeadCommitId"]) ||
+    !validCommitId(request["expectedHeadTreeId"]) ||
     (request["side"] !== "base" && request["side"] !== "head")
   ) {
     throw new ConceptualReviewSourceError("invalid_request");
@@ -61,10 +67,14 @@ function assertBinding(input: unknown): asserts input is ConceptualReviewSourceB
 }
 
 async function readBoundManifest(config: LocalSourceConfig, input: ConceptualReviewSourceBinding) {
-  const manifest = await readRetainedSourceManifest(config, input);
+  const [manifest, identity] = await Promise.all([
+    readRetainedSourceManifest(config, input),
+    readRetainedRevisionIdentity(config, input),
+  ]);
   if (
     manifest.base.commitObjectId !== input.expectedBaseCommitId ||
-    manifest.head.commitObjectId !== input.expectedHeadCommitId
+    manifest.head.commitObjectId !== input.expectedHeadCommitId ||
+    identity.head.treeObjectId !== input.expectedHeadTreeId
   ) {
     throw new ConceptualReviewSourceError("revision_mismatch");
   }

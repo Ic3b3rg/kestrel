@@ -118,6 +118,7 @@ async function createFixture() {
   ]);
   await git(repository, ["commit", "-m", "Head source"]);
   const headCommitId = await git(repository, ["rev-parse", "HEAD"]);
+  const headTreeId = await git(repository, ["rev-parse", "HEAD^{tree}"]);
   const headBlobId = await git(repository, ["rev-parse", "HEAD:a.txt"]);
   const config = await readLocalSourceConfig({
     LOCAL_REPOSITORY_ROOTS: JSON.stringify([root]),
@@ -149,6 +150,7 @@ async function createFixture() {
       manifestDigest: retained.manifestDigest,
       expectedBaseCommitId: baseCommitId,
       expectedHeadCommitId: headCommitId,
+      expectedHeadTreeId: headTreeId,
     },
     baseBlobId,
     headBlobId,
@@ -230,6 +232,7 @@ describe("retained Conceptual Review source catalog", () => {
     for (const binding of [
       { expectedBaseCommitId: fixture.binding.expectedHeadCommitId },
       { expectedHeadCommitId: fixture.binding.expectedBaseCommitId },
+      { expectedHeadTreeId: fixture.binding.expectedBaseCommitId },
     ]) {
       await expect(
         readConceptualReviewSourceCatalog(fixture.config, {
@@ -249,6 +252,7 @@ describe("retained Conceptual Review source catalog", () => {
       { ...input, side: "merge" },
       { ...input, expectedBaseCommitId: "HEAD" },
       { ...input, expectedHeadCommitId: "a".repeat(39) },
+      { ...input, expectedHeadTreeId: "a".repeat(39) },
       { ...input, artifactLocator: 3 },
       { ...input, manifestDigest: null },
       { ...input, offset: -1 },

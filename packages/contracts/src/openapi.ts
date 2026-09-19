@@ -6,6 +6,13 @@ import {
   RetryFactoryFeaturePublicationCommandSchema,
 } from "./factory-feature-publication.js";
 import {
+  FactoryConceptualReviewCheckCatalogSchema,
+  FactoryConceptualReviewCheckSchema,
+  FactoryConceptualReviewPreparationSchema,
+  FactoryConceptualReviewSourceCatalogSchema,
+  FactoryConceptualReviewSourceLinesSchema,
+} from "./conceptual-review.js";
+import {
   StartPlanningFeatureCommandSchema,
   PlanningFeatureStartedSchema,
   PlanningFeatureRequestSchema,
@@ -203,6 +210,19 @@ const factoryComponents = {
   ImportFactoryIssuesCommand: asComponentSchema(asJsonSchema(ImportFactoryIssuesCommandSchema)),
   FactoryIssuePublication: asComponentSchema(asJsonSchema(FactoryIssuePublicationSchema)),
   FactoryFeaturePublication: asComponentSchema(asJsonSchema(FactoryFeaturePublicationSchema)),
+  FactoryConceptualReviewPreparation: asComponentSchema(
+    asJsonSchema(FactoryConceptualReviewPreparationSchema),
+  ),
+  FactoryConceptualReviewSourceCatalog: asComponentSchema(
+    asJsonSchema(FactoryConceptualReviewSourceCatalogSchema),
+  ),
+  FactoryConceptualReviewSourceLines: asComponentSchema(
+    asJsonSchema(FactoryConceptualReviewSourceLinesSchema),
+  ),
+  FactoryConceptualReviewCheckCatalog: asComponentSchema(
+    asJsonSchema(FactoryConceptualReviewCheckCatalogSchema),
+  ),
+  FactoryConceptualReviewCheck: asComponentSchema(asJsonSchema(FactoryConceptualReviewCheckSchema)),
   RetryFactoryFeaturePublicationCommand: asComponentSchema(
     asJsonSchema(RetryFactoryFeaturePublicationCommandSchema),
   ),
@@ -1009,6 +1029,98 @@ export const openApiDocument = sortJson({
         "FactoryFeaturePublication",
         202,
       ),
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/review/preparation": {
+      parameters: factoryParameters(),
+      get: factoryRead(
+        "readFactoryConceptualReviewPreparation",
+        "FactoryConceptualReviewPreparation",
+      ),
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/review/source": {
+      parameters: [
+        ...factoryParameters(),
+        {
+          in: "query",
+          name: "side",
+          required: true,
+          schema: { type: "string", enum: ["base", "head"] },
+        },
+        {
+          in: "query",
+          name: "offset",
+          required: false,
+          schema: { type: "integer", minimum: 0, default: 0 },
+        },
+        {
+          in: "query",
+          name: "limit",
+          required: false,
+          schema: { type: "integer", minimum: 1, maximum: 200, default: 200 },
+        },
+      ],
+      get: factoryRead(
+        "readFactoryConceptualReviewSourceCatalog",
+        "FactoryConceptualReviewSourceCatalog",
+      ),
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/review/source/lines": {
+      parameters: [
+        ...factoryParameters(),
+        {
+          in: "query",
+          name: "side",
+          required: true,
+          schema: { type: "string", enum: ["base", "head"] },
+        },
+        { in: "query", name: "path", required: true, schema: { type: "string" } },
+        {
+          in: "query",
+          name: "startLine",
+          required: true,
+          schema: { type: "integer", minimum: 1 },
+        },
+        {
+          in: "query",
+          name: "endLine",
+          required: true,
+          schema: { type: "integer", minimum: 1 },
+        },
+      ],
+      get: factoryRead(
+        "readFactoryConceptualReviewSourceLines",
+        "FactoryConceptualReviewSourceLines",
+      ),
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/review/checks": {
+      parameters: [
+        ...factoryParameters(),
+        {
+          in: "query",
+          name: "offset",
+          required: false,
+          schema: { type: "integer", minimum: 0, default: 0 },
+        },
+        {
+          in: "query",
+          name: "limit",
+          required: false,
+          schema: { type: "integer", minimum: 1, maximum: 100, default: 100 },
+        },
+      ],
+      get: factoryRead("readFactoryConceptualReviewChecks", "FactoryConceptualReviewCheckCatalog"),
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/review/checks/{evidenceId}": {
+      parameters: [
+        ...factoryParameters(),
+        {
+          in: "path",
+          name: "evidenceId",
+          required: true,
+          schema: { type: "string", format: "uuid" },
+        },
+      ],
+      get: factoryRead("readFactoryConceptualReviewCheck", "FactoryConceptualReviewCheck"),
     },
     "/api/v1/projects/{projectId}/features/{featureId}/plans": {
       parameters: factoryParameters(),

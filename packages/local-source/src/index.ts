@@ -1,5 +1,6 @@
 export * from "./config.js";
 export * from "./artifact.js";
+export * from "./conceptual-review-source.js";
 export * from "./feature-workspace.js";
 export * from "./feature-publication.js";
 export * from "./discovery.js";
