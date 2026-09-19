@@ -600,6 +600,11 @@ export function failFactoryFeaturePublication(
   FactoryFeaturePublicationFailureSchema.parse(failure);
   return withAttempt(pool, claim, async (client, feature, row) => {
     const pull = await pullRequestFor(client, feature.id);
+    const retries = await client.query<{ count: string }>(
+      "SELECT count(*) FROM factory_feature_pr_retry_requests WHERE feature_id = $1",
+      [feature.id],
+    );
+    const effectiveFailure = Number(retries.rows[0]?.count ?? 0) >= 200 ? "retry_limit" : failure;
     const uncertain =
       (row.push_attempted && row.push_confirmed_at === null) || (row.pr_attempted && pull === null);
     await client.query(
@@ -611,7 +616,7 @@ export function failFactoryFeaturePublication(
           : feature.state === "cancelled" && pull === null
             ? "cancelled"
             : "blocked",
-        failure,
+        effectiveFailure,
         retryAt ?? null,
       ],
     );
@@ -672,6 +677,7 @@ async function publicationView(client: PoolClient, feature: FeatureRow) {
     canRetry:
       row !== undefined &&
       ["blocked", "uncertain"].includes(row.state) &&
+      row.failure !== "retry_limit" &&
       (!cancelled || uncertain || (pullRequest !== null && review === null)) &&
       (row.retry_after === null || row.retry_after.getTime() <= Date.now()),
     updatedAt: row?.updated_at.toISOString() ?? null,
@@ -712,8 +718,13 @@ export function retryFactoryFeaturePublication(
       "SELECT count(*) FROM factory_feature_pr_retry_requests WHERE feature_id = $1",
       [featureId],
     );
-    if (Number(retries.rows[0]?.count) >= 200)
-      throw new FactoryError("conflict", "Publication retry limit reached");
+    if (Number(retries.rows[0]?.count) >= 200) {
+      await client.query(
+        "UPDATE factory_feature_pr_publications SET failure = 'retry_limit', updated_at = clock_timestamp() WHERE feature_id = $1",
+        [featureId],
+      );
+      return publicationView(client, feature);
+    }
     await client.query(
       "INSERT INTO factory_feature_pr_retry_requests (feature_id,request_id,actor_id) VALUES ($1,$2,$3)",
       [featureId, requestId, actorId],

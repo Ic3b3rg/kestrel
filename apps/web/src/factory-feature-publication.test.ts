@@ -210,7 +210,7 @@ function setup(change: Partial<database.ClaimedFactoryFeaturePublication> = {}) 
     readRefs: vi.fn(() =>
       Promise.resolve({ targetHead: revision.baseCommitId, featureHead: remoteHead }),
     ),
-    push: vi.fn(() => {
+    push: vi.fn<typeof source.pushFeaturePublicationHead>(() => {
       remoteHead = revision.headCommitId;
       return Promise.resolve({
         state: "confirmed" as const,
@@ -373,6 +373,45 @@ it("does not clear the attempted flag when a started push returns an uncertain r
     expect.anything(),
     expect.anything(),
     "uncertain_write",
+    undefined,
+  );
+});
+
+it("reports an active publication interrupted by processor shutdown as unavailable", async () => {
+  const { processor, git } = setup();
+  let pushStarted: (() => void) | undefined;
+  const started = new Promise<void>((resolve) => {
+    pushStarted = resolve;
+  });
+  git.push.mockImplementation((_config, _source, _remote, options) => {
+    const signal = options?.signal;
+    if (signal === undefined) throw new Error("Publication push has no cancellation signal");
+    pushStarted?.();
+    return new Promise<Awaited<ReturnType<typeof source.pushFeaturePublicationHead>>>(
+      (_resolve, reject) => {
+        signal.addEventListener(
+          "abort",
+          () =>
+            reject(
+              signal.reason instanceof Error
+                ? signal.reason
+                : new Error("Publication processor stopped"),
+            ),
+          { once: true },
+        );
+      },
+    );
+  });
+
+  const processing = processor.process({ featureId: id });
+  await started;
+  await processor.stop();
+  await processing;
+
+  expect(database.failFactoryFeaturePublication).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.anything(),
+    "unavailable",
     undefined,
   );
 });

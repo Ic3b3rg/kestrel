@@ -4,6 +4,7 @@ import { factoryVerificationManifest, type FeaturePlanDocument } from "@kestrel/
 import {
   assertFactoryFeaturePublicationCertificate,
   bindFactoryFeaturePullRequest,
+  failFactoryFeaturePublication,
   markFactoryFeaturePublicationWrite,
   readFactoryFeaturePublication,
 } from "./factory-feature-publication.js";
@@ -268,4 +269,51 @@ it("keeps the canonical Feature review binding when the revision was acquired un
   const pool = { query, connect: () => Promise.resolve({ query, release: vi.fn() }) };
   const view = await readFactoryFeaturePublication(pool as never, secondId, id);
   expect(view.review).toMatchObject({ projectId: secondId, changeProposalId: secondId });
+});
+
+it("persists a terminal retry-limit failure after the final admitted attempt fails", async () => {
+  const query = vi.fn((sql: string) => {
+    if (sql.includes("FROM factory_features") && sql.includes("FOR UPDATE"))
+      return {
+        rows: [
+          {
+            id,
+            project_id: secondId,
+            state: "in_review",
+            approved_plan_version: 1,
+          },
+        ],
+      };
+    if (sql.includes("FROM factory_feature_pr_publications") && sql.includes("attempt_id"))
+      return {
+        rows: [
+          {
+            feature_id: id,
+            plan_version: 1,
+            state: "running",
+            attempt_id: id,
+            push_attempted: false,
+            push_confirmed_at: null,
+            pr_attempted: false,
+          },
+        ],
+      };
+    if (sql.includes("FROM factory_feature_pr_results")) return { rows: [] };
+    if (sql.includes("count(*) FROM factory_feature_pr_retry_requests"))
+      return { rows: [{ count: "200" }] };
+    return { rows: [], rowCount: 1 };
+  });
+  const client = { query, release: vi.fn() };
+  const pool = { connect: () => Promise.resolve(client), query };
+
+  await failFactoryFeaturePublication(
+    pool as never,
+    { featureId: id, projectId: secondId, attemptId: id },
+    "unavailable",
+  );
+
+  expect(query).toHaveBeenCalledWith(
+    expect.stringContaining("UPDATE factory_feature_pr_publications SET state"),
+    [id, "blocked", "retry_limit", null],
+  );
 });

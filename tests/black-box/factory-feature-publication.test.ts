@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { FactoryFeaturePublicationSchema, ProjectInboxSchema } from "@kestrel/contracts";
 import {
   createFeaturePublicationJourney,
+  interruptPublicationFixtureDuringPush,
   movePublicationRef,
   processPublicationFixture,
   publicationGitState,
@@ -126,7 +127,7 @@ describe("certified Feature PR publication through HTTP, PostgreSQL, Git and Git
   );
 
   it(
-    "reconciles lost push and PR responses after restart without duplicate writes",
+    "reconciles an interrupted push and a lost PR response after restart without duplicate writes",
     { timeout: 180_000 },
     async () => {
       const pushesBefore = (await publicationGitState(journey.stack)).pushes;
@@ -135,8 +136,9 @@ describe("certified Feature PR publication through HTTP, PostgreSQL, Git and Git
       const certificate = await journey.certify(featureId, finalRunId);
       const providerBefore = await publicationProviderState(journey.stack);
 
-      await setPublicationGitControls(journey.stack, { losePushResponse: true });
-      await processPublicationFixture(journey.stack, featureId);
+      await setPublicationGitControls(journey.stack, { pauseAfterPush: true });
+      await interruptPublicationFixtureDuringPush(journey.stack, featureId);
+      await setPublicationGitControls(journey.stack, { pauseAfterPush: false });
       expect(await journey.publication(featureId)).toMatchObject({
         state: "uncertain",
         failure: "uncertain_write",
@@ -147,6 +149,7 @@ describe("certified Feature PR publication through HTTP, PostgreSQL, Git and Git
         (await publicationRemoteRefs(journey.stack))[`refs/heads/kestrel/feature/${featureId}`],
       ).toBe(certificate.revision.headCommitId);
 
+      await journey.stack.restart("web");
       const pushRetryId = randomUUID();
       expect((await journey.retry(featureId, pushRetryId)).status).toBe(202);
       expect((await journey.retry(featureId, pushRetryId)).status).toBe(202);

@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { z } from "zod";
 
 import {
   ApiErrorSchema,
@@ -24,6 +25,7 @@ import {
 } from "@kestrel/contracts";
 import {
   ReviewRevisionPersistenceError,
+  readProject,
   readProjectInbox,
   readProjectGitHubCoordinates,
   upsertPublicGitHubProject,
@@ -52,6 +54,11 @@ export interface ProjectServiceContext {
   correlationId: string;
 }
 
+export interface RequiredProjectRevision {
+  projectId: string;
+  revisionId: string;
+}
+
 export interface ProjectService {
   openLocalProject(
     command: OpenLocalProjectCommand,
@@ -61,11 +68,11 @@ export interface ProjectService {
     command: OpenPublicGitHubPullRequestCommand,
     context: ProjectServiceContext,
   ): Promise<ProjectUpserted>;
-  readInbox(): Promise<ProjectInbox>;
+  readInbox(requiredRevision?: RequiredProjectRevision): Promise<ProjectInbox>;
 }
 
 export interface ProjectStore {
-  readInbox(): Promise<ProjectInbox>;
+  readInbox(requiredRevision?: RequiredProjectRevision): Promise<ProjectInbox>;
   upsert(input: UpsertPublicGitHubProjectInput): Promise<ProjectUpserted>;
 }
 
@@ -187,7 +194,7 @@ export function createProjectService(
       const observation = await reader.read(command.url);
       return store.upsert({ ...context, observation });
     },
-    readInbox: () => store.readInbox(),
+    readInbox: (requiredRevision) => store.readInbox(requiredRevision),
   };
 }
 
@@ -199,7 +206,21 @@ export function createDatabaseProjectService(
   return createProjectService(
     createPublicGitHubReader(),
     {
-      readInbox: () => readProjectInbox(pool),
+      async readInbox(requiredRevision) {
+        const inbox = await readProjectInbox(pool);
+        if (requiredRevision === undefined) return inbox;
+        const project = await readProject(
+          pool,
+          requiredRevision.projectId,
+          requiredRevision.revisionId,
+        );
+        return ProjectInboxSchema.parse({
+          schemaVersion: 1,
+          projects: inbox.projects.map((candidate) =>
+            candidate.id === project.id ? project : candidate,
+          ),
+        });
+      },
       upsert: (input) => upsertPublicGitHubProject(pool, input, renderingCoordinator),
     },
     openLocalProject,
@@ -341,11 +362,17 @@ export function registerProjectRoutes(
   service: ProjectService,
   hostGitHub?: HostGitHubProjectService,
 ): void {
+  const readInboxQuery = z.strictObject({
+    projectId: KestrelIdSchema.optional(),
+    revisionId: KestrelIdSchema.optional(),
+  });
   app.get(
     "/api/v1/projects",
     {
       schema: {
+        querystring: z.toJSONSchema(readInboxQuery, { target: "draft-7" }),
         response: {
+          400: jsonSchemaForEmbedding(apiErrorJsonSchema),
           200: jsonSchemaForEmbedding(projectInboxJsonSchema),
           401: jsonSchemaForEmbedding(apiErrorJsonSchema),
           503: jsonSchemaForEmbedding(apiErrorJsonSchema),
@@ -354,7 +381,25 @@ export function registerProjectRoutes(
     },
     async (request, reply) => {
       try {
-        return ProjectInboxSchema.parse(await service.readInbox());
+        const query = readInboxQuery.parse(request.query);
+        if ((query.projectId === undefined) !== (query.revisionId === undefined)) {
+          return await reply
+            .code(400)
+            .send(
+              apiError(
+                request,
+                "INVALID_REQUEST",
+                "Project and Review Revision identities must be provided together",
+              ),
+            );
+        }
+        return ProjectInboxSchema.parse(
+          await service.readInbox(
+            query.projectId === undefined || query.revisionId === undefined
+              ? undefined
+              : { projectId: query.projectId, revisionId: query.revisionId },
+          ),
+        );
       } catch (error) {
         request.log.error({ err: error, event: "project.inbox_unavailable" });
         return reply

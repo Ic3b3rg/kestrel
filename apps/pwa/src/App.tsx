@@ -577,7 +577,14 @@ export function App() {
     setProjectLoading(true);
     setProjectError(null);
 
-    void fetchProjectInbox(controller.signal).then(
+    const requiredRevision =
+      route.kind === "project" && route.revisionId !== undefined
+        ? {
+            projectId: route.projectId,
+            revisionId: route.revisionId,
+          }
+        : undefined;
+    void fetchProjectInbox(controller.signal, requiredRevision).then(
       (inbox) => {
         if (!active || controller.signal.aborted || projectInboxController.current !== controller) {
           return;
@@ -605,7 +612,14 @@ export function App() {
         projectInboxController.current = null;
       }
     };
-  }, [handleAuthenticationBoundaryError, online, projectReloadGeneration, session]);
+  }, [
+    handleAuthenticationBoundaryError,
+    online,
+    projectReloadGeneration,
+    route.kind === "project" ? route.projectId : undefined,
+    route.kind === "project" ? route.revisionId : undefined,
+    session,
+  ]);
 
   useEffect(() => {
     if (
@@ -723,7 +737,10 @@ export function App() {
       ...(route.kind === "project" &&
       route.projectId === result.project.id &&
       route.proposalId !== undefined
-        ? { proposalId: route.proposalId }
+        ? {
+            proposalId: route.proposalId,
+            ...(route.revisionId === undefined ? {} : { revisionId: route.revisionId }),
+          }
         : {}),
     });
     setAnnouncement("Project opened from the authorized local repository.");
@@ -844,6 +861,9 @@ export function App() {
       <ProjectInboxPanel
         key={selectedProject.id}
         selectedProposalId={route.kind === "project" ? (route.proposalId ?? "") : ""}
+        {...(route.kind === "project" && route.revisionId !== undefined
+          ? { selectedRevisionId: route.revisionId }
+          : {})}
         onSelectProposal={(proposalId) =>
           navigate({
             kind: "project",

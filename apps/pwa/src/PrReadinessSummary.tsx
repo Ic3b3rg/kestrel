@@ -23,6 +23,7 @@ export function PrReadinessSummary({
   disabled,
   project,
   proposal,
+  requiredRevisionId,
   sourceCorrection,
 }: {
   children: ReactNode;
@@ -30,11 +31,12 @@ export function PrReadinessSummary({
   disabled: boolean;
   project: Project;
   proposal: Proposal;
+  requiredRevisionId?: string;
   sourceCorrection: ReactNode;
 }) {
   const { github, codex, model } = connections;
   const source = project.localRepositorySource;
-  const revision = currentReviewRevision(proposal);
+  const revision = currentReviewRevision(proposal, requiredRevisionId);
   const account = codex.state === "checked" ? codex.value.account : null;
   const savedModelId = model.state === "checked" ? model.value.selectedModelId : null;
   const selectedModel =

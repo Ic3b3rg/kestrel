@@ -214,8 +214,15 @@ export async function fetchInstallation(signal?: AbortSignal): Promise<Installat
   return requireJson(response, InstallationSnapshotSchema, "Installation snapshot");
 }
 
-export async function fetchProjectInbox(signal?: AbortSignal): Promise<ProjectInbox> {
-  const response = await fetch("/api/v1/projects", {
+export async function fetchProjectInbox(
+  signal?: AbortSignal,
+  requiredRevision?: { projectId: string; revisionId: string },
+): Promise<ProjectInbox> {
+  const query =
+    requiredRevision === undefined
+      ? ""
+      : `?projectId=${encodeURIComponent(KestrelIdSchema.parse(requiredRevision.projectId))}&revisionId=${encodeURIComponent(KestrelIdSchema.parse(requiredRevision.revisionId))}`;
+  const response = await fetch(`/api/v1/projects${query}`, {
     credentials: "same-origin",
     headers: { Accept: "application/json" },
     method: "GET",

@@ -92,7 +92,7 @@ test.describe("certified Feature PR in the Project board", () => {
     await open.focus();
     await open.press("Enter");
     await expect(page).toHaveURL(
-      `${journey.stack.pwaUrl}/projects/${review.projectId}?proposalId=${review.changeProposalId}`,
+      `${journey.stack.pwaUrl}/projects/${review.projectId}?proposalId=${review.changeProposalId}&revisionId=${review.revision.id}`,
     );
     await expect(
       page.getByRole("heading", {

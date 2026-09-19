@@ -674,6 +674,7 @@ export function FeatureChatPanel({
                 kind: "project",
                 projectId: review.projectId,
                 proposalId: review.changeProposalId,
+                revisionId: review.revision.id,
               })
             }
             onFeatureChanged={() => void refresh()}

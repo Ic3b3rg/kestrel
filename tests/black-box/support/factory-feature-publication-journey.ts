@@ -96,6 +96,34 @@ export function processPublicationFixture(stack: ModuleStack, featureId: string)
   );
 }
 
+export function interruptPublicationFixtureDuringPush(stack: ModuleStack, featureId: string) {
+  return verificationModule<null>(
+    stack,
+    `
+    const {readFile}=await import('node:fs/promises');
+    const {setTimeout:delay}=await import('node:timers/promises');
+    const {createFactoryFeaturePublicationProcessor}=await import('./apps/web/dist/factory-feature-publication.js');
+    const {createFactoryFeatureRevisionRetainer}=await import('./apps/web/dist/factory-feature-revision.js');
+    const {readLocalSourceConfig}=await import('@kestrel/local-source');
+    const readSourceConfig=async()=>({...await readLocalSourceConfig(),gitExecutable:${JSON.stringify(publicationGitExecutablePath)}});
+    await db.reconcileFactoryFeaturePublications(pool,boss);
+    const processor=createFactoryFeaturePublicationProcessor({pool,readSourceConfig,
+      retain:createFactoryFeatureRevisionRetainer({pool,readSourceConfig,renderingCoordinator:boss})});
+    const processing=processor.process({featureId:${JSON.stringify(featureId)}});
+    const deadline=Date.now()+15000;
+    while(true) {
+      const state=JSON.parse(await readFile(${JSON.stringify(publicationGitStatePath)},'utf8'));
+      if(state.paused===true) break;
+      if(Date.now()>deadline) throw new Error('Timed out waiting for the publication push');
+      await delay(25);
+    }
+    await processor.stop();
+    await processing;
+    console.log('null');
+  `,
+  );
+}
+
 export async function publicationGitState(stack: ModuleStack): Promise<PublicationGitState> {
   return JSON.parse(
     await stack.executeWebModule(`

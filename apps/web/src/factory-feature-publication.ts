@@ -349,9 +349,9 @@ export function createFactoryFeaturePublicationProcessor({
       if (pulse !== null) return;
       pulse = isFactoryFeaturePublicationRunning(pool, claim)
         .then((running) => {
-          if (!running) controller.abort();
+          if (!running) controller.abort(new FactoryFeaturePublicationError("cancelled"));
         })
-        .catch(() => controller.abort())
+        .catch(() => controller.abort(new FactoryFeaturePublicationError("unavailable")))
         .finally(() => {
           pulse = null;
         });
@@ -368,11 +368,15 @@ export function createFactoryFeaturePublicationProcessor({
             ? error.failure
             : deadline.aborted
               ? "timeout"
-              : signal.aborted
-                ? "cancelled"
-                : error instanceof FeatureWorkspaceError
-                  ? "workspace_changed"
-                  : "unavailable";
+              : shutdown.signal.aborted
+                ? "unavailable"
+                : controller.signal.reason instanceof FactoryFeaturePublicationError
+                  ? controller.signal.reason.code
+                  : signal.aborted
+                    ? "unavailable"
+                    : error instanceof FeatureWorkspaceError
+                      ? "workspace_changed"
+                      : "unavailable";
       try {
         await failFactoryFeaturePublication(
           pool,

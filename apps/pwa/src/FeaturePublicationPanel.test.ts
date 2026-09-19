@@ -234,6 +234,20 @@ it("retains the last confirmed state and disables retry when the browser goes of
   expect(button("Retry publication").disabled).toBe(true);
 });
 
+it("explains retry exhaustion without offering an impossible retry", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() =>
+      Promise.resolve(
+        response({ ...uncertain, state: "blocked", failure: "retry_limit", canRetry: false }),
+      ),
+    ),
+  );
+  await renderAct(() => root.render(createElement(FeaturePublicationPanel, props())));
+  expect(container.textContent).toContain("reached its retry limit");
+  expect(container.textContent).not.toContain("Retry publication");
+});
+
 it("does not let a late response replace another Feature's publication state", async () => {
   let settle: ((result: Response) => void) | undefined;
   const fetcher = vi

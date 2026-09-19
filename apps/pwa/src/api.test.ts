@@ -697,6 +697,22 @@ describe("PWA API client", () => {
     );
   });
 
+  it("binds an exact retained revision when reading the Project inbox", async () => {
+    const projectId = projectInbox.projects[0]?.id;
+    const revisionId = "018f0f89-9a21-7271-b92d-f1cb0d48bb47";
+    if (projectId === undefined) throw new Error("Project fixture is unavailable");
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(projectInbox));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchProjectInbox(undefined, { projectId, revisionId })).resolves.toEqual(
+      projectInbox,
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/v1/projects?projectId=${projectId}&revisionId=${revisionId}`,
+      expect.objectContaining({ credentials: "same-origin", method: "GET" }),
+    );
+  });
+
   it("reads a fresh host GitHub Connection for one opaque Project", async () => {
     const connection: HostGitHubConnection = {
       schemaVersion: 1,

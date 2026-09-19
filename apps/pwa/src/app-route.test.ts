@@ -47,6 +47,24 @@ describe("authenticated app routing", () => {
     expect(readAppRoute(`/projects/${projectId}`, `?proposalId=${proposalId}`)).toEqual(route);
   });
 
+  it("keeps an explicitly retained Review Revision in the authoritative URL", () => {
+    const proposalId = "018f0f89-9192-755f-aa96-f72094c734df";
+    const revisionId = "018f0f89-9a21-7271-b92d-f1cb0d48bb47";
+    const route = { kind: "project" as const, projectId, proposalId, revisionId };
+    expect(appPath(route)).toBe(
+      `/projects/${projectId}?proposalId=${proposalId}&revisionId=${revisionId}`,
+    );
+    expect(
+      readAppRoute(`/projects/${projectId}`, `?proposalId=${proposalId}&revisionId=${revisionId}`),
+    ).toEqual(route);
+    expect(
+      readAppRoute(`/projects/${projectId}`, `?proposalId=${proposalId}&revisionId=not-a-revision`),
+    ).toEqual({ kind: "not_found" });
+    expect(readAppRoute(`/projects/${projectId}`, `?revisionId=${revisionId}`)).toEqual({
+      kind: "not_found",
+    });
+  });
+
   it("keeps Project-owned Settings aligned with the URL", () => {
     const route = { kind: "settings" as const, projectId };
     expect(appPath(route)).toBe(`/settings?projectId=${projectId}`);
