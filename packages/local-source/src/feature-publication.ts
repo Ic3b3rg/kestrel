@@ -151,7 +151,7 @@ function run(
       });
     };
     options.signal?.addEventListener("abort", abort, { once: true });
-    if (options.signal?.aborted === true) abort();
+    if (options.signal?.aborted) abort();
     child.once("spawn", () => {
       started = true;
     });

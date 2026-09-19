@@ -125,6 +125,7 @@ export function renderFactoryFeaturePullRequest(
     `Base: \`${claim.certificate.revision.baseCommitId}\`\nHead: \`${claim.certificate.revision.headCommitId}\`\nTree: \`${claim.certificate.revision.treeId}\``,
     `Command manifest SHA-256: \`${claim.certificate.manifestDigest}\``,
     `The certificate retains ${String(claim.certificate.evidenceIds.length)} individual passing results. Work Items remain In review; linked issues remain open.`,
+    "These results cover the declared verification commands. Conceptual Review has not run yet.",
     marker,
   ].join("\n\n");
   // The approved plan and ordered issue set have fixed bounds; do not silently drop an issue.

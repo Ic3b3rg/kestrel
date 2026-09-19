@@ -153,6 +153,13 @@ describe("web error and readiness boundaries", () => {
     expect(ApiErrorSchema.parse(response.json())).toMatchObject({ code: "NOT_FOUND" });
   });
 
+  it("registers the certified Feature pull-request read and retry routes", () => {
+    const featurePath = "/api/v1/projects/:projectId/features/:featureId/pull-request";
+
+    expect(app.hasRoute({ method: "GET", url: featurePath })).toBe(true);
+    expect(app.hasRoute({ method: "POST", url: `${featurePath}/retry` })).toBe(true);
+  });
+
   it("reports an unavailable diagnostic dependency without exposing internals", async () => {
     const response = await app.inject({
       headers: { ...authenticatedHeaders, "content-type": "application/json" },

@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import type { FactoryBoard, FactoryWorkItem, FactoryIssuePublication } from "@kestrel/contracts";
+import type {
+  FactoryBoard,
+  FactoryFeaturePublicationReview,
+  FactoryWorkItem,
+  FactoryIssuePublication,
+} from "@kestrel/contracts";
 import {
   ApiClientError,
   fetchFactoryBoard,
@@ -8,6 +13,7 @@ import {
 } from "./api.js";
 import { FactoryProviderProblem } from "./FeatureGitHubIssuesPanel.js";
 import { FeatureExecutionPanel } from "./FeatureExecutionPanel.js";
+import { FeaturePublicationPanel } from "./FeaturePublicationPanel.js";
 import { planningRequestError } from "./FeatureNavigation.js";
 import { VerificationSummary } from "./FeaturePlanDocument.js";
 import { Button } from "./components/ui/button.js";
@@ -235,6 +241,7 @@ export interface FeatureBoardPanelProps {
   online: boolean;
   onAuthenticationError: (error: unknown) => boolean;
   onViewPlan: () => void;
+  onOpenRevision: (review: FactoryFeaturePublicationReview) => void;
   onFeatureChanged?: () => void;
   loadBoard?: typeof fetchFactoryBoard;
   loadPublication?: typeof fetchFactoryIssuePublication;
@@ -247,6 +254,7 @@ export function FeatureBoardPanel({
   online,
   onAuthenticationError,
   onViewPlan,
+  onOpenRevision,
   onFeatureChanged,
   loadBoard = fetchFactoryBoard,
   loadPublication = fetchFactoryIssuePublication,
@@ -412,6 +420,15 @@ export function FeatureBoardPanel({
                 setGeneration((value) => value + 1);
                 onFeatureChanged?.();
               }}
+            />
+          )}
+          {board.approvedVersion === null ? null : (
+            <FeaturePublicationPanel
+              projectId={projectId}
+              featureId={featureId}
+              online={online}
+              onAuthenticationError={onAuthenticationError}
+              onOpenRevision={onOpenRevision}
             />
           )}
           <div className="factory-board">

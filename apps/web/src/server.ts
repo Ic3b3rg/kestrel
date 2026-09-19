@@ -19,6 +19,11 @@ import {
   FACTORY_PUBLICATION_WORK_OPTIONS,
 } from "./factory-publication.js";
 import {
+  createFactoryFeaturePublicationProcessor,
+  FACTORY_FEATURE_PUBLICATION_WORK_OPTIONS,
+} from "./factory-feature-publication.js";
+import { createFactoryFeatureRevisionRetainer } from "./factory-feature-revision.js";
+import {
   createFactoryPlanningProcessor,
   FACTORY_PLANNING_WORK_OPTIONS,
 } from "./factory-planning.js";
@@ -34,6 +39,7 @@ import {
   CHANGE_OVERVIEW_RENDER_QUEUE,
   FACTORY_PLANNING_QUEUE,
   FACTORY_PUBLICATION_QUEUE,
+  FACTORY_FEATURE_PUBLICATION_QUEUE,
   FACTORY_EXECUTION_QUEUE,
   readReferencedArtifactLocators,
   readDatabaseConfig,
@@ -43,6 +49,7 @@ import {
   reconcileLocalSourceAttachments,
   reconcilePlanningTurns,
   reconcileFactoryPublications,
+  reconcileFactoryFeaturePublications,
   reconcileFactoryExecutions,
   withArtifactLifecycleLock,
 } from "@kestrel/database";
@@ -127,6 +134,15 @@ const planningProcessor = createFactoryPlanningProcessor({
   readSourceConfig: () => readLocalSourceConfig(),
 });
 const publicationProcessor = createFactoryPublicationProcessor({ pool });
+const featurePublicationProcessor = createFactoryFeaturePublicationProcessor({
+  pool,
+  readSourceConfig: () => readLocalSourceConfig(),
+  retain: createFactoryFeatureRevisionRetainer({
+    pool,
+    readSourceConfig: () => readLocalSourceConfig(),
+    renderingCoordinator: boss,
+  }),
+});
 const recoverExecutionContainer = createCodexExecutionContainerRecovery(
   process.env.KESTREL_FACTORY_DOCKER_EXECUTABLE === undefined
     ? {}
@@ -143,6 +159,8 @@ const executionProcessor = createFactoryExecutionProcessor({
     : { dockerExecutable: process.env.KESTREL_FACTORY_DOCKER_EXECUTABLE }),
 });
 let publicationReconciliation: NodeJS.Timeout | undefined;
+let featurePublicationReconciliation: NodeJS.Timeout | undefined;
+let reconcilingFeaturePublication: Promise<void> | null = null;
 let executionReconciliation: NodeJS.Timeout | undefined;
 let reconcilingExecution: Promise<void> | null = null;
 boss.on("error", (error) => {
@@ -153,8 +171,10 @@ let shuttingDown = false;
 async function stopExecutionAndHttp(): Promise<void> {
   // Interrupt tool execution before HTTP draining can wait on an open client.
   const stoppingExecution = executionProcessor.stop();
-  await Promise.all([stoppingExecution, app.close()]);
+  const stoppingPublication = featurePublicationProcessor.stop();
+  await Promise.all([stoppingExecution, stoppingPublication, app.close()]);
   await reconcilingExecution;
+  await reconcilingFeaturePublication;
 }
 
 async function shutdown(signal: string): Promise<void> {
@@ -163,6 +183,7 @@ async function shutdown(signal: string): Promise<void> {
   }
   shuttingDown = true;
   clearInterval(publicationReconciliation);
+  clearInterval(featurePublicationReconciliation);
   clearInterval(executionReconciliation);
   app.log.info({ event: "web.stopping", signal });
   await stopExecutionAndHttp();
@@ -185,6 +206,18 @@ try {
   await reconcilePlanningTurns(pool);
   await reconcileFactoryPublications(pool, boss);
   await reconcileFactoryExecutions(pool, boss, recoverExecutionContainer);
+  await reconcileFactoryFeaturePublications(pool, boss);
+  featurePublicationReconciliation = setInterval(() => {
+    if (reconcilingFeaturePublication !== null || shuttingDown) return;
+    reconcilingFeaturePublication = reconcileFactoryFeaturePublications(pool, boss)
+      .catch((error: unknown) =>
+        app.log.error({ err: error, event: "factory.feature_publication_reconciliation_failed" }),
+      )
+      .finally(() => {
+        reconcilingFeaturePublication = null;
+      });
+  }, 5_000);
+  featurePublicationReconciliation.unref();
   executionReconciliation = setInterval(() => {
     if (reconcilingExecution !== null || shuttingDown) return;
     reconcilingExecution = reconcileFactoryExecutions(pool, boss, recoverExecutionContainer)
@@ -222,6 +255,14 @@ try {
     if (job !== undefined) await planningProcessor.process(job.data, job.signal);
   });
   await boss.work<unknown>(
+    FACTORY_FEATURE_PUBLICATION_QUEUE,
+    FACTORY_FEATURE_PUBLICATION_WORK_OPTIONS,
+    async (jobs) => {
+      const job = jobs[0];
+      if (job !== undefined) await featurePublicationProcessor.process(job.data, job.signal);
+    },
+  );
+  await boss.work<unknown>(
     FACTORY_EXECUTION_QUEUE,
     FACTORY_EXECUTION_WORK_OPTIONS,
     async (jobs) => {
@@ -248,6 +289,7 @@ try {
   app.log.info({ event: "web.started" });
 } catch (error) {
   clearInterval(publicationReconciliation);
+  clearInterval(featurePublicationReconciliation);
   clearInterval(executionReconciliation);
   app.log.error({ err: error, event: "web.start_failed" });
   await stopExecutionAndHttp();

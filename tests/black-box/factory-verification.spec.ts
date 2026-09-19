@@ -186,9 +186,7 @@ test.describe("Final Feature verification evidence and decisions", () => {
     await expect(
       final.getByText("All 3 approved checks passed · plan version 1.", { exact: true }),
     ).toBeVisible();
-    await expect(
-      final.getByText(/No pull request has been published by this verification/),
-    ).toBeVisible();
+    await expect(final.getByText(/Pull request publication is tracked below/)).toBeVisible();
     const confirmed = await fixture.execution(featureId);
     const certificate = confirmed.finalVerification?.certificate;
     if (certificate == null) throw new Error("Certified record missing");

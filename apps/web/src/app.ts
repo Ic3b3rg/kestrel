@@ -10,6 +10,7 @@ import { registerPlanningSkillRoutes } from "./routes/factory-skills.js";
 import { registerFactoryPlanningRoutes } from "./routes/factory-planning.js";
 import { registerFactoryIssueRoutes } from "./routes/factory-issues.js";
 import { registerFactoryExecutionRoutes } from "./routes/factory-execution.js";
+import { registerFactoryFeaturePublicationRoutes } from "./routes/factory-feature-publication.js";
 import type { FactoryGitHubAdapter } from "./factory-github.js";
 import {
   createCodexAppServerAgentRuntime,
@@ -236,6 +237,7 @@ export async function buildApp({
   registerPlanningSkillRoutes(app, pool);
   registerFactoryIssueRoutes(app, pool, factoryGitHub);
   registerFactoryExecutionRoutes(app, pool);
+  registerFactoryFeaturePublicationRoutes(app, pool);
   registerEventRoutes(app, eventPool);
   registerHealthRoutes(app, pool);
   registerInstallationRoutes(app, pool);

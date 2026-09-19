@@ -502,8 +502,8 @@ function ExecutionPanel({
                     passed · plan version {execution.finalVerification.certificate.approvedVersion}.
                   </p>
                   <p className="text-muted-foreground">
-                    The final verification record is retained. No pull request has been published by
-                    this verification.
+                    The final verification record is retained. Pull request publication is tracked
+                    below.
                   </p>
                   <details>
                     <summary className="cursor-pointer rounded-sm focus-visible:outline focus-visible:outline-ring">
