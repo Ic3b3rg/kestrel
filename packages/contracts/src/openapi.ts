@@ -12,6 +12,12 @@ import {
   RetryFactoryReviewCorrectionCommandSchema,
 } from "./factory-review-corrections.js";
 import {
+  ApproveFactoryFeatureMergeCommandSchema,
+  FactoryFeatureMergeCurrentSchema,
+  FactoryFeatureMergeSchema,
+  RetryFactoryFeatureMergeCommandSchema,
+} from "./factory-feature-merge.js";
+import {
   FactoryConceptualReviewCheckCatalogSchema,
   FactoryConceptualReviewCheckSchema,
   FactoryConceptualReviewCurrentSchema,
@@ -229,6 +235,14 @@ const factoryComponents = {
   FactoryReviewCorrectionCurrent: asComponentSchema(
     asJsonSchema(FactoryReviewCorrectionCurrentSchema),
   ),
+  ApproveFactoryFeatureMergeCommand: asComponentSchema(
+    asJsonSchema(ApproveFactoryFeatureMergeCommandSchema),
+  ),
+  RetryFactoryFeatureMergeCommand: asComponentSchema(
+    asJsonSchema(RetryFactoryFeatureMergeCommandSchema),
+  ),
+  FactoryFeatureMerge: asComponentSchema(asJsonSchema(FactoryFeatureMergeSchema)),
+  FactoryFeatureMergeCurrent: asComponentSchema(asJsonSchema(FactoryFeatureMergeCurrentSchema)),
   FactoryConceptualReviewPreparation: asComponentSchema(
     asJsonSchema(FactoryConceptualReviewPreparationSchema),
   ),
@@ -1240,6 +1254,25 @@ export const openApiDocument = sortJson({
         "retryFactoryReviewCorrection",
         "RetryFactoryReviewCorrectionCommand",
         "FactoryReviewCorrection",
+        202,
+      ),
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/review/merge": {
+      parameters: factoryParameters(),
+      get: factoryRead("readCurrentFactoryFeatureMerge", "FactoryFeatureMergeCurrent"),
+      post: factoryTurnMutation(
+        "approveFactoryFeatureMerge",
+        "ApproveFactoryFeatureMergeCommand",
+        "FactoryFeatureMerge",
+        202,
+      ),
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/review/merge/retry": {
+      parameters: factoryParameters(),
+      post: factoryTurnMutation(
+        "retryFactoryFeatureMerge",
+        "RetryFactoryFeatureMergeCommand",
+        "FactoryFeatureMerge",
         202,
       ),
     },

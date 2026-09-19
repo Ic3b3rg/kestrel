@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import {
   FactoryConceptualReviewArtifactSchema,
+  FactoryFeatureMergeCurrentSchema,
+  FactoryFeatureMergeSchema,
   FactoryFeaturePublicationSchema,
   FactoryReviewCorrectionCurrentSchema,
   type FactoryConceptualReviewDraft,
@@ -69,7 +71,7 @@ export interface PublicationGitState {
 }
 
 export interface PublicationProviderState {
-  issues: Array<{ id: string; number: number; state: string }>;
+  issues: Array<{ id: string; number: number; state: string; closed_at?: string }>;
   pullRequests: Array<{
     id: number;
     node_id: string;
@@ -77,6 +79,9 @@ export interface PublicationProviderState {
     title: string;
     body: string;
     state: string;
+    merged?: boolean;
+    merge_commit_sha?: string | null;
+    merged_at?: string | null;
     base: { ref: string; sha: string };
     head: { ref: string; sha: string };
   }>;
@@ -99,6 +104,21 @@ export function processPublicationFixture(stack: ModuleStack, featureId: string)
     console.log('null');
   `,
   );
+}
+
+export function processMergeFixture(stack: ModuleStack, featureId: string) {
+  return verificationModule(
+    stack,
+    `
+    const {createFactoryFeatureMergeProcessor}=await import('./apps/web/dist/factory-feature-merge-processor.js');
+    await db.reconcileFactoryFeatureMerges(pool,boss);
+    const processor=createFactoryFeatureMergeProcessor({pool,boss});
+    try {await processor.process({featureId:${JSON.stringify(featureId)}});}
+    finally {await processor.stop();}
+    const row=(await pool.query('SELECT project_id FROM factory_features WHERE id=$1',[${JSON.stringify(featureId)}])).rows[0];
+    console.log(JSON.stringify(await db.readCurrentFactoryFeatureMerge(pool,row.project_id,${JSON.stringify(featureId)})));
+  `,
+  ).then((value) => FactoryFeatureMergeCurrentSchema.parse(value));
 }
 
 const controlledReviewProfile = {
@@ -131,7 +151,30 @@ export function publishConceptualReviewFixture(
       {actorId,correlationId:randomUUID()});
     const claim=await db.claimFactoryConceptualReviewWorkflow(pool,started.workflow.id);
     if(claim===null) throw new Error('Controlled Conceptual Review was not claimed');
-    console.log(JSON.stringify(await db.publishFactoryConceptualReview(pool,claim,graph)));
+    await db.observeFactoryConceptualReviewHead(
+      pool,claim,claim.preparation.publication.revision.head.objectId);
+    await db.recordFactoryConceptualReviewResourceDisposal(pool,claim);
+    if(graph.result==='complete') {
+      const catalog=await db.readFactoryConceptualReviewWorkflowChecks(
+        pool,claim.preparation.projectId,claim.preparation.featureId,claim.workflowId,0,1);
+      const record=catalog.checks[0];
+      if(!record || record.outcome!=='passed' || record.exitCode!==0)
+        throw new Error('Conceptual Review has no passing final verification evidence');
+      const evidenceId='check:final-verification';
+      graph.evidence.push({id:evidenceId,type:'check',evidenceId:record.evidenceId,
+        relation:'supports',proposition:'The exact reviewed revision passed an approved command.',
+        description:'Final verification',sufficiency:'The server resolved this immutable certificate record.',
+        limitations:[],record});
+      graph.behavioralSteps=graph.behavioralSteps.map(step=>({...step,evidenceIds:[...step.evidenceIds,evidenceId]}));
+      graph.edges.push(...graph.behavioralSteps.map(step=>({from:step.id,to:evidenceId,kind:'supported_by'})));
+    }
+    const artifact=await db.publishFactoryConceptualReview(pool,claim,graph);
+    await pool.query('UPDATE review_workflow_attempts SET '+
+      'container_stopped_at=COALESCE(container_stopped_at,clock_timestamp()), '+
+      'workspace_disposed_at=COALESCE(workspace_disposed_at,clock_timestamp()) '+
+      'WHERE workflow_id=$1 AND attempt_id=$2 AND attempt_number=$3',
+      [claim.workflowId,claim.attemptId,claim.attemptNumber]);
+    console.log(JSON.stringify(artifact));
   `,
   ).then((value) => FactoryConceptualReviewArtifactSchema.parse(value));
 }
@@ -353,6 +396,37 @@ export async function createFeaturePublicationJourney() {
       },
       async retry(featureId: string, requestId = randomUUID()) {
         return fixture.post(`${fixture.path(featureId)}/pull-request/retry`, { requestId });
+      },
+      async merge(
+        featureId: string,
+        review: FactoryConceptualReviewArtifact,
+        requestId = randomUUID(),
+      ) {
+        const response = await fixture.post(`${fixture.path(featureId)}/review/merge`, {
+          requestId,
+          decision: "approve_merge",
+          expectedPlanVersion: 1,
+          review: {
+            workflowId: review.workflowId,
+            artifactId: review.id,
+            headCommitId: review.headCommitId,
+          },
+        });
+        const payload: unknown = await response.clone().json();
+        return {
+          response,
+          value: response.status === 202 ? FactoryFeatureMergeSchema.parse(payload) : null,
+          error: response.status === 202 ? null : payload,
+        };
+      },
+      async mergeCurrent(featureId: string) {
+        const response = await fixture.stack.fetchApi(`${fixture.path(featureId)}/review/merge`);
+        if (response.status !== 200)
+          throw new Error(`Merge read failed: ${String(response.status)} ${await response.text()}`);
+        return FactoryFeatureMergeCurrentSchema.parse(await response.json());
+      },
+      async retryMerge(featureId: string, requestId = randomUUID()) {
+        return fixture.post(`${fixture.path(featureId)}/review/merge/retry`, { requestId });
       },
     };
   } catch (error) {

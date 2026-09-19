@@ -18,6 +18,10 @@ import {
   createFactoryReviewCorrectionProcessor,
   FACTORY_REVIEW_CORRECTION_WORK_OPTIONS,
 } from "./factory-review-correction-processor.js";
+import {
+  createFactoryFeatureMergeProcessor,
+  FACTORY_FEATURE_MERGE_WORK_OPTIONS,
+} from "./factory-feature-merge-processor.js";
 import { createDatabaseFactoryConceptualReviewService } from "./routes/factory-conceptual-review.js";
 import {
   createLocalRepositoryService,
@@ -56,6 +60,7 @@ import {
   FACTORY_EXECUTION_QUEUE,
   FACTORY_CONCEPTUAL_REVIEW_QUEUE,
   FACTORY_CORRECTION_QUEUE,
+  FACTORY_MERGE_QUEUE,
   readReferencedArtifactLocators,
   readDatabaseConfig,
   readEventRetentionLimit,
@@ -68,6 +73,7 @@ import {
   reconcileFactoryExecutions,
   reconcileFactoryConceptualReviewWorkflows,
   reconcileFactoryReviewCorrections,
+  reconcileFactoryFeatureMerges,
   withArtifactLifecycleLock,
 } from "@kestrel/database";
 import {
@@ -216,6 +222,7 @@ const reviewCorrectionProcessor = createFactoryReviewCorrectionProcessor({
   retain: featureRevisionRetainer,
   review: factoryConceptualReviewService,
 });
+const featureMergeProcessor = createFactoryFeatureMergeProcessor({ pool, boss });
 const recoverExecutionContainer = createCodexExecutionContainerRecovery(
   factoryDockerExecutable === undefined ? {} : { dockerExecutable: factoryDockerExecutable },
 );
@@ -249,6 +256,8 @@ let conceptualReviewReconciliation: NodeJS.Timeout | undefined;
 let reconcilingConceptualReview: Promise<void> | null = null;
 let reviewCorrectionReconciliation: NodeJS.Timeout | undefined;
 let reconcilingReviewCorrection: Promise<void> | null = null;
+let featureMergeReconciliation: NodeJS.Timeout | undefined;
+let reconcilingFeatureMerge: Promise<void> | null = null;
 boss.on("error", (error) => {
   app.log.error({ err: error, event: "pgboss.error" });
 });
@@ -259,17 +268,20 @@ async function stopExecutionAndHttp(): Promise<void> {
   const stoppingExecution = executionProcessor.stop();
   const stoppingConceptualReview = conceptualReviewProcessor.stop();
   const stoppingReviewCorrection = reviewCorrectionProcessor.stop();
+  const stoppingFeatureMerge = featureMergeProcessor.stop();
   const stoppingPublication = featurePublicationProcessor.stop();
   await Promise.all([
     stoppingExecution,
     stoppingConceptualReview,
     stoppingReviewCorrection,
+    stoppingFeatureMerge,
     stoppingPublication,
     app.close(),
   ]);
   await reconcilingExecution;
   await reconcilingConceptualReview;
   await reconcilingReviewCorrection;
+  await reconcilingFeatureMerge;
   await reconcilingFeaturePublication;
 }
 
@@ -283,6 +295,7 @@ async function shutdown(signal: string): Promise<void> {
   clearInterval(executionReconciliation);
   clearInterval(conceptualReviewReconciliation);
   clearInterval(reviewCorrectionReconciliation);
+  clearInterval(featureMergeReconciliation);
   app.log.info({ event: "web.stopping", signal });
   await stopExecutionAndHttp();
   await boss.stop();
@@ -311,6 +324,7 @@ try {
     (attemptId) => disposeConceptualReviewAttemptResources(localSourceConfig, attemptId),
   );
   await reconcileFactoryReviewCorrections(pool, boss);
+  await reconcileFactoryFeatureMerges(pool, boss);
   await reconcileFactoryFeaturePublications(pool, boss);
   featurePublicationReconciliation = setInterval(() => {
     if (reconcilingFeaturePublication !== null || shuttingDown) return;
@@ -361,6 +375,17 @@ try {
       });
   }, 2_000);
   reviewCorrectionReconciliation.unref();
+  featureMergeReconciliation = setInterval(() => {
+    if (reconcilingFeatureMerge !== null || shuttingDown) return;
+    reconcilingFeatureMerge = reconcileFactoryFeatureMerges(pool, boss)
+      .catch((error: unknown) =>
+        app.log.error({ err: error, event: "factory.feature_merge_reconciliation_failed" }),
+      )
+      .finally(() => {
+        reconcilingFeatureMerge = null;
+      });
+  }, 2_000);
+  featureMergeReconciliation.unref();
   let reconcilingPublication = false;
   publicationReconciliation = setInterval(() => {
     if (reconcilingPublication || shuttingDown) return;
@@ -419,6 +444,14 @@ try {
     },
   );
   await boss.work<unknown>(
+    FACTORY_MERGE_QUEUE,
+    FACTORY_FEATURE_MERGE_WORK_OPTIONS,
+    async (jobs) => {
+      const job = jobs[0];
+      if (job !== undefined) await featureMergeProcessor.process(job.data, job.signal);
+    },
+  );
+  await boss.work<unknown>(
     CHANGE_OVERVIEW_RENDER_QUEUE,
     CHANGE_OVERVIEW_RENDER_WORK_OPTIONS,
     async (jobs) => {
@@ -441,6 +474,7 @@ try {
   clearInterval(executionReconciliation);
   clearInterval(conceptualReviewReconciliation);
   clearInterval(reviewCorrectionReconciliation);
+  clearInterval(featureMergeReconciliation);
   app.log.error({ err: error, event: "web.start_failed" });
   await stopExecutionAndHttp();
   await boss.stop({ graceful: false });

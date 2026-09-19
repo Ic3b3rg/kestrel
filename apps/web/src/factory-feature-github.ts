@@ -1,8 +1,10 @@
 import { z } from "zod";
 import {
+  FactoryFeaturePublicationIssueSchema,
   FactoryGitHubRepositorySchema,
   RepositorySnapshotSchema,
   type FactoryGitHubRepository,
+  type FactoryFeaturePublicationIssue,
 } from "@kestrel/contracts";
 import { runFactoryGitHubCli } from "./factory-github-cli.js";
 import {
@@ -43,6 +45,18 @@ export interface FactoryFeaturePullRequestObservation {
   headCommitId: string;
   state: "open" | "closed";
 }
+export interface FactoryFeatureMergeCheck {
+  name: string;
+  state: "success" | "pending" | "failure";
+  required: true;
+}
+export interface FactoryFeatureMergeObservation extends FactoryFeaturePullRequestObservation {
+  merged: boolean;
+  mergeCommitId: string | null;
+  mergedAt: string | null;
+  mergeable: boolean | null;
+  checks: FactoryFeatureMergeCheck[];
+}
 export interface FactoryFeatureGitHubAdapter {
   identify(
     coordinates: Pick<FactoryGitHubRepository, "owner" | "name">,
@@ -70,6 +84,21 @@ export interface FactoryFeatureGitHubAdapter {
     payload: FactoryFeaturePullRequestPayload,
     signal?: AbortSignal,
   ): Promise<WriteResult<FactoryFeaturePullRequest>>;
+  inspectPullRequestForMerge(
+    identity: FactoryGitHubIdentity,
+    expected: FactoryFeaturePullRequest,
+    signal?: AbortSignal,
+  ): Promise<FactoryFeatureMergeObservation>;
+  mergePullRequest(
+    identity: FactoryGitHubIdentity,
+    expected: FactoryFeaturePullRequest,
+    signal?: AbortSignal,
+  ): Promise<WriteResult<{ mergeCommitId: string }>>;
+  closeIssue(
+    identity: FactoryGitHubIdentity,
+    expected: FactoryFeaturePublicationIssue["issue"],
+    signal?: AbortSignal,
+  ): Promise<WriteResult<{ closedAt: string }>>;
 }
 
 const same = (left: string, right: string) => left.toLowerCase() === right.toLowerCase();
@@ -132,6 +161,70 @@ const PullRequestSchema = z.strictObject({
   base: refSchema,
   head: refSchema,
 });
+const MergePullRequestSchema = PullRequestSchema.extend({
+  merged: z.boolean(),
+  merge_commit_sha: sha.nullable(),
+  merged_at: z.iso.datetime().nullable(),
+  mergeable: z.boolean().nullable(),
+  mergeable_state: z.string().min(1).max(64),
+});
+const BranchReadinessSchema = z.strictObject({
+  name: branch,
+  protected: z.boolean(),
+  requiredContexts: z.array(z.string().min(1).max(255)).max(200),
+});
+const CombinedStatusSchema = z.strictObject({
+  state: z.enum(["success", "pending", "failure", "error"]),
+  statuses: z
+    .array(
+      z.strictObject({
+        context: z.string().min(1).max(255),
+        state: z.enum(["success", "pending", "failure", "error"]),
+      }),
+    )
+    .max(1000),
+});
+const CheckRunsSchema = z.strictObject({
+  check_runs: z
+    .array(
+      z.strictObject({
+        name: z.string().min(1).max(255),
+        status: z.enum(["queued", "in_progress", "completed", "pending", "requested", "waiting"]),
+        conclusion: z
+          .enum([
+            "success",
+            "failure",
+            "neutral",
+            "cancelled",
+            "skipped",
+            "timed_out",
+            "action_required",
+            "stale",
+            "startup_failure",
+          ])
+          .nullable(),
+      }),
+    )
+    .max(1000),
+});
+const MergeResultSchema = z.strictObject({
+  merged: z.boolean(),
+  sha: sha.nullable(),
+  message: z.string().max(2048),
+});
+const CloseIssueInputSchema = FactoryFeaturePublicationIssueSchema.shape.issue;
+const ClosedIssueSchema = z.strictObject({
+  id: z
+    .string()
+    .regex(/^[1-9][0-9]*$/u)
+    .max(32),
+  number: numberSchema,
+  state: z.enum(["open", "closed"]),
+  closed_at: z.iso.datetime().nullable(),
+  html_url: z.string().max(512),
+  repository_url: z.string().max(512),
+  isPullRequest: z.boolean(),
+});
 type ProviderPullRequest = z.infer<typeof PullRequestSchema>;
 const ExpectedPullRequestSchema = PayloadSchema.extend({
   repository: FactoryGitHubRepositorySchema,
@@ -152,6 +245,8 @@ const PR_FIELDS =
   ")},head:{ref:.head.ref,sha:.head.sha,repo:(.head.repo|" +
   REPO_FIELDS +
   ")}}";
+const PR_MERGE_FIELDS =
+  PR_FIELDS.slice(0, -1) + ",merged,merge_commit_sha,merged_at,mergeable,mergeable_state}";
 const projection =
   'if type == "array" then map(' +
   PR_FIELDS +
@@ -257,7 +352,13 @@ export function createFactoryFeatureGitHubAdapter(
   options: { executable?: string; timeoutMs?: number } = {},
 ): FactoryFeatureGitHubAdapter {
   const existing = createFactoryGitHubAdapter(options);
-  const api = (endpoint: string, signal?: AbortSignal, input?: string, fields = projection) =>
+  const api = (
+    endpoint: string,
+    signal?: AbortSignal,
+    input?: string,
+    fields = projection,
+    method: "GET" | "POST" | "PUT" | "PATCH" = input === undefined ? "GET" : "POST",
+  ) =>
     runFactoryGitHubCli({
       executable: options.executable ?? process.env.KESTREL_GH_EXECUTABLE ?? "gh",
       timeoutMs: options.timeoutMs ?? 10_000,
@@ -267,7 +368,7 @@ export function createFactoryFeatureGitHubAdapter(
         "github.com",
         endpoint,
         "--method",
-        input === undefined ? "GET" : "POST",
+        method,
         "--include",
         "-H",
         "Accept: application/vnd.github+json",
@@ -287,6 +388,33 @@ export function createFactoryFeatureGitHubAdapter(
     const response = readFactoryGitHubHttpResponse(output.stdout);
     if (response.status !== 200 || output.exitCode !== 0) throw factoryGitHubHttpFailure(response);
     return response;
+  };
+  const write = async (
+    endpoint: string,
+    method: "PUT" | "PATCH",
+    input: unknown,
+    signal: AbortSignal | undefined,
+    fields: string,
+  ) => {
+    const output = await api(endpoint, signal, JSON.stringify(input), fields, method);
+    if (output.failure !== undefined)
+      return failedFactoryGitHubWrite(
+        output.started ? "uncertain" : "not_sent",
+        new FactoryGitHubError(output.failure),
+      );
+    if (output.exitCode === 4)
+      return failedFactoryGitHubWrite("uncertain", new FactoryGitHubError("needs_authentication"));
+    let response;
+    try {
+      response = readFactoryGitHubHttpResponse(output.stdout);
+    } catch (error) {
+      return failedFactoryGitHubWrite("uncertain", error);
+    }
+    if (response.status >= 400 && response.status < 500)
+      return failedFactoryGitHubWrite("rejected", factoryGitHubHttpFailure(response));
+    if (response.status !== 200 || output.exitCode !== 0)
+      return failedFactoryGitHubWrite("uncertain", factoryGitHubHttpFailure(response));
+    return { state: "confirmed" as const, value: response.body };
   };
   const verify = async (identity: FactoryGitHubIdentity, signal?: AbortSignal) => {
     const current = await existing.identify(
@@ -420,6 +548,167 @@ export function createFactoryFeatureGitHubAdapter(
         );
         await verify(identity, signal);
         return { state: "confirmed", value };
+      } catch (error) {
+        return failedFactoryGitHubWrite("uncertain", error);
+      }
+    },
+    async inspectPullRequestForMerge(identity, expected, signal) {
+      const input = parse(ExpectedPullRequestSchema, expected);
+      await verify(identity, signal);
+      const value = parse(
+        MergePullRequestSchema,
+        (
+          await get(
+            `${base(identity.repository)}/${String(input.number)}`,
+            signal,
+            `if has("message") then {message} else ${PR_MERGE_FIELDS} end`,
+          )
+        ).body,
+      );
+      const observed = observedPullRequest(identity, input, value);
+      if (value.merged) {
+        if (value.merge_commit_sha === null || value.merged_at === null || value.state !== "closed")
+          throw new FactoryGitHubError("invalid_response");
+        await verify(identity, signal);
+        return {
+          ...observed,
+          merged: true,
+          mergeCommitId: value.merge_commit_sha,
+          mergedAt: new Date(value.merged_at).toISOString(),
+          mergeable: value.mergeable,
+          checks: [],
+        };
+      }
+      if (value.merge_commit_sha !== null || value.merged_at !== null)
+        throw new FactoryGitHubError("invalid_response");
+      const escapedBranch = encodeURIComponent(input.baseRef);
+      const branchResult = await get(
+        `/repos/${identity.repository.owner}/${identity.repository.name}/branches/${escapedBranch}`,
+        signal,
+        'if has("message") then {message} else {name,protected,requiredContexts:(((.protection.required_status_checks.contexts // []) + ((.protection.required_status_checks.checks // []) | map(.context))) | unique)} end',
+      );
+      const statusResult = await get(
+        `/repos/${identity.repository.owner}/${identity.repository.name}/commits/${input.headCommitId}/status?per_page=100`,
+        signal,
+        'if has("message") then {message} else {state,statuses:[.statuses[]|{context,state}]} end',
+      );
+      const checksResult = await get(
+        `/repos/${identity.repository.owner}/${identity.repository.name}/commits/${input.headCommitId}/check-runs?per_page=100`,
+        signal,
+        'if has("message") then {message} else {check_runs:[.check_runs[]|{name,status,conclusion}]} end',
+      );
+      const protectedBranch = parse(BranchReadinessSchema, branchResult.body);
+      if (protectedBranch.name !== input.baseRef) throw new FactoryGitHubError("invalid_response");
+      const statuses = parse(CombinedStatusSchema, statusResult.body).statuses;
+      const checkRuns = parse(CheckRunsSchema, checksResult.body).check_runs;
+      const checks: FactoryFeatureMergeCheck[] = protectedBranch.requiredContexts.map((name) => {
+        const status = statuses.find((item) => item.context === name);
+        const run = checkRuns.find((item) => item.name === name);
+        const success =
+          status?.state === "success" ||
+          (run?.status === "completed" &&
+            ["success", "neutral", "skipped"].includes(run.conclusion ?? ""));
+        const pending =
+          status?.state === "pending" ||
+          (run !== undefined && run.status !== "completed") ||
+          (status === undefined && run === undefined);
+        return {
+          name,
+          required: true,
+          state: success ? "success" : pending ? "pending" : "failure",
+        };
+      });
+      await verify(identity, signal);
+      return {
+        ...observed,
+        merged: false,
+        mergeCommitId: null,
+        mergedAt: null,
+        mergeable: value.mergeable,
+        checks,
+      };
+    },
+    async mergePullRequest(identity, expected, signal) {
+      let input: z.infer<typeof ExpectedPullRequestSchema>;
+      try {
+        input = parse(ExpectedPullRequestSchema, expected);
+        await verify(identity, signal);
+      } catch (error) {
+        return failedFactoryGitHubWrite("not_sent", error);
+      }
+      try {
+        const result = await write(
+          `${base(identity.repository)}/${String(input.number)}/merge`,
+          "PUT",
+          { sha: input.headCommitId },
+          signal,
+          'if has("message") then {merged,sha,message} else {merged,sha,message} end',
+        );
+        if (result.state !== "confirmed") return result;
+        const merged = parse(MergeResultSchema, result.value);
+        if (!merged.merged || merged.sha === null)
+          return failedFactoryGitHubWrite("rejected", new FactoryGitHubError("invalid_response"));
+        await verify(identity, signal);
+        return { state: "confirmed", value: { mergeCommitId: merged.sha } };
+      } catch (error) {
+        return failedFactoryGitHubWrite("uncertain", error);
+      }
+    },
+    async closeIssue(identity, expected, signal) {
+      let input: z.infer<typeof CloseIssueInputSchema>;
+      try {
+        input = parse(CloseIssueInputSchema, expected);
+        if (
+          input.repository.id !== identity.repository.id ||
+          !same(input.repository.owner, identity.repository.owner) ||
+          !same(input.repository.name, identity.repository.name)
+        )
+          throw new FactoryGitHubError("repository_changed");
+        await verify(identity, signal);
+        const endpoint = `/repos/${identity.repository.owner}/${identity.repository.name}/issues/${String(input.number)}`;
+        const fields =
+          'if has("message") then {message} else {id:(.id|tostring),number,state,closed_at,html_url,repository_url,isPullRequest:has("pull_request")} end';
+        const current = parse(ClosedIssueSchema, (await get(endpoint, signal, fields)).body);
+        const valid =
+          current.id === input.id &&
+          current.number === input.number &&
+          !current.isPullRequest &&
+          same(current.html_url, input.url) &&
+          same(
+            current.repository_url,
+            `https://api.github.com/repos/${identity.repository.owner}/${identity.repository.name}`,
+          );
+        if (!valid) throw new FactoryGitHubError("invalid_response");
+        if (current.state === "closed") {
+          if (current.closed_at === null) throw new FactoryGitHubError("invalid_response");
+          return {
+            state: "confirmed",
+            value: { closedAt: new Date(current.closed_at).toISOString() },
+          };
+        }
+        const result = await write(
+          endpoint,
+          "PATCH",
+          { state: "closed", state_reason: "completed" },
+          signal,
+          fields,
+        );
+        if (result.state !== "confirmed") return result;
+        const closed = parse(ClosedIssueSchema, result.value);
+        if (
+          closed.id !== input.id ||
+          closed.number !== input.number ||
+          closed.state !== "closed" ||
+          closed.closed_at === null ||
+          closed.isPullRequest ||
+          !same(closed.html_url, input.url)
+        )
+          return failedFactoryGitHubWrite("uncertain", new FactoryGitHubError("invalid_response"));
+        await verify(identity, signal);
+        return {
+          state: "confirmed",
+          value: { closedAt: new Date(closed.closed_at).toISOString() },
+        };
       } catch (error) {
         return failedFactoryGitHubWrite("uncertain", error);
       }

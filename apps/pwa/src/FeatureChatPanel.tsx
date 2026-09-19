@@ -45,6 +45,8 @@ const featureStatus: Record<Feature["state"], string> = {
   implementing: "In progress · Approved work is running on the workstation.",
   gated: "Decision needed · Review the blocked work on the board.",
   in_review: "In review · Inspect the work and its verification results.",
+  merging: "Merge gate · The exact reviewed pull request is being reconciled.",
+  completed: "Completed · The Feature is merged and its project queue is released.",
   cancelled: "Cancelled · Saved work remains available.",
 };
 
@@ -698,6 +700,7 @@ export function FeatureChatPanel({
               })
             }
             onAuthenticationError={onAuthenticationError}
+            onFeatureChanged={() => void refresh()}
           />
         </TabsContent>
       </Tabs>

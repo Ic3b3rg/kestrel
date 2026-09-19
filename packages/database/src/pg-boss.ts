@@ -34,6 +34,13 @@ export const FACTORY_CORRECTION_QUEUE_OPTIONS = {
   retryLimit: 0,
   notify: true,
 } satisfies Omit<Queue, "name">;
+export const FACTORY_MERGE_QUEUE = "factory-feature-merge-v1";
+export const FACTORY_MERGE_QUEUE_OPTIONS = {
+  deleteAfterSeconds: 86_400,
+  expireInSeconds: 180,
+  retryLimit: 0,
+  notify: true,
+} satisfies Omit<Queue, "name">;
 export const FACTORY_PUBLICATION_QUEUE_OPTIONS = {
   deleteAfterSeconds: 86_400,
   expireInSeconds: 180,
