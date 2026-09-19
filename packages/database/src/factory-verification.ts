@@ -111,6 +111,7 @@ export async function persistFactoryFeatureVerification(
     id: string;
     feature_id: string;
     plan_version: number;
+    purpose?: "work_item" | "feature_verification" | "correction";
     source: unknown;
     revision: unknown;
     verification_manifest: unknown;
@@ -123,12 +124,13 @@ export async function persistFactoryFeatureVerification(
   if (evidenceIds.length !== manifest.length || new Set(evidenceIds).size !== manifest.length)
     throw new FactoryError("conflict");
   await client.query(
-    `INSERT INTO factory_feature_verifications (feature_id,plan_version,run_id,source,revision,manifest,manifest_digest,evidence_ids)
-     VALUES ($1,$2,$3,$4::jsonb,$5::jsonb,$6::jsonb,$7,$8::uuid[])`,
+    `INSERT INTO factory_feature_verifications (feature_id,plan_version,run_id,purpose,source,revision,manifest,manifest_digest,evidence_ids)
+     VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7::jsonb,$8,$9::uuid[])`,
     [
       run.feature_id,
       run.plan_version,
       run.id,
+      run.purpose ?? "feature_verification",
       JSON.stringify(source),
       JSON.stringify(revision),
       JSON.stringify(manifest),

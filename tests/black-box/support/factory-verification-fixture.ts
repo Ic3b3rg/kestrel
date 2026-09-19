@@ -127,7 +127,7 @@ export async function createVerificationFixture(
     // Hold delivery, not scheduler admission. Tests invoke the actual worker explicitly.
     await stack.executeSql(`
       CREATE FUNCTION hold_verification_delivery() RETURNS trigger LANGUAGE plpgsql AS $$
-      BEGIN IF NEW.name IN ('factory-execution-v1','factory-feature-pr-publication-v1') THEN NEW.start_after=clock_timestamp()+interval '1 hour'; END IF; RETURN NEW; END $$;
+      BEGIN IF NEW.name IN ('factory-execution-v1','factory-feature-pr-publication-v1','factory-review-correction-v1','factory-conceptual-review-v1') THEN NEW.start_after=clock_timestamp()+interval '1 hour'; END IF; RETURN NEW; END $$;
       CREATE TRIGGER hold_verification_delivery BEFORE INSERT ON pgboss.job FOR EACH ROW EXECUTE FUNCTION hold_verification_delivery();
     `);
     const inventory = LocalRepositoryInventorySchema.parse(
@@ -279,7 +279,7 @@ export function seedCertifiedVerificationHistory(stack: ModuleStack, templateFea
 export function processVerificationFixture(
   stack: ModuleStack,
   runId: string,
-  mode: "order" | "consumer" | "break_consumer" | "repair" | "keep",
+  mode: "order" | "consumer" | "break_consumer" | "repair" | "correction" | "keep",
   pause?: { token: string; position: number },
 ) {
   return verificationModule<{ events: string[]; error: string | null }>(
@@ -317,7 +317,7 @@ export function processVerificationFixture(
             await writeFile(join(input.cwd,'consumer.test.mjs'),"import {test} from 'node:test'; import assert from 'node:assert/strict'; import {consumer} from './value.mjs'; test('consumer returns approved result',()=>assert.equal(consumer,2));\\n");
           }
           if(mode!=='keep') await writeFile(join(input.cwd,'value.mjs'),
-            'export const order = '+(mode==='break_consumer'?'2':'1')+'; export const consumer = '+(mode==='order'?'1':'2')+';\\n');
+            'export const order = '+(mode==='break_consumer'?'2':'1')+'; export const consumer = '+(mode==='order'?'1':'2')+';'+(mode==='correction'?' // selected review correction':'')+'\\n');
           return {threadId:'controlled-'+input.requestId,turnId:'controlled-turn',text:JSON.stringify({status:'completed',summary:'Controlled approved implementation step',question:null})};
         }),
         runVerification:input=>lifecycle(input,input.processId,async()=>{

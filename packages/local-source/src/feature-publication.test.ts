@@ -16,6 +16,7 @@ import {
 } from "./feature-workspace.js";
 import {
   identifyFeaturePublicationRemote,
+  pushFeatureCorrectionHead,
   pushFeaturePublicationHead,
   readFeaturePublicationRefs,
 } from "./feature-publication.js";
@@ -281,6 +282,68 @@ it("creates only the exact certified Feature ref with an empty lease and preserv
   expect(pushes[0]?.args).toContain("core.hooksPath=/dev/null");
   expect(pushes[0]?.args).toContain("protocol.file.allow=never");
   expect(pushes[0]?.tokenPresent).toBe(false);
+}, 30_000);
+
+it("updates the existing Feature ref only from the reviewed head with an exact lease", async () => {
+  const value = await fixture();
+  const reviewedHead = value.source.snapshot.headCommitId;
+  expect(await pushFeaturePublicationHead(value.config, value.source, value.target)).toMatchObject({
+    state: "confirmed",
+  });
+  await writeFile(join(value.source.workspace.workspacePath, "source.txt"), "Corrected Feature\n");
+  const candidate = await snapshotFeatureWorkspace(value.source.workspace, {
+    expectedHead: reviewedHead,
+  });
+  const corrected = await checkpointFeatureWorkspace(value.source.workspace, {
+    expectedHead: reviewedHead,
+    expectedTree: candidate.treeId,
+    checkpointId: randomUUID(),
+    message: "Selected correction",
+  });
+  const source = { workspace: value.source.workspace, snapshot: corrected };
+
+  expect(await pushFeatureCorrectionHead(value.config, source, value.target, reviewedHead)).toEqual(
+    {
+      state: "confirmed",
+      value: { headCommitId: corrected.headCommitId, ref: source.workspace.identity.branch },
+    },
+  );
+  expect(await git(value.remote, ["rev-parse", source.workspace.identity.branch])).toBe(
+    corrected.headCommitId,
+  );
+  const pushes = (await value.calls()).filter(({ args }) => args.includes("push"));
+  expect(pushes).toHaveLength(2);
+  expect(pushes[1]?.args).toContain(
+    `--force-with-lease=${source.workspace.identity.branch}:${reviewedHead}`,
+  );
+}, 30_000);
+
+it("rejects a correction when the reviewed Feature ref moves during the exact-head push", async () => {
+  const value = await fixture();
+  const reviewedHead = value.source.snapshot.headCommitId;
+  expect(await pushFeaturePublicationHead(value.config, value.source, value.target)).toMatchObject({
+    state: "confirmed",
+  });
+  await writeFile(join(value.source.workspace.workspacePath, "source.txt"), "Corrected Feature\n");
+  const candidate = await snapshotFeatureWorkspace(value.source.workspace, {
+    expectedHead: reviewedHead,
+  });
+  const corrected = await checkpointFeatureWorkspace(value.source.workspace, {
+    expectedHead: reviewedHead,
+    expectedTree: candidate.treeId,
+    checkpointId: randomUUID(),
+    message: "Racing selected correction",
+  });
+  const source = { workspace: value.source.workspace, snapshot: corrected };
+  await value.control({ raceRef: source.workspace.identity.branch });
+
+  expect(await pushFeatureCorrectionHead(value.config, source, value.target, reviewedHead)).toEqual(
+    { state: "rejected", failure: "push_rejected" },
+  );
+  expect(await git(value.remote, ["rev-parse", source.workspace.identity.branch])).toBe(
+    source.workspace.identity.baseCommitId,
+  );
+  expect((await value.calls()).filter(({ args }) => args.includes("push"))).toHaveLength(2);
 }, 30_000);
 
 it("accepts an unchanged persisted remote descriptor regardless of JSON property order", async () => {

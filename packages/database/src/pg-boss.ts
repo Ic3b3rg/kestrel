@@ -27,6 +27,13 @@ export const FACTORY_CONCEPTUAL_REVIEW_QUEUE_OPTIONS = {
   retryLimit: 0,
   notify: true,
 } satisfies Omit<Queue, "name">;
+export const FACTORY_CORRECTION_QUEUE = "factory-review-correction-v1";
+export const FACTORY_CORRECTION_QUEUE_OPTIONS = {
+  deleteAfterSeconds: 86_400,
+  expireInSeconds: 930,
+  retryLimit: 0,
+  notify: true,
+} satisfies Omit<Queue, "name">;
 export const FACTORY_PUBLICATION_QUEUE_OPTIONS = {
   deleteAfterSeconds: 86_400,
   expireInSeconds: 180,

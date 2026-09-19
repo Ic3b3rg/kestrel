@@ -267,7 +267,7 @@ async function publicationInputs(
     [feature.id],
   );
   const finalRun = await client.query(
-    `SELECT id FROM factory_execution_runs WHERE id = $1 AND feature_id = $2 AND plan_version = $3 AND purpose = 'feature_verification'
+    `SELECT id FROM factory_execution_runs WHERE id = $1 AND feature_id = $2 AND plan_version = $3 AND purpose IN ('feature_verification','correction')
      AND state = 'verified' AND reservation_released_at IS NOT NULL AND source = $4::jsonb AND revision = $5::jsonb AND verification_manifest = $6::jsonb
      AND NOT EXISTS (SELECT 1 FROM factory_execution_containers container WHERE container.run_id = factory_execution_runs.id AND container.stopped_at IS NULL)`,
     [

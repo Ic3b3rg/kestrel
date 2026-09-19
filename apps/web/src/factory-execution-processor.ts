@@ -122,9 +122,11 @@ function promptFor(
   previousChecks: VerificationFeedback[],
 ): string {
   const final = run.purpose === "feature_verification";
+  const correction = run.purpose === "correction";
+  const featureLevel = final || correction;
   const item = run.plan.workItems.find((item) => item.key === run.key);
   if (
-    !final &&
+    !featureLevel &&
     (item === undefined ||
       item.dependsOn.some((key) => !run.completed.some((done) => done.key === key)))
   )
@@ -135,8 +137,10 @@ function promptFor(
   const prompt = [
     final
       ? "Repair only the technical failures of the cumulative Feature within the immutable approved scope, in the Operator's language. Do not replay Work Item implementations. All approved commands will be checked again on the new checkpoint; earlier successes cannot certify it."
-      : "Implement only this approved Work Item in the isolated Feature workspace, in the Operator's language.",
-    ...(final
+      : correction
+        ? "Apply only the Operator-selected correction to the reviewed revision, in the Operator's language. The correction authority below is immutable and does not authorize other findings, requirement changes, acceptance changes, or scope expansion. All approved Feature commands will be checked again on the new checkpoint."
+        : "Implement only this approved Work Item in the isolated Feature workspace, in the Operator's language.",
+    ...(featureLevel
       ? []
       : [
           "The proposedDocuments supplied for this Work Item are the approved glossary or ADR proposals it owns. Apply them only within this Work Item's approved scope and verification. Other proposals in .kestrel/plan.md are context for their own Work Items. If pathIsProvisional is true, resolve the filename against the existing Project documents within the approved scope; request human input if that needs a new scope or decision. Proposed Markdown cannot grant additional runtime, provider or merge authority.",
@@ -154,7 +158,7 @@ function promptFor(
       objective: run.plan.objective,
       scope: run.plan.scope,
       requirements: run.plan.acceptance,
-      ...(final
+      ...(featureLevel
         ? {
             workItems: run.plan.workItems.map(({ key, title, requirementKeys }) => ({
               key,
@@ -168,6 +172,7 @@ function promptFor(
               (document) => document.workItemKey === item?.key,
             ),
           }),
+      ...(correction ? { correction: run.correction } : {}),
 
       limits: run.plan.limits,
       revision: {
@@ -176,8 +181,10 @@ function promptFor(
         treeId: workspace.treeId,
         branch: workspace.branch,
       },
-      dependencies: final ? [] : run.completed.filter((done) => item?.dependsOn.includes(done.key)),
-      previousChecks: final
+      dependencies: featureLevel
+        ? []
+        : run.completed.filter((done) => item?.dependsOn.includes(done.key)),
+      previousChecks: featureLevel
         ? previousChecks
             .filter((check) => check.outcome !== "passed")
             .slice(0, 12)
@@ -186,7 +193,7 @@ function promptFor(
               origins: run.verificationManifest?.[check.position - 1]?.origins,
             }))
         : previousChecks,
-      ...(final
+      ...(featureLevel
         ? {
             failedCheckCount: previousChecks.filter((check) => check.outcome !== "passed").length,
             feedbackLimit:
@@ -217,7 +224,7 @@ async function prepareWorkspace(
 ): Promise<{ workspace: FeatureWorkspace; revision: FactoryFeatureWorkspace }> {
   if (run.source === null) throw new ExecutionFailure("source_unavailable");
   let revision = await readFactoryFeatureWorkspace(pool, run);
-  if (run.purpose === "feature_verification") {
+  if (run.purpose === "feature_verification" || run.purpose === "correction") {
     const initial = run.initialRevision;
     if (revision === null || initial === undefined)
       throw new ExecutionFailure("source_unavailable");
@@ -435,6 +442,7 @@ async function execute(
       homedir(),
     ].sort((left, right) => right.length - left.length);
     const final = run.purpose === "feature_verification";
+    const featureLevel = final || run.purpose === "correction";
     let model: string | undefined;
     const selectModel = async (): Promise<string> => {
       if (model !== undefined) return model;
@@ -554,7 +562,7 @@ async function execute(
         revision = { ...revision, ...checkpoint };
       }
       verifying = true;
-      const commands = final
+      const commands = featureLevel
         ? run.verificationManifest?.map((entry) => entry.command)
         : run.plan.workItems.find((item) => item.key === run.key)?.verification;
       if (commands === undefined || commands.length === 0)
@@ -632,7 +640,7 @@ async function execute(
         const failed = previousChecks.filter((check) => check.outcome !== "passed");
         throw new ExecutionFailure(
           "verification_failed",
-          final
+          featureLevel
             ? `Final Feature verification failed checks ${failed
                 .slice(0, 12)
                 .map((check) => String(check.position))

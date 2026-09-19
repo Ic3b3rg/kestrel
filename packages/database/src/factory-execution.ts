@@ -7,12 +7,14 @@ import {
   FactoryAcceptedVerificationCommandsSchema,
   FactoryExecutionFailureSchema,
   FactoryVerificationManifestSchema,
+  FactoryReviewCorrectionSchema,
   factoryVerificationManifest,
   type FactoryVerificationManifest,
   type FactoryExecutionFailure,
   type FactoryExecutionRevision,
   type FactoryVerificationResult,
   type FactoryExecutionRun,
+  type FactoryReviewCorrection,
   type FeaturePlanDocument,
   type PlanningContext,
 } from "@kestrel/contracts";
@@ -37,6 +39,30 @@ interface OwnedRunRow extends ExecutionRunRow {
   owner_instance_id: string | null;
   stop_requested_at: Date | null;
   source: { repositoryId: string; identity: string } | null;
+  correction_id: string | null;
+}
+
+function correctionFailure(failure: FactoryExecutionFailure | null) {
+  switch (failure) {
+    case "authentication":
+      return "authentication_required" as const;
+    case "usage_limit":
+      return "usage_limit" as const;
+    case "input_required":
+      return "input_required" as const;
+    case "verification_failed":
+      return "verification_failed" as const;
+    case "source_changed":
+      return "source_changed" as const;
+    case "revision_changed":
+      return "head_changed" as const;
+    case "timeout":
+      return "timeout" as const;
+    case "cancelled":
+      return "cancelled" as const;
+    default:
+      return "runtime_unavailable" as const;
+  }
 }
 export interface ClaimedFactoryExecution {
   id: string;
@@ -45,9 +71,10 @@ export interface ClaimedFactoryExecution {
   featureId: string;
   title: string;
   workItemId: string | null;
-  purpose?: "work_item" | "feature_verification";
+  purpose?: "work_item" | "feature_verification" | "correction";
   verificationManifest?: FactoryVerificationManifest;
   initialRevision?: FactoryExecutionRevision;
+  correction?: Pick<FactoryReviewCorrection, "id" | "instruction" | "findings" | "sourceReview">;
   key: string;
   attempt: number;
   version: number;
@@ -108,6 +135,9 @@ export async function queueFactoryExecutions(
        JOIN factory_plan_approvals approval ON approval.feature_id = feature.id AND approval.plan_version = feature.approved_plan_version
        JOIN factory_feature_publications publication ON publication.feature_id = feature.id AND publication.state = 'published'
        WHERE feature.state IN ('queued', 'implementing', 'in_review')
+         AND NOT EXISTS (SELECT 1 FROM factory_review_corrections correction
+           WHERE correction.feature_id = feature.id
+             AND correction.state IN ('executing','gated','publishing','blocked','uncertain','reviewing'))
          AND NOT EXISTS (SELECT 1 FROM factory_feature_verifications certificate
            JOIN factory_feature_workspaces workspace ON workspace.feature_id = certificate.feature_id
            WHERE certificate.feature_id = feature.id AND certificate.plan_version = feature.approved_plan_version
@@ -414,22 +444,25 @@ export async function claimFactoryExecution(
       );
       const item = workItems.rows.find((item) => item.id === row.work_item_id);
       const final = row.purpose === "feature_verification";
-      if (!final && (item === undefined || item.board_column !== "todo"))
+      const correction = row.purpose === "correction";
+      const featureLevel = final || correction;
+      if (!featureLevel && (item === undefined || item.board_column !== "todo"))
         throw new FactoryError("conflict");
       const plan = FeaturePlanDocumentSchema.parse(version.document);
       const definition = plan.workItems.find((definition) => definition.key === item?.key);
       if (
-        (!final && definition === undefined) ||
+        (!featureLevel && definition === undefined) ||
         JSON.stringify(
-          final
+          featureLevel
             ? factoryVerificationManifest(plan).map((entry) => entry.command)
             : definition?.verification,
         ) !== JSON.stringify(FactoryAcceptedVerificationCommandsSchema.parse(row.accepted_commands))
       )
         throw new FactoryError("conflict");
-      if (final) {
+      let initial: FactoryExecutionRevision | undefined;
+      if (featureLevel) {
         const workspace = await workspaceFor(client, row.feature_id);
-        const initial = FactoryExecutionRevisionSchema.parse(row.initial_revision);
+        initial = FactoryExecutionRevisionSchema.parse(row.initial_revision);
         if (
           workspace === null ||
           row.work_item_id !== null ||
@@ -503,7 +536,49 @@ export async function claimFactoryExecution(
        WHERE item.feature_id = $1 AND item.board_column IN ('in_review', 'completed') AND run.state = 'verified' ORDER BY item.position`,
         [row.feature_id],
       );
-      if (!final)
+      let correctionAuthority: ClaimedFactoryExecution["correction"];
+      if (correction) {
+        const selected = await client.query<{
+          id: string;
+          instruction: string;
+          findings: unknown;
+          source_workflow_id: string;
+          source_artifact_id: string;
+          source_review_revision_id: string;
+          base_commit_id: string;
+          head_commit_id: string;
+          current_run_id: string;
+          state: string;
+        }>(
+          `SELECT id, instruction, findings, source_workflow_id, source_artifact_id,
+            source_review_revision_id, base_commit_id, head_commit_id, current_run_id, state
+           FROM factory_review_corrections WHERE id = $1 AND feature_id = $2 FOR UPDATE`,
+          [row.correction_id, row.feature_id],
+        );
+        const authority = selected.rows[0];
+        if (
+          authority === undefined ||
+          authority.current_run_id !== row.id ||
+          authority.state !== "executing" ||
+          row.correction_id === null ||
+          initial?.baseCommitId !== authority.base_commit_id ||
+          (row.attempt === 1 && initial.headCommitId !== authority.head_commit_id)
+        )
+          throw new FactoryError("conflict");
+        correctionAuthority = {
+          id: authority.id,
+          instruction: authority.instruction,
+          findings: FactoryReviewCorrectionSchema.shape.findings.parse(authority.findings),
+          sourceReview: {
+            workflowId: authority.source_workflow_id,
+            artifactId: authority.source_artifact_id,
+            reviewRevisionId: authority.source_review_revision_id,
+            baseCommitId: authority.base_commit_id,
+            headCommitId: authority.head_commit_id,
+          },
+        };
+      }
+      if (!featureLevel)
         await client.query(
           "UPDATE factory_work_items SET board_column = 'in_progress' WHERE id = $1",
           [row.work_item_id],
@@ -515,7 +590,9 @@ export async function claimFactoryExecution(
           row.work_item_id,
           final
             ? "Final Feature verification is checking the cumulative revision"
-            : `${item?.key ?? "Work Item"} is being implemented`,
+            : correction
+              ? "The selected review correction is being applied"
+              : `${item?.key ?? "Work Item"} is being implemented`,
         ],
       );
       return {
@@ -525,9 +602,9 @@ export async function claimFactoryExecution(
         featureId: row.feature_id,
         title: feature.title,
         workItemId: row.work_item_id,
-        key: item?.key ?? "Feature verification",
+        key: item?.key ?? (correction ? "Selected review correction" : "Feature verification"),
         purpose: row.purpose ?? "work_item",
-        ...(final
+        ...(featureLevel
           ? {
               verificationManifest: FactoryVerificationManifestSchema.parse(
                 row.verification_manifest,
@@ -535,6 +612,7 @@ export async function claimFactoryExecution(
               initialRevision: FactoryExecutionRevisionSchema.parse(row.initial_revision),
             }
           : {}),
+        ...(correctionAuthority === undefined ? {} : { correction: correctionAuthority }),
         attempt: row.attempt,
         version: row.plan_version,
         plan,
@@ -676,7 +754,7 @@ export function finishFactoryExecution(
         });
       if (!verified)
         throw new FactoryError("conflict", "All approved checks must pass on the exact revision");
-      if (row.purpose === "feature_verification") {
+      if (row.purpose === "feature_verification" || row.purpose === "correction") {
         if (
           workspace === null ||
           row.source?.repositoryId !== workspace.repositoryId ||
@@ -715,7 +793,7 @@ export function finishFactoryExecution(
         reservation_released_at = CASE WHEN $5 THEN clock_timestamp() ELSE NULL END WHERE id = $1`,
       [run.id, state, failure, outcome.question?.slice(0, 4000) ?? null, writerStopped],
     );
-    if (row.purpose !== "feature_verification")
+    if ((row.purpose ?? "work_item") === "work_item")
       await client.query("UPDATE factory_work_items SET board_column = $2 WHERE id = $1", [
         row.work_item_id,
         verified ? "in_review" : "todo",
@@ -729,6 +807,40 @@ export function finishFactoryExecution(
       );
     if (!verified && !cancelled)
       await ensureFactoryGate(client, row.id, failure ?? "interrupted", outcome.question);
+    if (row.purpose === "correction") {
+      const correctionVerified = verified && !cancelled;
+      const certificate = correctionVerified
+        ? (
+            await client.query<{ id: string }>(
+              "SELECT id FROM factory_feature_verifications WHERE run_id = $1",
+              [row.id],
+            )
+          ).rows[0]?.id
+        : undefined;
+      await client.query(
+        `UPDATE factory_review_corrections SET state = $2, failure = $3,
+         certificate_id = $4, updated_at = clock_timestamp()
+         WHERE id = $1 AND current_run_id = $5`,
+        [
+          row.correction_id,
+          correctionVerified ? "publishing" : cancelled ? "cancelled" : "gated",
+          correctionVerified ? null : cancelled ? "cancelled" : correctionFailure(failure),
+          certificate ?? null,
+          row.id,
+        ],
+      );
+      await client.query(
+        "INSERT INTO factory_activity (feature_id, kind, summary) VALUES ($1,$2,$3)",
+        [
+          row.feature_id,
+          correctionVerified ? "correction_verified" : "execution_blocked",
+          correctionVerified
+            ? "The selected correction passed every approved Feature check"
+            : `The selected correction stopped: ${failure ?? "interrupted"}`,
+        ],
+      );
+      return;
+    }
     // The immutable Feature certificate is its success record; do not invent a verified Work Item.
     if (verified && row.purpose === "feature_verification") return;
     await client.query(
@@ -760,7 +872,10 @@ export function reserveFactoryExecutionContainer(
       "SELECT count(*) FROM factory_execution_containers WHERE run_id = $1",
       [run.id],
     );
-    if (Number(count.rows[0]?.count) >= (row.purpose === "feature_verification" ? 1442 : 39))
+    if (
+      Number(count.rows[0]?.count) >=
+      (row.purpose === "feature_verification" || row.purpose === "correction" ? 1442 : 39)
+    )
       throw new FactoryError("conflict", "The attempt environment limit was reached");
     await client.query(
       "INSERT INTO factory_execution_containers (name, run_id, phase, daemon_id) VALUES ($1,$2,$3,$4)",
@@ -997,10 +1112,21 @@ export async function reconcileFactoryExecutions(
            reservation_released_at = CASE WHEN $4 THEN clock_timestamp() ELSE NULL END WHERE id = $1`,
           [row.id, writerStopped ? "blocked" : "interrupted", question, writerStopped],
         );
-        if (row.purpose !== "feature_verification")
+        if ((row.purpose ?? "work_item") === "work_item")
           await client.query("UPDATE factory_work_items SET board_column = 'todo' WHERE id = $1", [
             row.work_item_id,
           ]);
+        if (row.purpose === "correction")
+          await client.query(
+            `UPDATE factory_review_corrections SET state = $3, failure = $4,
+             updated_at = clock_timestamp() WHERE id = $1 AND current_run_id = $2`,
+            [
+              row.correction_id,
+              row.id,
+              feature.state === "cancelled" ? "cancelled" : "gated",
+              feature.state === "cancelled" ? "cancelled" : "runtime_unavailable",
+            ],
+          );
         if (feature.state !== "cancelled") {
           await client.query(
             "UPDATE factory_features SET state = 'gated', updated_at = clock_timestamp() WHERE id = $1",

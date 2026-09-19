@@ -15,7 +15,7 @@ interface GateRow {
   id: string;
   feature_id: string;
   work_item_id: string | null;
-  purpose?: "work_item" | "feature_verification";
+  purpose?: "work_item" | "feature_verification" | "correction";
   run_id: string;
   plan_version: number;
   reason: FactoryExecutionFailure;
@@ -93,7 +93,7 @@ function blockedReason(
     !["gated", "queued"].includes(feature.state) ||
     row.latest_run_id !== row.run_id ||
     row.successor_run_id !== null ||
-    (row.purpose === "feature_verification"
+    (row.purpose === "feature_verification" || row.purpose === "correction"
       ? row.work_item_id !== null || row.has_unverified_item === true
       : row.board_column !== "todo")
   )

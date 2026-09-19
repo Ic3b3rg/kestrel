@@ -233,7 +233,7 @@ async function evidenceFor(
       `SELECT evidence.id, evidence.run_id, evidence.result, evidence.created_at
        FROM unnest($2::uuid[]) WITH ORDINALITY expected(id, position)
        JOIN factory_verification_results AS evidence
-         ON evidence.id = expected.id AND evidence.run_id = $1 AND evidence.purpose = 'feature_verification'
+         ON evidence.id = expected.id AND evidence.run_id = $1
        ORDER BY expected.position`,
       [certificate.runId, certificate.evidenceIds],
     )
@@ -648,7 +648,7 @@ async function readFrozenWorkflowCheckRange(
       `SELECT evidence.id, evidence.run_id, evidence.result, evidence.created_at
        FROM unnest($2::uuid[]) WITH ORDINALITY expected(id, position)
        JOIN factory_verification_results AS evidence
-         ON evidence.id = expected.id AND evidence.run_id = $1 AND evidence.purpose = 'feature_verification'
+         ON evidence.id = expected.id AND evidence.run_id = $1
        ORDER BY expected.position`,
       [certificate.runId, evidenceIds],
     )

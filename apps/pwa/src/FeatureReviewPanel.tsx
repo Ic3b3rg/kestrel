@@ -27,6 +27,7 @@ import {
   startFactoryConceptualReview,
 } from "./conceptual-review-api.js";
 import { ConceptualReviewPanel } from "./ConceptualReviewPanel.js";
+import { FeatureCorrectionPanel } from "./FeatureCorrectionPanel.js";
 import { planningRequestError } from "./FeatureNavigation.js";
 import { Button } from "./components/ui/button.js";
 import { Input } from "./components/ui/input.js";
@@ -783,6 +784,10 @@ function FeatureReviewPanelContent({
       if (reviewGeneration.current === generation) setReviewBusy(false);
     }
   };
+  const openReplacementReview = useCallback(() => {
+    onSelectArtifact(undefined);
+    void Promise.all([read(), readReview()]);
+  }, [onSelectArtifact, read, readReview]);
 
   if (preparation === null)
     return (
@@ -947,6 +952,21 @@ function FeatureReviewPanelContent({
             loadCheck={loadReviewCheck}
             onAuthenticationError={onAuthenticationError}
           />
+          {selectedArtifactId === undefined &&
+          review.workflow.state === "published" &&
+          review.artifact !== null &&
+          review.currency === "up_to_date" &&
+          basis !== null ? (
+            <FeatureCorrectionPanel
+              projectId={projectId}
+              featureId={featureId}
+              approvedVersion={basis.provenance.version}
+              review={review}
+              online={online}
+              onAuthenticationError={onAuthenticationError}
+              onReplacementReview={openReplacementReview}
+            />
+          ) : null}
         </div>
       )}
       {basis === null ? (

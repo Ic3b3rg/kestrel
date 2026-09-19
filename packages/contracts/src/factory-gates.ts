@@ -73,5 +73,6 @@ const gate = z.strictObject({
 export const FactoryGateSchema = z.union([
   gate.extend({ purpose: z.literal("work_item").optional(), workItemId: KestrelIdSchema }),
   gate.extend({ purpose: z.literal("feature_verification"), workItemId: z.null() }),
+  gate.extend({ purpose: z.literal("correction"), workItemId: z.null() }),
 ]);
 export type FactoryGate = z.infer<typeof FactoryGateSchema>;
