@@ -3,9 +3,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   FactoryConceptualReviewCheckCatalogSchema,
   FactoryConceptualReviewCheckSchema,
+  FactoryConceptualReviewHistorySchema,
   FactoryConceptualReviewPreparationSchema,
   FactoryConceptualReviewSourceCatalogSchema,
   FactoryConceptualReviewSourceLinesSchema,
+  FactoryConceptualReviewWorkflowReadSchema,
+  type FactoryConceptualReviewDraft,
 } from "@kestrel/contracts";
 import {
   createFeaturePublicationJourney,
@@ -103,8 +106,16 @@ describe("exact Conceptual Review inputs through authenticated HTTP and retained
       );
       expect(checks.total).toBe(certificate.evidenceIds.length);
       expect(checks.checks.every(({ outcome }) => outcome === "passed")).toBe(true);
-      const evidenceId = checks.checks[0]?.evidenceId;
-      if (evidenceId === undefined) throw new Error("Final check catalog is empty");
+      const checkSummary = checks.checks[0];
+      if (checkSummary === undefined) throw new Error("Final check catalog is empty");
+      if (checkSummary.outcome !== "passed" || checkSummary.exitCode !== 0)
+        throw new Error("Final check fixture did not pass");
+      const passedCheckSummary = {
+        ...checkSummary,
+        outcome: "passed" as const,
+        exitCode: 0 as const,
+      };
+      const evidenceId = checkSummary.evidenceId;
       const check = FactoryConceptualReviewCheckSchema.parse(
         await (await journey.stack.fetchApi(`${root}/checks/${evidenceId}`)).json(),
       );
@@ -117,6 +128,175 @@ describe("exact Conceptual Review inputs through authenticated HTTP and retained
           outcome: "passed",
         },
       });
+      expect(
+        await verificationModule<number>(
+          journey.stack,
+          "console.log(JSON.stringify(Number((await pool.query('SELECT count(*) FROM review_workflows')).rows[0].count)));",
+        ),
+      ).toBe(0);
+
+      const mappedOutcome = prepared.basis?.outcomes[0];
+      const gapOutcome = prepared.basis?.outcomes[1];
+      if (mappedOutcome === undefined || gapOutcome === undefined)
+        throw new Error("Review fixture needs one mapped and one gap outcome");
+      const graph: FactoryConceptualReviewDraft = {
+        result: "partial",
+        summary: "One approved requirement is supported by source and a final check; one is a Gap.",
+        outcomes: [
+          {
+            id: `outcome:${mappedOutcome.key}`,
+            outcomeKey: mappedOutcome.key,
+            title: mappedOutcome.outcome,
+            coverage: "mapped",
+            behavioralStepIds: [`step:${mappedOutcome.key}`],
+            reason: "Exact source and the frozen final check support this requirement.",
+          },
+          {
+            id: `outcome:${gapOutcome.key}`,
+            outcomeKey: gapOutcome.key,
+            title: gapOutcome.outcome,
+            coverage: "gap",
+            behavioralStepIds: [],
+            reason: "No independently supported behavior was established for this requirement.",
+          },
+        ],
+        behavioralSteps: [
+          {
+            id: `step:${mappedOutcome.key}`,
+            title: "Preserve stable order",
+            description: "The implementation retains source order when values compare equally.",
+            change: "modified",
+            outcomeKeys: [mappedOutcome.key],
+            evidenceIds: ["source:stable-order", "check:stable-order"],
+          },
+        ],
+        evidence: [
+          {
+            id: "source:stable-order",
+            type: "source",
+            side: "head",
+            path: "value.mjs",
+            startLine: 1,
+            endLine: 1,
+            description: "Stable ordering implementation",
+            sufficiency: "The exact frozen head identifies the implementation path.",
+            limitations: ["Source alone cannot establish execution."],
+          },
+          {
+            id: "check:stable-order",
+            type: "check",
+            evidenceId,
+            relation: "supports",
+            proposition: "The certified ordering check passed on the reviewed head.",
+            description: "Final Feature verification",
+            sufficiency: "The server-owned record establishes this command execution.",
+            limitations: ["The behavioral link remains Model Judgment."],
+            record: passedCheckSummary,
+          },
+        ],
+        problems: [
+          {
+            id: "concern:consumer-gap",
+            type: "unverified_concern",
+            title: "Consumer behavior remains unverified",
+            condition: "The approved consumer outcome has no supported behavioral mapping.",
+            possibleConsequence: "The Feature may omit the approved consumer result.",
+            reasonUnverified: "No relevant final check was linked to that requirement.",
+            evidenceIds: [],
+            limitations: ["A targeted final check is required."],
+          },
+        ],
+        edges: [
+          {
+            from: `outcome:${mappedOutcome.key}`,
+            to: `step:${mappedOutcome.key}`,
+            kind: "implemented_by",
+          },
+          {
+            from: `step:${mappedOutcome.key}`,
+            to: "source:stable-order",
+            kind: "supported_by",
+          },
+          {
+            from: `step:${mappedOutcome.key}`,
+            to: "check:stable-order",
+            kind: "supported_by",
+          },
+        ],
+        limitations: ["The consumer outcome remains a Gap."],
+      };
+      const artifactId = await verificationModule<string>(
+        journey.stack,
+        `const featureId=${JSON.stringify(featureId)};
+         const factoryInput=${JSON.stringify(prepared)};
+         const graph=${JSON.stringify(graph)};
+         const identity=(await pool.query(
+           \`SELECT binding.project_id, binding.change_proposal_id,
+              binding.review_revision_id, revision.acquisition_change_intent_id AS change_intent_id,
+              (SELECT id FROM operators LIMIT 1) AS operator_id
+            FROM factory_feature_pr_revisions AS binding
+            JOIN review_revisions AS revision ON revision.id=binding.review_revision_id
+            WHERE binding.feature_id=$1\`, [featureId])).rows[0];
+         const generated=(await pool.query(
+           'SELECT uuidv7()::text AS workflow_id, uuidv7()::text AS attempt_id')).rows[0];
+         const workflowId=generated.workflow_id, attemptId=generated.attempt_id;
+         await pool.query(
+           \`INSERT INTO review_workflows
+             (id,project_id,change_proposal_id,review_revision_id,change_intent_id,
+              requested_by_operator_id,input_digest,analysis_configuration,authority,
+              resource_envelope,workflow_state,feature_id,request_id,factory_input,job_id,
+              attempt_count,maximum_attempts,attempt_id,started_at,heartbeat_at,
+              observed_head_commit_id,head_observed_at)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,'{}','{}','{}','running',$8,$9,$10::jsonb,$11,
+              1,1,$12,clock_timestamp(),clock_timestamp(),$13,clock_timestamp())\`,
+           [workflowId,identity.project_id,identity.change_proposal_id,
+            identity.review_revision_id,identity.change_intent_id,identity.operator_id,
+            factoryInput.preparationDigest,featureId,randomUUID(),JSON.stringify(factoryInput),
+            randomUUID(),attemptId,factoryInput.publication.revision.head.objectId]);
+         await pool.query(
+           \`INSERT INTO review_workflow_attempts
+             (workflow_id,attempt_number,attempt_id,attempt_state,heartbeat_at)
+            VALUES ($1,1,$2,'running',clock_timestamp())\`, [workflowId,attemptId]);
+         const artifact=await db.publishFactoryConceptualReview(
+           pool,{workflowId,attemptId,attemptNumber:1},graph);
+         console.log(JSON.stringify(artifact.id));`,
+      );
+      const history = FactoryConceptualReviewHistorySchema.parse(
+        await (await journey.stack.fetchApi(`${root}/artifacts?offset=0&limit=20`)).json(),
+      );
+      expect(history.reviews[0]).toMatchObject({
+        artifactId,
+        status: "partial",
+        headCommitId: certificate.revision.headCommitId,
+        currency: "up_to_date",
+      });
+      const selected = FactoryConceptualReviewWorkflowReadSchema.parse(
+        await (await journey.stack.fetchApi(`${root}/artifacts/${artifactId}`)).json(),
+      );
+      expect(selected.artifact?.graph).toEqual(graph);
+      const artifactLines = FactoryConceptualReviewSourceLinesSchema.parse(
+        await (
+          await journey.stack.fetchApi(
+            `${root}/artifacts/${artifactId}/source/lines?side=head&path=value.mjs&startLine=1&endLine=1`,
+          )
+        ).json(),
+      );
+      expect(artifactLines).toEqual(lines);
+      const artifactCheck = FactoryConceptualReviewCheckSchema.parse(
+        await (
+          await journey.stack.fetchApi(`${root}/artifacts/${artifactId}/checks/${evidenceId}`)
+        ).json(),
+      );
+      expect(artifactCheck).toEqual(check);
+      expect(selected.artifact?.graph.outcomes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ outcomeKey: mappedOutcome.key, coverage: "mapped" }),
+          expect.objectContaining({ outcomeKey: gapOutcome.key, coverage: "gap" }),
+        ]),
+      );
+      expect(selected.artifact?.graph.problems).toContainEqual(
+        expect.objectContaining({ id: "concern:consumer-gap", type: "unverified_concern" }),
+      );
 
       await journey.source.detach();
       await journey.stack.restart("web");
@@ -128,6 +308,17 @@ describe("exact Conceptual Review inputs through authenticated HTTP and retained
         ).json(),
       );
       expect(retainedAfterDetach).toEqual(lines);
+      const artifactAfterDetach = FactoryConceptualReviewWorkflowReadSchema.parse(
+        await (await journey.stack.fetchApi(`${root}/artifacts/${artifactId}`)).json(),
+      );
+      expect(artifactAfterDetach.artifact?.graph).toEqual(graph);
+      expect(
+        FactoryConceptualReviewCheckSchema.parse(
+          await (
+            await journey.stack.fetchApi(`${root}/artifacts/${artifactId}/checks/${evidenceId}`)
+          ).json(),
+        ),
+      ).toEqual(check);
 
       expect(
         (
@@ -154,7 +345,7 @@ describe("exact Conceptual Review inputs through authenticated HTTP and retained
          const reviewWrites=Number((await pool.query("SELECT count(*) FROM installation_audit_records WHERE event_type LIKE 'review_workflow.%'")).rows[0].count);
          console.log(JSON.stringify({workflows,reviewWrites}));`,
       );
-      expect(effects).toEqual({ workflows: 0, reviewWrites: 0 });
+      expect(effects).toEqual({ workflows: 1, reviewWrites: 0 });
       const lockedLifecycle = await verificationModule<{
         stop: { code: string; elapsedMs: number };
         claim: { code: string; elapsedMs: number };

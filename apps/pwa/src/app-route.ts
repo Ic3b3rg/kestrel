@@ -1,7 +1,13 @@
 import { KestrelIdSchema, StartPlanningFeatureCommandSchema } from "@kestrel/contracts";
 
 export type AppRoute =
-  | { kind: "feature"; projectId: string; featureId: string; view?: "plan" | "board" | "review" }
+  | {
+      kind: "feature";
+      projectId: string;
+      featureId: string;
+      view?: "plan" | "board" | "review";
+      artifactId?: string;
+    }
   | { kind: "not_found" }
   | { kind: "planning"; projectId: string; requestId: string }
   | {
@@ -34,13 +40,19 @@ export function readAppRoute(pathname: string, search = ""): AppRoute {
     }
     if (match[2] === "features") {
       const featureId = KestrelIdSchema.safeParse(decodeURIComponent(match[3] ?? ""));
-      const view = new URLSearchParams(search).get("view");
+      const parameters = new URLSearchParams(search);
+      const view = parameters.get("view");
+      const requestedArtifact = parameters.get("artifactId");
+      const artifactId = KestrelIdSchema.safeParse(requestedArtifact);
+      if (requestedArtifact !== null && (view !== "review" || !artifactId.success))
+        return { kind: "not_found" };
       return projectId.success && featureId.success
         ? {
             kind: "feature",
             projectId: projectId.data,
             featureId: featureId.data,
             ...(view === "plan" || view === "board" || view === "review" ? { view } : {}),
+            ...(view === "review" && artifactId.success ? { artifactId: artifactId.data } : {}),
           }
         : { kind: "not_found" };
     }
@@ -71,7 +83,7 @@ export function appPath(route: Exclude<AppRoute, { kind: "not_found" }>): string
     case "planning":
       return `/projects/${encodeURIComponent(route.projectId)}/planning/${encodeURIComponent(route.requestId)}`;
     case "feature":
-      return `/projects/${encodeURIComponent(route.projectId)}/features/${encodeURIComponent(route.featureId)}${route.view === undefined ? "" : `?view=${route.view}`}`;
+      return `/projects/${encodeURIComponent(route.projectId)}/features/${encodeURIComponent(route.featureId)}${route.view === undefined ? "" : `?view=${route.view}${route.view === "review" && route.artifactId !== undefined ? `&artifactId=${encodeURIComponent(route.artifactId)}` : ""}`}`;
     case "projects":
       return "/";
     case "settings":

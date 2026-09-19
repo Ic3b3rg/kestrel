@@ -1,13 +1,18 @@
 import { createHash } from "node:crypto";
 import { expect, it, vi } from "vitest";
 
-import type { FeaturePlanDocument } from "@kestrel/contracts";
+import {
+  FactoryConceptualReviewPreparationSchema,
+  type FeaturePlanDocument,
+} from "@kestrel/contracts";
 import {
   FactoryConceptualReviewPersistenceError,
   readFactoryConceptualReviewCheck,
   readFactoryConceptualReviewChecks,
   readFactoryConceptualReviewPreparation,
   readFactoryConceptualReviewSourceBinding,
+  readFactoryConceptualReviewWorkflowCheck,
+  readFactoryConceptualReviewWorkflowChecks,
 } from "./factory-conceptual-review.js";
 
 const projectId = "01991c36-7f90-7000-8000-000000000001";
@@ -353,4 +358,164 @@ it("pages check metadata and resolves one exact command result", async () => {
   );
   expect(check.result.stdout).toBe("ok\n");
   expect(check.origins).toEqual(manifest[0]?.origins);
+});
+
+it("resolves check evidence from the workflow's frozen certificate rather than current Feature state", async () => {
+  const frozenPreparation = await readFactoryConceptualReviewPreparation(
+    pool() as never,
+    projectId,
+    featureId,
+    { profile: null },
+  );
+  const query = vi.fn((sql: string) => {
+    if (sql.includes("FROM review_workflows AS workflow"))
+      return { rows: [{ factory_input: frozenPreparation }] };
+    if (sql.includes("FROM unnest($2::uuid[])"))
+      return { rows: [{ id: evidenceId, run_id: runId, result, created_at: at }] };
+    throw new Error(`Unexpected query: ${sql}`);
+  });
+  const database = { query } as never;
+  const catalog = await readFactoryConceptualReviewWorkflowChecks(
+    database,
+    projectId,
+    featureId,
+    revisionId,
+    0,
+    100,
+  );
+  const check = await readFactoryConceptualReviewWorkflowCheck(
+    database,
+    projectId,
+    featureId,
+    revisionId,
+    evidenceId,
+  );
+  expect(catalog.checks[0]).toMatchObject({ evidenceId, runId, headCommitId, treeId, command });
+  expect(check.result.stdout).toBe("ok\n");
+});
+
+it("reads only the requested frozen certificate page and individual result", async () => {
+  const frozen = await readFactoryConceptualReviewPreparation(
+    pool() as never,
+    projectId,
+    featureId,
+    { profile: null },
+  );
+  if (frozen.publication === null || frozen.evidence === null)
+    throw new Error("Frozen review fixture is unavailable");
+  const secondEvidenceId = "01991c36-7f90-7000-8000-000000000008";
+  const secondCommand = { ...command, args: ["test", "second"] };
+  const expandedManifest = [
+    manifest[0],
+    {
+      position: 2,
+      command: secondCommand,
+      origins: [{ workItemKey: "search", position: 2 }],
+    },
+  ];
+  const expandedDigest = createHash("sha256")
+    .update(JSON.stringify(expandedManifest))
+    .digest("hex");
+  const frozenPreparation = FactoryConceptualReviewPreparationSchema.parse({
+    ...frozen,
+    publication: {
+      ...frozen.publication,
+      certificate: {
+        ...frozen.publication.certificate,
+        manifest: expandedManifest,
+        manifestDigest: expandedDigest,
+        evidenceIds: [evidenceId, secondEvidenceId],
+      },
+    },
+    evidence: {
+      ...frozen.evidence,
+      checks: {
+        ...frozen.evidence.checks,
+        manifestDigest: expandedDigest,
+        total: 2,
+      },
+    },
+  });
+  const resultReads: unknown[][] = [];
+  const query = vi.fn((sql: string, parameters?: unknown[]) => {
+    if (sql.includes("FROM review_workflows AS workflow"))
+      return { rows: [{ factory_input: frozenPreparation }] };
+    if (sql.includes("FROM unnest($2::uuid[])")) {
+      resultReads.push(parameters ?? []);
+      return {
+        rows: [
+          {
+            id: secondEvidenceId,
+            run_id: runId,
+            result: { ...result, position: 2, command: secondCommand },
+            created_at: at,
+          },
+        ],
+      };
+    }
+    throw new Error(`Unexpected query: ${sql}`);
+  });
+  const database = { query } as never;
+  const catalog = await readFactoryConceptualReviewWorkflowChecks(
+    database,
+    projectId,
+    featureId,
+    revisionId,
+    1,
+    1,
+  );
+  const detail = await readFactoryConceptualReviewWorkflowCheck(
+    database,
+    projectId,
+    featureId,
+    revisionId,
+    secondEvidenceId,
+  );
+  expect(catalog).toMatchObject({ offset: 1, total: 2, nextOffset: null });
+  expect(catalog.checks.map(({ evidenceId: id }) => id)).toEqual([secondEvidenceId]);
+  expect(detail.evidenceId).toBe(secondEvidenceId);
+  expect(resultReads).toEqual([
+    [runId, [secondEvidenceId]],
+    [runId, [secondEvidenceId]],
+  ]);
+});
+
+it.each([
+  ["an earlier Work Item pass", { headCommitId: "f".repeat(40) }],
+  ["a changed tree", { treeId: "f".repeat(40) }],
+  ["a mismatched command", { command: { ...command, args: ["test", "--changed"] } }],
+  ["a failed command", { outcome: "failed" as const, exitCode: 1 }],
+  ["a timed out command", { outcome: "timeout" as const, exitCode: null }],
+] as const)("does not substitute %s for frozen final evidence", async (_name, change) => {
+  const frozenPreparation = await readFactoryConceptualReviewPreparation(
+    pool() as never,
+    projectId,
+    featureId,
+    { profile: null },
+  );
+  const query = vi.fn((sql: string) => {
+    if (sql.includes("FROM review_workflows AS workflow"))
+      return { rows: [{ factory_input: frozenPreparation }] };
+    if (sql.includes("FROM unnest($2::uuid[])"))
+      return {
+        rows: [
+          {
+            id: evidenceId,
+            run_id: runId,
+            result: { ...result, ...change },
+            created_at: at,
+          },
+        ],
+      };
+    throw new Error(`Unexpected query: ${sql}`);
+  });
+  await expect(
+    readFactoryConceptualReviewWorkflowCheck(
+      { query } as never,
+      projectId,
+      featureId,
+      revisionId,
+      evidenceId,
+    ),
+  ).rejects.toEqual(new FactoryConceptualReviewPersistenceError("evidence_not_found"));
 });

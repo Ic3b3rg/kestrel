@@ -169,6 +169,7 @@ export interface FeatureChatPanelProps {
   featureId: string;
   online: boolean;
   view?: "chat" | "plan" | "board" | "review";
+  artifactId?: string;
   onPlanDirtyChange?: (dirty: boolean) => void;
   onNavigate: (route: Exclude<AppRoute, { kind: "not_found" }>) => void;
   onAuthenticationError: (error: unknown) => boolean;
@@ -188,6 +189,7 @@ export function FeatureChatPanel({
   featureId,
   online,
   view = "chat",
+  artifactId,
   onPlanDirtyChange = ignoreDirtyChange,
   onNavigate,
   onAuthenticationError,
@@ -685,6 +687,16 @@ export function FeatureChatPanel({
             projectId={projectId}
             featureId={featureId}
             online={online}
+            {...(artifactId === undefined ? {} : { selectedArtifactId: artifactId })}
+            onSelectArtifact={(selectedArtifactId) =>
+              onNavigate({
+                kind: "feature",
+                projectId,
+                featureId,
+                view: "review",
+                ...(selectedArtifactId === undefined ? {} : { artifactId: selectedArtifactId }),
+              })
+            }
             onAuthenticationError={onAuthenticationError}
           />
         </TabsContent>

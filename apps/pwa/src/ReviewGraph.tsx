@@ -1,5 +1,12 @@
 import type { FactoryConceptualReviewDraft } from "@kestrel/contracts";
-import { AlertTriangle, ArrowRight, CheckCircle2, FileCode2, Footprints } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowRight,
+  CheckCircle2,
+  FileCode2,
+  Footprints,
+  TerminalSquare,
+} from "lucide-react";
 
 import { Button } from "./components/ui/button.js";
 
@@ -80,12 +87,24 @@ export function ReviewGraph({ graph, selectedId, onSelect }: ReviewGraphProps) {
       detail: (node: FactoryConceptualReviewDraft["behavioralSteps"][number]) => node.change,
     },
     {
-      key: "evidence",
-      title: "Exact evidence",
+      key: "source-evidence",
+      title: "Source evidence",
       icon: FileCode2,
-      nodes: graph.evidence,
+      nodes: graph.evidence.filter((node) => node.type === "source"),
       detail: (node: FactoryConceptualReviewDraft["evidence"][number]) =>
-        `${node.side} · ${node.path}:${String(node.startLine)}–${String(node.endLine)}`,
+        node.type === "source"
+          ? `${node.side} · ${node.path}:${String(node.startLine)}–${String(node.endLine)}`
+          : "",
+    },
+    {
+      key: "check-evidence",
+      title: "Final checks",
+      icon: TerminalSquare,
+      nodes: graph.evidence.filter((node) => node.type === "check"),
+      detail: (node: FactoryConceptualReviewDraft["evidence"][number]) =>
+        node.type === "check"
+          ? `${node.relation} · check ${String(node.record.manifestPosition)}`
+          : "",
     },
     {
       key: "problems",
@@ -102,7 +121,7 @@ export function ReviewGraph({ graph, selectedId, onSelect }: ReviewGraphProps) {
   return (
     <section className="min-w-0 space-y-3" aria-label="Requirements review graph">
       <div className="overflow-x-auto pb-2">
-        <div className="grid min-w-0 grid-cols-1 gap-2 lg:min-w-[58rem] lg:grid-cols-[minmax(12rem,1fr)_2rem_minmax(12rem,1fr)_2rem_minmax(12rem,1fr)_2rem_minmax(12rem,1fr)]">
+        <div className="grid min-w-0 grid-cols-1 gap-2 lg:min-w-[72rem] lg:grid-cols-[minmax(12rem,1fr)_2rem_minmax(12rem,1fr)_2rem_minmax(12rem,1fr)_2rem_minmax(12rem,1fr)_2rem_minmax(12rem,1fr)]">
           {groups.map((group, index) => {
             const Icon = group.icon;
             return (

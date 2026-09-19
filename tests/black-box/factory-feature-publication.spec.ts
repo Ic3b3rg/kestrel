@@ -1,6 +1,8 @@
 import { AxeBuilder } from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 import {
+  FactoryConceptualReviewCheckCatalogSchema,
+  FactoryConceptualReviewCheckSchema,
   FactoryConceptualReviewPreparationSchema,
   type FactoryConceptualReviewDraft,
   type FactoryConceptualReviewWorkflowRead,
@@ -186,9 +188,37 @@ test.describe("certified Feature PR and Conceptual Review entry", () => {
     const exactPullRequest = pullRequest;
     const exactRetained = retained;
     const exactChangeProposalId = preparation.changeProposalId;
+    const checkCatalog = FactoryConceptualReviewCheckCatalogSchema.parse(
+      await (await journey.stack.fetchApi(`${reviewRoot}/checks?offset=0&limit=100`)).json(),
+    );
+    const checkSummary = checkCatalog.checks[0];
+    if (
+      checkSummary === undefined ||
+      checkSummary.outcome !== "passed" ||
+      checkSummary.exitCode !== 0
+    )
+      throw new Error("Browser fixture did not retain a passing final check");
+    const passedCheckSummary = {
+      ...checkSummary,
+      outcome: "passed" as const,
+      exitCode: 0 as const,
+    };
+    const checkDetail = FactoryConceptualReviewCheckSchema.parse(
+      await (
+        await journey.stack.fetchApi(`${reviewRoot}/checks/${checkSummary.evidenceId}`)
+      ).json(),
+    );
 
     const workflowId = "01991c36-7f90-7000-8000-000000000071";
     const artifactId = "01991c36-7f90-7000-8000-000000000072";
+    const olderWorkflowId = "01991c36-7f90-7000-8000-000000000073";
+    const olderArtifactId = "01991c36-7f90-7000-8000-000000000074";
+    const olderReviewRevisionId = "01991c36-7f90-7000-8000-000000000075";
+    const olderEvidenceId = "01991c36-7f90-7000-8000-000000000076";
+    const olderRunId = "01991c36-7f90-7000-8000-000000000077";
+    const olderResultId = "01991c36-7f90-7000-8000-000000000078";
+    const olderHead = "9".repeat(40);
+    const olderTree = "8".repeat(40);
     const requestedAt = "2026-09-19T12:00:00.000Z";
     const graph: FactoryConceptualReviewDraft = {
       result: "partial",
@@ -212,7 +242,7 @@ test.describe("certified Feature PR and Conceptual Review entry", () => {
               : "The consumer reads the ordered result produced by the Feature.",
           change: index === 0 ? ("modified" as const) : ("added" as const),
           outcomeKeys: [outcome.key],
-          evidenceIds: [index === 0 ? "source:order" : "source:consumer"],
+          evidenceIds: [index === 0 ? "source:order" : "source:consumer", "check:final-ordering"],
         })) ?? [],
       evidence: [
         {
@@ -236,6 +266,17 @@ test.describe("certified Feature PR and Conceptual Review entry", () => {
           description: "Consumer result assignment",
           sufficiency: "The exact head line shows the returned consumer value.",
           limitations: ["No browser timing trace is linked."],
+        },
+        {
+          id: "check:final-ordering",
+          type: "check",
+          evidenceId: checkSummary.evidenceId,
+          relation: "supports",
+          proposition: "The certified ordering command passed on the reviewed head.",
+          description: "Final ordering verification",
+          sufficiency: "Kestrel resolved this execution from the frozen final certificate.",
+          limitations: ["The link to each product behavior remains Model Judgment."],
+          record: passedCheckSummary,
         },
       ],
       problems: [
@@ -263,9 +304,122 @@ test.describe("certified Feature PR and Conceptual Review entry", () => {
           to: index === 0 ? "source:order" : "source:consumer",
           kind: "supported_by" as const,
         })),
+        ...(preparation.basis?.outcomes ?? []).map((outcome) => ({
+          from: `step:${outcome.key}`,
+          to: "check:final-ordering",
+          kind: "supported_by" as const,
+        })),
         { from: "source:consumer", to: "finding:stale-result", kind: "reveals" },
       ],
       limitations: ["Browser interaction was not observed."],
+    };
+    const olderCheckSummary = {
+      ...passedCheckSummary,
+      evidenceId: olderEvidenceId,
+      runId: olderRunId,
+      headCommitId: olderHead,
+      treeId: olderTree,
+      createdAt: "2026-09-18T10:00:02.000Z",
+    };
+    const olderCheckDetail = FactoryConceptualReviewCheckSchema.parse({
+      ...checkDetail,
+      evidenceId: olderEvidenceId,
+      runId: olderRunId,
+      result: {
+        ...checkDetail.result,
+        id: olderResultId,
+        headCommitId: olderHead,
+        treeId: olderTree,
+        stdout: '<img src=x onerror="window.pwned=true"> passed\n',
+        stderr: "<script>alert('old review')</script>\n",
+        createdAt: "2026-09-18T10:00:02.000Z",
+      },
+    });
+    const olderGraph: FactoryConceptualReviewDraft = {
+      result: "partial",
+      summary: "Earlier immutable review with one unclear requirement.",
+      outcomes: [
+        {
+          id: "outcome:old-stable-order",
+          outcomeKey: "stable-order",
+          title: "Equal values retain their original order",
+          coverage: "unclear",
+          behavioralStepIds: ["step:old-stable-order"],
+          reason: "The implementation is present, but the older check has limited semantic scope.",
+        },
+        {
+          id: "outcome:old-consumer-result",
+          outcomeKey: "consumer-result",
+          title: "The consumer returns its approved result",
+          coverage: "gap",
+          behavioralStepIds: [],
+          reason: "This earlier review found no supported consumer behavior.",
+        },
+      ],
+      behavioralSteps: [
+        {
+          id: "step:old-stable-order",
+          title: "Earlier stable ordering path",
+          description: "The older frozen head retained an ordering implementation.",
+          change: "modified",
+          outcomeKeys: ["stable-order"],
+          evidenceIds: ["source:old-order", "check:old-order"],
+        },
+      ],
+      evidence: [
+        {
+          id: "source:old-order",
+          type: "source",
+          side: "head",
+          path: "value.mjs",
+          startLine: 1,
+          endLine: 1,
+          description: "Earlier ordering implementation",
+          sufficiency: "This locator belongs only to the older frozen head.",
+          limitations: ["The newer graph must not replace this node."],
+        },
+        {
+          id: "check:old-order",
+          type: "check",
+          evidenceId: olderEvidenceId,
+          relation: "supports",
+          proposition: "The earlier certified ordering command passed.",
+          description: "Earlier final ordering verification",
+          sufficiency: "Kestrel retained the exact earlier command record.",
+          limitations: ["It does not prove the later consumer behavior."],
+          record: olderCheckSummary,
+        },
+      ],
+      problems: [
+        {
+          id: "concern:old-consumer",
+          type: "unverified_concern",
+          title: "Earlier consumer behavior was unverified",
+          condition: "No behavior and check pair mapped the consumer outcome.",
+          possibleConsequence: "The approved consumer result may be absent.",
+          reasonUnverified: "The older evidence set was insufficient.",
+          evidenceIds: [],
+          limitations: ["A later review may reach a different conclusion."],
+        },
+      ],
+      edges: [
+        {
+          from: "outcome:old-stable-order",
+          to: "step:old-stable-order",
+          kind: "implemented_by",
+        },
+        {
+          from: "step:old-stable-order",
+          to: "source:old-order",
+          kind: "supported_by",
+        },
+        {
+          from: "step:old-stable-order",
+          to: "check:old-order",
+          kind: "supported_by",
+        },
+      ],
+      limitations: ["This artifact predates the current reviewed head."],
     };
     let queued: FactoryConceptualReviewWorkflowRead | null = null;
     let published = false;
@@ -285,6 +439,51 @@ test.describe("certified Feature PR and Conceptual Review entry", () => {
           json: { schemaVersion: 1, review: published ? publishedRead() : queued },
           status: 200,
         });
+        return;
+      }
+      if (relative === "/artifacts" && request.method() === "GET") {
+        const reviews = [
+          ...(published
+            ? [
+                {
+                  artifactId,
+                  workflowId,
+                  status: "partial" as const,
+                  headCommitId: exactPullRequest.headCommitId,
+                  requestedAt,
+                  finishedAt: "2026-09-19T12:00:03.000Z",
+                  currency: "outdated" as const,
+                },
+              ]
+            : []),
+          {
+            artifactId: olderArtifactId,
+            workflowId: olderWorkflowId,
+            status: "partial" as const,
+            headCommitId: olderHead,
+            requestedAt: "2026-09-18T10:00:00.000Z",
+            finishedAt: "2026-09-18T10:00:03.000Z",
+            currency: "outdated" as const,
+          },
+        ];
+        await route.fulfill({
+          json: {
+            schemaVersion: 1,
+            reviews,
+            offset: 0,
+            total: reviews.length,
+            nextOffset: null,
+          },
+          status: 200,
+        });
+        return;
+      }
+      if (relative === `/artifacts/${artifactId}` && request.method() === "GET") {
+        await route.fulfill({ json: publishedRead(), status: 200 });
+        return;
+      }
+      if (relative === `/artifacts/${olderArtifactId}` && request.method() === "GET") {
+        await route.fulfill({ json: olderPublishedRead(), status: 200 });
         return;
       }
       if (relative === "/workflows" && request.method() === "POST") {
@@ -340,14 +539,21 @@ test.describe("certified Feature PR and Conceptual Review entry", () => {
         await route.fulfill({ json: publishedRead(), status: 200 });
         return;
       }
-      if (relative === `/workflows/${workflowId}/source/lines` && request.method() === "GET") {
+      if (
+        [
+          `/artifacts/${artifactId}/source/lines`,
+          `/artifacts/${olderArtifactId}/source/lines`,
+        ].includes(relative) &&
+        request.method() === "GET"
+      ) {
         expect(url.searchParams.get("side")).toBe("head");
         expect(url.searchParams.get("path")).toBe("value.mjs");
+        const older = relative.includes(olderArtifactId);
         await route.fulfill({
           json: {
             status: "available",
             side: "head",
-            commitId: exactPullRequest.headCommitId,
+            commitId: older ? olderHead : exactPullRequest.headCommitId,
             mode: "100644",
             objectId: "e".repeat(40),
             path: "value.mjs",
@@ -357,10 +563,26 @@ test.describe("certified Feature PR and Conceptual Review entry", () => {
             totalLines: 1,
             hasFinalNewline: true,
             lineEndings: ["lf"],
-            text: "export const consumer = response; // unconditional assignment\n",
+            text: older
+              ? '<img src=x onerror="window.pwned=true"> old source\n'
+              : "export const consumer = response; // unconditional assignment\n",
           },
           status: 200,
         });
+        return;
+      }
+      if (
+        relative === `/artifacts/${artifactId}/checks/${checkSummary.evidenceId}` &&
+        request.method() === "GET"
+      ) {
+        await route.fulfill({ json: checkDetail, status: 200 });
+        return;
+      }
+      if (
+        relative === `/artifacts/${olderArtifactId}/checks/${olderEvidenceId}` &&
+        request.method() === "GET"
+      ) {
+        await route.fulfill({ json: olderCheckDetail, status: 200 });
         return;
       }
       await route.continue();
@@ -389,11 +611,51 @@ test.describe("certified Feature PR and Conceptual Review entry", () => {
           status: "partial",
           evidenceScope: {
             source: "exact_retained_revision",
-            executedChecks: "not_linked",
-            narrativeAuthority: "source_only_model_interpretation",
+            executedChecks: "linked_final_certificate",
+            narrativeAuthority: "host_resolved_evidence_model_judgment",
           },
           graph,
           createdAt: "2026-09-19T12:00:03.000Z",
+        },
+        currency: "outdated",
+      };
+    }
+
+    function olderPublishedRead(): FactoryConceptualReviewWorkflowRead {
+      return {
+        schemaVersion: 1,
+        workflow: {
+          id: olderWorkflowId,
+          requestId: "65cc9964-10c2-49d1-86c4-8f13f5019e80",
+          projectId: journey.projectId,
+          featureId,
+          changeProposalId: exactChangeProposalId,
+          inputDigest: "0".repeat(64),
+          reviewRevisionId: olderReviewRevisionId,
+          state: "published",
+          attempt: { current: 1, maximum: 3 },
+          failure: null,
+          artifactId: olderArtifactId,
+          requestedAt: "2026-09-18T10:00:00.000Z",
+          startedAt: "2026-09-18T10:00:01.000Z",
+          finishedAt: "2026-09-18T10:00:03.000Z",
+        },
+        artifact: {
+          schemaVersion: 1,
+          id: olderArtifactId,
+          workflowId: olderWorkflowId,
+          inputDigest: "0".repeat(64),
+          reviewRevisionId: olderReviewRevisionId,
+          baseCommitId: exactPullRequest.baseCommitId,
+          headCommitId: olderHead,
+          status: "partial",
+          evidenceScope: {
+            source: "exact_retained_revision",
+            executedChecks: "linked_final_certificate",
+            narrativeAuthority: "host_resolved_evidence_model_judgment",
+          },
+          graph: olderGraph,
+          createdAt: "2026-09-18T10:00:03.000Z",
         },
         currency: "outdated",
       };
@@ -451,6 +713,20 @@ test.describe("certified Feature PR and Conceptual Review entry", () => {
     await source.focus();
     await source.press("Enter");
     await expect(page.getByText(/unconditional assignment/u)).toBeVisible();
+    const finalCheck = page.getByRole("button", { name: /Final ordering verification/u }).first();
+    await finalCheck.focus();
+    await finalCheck.press("Enter");
+    await expect(
+      page.getByText("The certified ordering command passed on the reviewed head.", {
+        exact: false,
+      }),
+    ).toBeVisible();
+    await expect(
+      page.getByText([checkSummary.command.program, ...checkSummary.command.args].join(" "), {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(page.getByText(checkSummary.runId, { exact: true })).toBeVisible();
     const finding = page
       .getByRole("button", { name: /Older results can replace the latest result/u })
       .first();
@@ -467,6 +743,36 @@ test.describe("certified Feature PR and Conceptual Review entry", () => {
     await outline.focus();
     await outline.press("Enter");
     await expect(page.getByText("implemented by", { exact: true }).first()).toBeVisible();
+
+    const history = page.getByRole("region", { name: "Conceptual Review history", exact: true });
+    const olderReview = history.getByRole("button", { name: /Review 2 · partial/u });
+    await olderReview.focus();
+    await olderReview.press("Enter");
+    await expect(page).toHaveURL(
+      `${journey.stack.pwaUrl}/projects/${journey.projectId}/features/${featureId}?view=review&artifactId=${olderArtifactId}`,
+    );
+    await expect(page.getByText(olderGraph.summary, { exact: true })).toBeVisible();
+    await expect(page.getByText(olderHead, { exact: true })).toBeVisible();
+    await expect(page.getByText("Review inputs changed", { exact: true })).toBeVisible();
+    const olderCheck = page
+      .getByRole("button", { name: /Earlier final ordering verification/u })
+      .first();
+    await olderCheck.focus();
+    await olderCheck.press("Enter");
+    await expect(
+      page.getByText('<img src=x onerror="window.pwned=true"> passed', { exact: false }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("<script>alert('old review')</script>", { exact: false }),
+    ).toBeVisible();
+    await expect(page.locator('img[src="x"]')).toHaveCount(0);
+    await expect(page.locator("script").filter({ hasText: "old review" })).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByText(olderGraph.summary, { exact: true })).toBeVisible();
+    await expect(history.getByRole("button", { name: /Review 2 · partial/u })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     await page.setViewportSize({ width: 390, height: 844 });
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),

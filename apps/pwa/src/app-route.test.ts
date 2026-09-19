@@ -26,6 +26,23 @@ describe("authenticated app routing", () => {
     expect(readAppRoute(path, `?view=${view}`)).toEqual(route);
     expect(appPath(route)).toBe(`${path}?view=${view}`);
   });
+  it("keeps the selected immutable review artifact in the feature URL", () => {
+    const featureId = "018f0f89-9192-755f-aa96-f72094c734df";
+    const artifactId = "018f0f89-9a21-7271-b92d-f1cb0d48bb47";
+    const path = `/projects/${projectId}/features/${featureId}`;
+    const route = {
+      kind: "feature" as const,
+      projectId,
+      featureId,
+      view: "review" as const,
+      artifactId,
+    };
+    expect(readAppRoute(path, `?view=review&artifactId=${artifactId}`)).toEqual(route);
+    expect(appPath(route)).toBe(`${path}?view=review&artifactId=${artifactId}`);
+    expect(readAppRoute(path, "?view=review&artifactId=not-an-artifact")).toEqual({
+      kind: "not_found",
+    });
+  });
   it("restores a feature chat within its Project and rejects malformed chat identities", () => {
     const featureId = "018f0f89-9192-755f-aa96-f72094c734df";
     const route = { kind: "feature" as const, projectId, featureId };

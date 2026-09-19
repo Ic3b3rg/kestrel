@@ -2707,27 +2707,54 @@
                           "type": "string"
                         },
                         "evidenceScope": {
-                          "additionalProperties": false,
-                          "properties": {
-                            "executedChecks": {
-                              "const": "not_linked",
-                              "type": "string"
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "executedChecks": {
+                                  "const": "not_linked",
+                                  "type": "string"
+                                },
+                                "narrativeAuthority": {
+                                  "const": "source_only_model_interpretation",
+                                  "type": "string"
+                                },
+                                "source": {
+                                  "const": "exact_retained_revision",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "source",
+                                "executedChecks",
+                                "narrativeAuthority"
+                              ],
+                              "type": "object"
                             },
-                            "narrativeAuthority": {
-                              "const": "source_only_model_interpretation",
-                              "type": "string"
-                            },
-                            "source": {
-                              "const": "exact_retained_revision",
-                              "type": "string"
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "executedChecks": {
+                                  "const": "linked_final_certificate",
+                                  "type": "string"
+                                },
+                                "narrativeAuthority": {
+                                  "const": "host_resolved_evidence_model_judgment",
+                                  "type": "string"
+                                },
+                                "source": {
+                                  "const": "exact_retained_revision",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "source",
+                                "executedChecks",
+                                "narrativeAuthority"
+                              ],
+                              "type": "object"
                             }
-                          },
-                          "required": [
-                            "source",
-                            "executedChecks",
-                            "narrativeAuthority"
-                          ],
-                          "type": "object"
+                          ]
                         },
                         "graph": {
                           "additionalProperties": false,
@@ -2834,72 +2861,270 @@
                             },
                             "evidence": {
                               "items": {
-                                "additionalProperties": false,
-                                "properties": {
-                                  "description": {
-                                    "maxLength": 4000,
-                                    "minLength": 1,
-                                    "type": "string"
-                                  },
-                                  "endLine": {
-                                    "maximum": 9007199254740991,
-                                    "minimum": 1,
-                                    "type": "integer"
-                                  },
-                                  "id": {
-                                    "maxLength": 96,
-                                    "minLength": 1,
-                                    "pattern": "^[a-z0-9][a-z0-9._:-]*$",
-                                    "type": "string"
-                                  },
-                                  "limitations": {
-                                    "items": {
-                                      "maxLength": 4000,
-                                      "minLength": 1,
-                                      "type": "string"
+                                "oneOf": [
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "description": {
+                                        "maxLength": 4000,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "endLine": {
+                                        "maximum": 9007199254740991,
+                                        "minimum": 1,
+                                        "type": "integer"
+                                      },
+                                      "id": {
+                                        "maxLength": 96,
+                                        "minLength": 1,
+                                        "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+                                        "type": "string"
+                                      },
+                                      "limitations": {
+                                        "items": {
+                                          "maxLength": 4000,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        },
+                                        "maxItems": 20,
+                                        "type": "array"
+                                      },
+                                      "path": {
+                                        "maxLength": 4096,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "side": {
+                                        "enum": [
+                                          "base",
+                                          "head"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "startLine": {
+                                        "maximum": 9007199254740991,
+                                        "minimum": 1,
+                                        "type": "integer"
+                                      },
+                                      "sufficiency": {
+                                        "maxLength": 4000,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "type": {
+                                        "const": "source",
+                                        "type": "string"
+                                      }
                                     },
-                                    "maxItems": 20,
-                                    "type": "array"
-                                  },
-                                  "path": {
-                                    "maxLength": 4096,
-                                    "minLength": 1,
-                                    "type": "string"
-                                  },
-                                  "side": {
-                                    "enum": [
-                                      "base",
-                                      "head"
+                                    "required": [
+                                      "id",
+                                      "type",
+                                      "side",
+                                      "path",
+                                      "startLine",
+                                      "endLine",
+                                      "description",
+                                      "sufficiency",
+                                      "limitations"
                                     ],
-                                    "type": "string"
+                                    "type": "object"
                                   },
-                                  "startLine": {
-                                    "maximum": 9007199254740991,
-                                    "minimum": 1,
-                                    "type": "integer"
-                                  },
-                                  "sufficiency": {
-                                    "maxLength": 4000,
-                                    "minLength": 1,
-                                    "type": "string"
-                                  },
-                                  "type": {
-                                    "const": "source",
-                                    "type": "string"
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "description": {
+                                        "maxLength": 4000,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "evidenceId": {
+                                        "format": "uuid",
+                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                        "type": "string"
+                                      },
+                                      "id": {
+                                        "maxLength": 96,
+                                        "minLength": 1,
+                                        "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+                                        "type": "string"
+                                      },
+                                      "limitations": {
+                                        "items": {
+                                          "maxLength": 4000,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        },
+                                        "maxItems": 20,
+                                        "type": "array"
+                                      },
+                                      "proposition": {
+                                        "maxLength": 4000,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "record": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "command": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "args": {
+                                                "items": {
+                                                  "maxLength": 2048,
+                                                  "pattern": "^[^\\x00]*$",
+                                                  "type": "string"
+                                                },
+                                                "maxItems": 32,
+                                                "type": "array"
+                                              },
+                                              "cwd": {
+                                                "maxLength": 256,
+                                                "minLength": 1,
+                                                "pattern": "^[^\\x00]*$",
+                                                "type": "string"
+                                              },
+                                              "program": {
+                                                "maxLength": 128,
+                                                "minLength": 1,
+                                                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._+-]*$",
+                                                "type": "string"
+                                              },
+                                              "timeoutSeconds": {
+                                                "maximum": 7200,
+                                                "minimum": 1,
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "required": [
+                                              "program",
+                                              "args",
+                                              "cwd",
+                                              "timeoutSeconds"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "createdAt": {
+                                            "format": "date-time",
+                                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                            "type": "string"
+                                          },
+                                          "durationMs": {
+                                            "maximum": 9007199254740991,
+                                            "minimum": 0,
+                                            "type": "integer"
+                                          },
+                                          "evidenceId": {
+                                            "format": "uuid",
+                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                            "type": "string"
+                                          },
+                                          "exitCode": {
+                                            "const": 0,
+                                            "type": "number"
+                                          },
+                                          "headCommitId": {
+                                            "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                                            "type": "string"
+                                          },
+                                          "manifestPosition": {
+                                            "maximum": 480,
+                                            "minimum": 1,
+                                            "type": "integer"
+                                          },
+                                          "origins": {
+                                            "items": {
+                                              "additionalProperties": false,
+                                              "properties": {
+                                                "position": {
+                                                  "maximum": 12,
+                                                  "minimum": 1,
+                                                  "type": "integer"
+                                                },
+                                                "workItemKey": {
+                                                  "maxLength": 48,
+                                                  "minLength": 1,
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "workItemKey",
+                                                "position"
+                                              ],
+                                              "type": "object"
+                                            },
+                                            "maxItems": 480,
+                                            "minItems": 1,
+                                            "type": "array"
+                                          },
+                                          "outcome": {
+                                            "const": "passed",
+                                            "type": "string"
+                                          },
+                                          "runId": {
+                                            "format": "uuid",
+                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                            "type": "string"
+                                          },
+                                          "stderrTruncated": {
+                                            "type": "boolean"
+                                          },
+                                          "stdoutTruncated": {
+                                            "type": "boolean"
+                                          },
+                                          "treeId": {
+                                            "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "evidenceId",
+                                          "runId",
+                                          "manifestPosition",
+                                          "origins",
+                                          "command",
+                                          "headCommitId",
+                                          "treeId",
+                                          "outcome",
+                                          "exitCode",
+                                          "stdoutTruncated",
+                                          "stderrTruncated",
+                                          "durationMs",
+                                          "createdAt"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      "relation": {
+                                        "enum": [
+                                          "supports",
+                                          "refutes"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "sufficiency": {
+                                        "maxLength": 4000,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "type": {
+                                        "const": "check",
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "type",
+                                      "evidenceId",
+                                      "relation",
+                                      "proposition",
+                                      "description",
+                                      "sufficiency",
+                                      "limitations",
+                                      "record"
+                                    ],
+                                    "type": "object"
                                   }
-                                },
-                                "required": [
-                                  "id",
-                                  "type",
-                                  "side",
-                                  "path",
-                                  "startLine",
-                                  "endLine",
-                                  "description",
-                                  "sufficiency",
-                                  "limitations"
-                                ],
-                                "type": "object"
+                                ]
                               },
                               "maxItems": 800,
                               "type": "array"
@@ -3324,6 +3549,7 @@
                             "timeout",
                             "invalid_output",
                             "source_unavailable",
+                            "check_unavailable",
                             "resource_exhausted",
                             "interrupted",
                             "stop_unconfirmed",
@@ -4817,27 +5043,54 @@
                   "type": "string"
                 },
                 "evidenceScope": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "executedChecks": {
-                      "const": "not_linked",
-                      "type": "string"
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "executedChecks": {
+                          "const": "not_linked",
+                          "type": "string"
+                        },
+                        "narrativeAuthority": {
+                          "const": "source_only_model_interpretation",
+                          "type": "string"
+                        },
+                        "source": {
+                          "const": "exact_retained_revision",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "source",
+                        "executedChecks",
+                        "narrativeAuthority"
+                      ],
+                      "type": "object"
                     },
-                    "narrativeAuthority": {
-                      "const": "source_only_model_interpretation",
-                      "type": "string"
-                    },
-                    "source": {
-                      "const": "exact_retained_revision",
-                      "type": "string"
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "executedChecks": {
+                          "const": "linked_final_certificate",
+                          "type": "string"
+                        },
+                        "narrativeAuthority": {
+                          "const": "host_resolved_evidence_model_judgment",
+                          "type": "string"
+                        },
+                        "source": {
+                          "const": "exact_retained_revision",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "source",
+                        "executedChecks",
+                        "narrativeAuthority"
+                      ],
+                      "type": "object"
                     }
-                  },
-                  "required": [
-                    "source",
-                    "executedChecks",
-                    "narrativeAuthority"
-                  ],
-                  "type": "object"
+                  ]
                 },
                 "graph": {
                   "additionalProperties": false,
@@ -4944,72 +5197,270 @@
                     },
                     "evidence": {
                       "items": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "description": {
-                            "maxLength": 4000,
-                            "minLength": 1,
-                            "type": "string"
-                          },
-                          "endLine": {
-                            "maximum": 9007199254740991,
-                            "minimum": 1,
-                            "type": "integer"
-                          },
-                          "id": {
-                            "maxLength": 96,
-                            "minLength": 1,
-                            "pattern": "^[a-z0-9][a-z0-9._:-]*$",
-                            "type": "string"
-                          },
-                          "limitations": {
-                            "items": {
-                              "maxLength": 4000,
-                              "minLength": 1,
-                              "type": "string"
+                        "oneOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "description": {
+                                "maxLength": 4000,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "endLine": {
+                                "maximum": 9007199254740991,
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "id": {
+                                "maxLength": 96,
+                                "minLength": 1,
+                                "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+                                "type": "string"
+                              },
+                              "limitations": {
+                                "items": {
+                                  "maxLength": 4000,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "maxItems": 20,
+                                "type": "array"
+                              },
+                              "path": {
+                                "maxLength": 4096,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "side": {
+                                "enum": [
+                                  "base",
+                                  "head"
+                                ],
+                                "type": "string"
+                              },
+                              "startLine": {
+                                "maximum": 9007199254740991,
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "sufficiency": {
+                                "maxLength": 4000,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "type": {
+                                "const": "source",
+                                "type": "string"
+                              }
                             },
-                            "maxItems": 20,
-                            "type": "array"
-                          },
-                          "path": {
-                            "maxLength": 4096,
-                            "minLength": 1,
-                            "type": "string"
-                          },
-                          "side": {
-                            "enum": [
-                              "base",
-                              "head"
+                            "required": [
+                              "id",
+                              "type",
+                              "side",
+                              "path",
+                              "startLine",
+                              "endLine",
+                              "description",
+                              "sufficiency",
+                              "limitations"
                             ],
-                            "type": "string"
+                            "type": "object"
                           },
-                          "startLine": {
-                            "maximum": 9007199254740991,
-                            "minimum": 1,
-                            "type": "integer"
-                          },
-                          "sufficiency": {
-                            "maxLength": 4000,
-                            "minLength": 1,
-                            "type": "string"
-                          },
-                          "type": {
-                            "const": "source",
-                            "type": "string"
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "description": {
+                                "maxLength": 4000,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "evidenceId": {
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                "type": "string"
+                              },
+                              "id": {
+                                "maxLength": 96,
+                                "minLength": 1,
+                                "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+                                "type": "string"
+                              },
+                              "limitations": {
+                                "items": {
+                                  "maxLength": 4000,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "maxItems": 20,
+                                "type": "array"
+                              },
+                              "proposition": {
+                                "maxLength": 4000,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "record": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "command": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "args": {
+                                        "items": {
+                                          "maxLength": 2048,
+                                          "pattern": "^[^\\x00]*$",
+                                          "type": "string"
+                                        },
+                                        "maxItems": 32,
+                                        "type": "array"
+                                      },
+                                      "cwd": {
+                                        "maxLength": 256,
+                                        "minLength": 1,
+                                        "pattern": "^[^\\x00]*$",
+                                        "type": "string"
+                                      },
+                                      "program": {
+                                        "maxLength": 128,
+                                        "minLength": 1,
+                                        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._+-]*$",
+                                        "type": "string"
+                                      },
+                                      "timeoutSeconds": {
+                                        "maximum": 7200,
+                                        "minimum": 1,
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "program",
+                                      "args",
+                                      "cwd",
+                                      "timeoutSeconds"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "createdAt": {
+                                    "format": "date-time",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                    "type": "string"
+                                  },
+                                  "durationMs": {
+                                    "maximum": 9007199254740991,
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  "evidenceId": {
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                    "type": "string"
+                                  },
+                                  "exitCode": {
+                                    "const": 0,
+                                    "type": "number"
+                                  },
+                                  "headCommitId": {
+                                    "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                                    "type": "string"
+                                  },
+                                  "manifestPosition": {
+                                    "maximum": 480,
+                                    "minimum": 1,
+                                    "type": "integer"
+                                  },
+                                  "origins": {
+                                    "items": {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "position": {
+                                          "maximum": 12,
+                                          "minimum": 1,
+                                          "type": "integer"
+                                        },
+                                        "workItemKey": {
+                                          "maxLength": 48,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "workItemKey",
+                                        "position"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    "maxItems": 480,
+                                    "minItems": 1,
+                                    "type": "array"
+                                  },
+                                  "outcome": {
+                                    "const": "passed",
+                                    "type": "string"
+                                  },
+                                  "runId": {
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                    "type": "string"
+                                  },
+                                  "stderrTruncated": {
+                                    "type": "boolean"
+                                  },
+                                  "stdoutTruncated": {
+                                    "type": "boolean"
+                                  },
+                                  "treeId": {
+                                    "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "evidenceId",
+                                  "runId",
+                                  "manifestPosition",
+                                  "origins",
+                                  "command",
+                                  "headCommitId",
+                                  "treeId",
+                                  "outcome",
+                                  "exitCode",
+                                  "stdoutTruncated",
+                                  "stderrTruncated",
+                                  "durationMs",
+                                  "createdAt"
+                                ],
+                                "type": "object"
+                              },
+                              "relation": {
+                                "enum": [
+                                  "supports",
+                                  "refutes"
+                                ],
+                                "type": "string"
+                              },
+                              "sufficiency": {
+                                "maxLength": 4000,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "type": {
+                                "const": "check",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "type",
+                              "evidenceId",
+                              "relation",
+                              "proposition",
+                              "description",
+                              "sufficiency",
+                              "limitations",
+                              "record"
+                            ],
+                            "type": "object"
                           }
-                        },
-                        "required": [
-                          "id",
-                          "type",
-                          "side",
-                          "path",
-                          "startLine",
-                          "endLine",
-                          "description",
-                          "sufficiency",
-                          "limitations"
-                        ],
-                        "type": "object"
+                        ]
                       },
                       "maxItems": 800,
                       "type": "array"
@@ -5434,6 +5885,7 @@
                     "timeout",
                     "invalid_output",
                     "source_unavailable",
+                    "check_unavailable",
                     "resource_exhausted",
                     "interrupted",
                     "stop_unconfirmed",

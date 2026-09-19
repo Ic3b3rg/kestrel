@@ -563,3 +563,164 @@ export async function readFactoryConceptualReviewCheck(
   if (check === undefined) throw new FactoryConceptualReviewPersistenceError("evidence_not_found");
   return FactoryConceptualReviewCheckSchema.parse(check);
 }
+
+async function readFrozenWorkflowPreparation(
+  pool: DatabasePool,
+  projectId: string,
+  featureId: string,
+  workflowId: string,
+): Promise<FactoryConceptualReviewPreparation> {
+  const selected = await pool.query<{ factory_input: unknown }>(
+    `SELECT workflow.factory_input
+     FROM review_workflows AS workflow
+     WHERE workflow.project_id = $1 AND workflow.feature_id = $2 AND workflow.id = $3`,
+    [projectId, featureId, workflowId],
+  );
+  const row = selected.rows[0];
+  if (row === undefined) throw new FactoryConceptualReviewPersistenceError("not_found");
+  const preparation = FactoryConceptualReviewPreparationSchema.parse(row.factory_input);
+  const publication = preparation.publication;
+  const evidence = preparation.evidence;
+  if (
+    preparation.projectId !== projectId ||
+    preparation.featureId !== featureId ||
+    preparation.changeProposalId === null ||
+    preparation.preparationDigest === null ||
+    preparation.basis === null ||
+    publication === null ||
+    evidence === null ||
+    publication.certificate.featureId !== featureId ||
+    evidence.checks.runId !== publication.certificate.runId ||
+    evidence.checks.manifestDigest !== publication.certificate.manifestDigest ||
+    evidence.checks.total !== publication.certificate.evidenceIds.length ||
+    sha256(publication.certificate.manifest) !== publication.certificate.manifestDigest
+  )
+    throw new FactoryConceptualReviewPersistenceError("not_ready");
+  return preparation;
+}
+
+function frozenCheck(
+  certificate: ReturnType<typeof FactoryFeatureVerificationSchema.parse>,
+  index: number,
+  row: EvidenceRow,
+): FactoryConceptualReviewCheck | null {
+  const expected = certificate.manifest[index];
+  const stored = FactoryVerificationResultSchema.omit({ id: true, createdAt: true }).safeParse(
+    row.result,
+  );
+  if (
+    expected === undefined ||
+    !stored.success ||
+    row.id !== certificate.evidenceIds[index] ||
+    row.run_id !== certificate.runId ||
+    stored.data.position !== index + 1 ||
+    expected.position !== index + 1 ||
+    stored.data.outcome !== "passed" ||
+    stored.data.exitCode !== 0 ||
+    stored.data.headCommitId !== certificate.revision.headCommitId ||
+    stored.data.treeId !== certificate.revision.treeId ||
+    JSON.stringify(stored.data.command) !== JSON.stringify(expected.command)
+  )
+    return null;
+  return FactoryConceptualReviewCheckSchema.parse({
+    schemaVersion: 1,
+    evidenceId: row.id,
+    runId: row.run_id,
+    manifestPosition: expected.position,
+    origins: expected.origins,
+    result: { ...stored.data, id: row.id, createdAt: row.created_at.toISOString() },
+  });
+}
+
+async function readFrozenWorkflowCheckRange(
+  pool: DatabasePool,
+  preparation: FactoryConceptualReviewPreparation,
+  offset: number,
+  limit: number,
+): Promise<FactoryConceptualReviewCheck[]> {
+  const certificate = preparation.publication?.certificate;
+  if (certificate === undefined)
+    throw new FactoryConceptualReviewPersistenceError("evidence_not_found");
+  const evidenceIds = certificate.evidenceIds.slice(offset, offset + limit);
+  if (evidenceIds.length === 0) return [];
+  const rows = (
+    await pool.query<EvidenceRow>(
+      `SELECT evidence.id, evidence.run_id, evidence.result, evidence.created_at
+       FROM unnest($2::uuid[]) WITH ORDINALITY expected(id, position)
+       JOIN factory_verification_results AS evidence
+         ON evidence.id = expected.id AND evidence.run_id = $1 AND evidence.purpose = 'feature_verification'
+       ORDER BY expected.position`,
+      [certificate.runId, evidenceIds],
+    )
+  ).rows;
+  if (rows.length !== evidenceIds.length)
+    throw new FactoryConceptualReviewPersistenceError("evidence_not_found");
+  const checks = rows.map((row, index) => frozenCheck(certificate, offset + index, row));
+  if (checks.some((check) => check === null))
+    throw new FactoryConceptualReviewPersistenceError("evidence_not_found");
+  return checks as FactoryConceptualReviewCheck[];
+}
+
+export async function readFactoryConceptualReviewWorkflowChecks(
+  pool: DatabasePool,
+  projectId: string,
+  featureId: string,
+  workflowId: string,
+  offset = 0,
+  limit = 100,
+): Promise<FactoryConceptualReviewCheckCatalog> {
+  if (
+    !Number.isSafeInteger(offset) ||
+    offset < 0 ||
+    !Number.isSafeInteger(limit) ||
+    limit < 1 ||
+    limit > 100
+  )
+    throw new FactoryConceptualReviewPersistenceError("invalid_request");
+  const preparation = await readFrozenWorkflowPreparation(pool, projectId, featureId, workflowId);
+  const certificate = preparation.publication?.certificate;
+  if (certificate === undefined)
+    throw new FactoryConceptualReviewPersistenceError("evidence_not_found");
+  const page = await readFrozenWorkflowCheckRange(pool, preparation, offset, limit);
+  return FactoryConceptualReviewCheckCatalogSchema.parse({
+    schemaVersion: 1,
+    runId: certificate.runId,
+    manifestDigest: certificate.manifestDigest,
+    checks: page.map((check) => ({
+      evidenceId: check.evidenceId,
+      runId: check.runId,
+      manifestPosition: check.manifestPosition,
+      origins: check.origins,
+      command: check.result.command,
+      headCommitId: check.result.headCommitId,
+      treeId: check.result.treeId,
+      outcome: check.result.outcome,
+      exitCode: check.result.exitCode,
+      stdoutTruncated: check.result.stdoutTruncated,
+      stderrTruncated: check.result.stderrTruncated,
+      durationMs: check.result.durationMs,
+      createdAt: check.result.createdAt,
+    })),
+    offset,
+    total: certificate.evidenceIds.length,
+    nextOffset: offset + page.length < certificate.evidenceIds.length ? offset + page.length : null,
+  });
+}
+
+export async function readFactoryConceptualReviewWorkflowCheck(
+  pool: DatabasePool,
+  projectId: string,
+  featureId: string,
+  workflowId: string,
+  evidenceId: string,
+): Promise<FactoryConceptualReviewCheck> {
+  const preparation = await readFrozenWorkflowPreparation(pool, projectId, featureId, workflowId);
+  const certificate = preparation.publication?.certificate;
+  if (certificate === undefined)
+    throw new FactoryConceptualReviewPersistenceError("evidence_not_found");
+  const index = certificate.evidenceIds.indexOf(evidenceId);
+  if (index < 0) throw new FactoryConceptualReviewPersistenceError("evidence_not_found");
+  const check = (await readFrozenWorkflowCheckRange(pool, preparation, index, 1))[0];
+  if (check === undefined) throw new FactoryConceptualReviewPersistenceError("evidence_not_found");
+  return FactoryConceptualReviewCheckSchema.parse(check);
+}

@@ -2,6 +2,7 @@ import { expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import type {
+  FactoryConceptualReviewCheck,
   FactoryConceptualReviewDraft,
   FactoryConceptualReviewPreparation,
 } from "@kestrel/contracts";
@@ -37,15 +38,15 @@ const preparation = {
 
 const draft: FactoryConceptualReviewDraft = {
   result: "partial",
-  summary: "1 of 2 approved outcomes map to exact retained source; 0 problems are identified.",
+  summary: "0 of 2 approved outcomes map to exact retained source; 0 problems are identified.",
   outcomes: [
     {
       id: "outcome:search",
       outcomeKey: "search",
       title: "Search",
-      coverage: "mapped",
+      coverage: "unclear",
       behavioralStepIds: ["step:search"],
-      reason: "The exact head implements it.",
+      reason: "The exact head implements it, but no final check is linked.",
     },
     {
       id: "outcome:empty",
@@ -88,7 +89,7 @@ const draft: FactoryConceptualReviewDraft = {
 };
 const searchStep = draft.behavioralSteps[0];
 const searchEvidence = draft.evidence[0];
-if (searchStep === undefined || searchEvidence === undefined)
+if (searchStep === undefined || searchEvidence?.type !== "source")
   throw new Error("Conceptual Review fixture is incomplete");
 
 const source = {
@@ -109,6 +110,51 @@ const source = {
 };
 const readChangedRange = () => Promise.resolve({ status: "modified" as const, rangeChanged: true });
 
+const finalCheck = {
+  schemaVersion: 1 as const,
+  evidenceId: "01991c36-7f90-7000-8000-000000000006",
+  runId: "01991c36-7f90-7000-8000-000000000005",
+  manifestPosition: 1,
+  origins: [{ workItemKey: "search", position: 1 }],
+  result: {
+    id: "01991c36-7f90-7000-8000-000000000006",
+    round: 1,
+    position: 1,
+    command: { program: "npm", args: ["test"], cwd: ".", timeoutSeconds: 60 },
+    headCommitId: "b".repeat(40),
+    treeId: "c".repeat(40),
+    outcome: "passed" as const,
+    exitCode: 0,
+    stdout: "ok\n",
+    stderr: "",
+    stdoutTruncated: false,
+    stderrTruncated: false,
+    durationMs: 123,
+    createdAt: "2026-09-19T12:00:00.000Z",
+  },
+};
+const checkPreparation = {
+  ...preparation,
+  publication: {
+    certificate: {
+      featureId: "01991c36-7f90-7000-8000-000000000002",
+      runId: finalCheck.runId,
+      revision: {
+        headCommitId: finalCheck.result.headCommitId,
+        treeId: finalCheck.result.treeId,
+      },
+      manifest: [
+        {
+          position: 1,
+          command: finalCheck.result.command,
+          origins: finalCheck.origins,
+        },
+      ],
+      evidenceIds: [finalCheck.evidenceId],
+    },
+  },
+} as unknown as FactoryConceptualReviewPreparation;
+
 it("accepts a bounded graph only after resolving every exact source locator", async () => {
   const readSource = vi.fn(() => Promise.resolve(source));
   await expect(
@@ -120,6 +166,109 @@ it("accepts a bounded graph only after resolving every exact source locator", as
     }),
   ).resolves.toEqual(draft);
   expect(readSource).toHaveBeenCalledWith(draft.evidence[0]);
+});
+
+it("does not let source alone present an approved outcome as adequately mapped", async () => {
+  await expect(
+    validateFactoryConceptualReview({
+      preparation,
+      draft: {
+        ...draft,
+        outcomes: [{ ...draft.outcomes[0], coverage: "mapped" }, draft.outcomes[1]],
+      },
+      readSource: vi.fn(() => Promise.resolve(source)),
+      readChange: readChangedRange,
+    }),
+  ).rejects.toEqual(new FactoryConceptualReviewValidationError("invalid_output"));
+});
+
+it("replaces a model check ID with its exact server-owned final result provenance", async () => {
+  const unresolved = {
+    ...draft,
+    behavioralSteps: [{ ...searchStep, evidenceIds: ["source:search", "check:search"] }],
+    evidence: [
+      searchEvidence,
+      {
+        id: "check:search",
+        type: "check",
+        evidenceId: finalCheck.evidenceId,
+        relation: "supports",
+        proposition: "The approved search command succeeds on the reviewed head.",
+        description: "Final search verification.",
+        sufficiency: "Records command success; behavior mapping remains model judgment.",
+        limitations: ["No browser timing assertion."],
+      },
+    ],
+    edges: [...draft.edges, { from: "step:search", to: "check:search", kind: "supported_by" }],
+  };
+  const readCheck = vi.fn(() => Promise.resolve(finalCheck));
+  const result = await validateFactoryConceptualReview({
+    preparation: checkPreparation,
+    draft: unresolved,
+    readSource: vi.fn(() => Promise.resolve(source)),
+    readChange: readChangedRange,
+    readCheck,
+  });
+  expect(readCheck).toHaveBeenCalledWith(finalCheck.evidenceId);
+  expect(result.evidence[1]).toMatchObject({
+    type: "check",
+    evidenceId: finalCheck.evidenceId,
+    record: {
+      runId: finalCheck.runId,
+      manifestPosition: 1,
+      headCommitId: finalCheck.result.headCommitId,
+      treeId: finalCheck.result.treeId,
+      outcome: "passed",
+      exitCode: 0,
+    },
+  });
+});
+
+it.each([
+  ["foreign run", { runId: "01991c36-7f90-7000-8000-000000000009" }],
+  ["wrong head", { result: { ...finalCheck.result, headCommitId: "f".repeat(40) } }],
+  ["wrong tree", { result: { ...finalCheck.result, treeId: "f".repeat(40) } }],
+  [
+    "wrong command",
+    {
+      result: {
+        ...finalCheck.result,
+        command: { ...finalCheck.result.command, args: ["test", "--changed"] },
+      },
+    },
+  ],
+  ["failed result", { result: { ...finalCheck.result, outcome: "failed", exitCode: 1 } }],
+  ["timeout result", { result: { ...finalCheck.result, outcome: "timeout", exitCode: null } }],
+] as const)("rejects %s as support for the frozen review", async (_name, change) => {
+  const unresolved = {
+    ...draft,
+    behavioralSteps: [{ ...searchStep, evidenceIds: ["source:search", "check:search"] }],
+    evidence: [
+      searchEvidence,
+      {
+        id: "check:search",
+        type: "check",
+        evidenceId: finalCheck.evidenceId,
+        relation: "supports",
+        proposition: "The search command succeeds.",
+        description: "Final search verification.",
+        sufficiency: "Command evidence.",
+        limitations: [],
+      },
+    ],
+    edges: [...draft.edges, { from: "step:search", to: "check:search", kind: "supported_by" }],
+  };
+  await expect(
+    validateFactoryConceptualReview({
+      preparation: checkPreparation,
+      draft: unresolved,
+      readSource: vi.fn(() => Promise.resolve(source)),
+      readChange: readChangedRange,
+      readCheck: vi.fn(() =>
+        Promise.resolve({ ...finalCheck, ...change } as unknown as FactoryConceptualReviewCheck),
+      ),
+    }),
+  ).rejects.toEqual(new FactoryConceptualReviewValidationError("check_unavailable"));
 });
 
 it("rejects unchanged source presented as a delivered modification", async () => {
@@ -243,7 +392,7 @@ it("never derives executed-check authority from unrestricted model prose", async
 
   expect(result.result).toBe("partial");
   expect(result.summary).toBe(
-    "1 of 2 approved outcomes map to exact retained source; 0 problems are identified.",
+    "0 of 2 approved outcomes map to exact retained source; 0 problems are identified.",
   );
   expect(result.evidence[0]?.sufficiency).toBe("The unit specs returned success.");
 });
@@ -282,6 +431,12 @@ it("rejects an otherwise valid graph that exhausts its frozen output budget", as
 it("uses a provider-compatible uniform problem shape before host-side narrowing", () => {
   const modelOutput = {
     ...draft,
+    evidence: draft.evidence.map((evidence) => ({
+      ...evidence,
+      evidenceId: null,
+      relation: null,
+      proposition: null,
+    })),
     problems: [
       {
         id: "finding:stale",

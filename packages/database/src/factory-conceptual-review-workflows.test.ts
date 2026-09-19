@@ -13,6 +13,8 @@ import {
   identifyFactoryConceptualReviewContainer,
   observeFactoryConceptualReviewHead,
   publishFactoryConceptualReview,
+  readFactoryConceptualReviewArtifact,
+  readFactoryConceptualReviewHistory,
   readCurrentFactoryConceptualReviewWorkflow,
   reconcileFactoryConceptualReviewWorkflows,
   recordFactoryConceptualReviewSession,
@@ -531,6 +533,77 @@ it("reads the latest durable workflow and marks a moved pull request head outdat
     artifact: { id: artifactId, graph: draft },
     currency: "outdated",
   });
+});
+
+it("pages immutable published artifacts and reopens the selected artifact identity", async () => {
+  const artifact = {
+    schemaVersion: 1 as const,
+    id: artifactId,
+    workflowId,
+    inputDigest: digest,
+    reviewRevisionId: revisionId,
+    baseCommitId,
+    headCommitId,
+    status: "partial" as const,
+    evidenceScope: {
+      source: "exact_retained_revision" as const,
+      executedChecks: "not_linked" as const,
+      narrativeAuthority: "source_only_model_interpretation" as const,
+    },
+    graph: draft,
+    createdAt: at.toISOString(),
+  };
+  const workflowRow = {
+    id: workflowId,
+    request_id: requestId,
+    project_id: projectId,
+    feature_id: featureId,
+    change_proposal_id: proposalId,
+    review_revision_id: revisionId,
+    input_digest: digest,
+    factory_input: preparation,
+    workflow_state: "published",
+    attempt_count: 1,
+    maximum_attempts: 3,
+    failure_code: null,
+    artifact_id: artifactId,
+    requested_at: at,
+    started_at: at,
+    finished_at: at,
+    artifact,
+    current_head_commit_id: "e".repeat(40),
+  };
+  const query = vi.fn((sql: string) => {
+    if (sql.includes("COUNT(*)")) return { rows: [{ total: "1" }] };
+    if (sql.includes("FROM review_workflows AS workflow")) return { rows: [workflowRow] };
+    throw new Error(`Unexpected query: ${sql}`);
+  });
+  const database = { query } as never;
+  const history = await readFactoryConceptualReviewHistory(database, projectId, featureId, 0, 20);
+  const selected = await readFactoryConceptualReviewArtifact(
+    database,
+    projectId,
+    featureId,
+    artifactId,
+  );
+  expect(history).toEqual({
+    schemaVersion: 1,
+    reviews: [
+      {
+        artifactId,
+        workflowId,
+        status: "partial",
+        headCommitId,
+        requestedAt: at.toISOString(),
+        finishedAt: at.toISOString(),
+        currency: "outdated",
+      },
+    ],
+    offset: 0,
+    total: 1,
+    nextOffset: null,
+  });
+  expect(selected).toMatchObject({ artifact: { id: artifactId }, workflow: { id: workflowId } });
 });
 
 it("persists every runtime identity behind the current attempt fence", async () => {

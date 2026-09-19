@@ -21,6 +21,14 @@ const treeId = "c".repeat(40);
 const digest = "d".repeat(64);
 const at = "2026-09-19T12:00:00.000Z";
 const command = { program: "npm", args: ["test"], cwd: ".", timeoutSeconds: 60 };
+const loadEmptyReviewHistory = () =>
+  Promise.resolve({
+    schemaVersion: 1 as const,
+    reviews: [],
+    offset: 0,
+    total: 0,
+    nextOffset: null,
+  });
 const preparation: FactoryConceptualReviewPreparation = {
   schemaVersion: 1,
   projectId,
@@ -259,6 +267,7 @@ it("explains the exact approved basis and exposes source and check inspectors wi
         featureId,
         online: true,
         onAuthenticationError: vi.fn(() => false),
+        loadReviewHistory: loadEmptyReviewHistory,
         loadPreparation,
         loadCurrentReview: vi.fn(() =>
           Promise.resolve({ schemaVersion: 1 as const, review: null }),
@@ -387,6 +396,7 @@ it("pages every bounded catalog and reads an operator-selected exact source rang
         featureId,
         online: true,
         onAuthenticationError: vi.fn(() => false),
+        loadReviewHistory: loadEmptyReviewHistory,
         loadPreparation: vi.fn(() => Promise.resolve(preparation)),
         loadCurrentReview: vi.fn(() =>
           Promise.resolve({ schemaVersion: 1 as const, review: null }),
@@ -459,6 +469,7 @@ it("clears loaded evidence when refreshed preparation no longer matches", async 
         featureId,
         online: true,
         onAuthenticationError: vi.fn(() => false),
+        loadReviewHistory: loadEmptyReviewHistory,
         loadPreparation,
         loadCurrentReview: vi.fn(() =>
           Promise.resolve({ schemaVersion: 1 as const, review: null }),
@@ -668,6 +679,7 @@ it("starts a durable review, survives polling, and traverses outcome to exact fi
     .mockResolvedValueOnce(cleanupPending)
     .mockResolvedValueOnce(published);
   const loadPreparation = vi.fn(() => Promise.resolve(ready));
+  const loadReviewHistory = vi.fn(loadEmptyReviewHistory);
   const loadSourceLines = vi.fn(() =>
     Promise.resolve({
       status: "available" as const,
@@ -703,6 +715,7 @@ it("starts a durable review, survives polling, and traverses outcome to exact fi
         featureId,
         online: true,
         onAuthenticationError: vi.fn(() => false),
+        loadReviewHistory,
         loadPreparation,
         loadCurrentReview,
         loadReviewWorkflow,
@@ -744,6 +757,7 @@ it("starts a durable review, survives polling, and traverses outcome to exact fi
     await vi.advanceTimersByTimeAsync(1_000);
   });
   expect(loadReviewWorkflow).toHaveBeenCalledTimes(3);
+  expect(loadReviewHistory).toHaveBeenCalledTimes(2);
   expect(container.textContent).toContain("Search refresh is implemented");
   expect(container.textContent).toContain("Outdated · PR head moved");
   expect(container.textContent).toContain("model interpretation of exact retained source");
@@ -757,7 +771,7 @@ it("starts a durable review, survives polling, and traverses outcome to exact fi
   expect(loadSourceLines).toHaveBeenCalledWith(
     projectId,
     featureId,
-    workflow.id,
+    artifact.id,
     "head",
     "src/search.ts",
     4,
@@ -803,6 +817,7 @@ it("clears the previous Project review immediately when switching while offline"
         featureId,
         online: true,
         onAuthenticationError: vi.fn(() => false),
+        loadReviewHistory: loadEmptyReviewHistory,
         loadPreparation: vi.fn(() => Promise.resolve(preparation)),
         loadCurrentReview: vi.fn(() =>
           Promise.resolve({ schemaVersion: 1 as const, review: null }),
@@ -822,6 +837,7 @@ it("clears the previous Project review immediately when switching while offline"
         featureId: "01991c36-7f90-7000-8000-000000000098",
         online: false,
         onAuthenticationError: vi.fn(() => false),
+        loadReviewHistory: loadEmptyReviewHistory,
         loadPreparation: vi.fn(),
         loadCurrentReview: vi.fn(),
         loadSourceCatalog: vi.fn(),
@@ -884,7 +900,7 @@ it("never renders source from the previously selected Evidence under new metadat
     graph,
     projectId,
     featureId,
-    workflowId: projectId,
+    artifactId: projectId,
     loadSourceLines,
     onAuthenticationError: vi.fn(() => false),
   };
@@ -935,4 +951,132 @@ it("never renders source from the previously selected Evidence under new metadat
     } as never),
   );
   expect(container.textContent).toContain("current source B");
+});
+
+it("renders final-check provenance and HTML-looking output as bounded plain text", async () => {
+  const artifactId = "01991c36-7f90-7000-8000-000000000010";
+  const checkId = "01991c36-7f90-7000-8000-000000000011";
+  const runId = "01991c36-7f90-7000-8000-000000000012";
+  const record = {
+    evidenceId: checkId,
+    runId,
+    manifestPosition: 1,
+    origins: [{ workItemKey: "search", position: 1 }],
+    command,
+    headCommitId,
+    treeId,
+    outcome: "passed" as const,
+    exitCode: 0 as const,
+    stdoutTruncated: false,
+    stderrTruncated: true,
+    durationMs: 42,
+    createdAt: at,
+  };
+  const graph: FactoryConceptualReviewDraft = {
+    result: "partial",
+    summary: "The behavior has source and final-check evidence.",
+    outcomes: [
+      {
+        id: "outcome:search",
+        outcomeKey: "search",
+        title: "Search updates",
+        coverage: "mapped",
+        behavioralStepIds: ["step:search"],
+        reason: "Source and a final check are linked.",
+      },
+    ],
+    behavioralSteps: [
+      {
+        id: "step:search",
+        title: "Update results",
+        description: "The response updates the list.",
+        change: "modified",
+        outcomeKeys: ["search"],
+        evidenceIds: ["source:search", "check:search"],
+      },
+    ],
+    evidence: [
+      {
+        id: "source:search",
+        type: "source",
+        side: "head",
+        path: "src/search.ts",
+        startLine: 1,
+        endLine: 1,
+        description: "Search source",
+        sufficiency: "Shows the changed assignment.",
+        limitations: [],
+      },
+      {
+        id: "check:search",
+        type: "check",
+        evidenceId: checkId,
+        relation: "supports",
+        proposition: "The approved verification command succeeds.",
+        description: "Final verification command",
+        sufficiency: "Proves command success, not the entire user experience.",
+        limitations: ["No browser timing assertion."],
+        record,
+      },
+    ],
+    problems: [],
+    edges: [
+      { from: "outcome:search", to: "step:search", kind: "implemented_by" },
+      { from: "step:search", to: "source:search", kind: "supported_by" },
+      { from: "step:search", to: "check:search", kind: "supported_by" },
+    ],
+    limitations: [],
+  };
+  const loadCheck = vi.fn(() =>
+    Promise.resolve({
+      schemaVersion: 1 as const,
+      evidenceId: checkId,
+      runId,
+      manifestPosition: 1,
+      origins: record.origins,
+      result: {
+        id: checkId,
+        round: 1,
+        position: 1,
+        command,
+        headCommitId,
+        treeId,
+        outcome: "passed" as const,
+        exitCode: 0,
+        stdout: '<img src=x onerror="window.pwned=true"> passed\n',
+        stderr: "<script>alert(1)</script>",
+        stdoutTruncated: false,
+        stderrTruncated: true,
+        durationMs: 42,
+        createdAt: at,
+      },
+    }),
+  );
+  await renderAct(() =>
+    root.render(
+      createElement(ReviewEvidenceInspector, {
+        graph,
+        selectedId: "check:search",
+        projectId,
+        featureId,
+        artifactId,
+        loadCheck,
+        onAuthenticationError: vi.fn(() => false),
+      }),
+    ),
+  );
+  expect(loadCheck).toHaveBeenCalledWith(
+    projectId,
+    featureId,
+    artifactId,
+    checkId,
+    expect.any(AbortSignal),
+  );
+  expect(container.textContent).toContain("Manifest / Work Items");
+  expect(container.textContent).toContain(runId);
+  expect(container.textContent).toContain('<img src=x onerror="window.pwned=true"> passed');
+  expect(container.textContent).toContain("<script>alert(1)</script>");
+  expect(container.textContent).toContain("stderr · truncated");
+  expect(container.querySelector("img")).toBeNull();
+  expect(container.querySelector("script")).toBeNull();
 });
