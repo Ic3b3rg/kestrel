@@ -2,6 +2,7 @@ import {
   FactoryConceptualReviewCheckCatalogSchema,
   FactoryConceptualReviewCheckSchema,
   FactoryConceptualReviewCurrentSchema,
+  FactoryConceptualReviewHistorySchema,
   FactoryConceptualReviewPreparationSchema,
   FactoryConceptualReviewStartCommandSchema,
   FactoryConceptualReviewSourceCatalogSchema,
@@ -11,6 +12,7 @@ import {
   type FactoryConceptualReviewCheck,
   type FactoryConceptualReviewCheckCatalog,
   type FactoryConceptualReviewCurrent,
+  type FactoryConceptualReviewHistory,
   type FactoryConceptualReviewPreparation,
   type FactoryConceptualReviewStartCommand,
   type FactoryConceptualReviewSourceCatalog,
@@ -192,6 +194,75 @@ export function fetchFactoryConceptualReviewWorkflowSourceLines(
     `${root(projectId, featureId)}/workflows/${encodeURIComponent(workflow)}/source/lines?${query.toString()}`,
     FactoryConceptualReviewSourceLinesSchema,
     "published Conceptual Review source lines",
+    signal,
+  );
+}
+
+export function fetchFactoryConceptualReviewHistory(
+  projectId: string,
+  featureId: string,
+  offset = 0,
+  limit = 20,
+  signal?: AbortSignal,
+): Promise<FactoryConceptualReviewHistory> {
+  const query = new URLSearchParams({ offset: String(offset), limit: String(limit) });
+  return read(
+    `${root(projectId, featureId)}/artifacts?${query.toString()}`,
+    FactoryConceptualReviewHistorySchema,
+    "Conceptual Review history",
+    signal,
+  );
+}
+
+export function fetchFactoryConceptualReviewArtifact(
+  projectId: string,
+  featureId: string,
+  artifactId: string,
+  signal?: AbortSignal,
+): Promise<FactoryConceptualReviewWorkflowRead> {
+  return read(
+    `${root(projectId, featureId)}/artifacts/${encodeURIComponent(KestrelIdSchema.parse(artifactId))}`,
+    FactoryConceptualReviewWorkflowReadSchema,
+    "Conceptual Review artifact",
+    signal,
+  );
+}
+
+export function fetchFactoryConceptualReviewArtifactSourceLines(
+  projectId: string,
+  featureId: string,
+  artifactId: string,
+  side: "base" | "head",
+  path: string,
+  startLine: number,
+  endLine: number,
+  signal?: AbortSignal,
+): Promise<FactoryConceptualReviewSourceLines> {
+  const query = new URLSearchParams({
+    side,
+    path,
+    startLine: String(startLine),
+    endLine: String(endLine),
+  });
+  return read(
+    `${root(projectId, featureId)}/artifacts/${encodeURIComponent(KestrelIdSchema.parse(artifactId))}/source/lines?${query.toString()}`,
+    FactoryConceptualReviewSourceLinesSchema,
+    "Conceptual Review artifact source lines",
+    signal,
+  );
+}
+
+export function fetchFactoryConceptualReviewArtifactCheck(
+  projectId: string,
+  featureId: string,
+  artifactId: string,
+  evidenceId: string,
+  signal?: AbortSignal,
+): Promise<FactoryConceptualReviewCheck> {
+  return read(
+    `${root(projectId, featureId)}/artifacts/${encodeURIComponent(KestrelIdSchema.parse(artifactId))}/checks/${encodeURIComponent(KestrelIdSchema.parse(evidenceId))}`,
+    FactoryConceptualReviewCheckSchema,
+    "Conceptual Review artifact check result",
     signal,
   );
 }

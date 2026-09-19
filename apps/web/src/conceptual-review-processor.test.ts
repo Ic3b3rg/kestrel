@@ -4,6 +4,7 @@ import type {
   FactoryConceptualReviewDraft,
   FactoryConceptualReviewPreparation,
 } from "@kestrel/contracts";
+import { FactoryConceptualReviewDraftSchema } from "@kestrel/contracts";
 import type { CodexReviewRuntime } from "./codex-review-runtime.js";
 import { CodexExecutionError, type CodexExecutionTurnInput } from "./codex-execution-runtime.js";
 import { FactoryGitHubError } from "./factory-github.js";
@@ -15,6 +16,8 @@ const db = vi.hoisted(() => ({
   identifyContainer: vi.fn(),
   observeHead: vi.fn(),
   publish: vi.fn(),
+  readCheck: vi.fn(),
+  readChecks: vi.fn(),
   readBinding: vi.fn(),
   recordResourceDisposal: vi.fn(),
   recordSession: vi.fn(),
@@ -42,6 +45,8 @@ vi.mock("@kestrel/database", () => ({
   identifyFactoryConceptualReviewContainer: db.identifyContainer,
   observeFactoryConceptualReviewHead: db.observeHead,
   publishFactoryConceptualReview: db.publish,
+  readFactoryConceptualReviewWorkflowCheck: db.readCheck,
+  readFactoryConceptualReviewWorkflowChecks: db.readChecks,
   readFactoryConceptualReviewWorkflowSourceBinding: db.readBinding,
   recordFactoryConceptualReviewResourceDisposal: db.recordResourceDisposal,
   recordFactoryConceptualReviewSession: db.recordSession,
@@ -68,6 +73,14 @@ const attemptId = "85cc9964-10c2-49d1-86c4-8f13f5019e86";
 const projectId = "01991c36-7f90-7000-8000-000000000001";
 const featureId = "01991c36-7f90-7000-8000-000000000002";
 const digest = "d".repeat(64);
+const checkEvidenceId = "01991c36-7f90-7000-8000-000000000006";
+const runId = "01991c36-7f90-7000-8000-000000000007";
+const verificationCommand = {
+  program: "npm",
+  args: ["test"],
+  cwd: ".",
+  timeoutSeconds: 60,
+};
 
 const preparation = {
   projectId,
@@ -101,6 +114,21 @@ const preparation = {
       base: { objectId: "a".repeat(40) },
       head: { objectId: "b".repeat(40) },
     },
+    certificate: {
+      runId,
+      revision: { headCommitId: "b".repeat(40), treeId: "c".repeat(40) },
+      manifest: [
+        {
+          position: 1,
+          command: verificationCommand,
+          origins: [{ workItemKey: "search", position: 1 }],
+        },
+      ],
+      evidenceIds: [checkEvidenceId],
+    },
+  },
+  evidence: {
+    checks: { runId, manifestDigest: digest, total: 1 },
   },
   configuration: {
     model: { modelId: "gpt-6-astra" },
@@ -138,13 +166,13 @@ const preparation = {
 
 const draft: FactoryConceptualReviewDraft = {
   result: "partial",
-  summary: "1 of 1 approved outcomes map to exact retained source; 0 problems are identified.",
+  summary: "0 of 1 approved outcomes map to exact retained source; 0 problems are identified.",
   outcomes: [
     {
       id: "outcome:search",
       outcomeKey: "search",
       title: "Search updates the results",
-      coverage: "mapped",
+      coverage: "unclear",
       behavioralStepIds: ["step:search"],
       reason: "The handler maps this behavior.",
     },
@@ -180,6 +208,15 @@ const draft: FactoryConceptualReviewDraft = {
   limitations: ["Browser interaction was not observed."],
 };
 
+const modelDraft = {
+  ...draft,
+  evidence: draft.evidence.map((evidence) =>
+    evidence.type === "source"
+      ? { ...evidence, evidenceId: null, relation: null, proposition: null }
+      : evidence,
+  ),
+};
+
 async function completeRuntimeTurn(input: CodexExecutionTurnInput, text: string) {
   const container = {
     name: `kestrel-factory-${"a".repeat(32)}`,
@@ -213,6 +250,54 @@ function arrange(
     expectedBaseCommitId: "a".repeat(40),
     expectedHeadCommitId: "b".repeat(40),
     expectedHeadTreeId: "c".repeat(40),
+  });
+  db.readChecks.mockResolvedValue({
+    schemaVersion: 1,
+    runId,
+    manifestDigest: digest,
+    checks: [
+      {
+        evidenceId: checkEvidenceId,
+        runId,
+        manifestPosition: 1,
+        origins: [{ workItemKey: "search", position: 1 }],
+        command: verificationCommand,
+        headCommitId: "b".repeat(40),
+        treeId: "c".repeat(40),
+        outcome: "passed",
+        exitCode: 0,
+        stdoutTruncated: false,
+        stderrTruncated: false,
+        durationMs: 123,
+        createdAt: "2026-09-19T12:00:00.000Z",
+      },
+    ],
+    offset: 0,
+    total: 1,
+    nextOffset: null,
+  });
+  db.readCheck.mockResolvedValue({
+    schemaVersion: 1,
+    evidenceId: checkEvidenceId,
+    runId,
+    manifestPosition: 1,
+    origins: [{ workItemKey: "search", position: 1 }],
+    result: {
+      id: checkEvidenceId,
+      round: 1,
+      position: 1,
+      command: verificationCommand,
+      headCommitId: "b".repeat(40),
+      treeId: "c".repeat(40),
+      outcome: "passed",
+      exitCode: 0,
+      stdout: "<check>passed</check>\n",
+      stderr: "",
+      stdoutTruncated: false,
+      stderrTruncated: false,
+      durationMs: 123,
+      createdAt: "2026-09-19T12:00:00.000Z",
+    },
   });
   for (const callback of [
     db.reserveContainer,
@@ -254,7 +339,7 @@ function arrange(
     dispose: vi.fn(() => Promise.resolve()),
   };
   const runTurn = vi.fn((input: CodexExecutionTurnInput) =>
-    completeRuntimeTurn(input, JSON.stringify(draft)),
+    completeRuntimeTurn(input, JSON.stringify(modelDraft)),
   );
   const runtime: CodexReviewRuntime = { runTurn };
   reviewRuntime.create.mockReturnValue(runtime);
@@ -346,6 +431,9 @@ it("reads source omitted from the prompt, validates it, and publishes once after
   expect(turn?.prompt).toContain('path:"src/file.ts"');
   expect(turn?.prompt).toContain("mapped outcomes must name at least one Behavioral Step ID");
   expect(turn?.prompt).toContain("Finding evidenceIds may reference head-side evidence only");
+  expect(turn?.prompt).toContain('"finalCheckCatalog"');
+  expect(turn?.prompt).toContain(checkEvidenceId);
+  expect(turn?.prompt).not.toContain('"stdout"');
   expect(turn?.prompt).not.toContain("two\\nthree");
   expect(turn?.outputSchema).toBeDefined();
   expect(source.openReader).toHaveBeenCalledOnce();
@@ -373,6 +461,131 @@ it("reads source omitted from the prompt, validates it, and publishes once after
     expect.any(Number),
   );
   expect(db.fail).not.toHaveBeenCalled();
+});
+
+it("publishes only server-resolved final-check provenance and never puts output in the prompt", async () => {
+  const checkDraft = {
+    ...modelDraft,
+    result: "complete",
+    outcomes: modelDraft.outcomes.map((outcome) => ({ ...outcome, coverage: "mapped" })),
+    behavioralSteps: [
+      {
+        ...draft.behavioralSteps[0],
+        evidenceIds: ["source:search", "check:search"],
+      },
+    ],
+    evidence: [
+      modelDraft.evidence[0],
+      {
+        id: "check:search",
+        type: "check",
+        side: null,
+        path: null,
+        startLine: null,
+        endLine: null,
+        evidenceId: checkEvidenceId,
+        relation: "supports",
+        proposition: "The approved verification command succeeds on the reviewed head.",
+        description: "Final Feature verification.",
+        sufficiency: "Establishes command success; the behavioral link remains model judgment.",
+        limitations: ["No browser timing assertion."],
+      },
+    ],
+    edges: [...draft.edges, { from: "step:search", to: "check:search", kind: "supported_by" }],
+    limitations: [],
+  };
+  const { processor, runTurn } = arrange();
+  runTurn.mockImplementationOnce((input) => completeRuntimeTurn(input, JSON.stringify(checkDraft)));
+
+  await processor.process({ workflowId });
+
+  const turn = runTurn.mock.calls[0]?.[0];
+  expect(turn?.prompt).toContain(checkEvidenceId);
+  expect(turn?.prompt).not.toContain("<check>passed</check>");
+  expect(db.readCheck).toHaveBeenCalledWith(
+    expect.anything(),
+    projectId,
+    featureId,
+    workflowId,
+    checkEvidenceId,
+  );
+  const publishedInput: unknown = db.publish.mock.calls[0]?.[2];
+  const published = FactoryConceptualReviewDraftSchema.parse(publishedInput);
+  expect(published.result).toBe("complete");
+  const publishedCheck = published.evidence.find(
+    (item) => item.type === "check" && item.evidenceId === checkEvidenceId,
+  );
+  expect(publishedCheck?.type).toBe("check");
+  if (publishedCheck?.type !== "check") throw new Error("Expected published check evidence");
+  expect(publishedCheck.record).toMatchObject({ runId, outcome: "passed", exitCode: 0 });
+});
+
+it("provides all 480 bounded final-check summaries without copying any command output", async () => {
+  const { processor, runTurn } = arrange();
+  const summaries = Array.from({ length: 480 }, (_, index) => ({
+    evidenceId: `01991c36-7f90-7000-8000-${String(index + 1).padStart(12, "0")}`,
+    runId,
+    manifestPosition: index + 1,
+    origins: [
+      { workItemKey: `item-${String(Math.floor(index / 12) + 1)}`, position: (index % 12) + 1 },
+    ],
+    command: {
+      program: "npm",
+      args: ["test", `check-${String(index + 1)}-${"x".repeat(2_048)}-COMMAND_TAIL_CANARY`],
+      cwd: ".",
+      timeoutSeconds: 60,
+    },
+    headCommitId: "b".repeat(40),
+    treeId: "c".repeat(40),
+    outcome: "passed" as const,
+    exitCode: 0,
+    stdoutTruncated: false,
+    stderrTruncated: false,
+    durationMs: index,
+    createdAt: "2026-09-19T12:00:00.000Z",
+  }));
+  db.claim.mockResolvedValue({
+    workflowId,
+    attemptId,
+    attemptNumber: 1,
+    preparation: {
+      ...preparation,
+      evidence: { checks: { runId, manifestDigest: digest, total: summaries.length } },
+    },
+  });
+  db.readChecks.mockImplementation(
+    (
+      _pool: unknown,
+      _project: string,
+      _feature: string,
+      _workflow: string,
+      offset: number,
+      limit: number,
+    ) => {
+      const checks = summaries.slice(offset, offset + limit);
+      return Promise.resolve({
+        schemaVersion: 1,
+        runId,
+        manifestDigest: digest,
+        checks,
+        offset,
+        total: summaries.length,
+        nextOffset: offset + checks.length < summaries.length ? offset + checks.length : null,
+      });
+    },
+  );
+
+  await processor.process({ workflowId });
+
+  const prompt = runTurn.mock.calls[0]?.[0].prompt ?? "";
+  expect(db.readChecks).toHaveBeenCalledTimes(5);
+  expect(prompt).toContain(summaries[0]?.evidenceId);
+  expect(prompt).toContain(summaries[479]?.evidenceId);
+  expect(prompt).not.toContain("FULL_OUTPUT_CANARY");
+  expect(prompt).not.toContain("COMMAND_TAIL_CANARY");
+  expect(prompt).toContain('"truncated":true');
+  expect(Buffer.byteLength(prompt, "utf8")).toBeLessThanOrEqual(512 * 1024);
+  expect(db.publish).toHaveBeenCalledOnce();
 });
 
 it("fails visibly and never publishes when the model invents a source range", async () => {

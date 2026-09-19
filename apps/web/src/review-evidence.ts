@@ -1,5 +1,9 @@
 import {
+  FactoryConceptualReviewCheckEvidenceSchema,
   FactoryConceptualReviewDraftSchema,
+  FactoryConceptualReviewSourceEvidenceSchema,
+  type FactoryConceptualReviewCheck,
+  type FactoryConceptualReviewCheckEvidence,
   type FactoryConceptualReviewDraft,
   type FactoryConceptualReviewPreparation,
   type FactoryConceptualReviewSourceEvidence,
@@ -8,7 +12,7 @@ import {
 import { z } from "zod";
 
 export type FactoryConceptualReviewValidationErrorCode =
-  "invalid_output" | "source_unavailable" | "resource_exhausted";
+  "invalid_output" | "source_unavailable" | "check_unavailable" | "resource_exhausted";
 
 export class FactoryConceptualReviewValidationError extends Error {
   constructor(public readonly code: FactoryConceptualReviewValidationErrorCode) {
@@ -28,6 +32,7 @@ export interface ValidateFactoryConceptualReviewInput {
     status: "added" | "modified" | "removed" | "unchanged";
     rangeChanged: boolean | null;
   }>;
+  readCheck?(evidenceId: string): Promise<FactoryConceptualReviewCheck>;
 }
 
 function assertValidationActive(signal?: AbortSignal): void {
@@ -38,12 +43,55 @@ function assertValidationActive(signal?: AbortSignal): void {
 function hostSummary(draft: FactoryConceptualReviewDraft): string {
   const mapped = draft.outcomes.filter(({ coverage }) => coverage === "mapped").length;
   const problems = draft.problems.length;
-  return `${String(mapped)} of ${String(draft.outcomes.length)} approved outcomes map to exact retained source; ${String(problems)} ${problems === 1 ? "problem is" : "problems are"} identified.`;
+  const checks = draft.evidence.filter(({ type }) => type === "check").length;
+  const support =
+    checks === 0
+      ? "exact retained source"
+      : `exact retained source and ${String(checks)} final ${checks === 1 ? "check" : "checks"}`;
+  return `${String(mapped)} of ${String(draft.outcomes.length)} approved outcomes map to ${support}; ${String(problems)} ${problems === 1 ? "problem is" : "problems are"} identified.`;
 }
 
 const ModelNodeIdSchema = z.string().min(1).max(96);
 const ModelTextSchema = z.string().min(1).max(4000);
 const ModelLimitationsSchema = z.array(ModelTextSchema).max(20);
+
+const ModelEvidenceSchema = z
+  .strictObject({
+    id: ModelNodeIdSchema,
+    type: z.enum(["source", "check"]),
+    side: z.enum(["base", "head"]).nullable(),
+    path: z.string().min(1).max(4096).nullable(),
+    startLine: z.int().min(1).max(1_000_000).nullable(),
+    endLine: z.int().min(1).max(1_000_000).nullable(),
+    evidenceId: z.string().min(1).max(128).nullable(),
+    relation: z.enum(["supports", "refutes"]).nullable(),
+    proposition: ModelTextSchema.nullable(),
+    description: ModelTextSchema,
+    sufficiency: ModelTextSchema,
+    limitations: ModelLimitationsSchema,
+  })
+  .superRefine((evidence, context) => {
+    const source =
+      evidence.type === "source" &&
+      evidence.side !== null &&
+      evidence.path !== null &&
+      evidence.startLine !== null &&
+      evidence.endLine !== null &&
+      evidence.evidenceId === null &&
+      evidence.relation === null &&
+      evidence.proposition === null;
+    const check =
+      evidence.type === "check" &&
+      evidence.side === null &&
+      evidence.path === null &&
+      evidence.startLine === null &&
+      evidence.endLine === null &&
+      evidence.evidenceId !== null &&
+      evidence.relation !== null &&
+      evidence.proposition !== null;
+    if (!source && !check)
+      context.addIssue({ code: "custom", message: "Evidence fields must match its type" });
+  });
 
 /**
  * Provider-facing schema. Problems use one uniform object because the Codex
@@ -76,19 +124,7 @@ export const FactoryConceptualReviewModelOutputSchema = z.strictObject({
       evidenceIds: z.array(ModelNodeIdSchema).min(1).max(80),
     }),
   ),
-  evidence: z.array(
-    z.strictObject({
-      id: ModelNodeIdSchema,
-      type: z.literal("source"),
-      side: z.enum(["base", "head"]),
-      path: z.string().min(1).max(4096),
-      startLine: z.int().min(1).max(1_000_000),
-      endLine: z.int().min(1).max(1_000_000),
-      description: ModelTextSchema,
-      sufficiency: ModelTextSchema,
-      limitations: ModelLimitationsSchema,
-    }),
-  ),
+  evidence: z.array(ModelEvidenceSchema),
   problems: z.array(
     z
       .strictObject({
@@ -155,6 +191,30 @@ export function parseFactoryConceptualReviewModelOutput(value: unknown): unknown
   if (!parsed.success) throw new FactoryConceptualReviewValidationError("invalid_output");
   return {
     ...parsed.data,
+    evidence: parsed.data.evidence.map((evidence) =>
+      evidence.type === "source"
+        ? {
+            id: evidence.id,
+            type: evidence.type,
+            side: evidence.side,
+            path: evidence.path,
+            startLine: evidence.startLine,
+            endLine: evidence.endLine,
+            description: evidence.description,
+            sufficiency: evidence.sufficiency,
+            limitations: evidence.limitations,
+          }
+        : {
+            id: evidence.id,
+            type: evidence.type,
+            evidenceId: evidence.evidenceId,
+            relation: evidence.relation,
+            proposition: evidence.proposition,
+            description: evidence.description,
+            sufficiency: evidence.sufficiency,
+            limitations: evidence.limitations,
+          },
+    ),
     problems: parsed.data.problems.map((problem) => {
       const common = {
         id: problem.id,
@@ -187,12 +247,95 @@ export function parseFactoryConceptualReviewModelOutput(value: unknown): unknown
   };
 }
 
+const UnresolvedCheckEvidenceSchema = z.strictObject({
+  id: FactoryConceptualReviewCheckEvidenceSchema.shape.id,
+  type: FactoryConceptualReviewCheckEvidenceSchema.shape.type,
+  evidenceId: FactoryConceptualReviewCheckEvidenceSchema.shape.evidenceId,
+  relation: FactoryConceptualReviewCheckEvidenceSchema.shape.relation,
+  proposition: FactoryConceptualReviewCheckEvidenceSchema.shape.proposition,
+  description: FactoryConceptualReviewCheckEvidenceSchema.shape.description,
+  sufficiency: FactoryConceptualReviewCheckEvidenceSchema.shape.sufficiency,
+  limitations: FactoryConceptualReviewCheckEvidenceSchema.shape.limitations,
+});
+const UnresolvedEvidenceEnvelopeSchema = z.object({
+  evidence: z
+    .array(z.union([FactoryConceptualReviewSourceEvidenceSchema, UnresolvedCheckEvidenceSchema]))
+    .max(800),
+});
+
+function resolvedCheckRecord(
+  preparation: FactoryConceptualReviewPreparation,
+  evidenceId: string,
+  check: FactoryConceptualReviewCheck,
+): FactoryConceptualReviewCheckEvidence["record"] | null {
+  const certificate = preparation.publication?.certificate;
+  if (certificate === undefined) return null;
+  const expectedIndex = check.manifestPosition - 1;
+  const expected = certificate.manifest[expectedIndex];
+  if (
+    expected === undefined ||
+    certificate.evidenceIds[expectedIndex] !== evidenceId ||
+    check.evidenceId !== evidenceId ||
+    check.runId !== certificate.runId ||
+    check.result.id !== evidenceId ||
+    check.result.position !== check.manifestPosition ||
+    expected.position !== check.manifestPosition ||
+    JSON.stringify(check.origins) !== JSON.stringify(expected.origins) ||
+    JSON.stringify(check.result.command) !== JSON.stringify(expected.command) ||
+    check.result.headCommitId !== certificate.revision.headCommitId ||
+    check.result.treeId !== certificate.revision.treeId ||
+    check.result.outcome !== "passed" ||
+    check.result.exitCode !== 0
+  )
+    return null;
+  return {
+    evidenceId,
+    runId: check.runId,
+    manifestPosition: check.manifestPosition,
+    origins: check.origins,
+    command: check.result.command,
+    headCommitId: check.result.headCommitId,
+    treeId: check.result.treeId,
+    outcome: "passed",
+    exitCode: 0,
+    stdoutTruncated: check.result.stdoutTruncated,
+    stderrTruncated: check.result.stderrTruncated,
+    durationMs: check.result.durationMs,
+    createdAt: check.result.createdAt,
+  };
+}
+
 /** Host-side authority boundary for model output. */
 export async function validateFactoryConceptualReview(
   input: ValidateFactoryConceptualReviewInput,
 ): Promise<FactoryConceptualReviewDraft> {
   assertValidationActive(input.signal);
-  const parsed = FactoryConceptualReviewDraftSchema.safeParse(input.draft);
+  const unresolved = UnresolvedEvidenceEnvelopeSchema.safeParse(input.draft);
+  if (!unresolved.success) throw new FactoryConceptualReviewValidationError("invalid_output");
+  const evidence = [];
+  for (const item of unresolved.data.evidence) {
+    if (item.type === "source") {
+      evidence.push(item);
+      continue;
+    }
+    if (input.readCheck === undefined)
+      throw new FactoryConceptualReviewValidationError("check_unavailable");
+    let check: FactoryConceptualReviewCheck;
+    try {
+      assertValidationActive(input.signal);
+      check = await input.readCheck(item.evidenceId);
+    } catch {
+      assertValidationActive(input.signal);
+      throw new FactoryConceptualReviewValidationError("check_unavailable");
+    }
+    const record = resolvedCheckRecord(input.preparation, item.evidenceId, check);
+    if (record === null) throw new FactoryConceptualReviewValidationError("check_unavailable");
+    evidence.push({ ...item, record });
+  }
+  const parsed = FactoryConceptualReviewDraftSchema.safeParse({
+    ...(typeof input.draft === "object" && input.draft !== null ? input.draft : {}),
+    evidence,
+  });
   if (!parsed.success) throw new FactoryConceptualReviewValidationError("invalid_output");
   const draft = parsed.data;
   const basis = input.preparation.basis;
@@ -224,10 +367,41 @@ export async function validateFactoryConceptualReview(
   if (draft.outcomes.some(({ outcomeKey, title }) => approvedTitles.get(outcomeKey) !== title))
     throw new FactoryConceptualReviewValidationError("invalid_output");
 
-  // The model produces source interpretation only. Check authority is a separate,
-  // host-authored artifact field and this slice can therefore never publish Complete.
-  if (draft.result !== "partial")
-    throw new FactoryConceptualReviewValidationError("invalid_output");
+  const evidenceById = new Map(draft.evidence.map((item) => [item.id, item]));
+  const stepsById = new Map(draft.behavioralSteps.map((step) => [step.id, step]));
+  for (const outcome of draft.outcomes) {
+    if (outcome.coverage !== "mapped") continue;
+    const inadequatelySupported = outcome.behavioralStepIds.some((stepId) => {
+      const step = stepsById.get(stepId);
+      if (step === undefined || step.change === "context") return false;
+      const checks = step.evidenceIds.flatMap((id) => {
+        const evidence = evidenceById.get(id);
+        return evidence?.type === "check" ? [evidence] : [];
+      });
+      return (
+        !checks.some(({ relation }) => relation === "supports") ||
+        checks.some(({ relation }) => relation === "refutes")
+      );
+    });
+    if (inadequatelySupported) throw new FactoryConceptualReviewValidationError("invalid_output");
+  }
+
+  if (draft.result === "complete") {
+    const unsupported = draft.behavioralSteps.some(
+      (step) =>
+        step.change !== "context" &&
+        (!step.evidenceIds.some((id) => {
+          const item = evidenceById.get(id);
+          return item?.type === "check" && item.relation === "supports";
+        }) ||
+          step.evidenceIds.some((id) => {
+            const item = evidenceById.get(id);
+            return item?.type === "check" && item.relation === "refutes";
+          })),
+    );
+    if (unsupported || draft.problems.some(({ type }) => type === "unverified_concern"))
+      throw new FactoryConceptualReviewValidationError("invalid_output");
+  }
 
   const changes = new Map<
     string,
@@ -237,6 +411,7 @@ export async function validateFactoryConceptualReview(
     }
   >();
   for (const evidence of draft.evidence) {
+    if (evidence.type === "check") continue;
     let source: FactoryConceptualReviewSourceLines;
     try {
       assertValidationActive(input.signal);
@@ -274,6 +449,7 @@ export async function validateFactoryConceptualReview(
       const change = changes.get(evidenceId);
       return (
         evidence !== undefined &&
+        evidence.type === "source" &&
         change?.status === step.change &&
         change.rangeChanged &&
         ((step.change === "removed" && evidence.side === "base") ||

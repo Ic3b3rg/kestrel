@@ -2,7 +2,10 @@ import { useEffect, useState } from "react";
 import type { FactoryConceptualReviewWorkflowRead } from "@kestrel/contracts";
 import { AlertTriangle, Clock3, GitCompareArrows, LoaderCircle } from "lucide-react";
 
-import { fetchFactoryConceptualReviewWorkflowSourceLines } from "./conceptual-review-api.js";
+import {
+  fetchFactoryConceptualReviewArtifactCheck,
+  fetchFactoryConceptualReviewArtifactSourceLines,
+} from "./conceptual-review-api.js";
 import { ReviewEvidenceInspector } from "./ReviewEvidenceInspector.js";
 import { ReviewGraph } from "./ReviewGraph.js";
 
@@ -16,6 +19,7 @@ const failures: Record<
   timeout: "The review exceeded its approved time limit.",
   invalid_output: "The reviewer did not return a valid, resolvable graph.",
   source_unavailable: "The frozen retained source could not be verified.",
+  check_unavailable: "A frozen final-check record could not be verified.",
   resource_exhausted: "The review exceeded an approved resource limit.",
   interrupted: "The review was interrupted and exhausted its retry budget.",
   stop_unconfirmed: "Kestrel could not confirm that the review environment stopped.",
@@ -26,13 +30,15 @@ export function ConceptualReviewPanel({
   review,
   projectId,
   featureId,
-  loadSourceLines = fetchFactoryConceptualReviewWorkflowSourceLines,
+  loadSourceLines = fetchFactoryConceptualReviewArtifactSourceLines,
+  loadCheck = fetchFactoryConceptualReviewArtifactCheck,
   onAuthenticationError,
 }: {
   review: FactoryConceptualReviewWorkflowRead;
   projectId: string;
   featureId: string;
-  loadSourceLines?: typeof fetchFactoryConceptualReviewWorkflowSourceLines;
+  loadSourceLines?: typeof fetchFactoryConceptualReviewArtifactSourceLines;
+  loadCheck?: typeof fetchFactoryConceptualReviewArtifactCheck;
   onAuthenticationError: (error: unknown) => boolean;
 }) {
   const artifact = review.artifact;
@@ -103,25 +109,45 @@ export function ConceptualReviewPanel({
               <GitCompareArrows className="size-3.5" aria-hidden="true" /> Currency unknown · GitHub
               unavailable
             </span>
-          ) : null}
+          ) : (
+            <span className="flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-emerald-300">
+              <GitCompareArrows className="size-3.5" aria-hidden="true" /> Up to date · reviewed PR
+              head
+            </span>
+          )}
         </div>
       </div>
       <p className="text-sm text-muted-foreground">
-        Choose an outcome and follow its highlighted path through behavior, source, and any problem.
+        Choose an outcome and follow its highlighted path through behavior, source, final checks,
+        and any problem.
       </p>
       <p className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-muted-foreground">
-        Authority: the narrative below is a model interpretation of exact retained source. Executed
-        checks are not linked or assessed, so this review remains Partial even if the narrative
-        mentions a check result.
+        {artifact.evidenceScope.executedChecks === "linked_final_certificate"
+          ? "Authority: source and check provenance are resolved by Kestrel against the frozen final certificate. The proposition each check supports or refutes remains model judgment and includes its limitations."
+          : "Authority: this older artifact contains model interpretation of exact retained source. Executed checks were not linked, so it remains Partial."}
       </p>
+      <dl
+        className="grid min-w-0 gap-2 rounded-lg border border-border bg-background p-3 text-xs sm:grid-cols-2"
+        aria-label="Published review revision"
+      >
+        <div>
+          <dt className="text-muted-foreground">Reviewed base</dt>
+          <dd className="break-all font-mono">{artifact.baseCommitId}</dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">Reviewed head</dt>
+          <dd className="break-all font-mono">{artifact.headCommitId}</dd>
+        </div>
+      </dl>
       <ReviewGraph graph={artifact.graph} selectedId={selectedId} onSelect={setSelectedId} />
       <ReviewEvidenceInspector
         graph={artifact.graph}
         selectedId={selectedId}
         projectId={projectId}
         featureId={featureId}
-        workflowId={review.workflow.id}
+        artifactId={artifact.id}
         loadSourceLines={loadSourceLines}
+        loadCheck={loadCheck}
         onAuthenticationError={onAuthenticationError}
       />
       {artifact.graph.limitations.length === 0 ? null : (

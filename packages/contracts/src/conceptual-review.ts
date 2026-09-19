@@ -300,7 +300,7 @@ export type FactoryConceptualReviewSourceLines = z.infer<
   typeof FactoryConceptualReviewSourceLinesSchema
 >;
 
-const FactoryConceptualReviewCheckSummarySchema = z.strictObject({
+export const FactoryConceptualReviewCheckSummarySchema = z.strictObject({
   evidenceId: KestrelIdSchema,
   runId: KestrelIdSchema,
   manifestPosition: z.int().min(1).max(480),
@@ -323,6 +323,9 @@ const FactoryConceptualReviewCheckSummarySchema = z.strictObject({
   durationMs: z.int().min(0),
   createdAt: z.iso.datetime(),
 });
+export type FactoryConceptualReviewCheckSummary = z.infer<
+  typeof FactoryConceptualReviewCheckSummarySchema
+>;
 
 export const FactoryConceptualReviewCheckCatalogSchema = z.strictObject({
   schemaVersion: z.literal(1),
@@ -394,6 +397,38 @@ export type FactoryConceptualReviewSourceEvidence = z.infer<
   typeof FactoryConceptualReviewSourceEvidenceSchema
 >;
 
+export const FactoryConceptualReviewCheckEvidenceSchema = z
+  .strictObject({
+    id: FactoryConceptualReviewNodeIdSchema,
+    type: z.literal("check"),
+    evidenceId: KestrelIdSchema,
+    relation: z.enum(["supports", "refutes"]),
+    proposition: ReviewTextSchema,
+    description: ReviewTextSchema,
+    sufficiency: ReviewTextSchema,
+    limitations: ReviewLimitationsSchema,
+    record: FactoryConceptualReviewCheckSummarySchema.extend({
+      outcome: z.literal("passed"),
+      exitCode: z.literal(0),
+    }),
+  })
+  .superRefine((value, context) => {
+    if (value.evidenceId !== value.record.evidenceId)
+      context.addIssue({
+        code: "custom",
+        message: "Check evidence identity must match its server-resolved record",
+      });
+  });
+export type FactoryConceptualReviewCheckEvidence = z.infer<
+  typeof FactoryConceptualReviewCheckEvidenceSchema
+>;
+
+export const FactoryConceptualReviewEvidenceSchema = z.discriminatedUnion("type", [
+  FactoryConceptualReviewSourceEvidenceSchema,
+  FactoryConceptualReviewCheckEvidenceSchema,
+]);
+export type FactoryConceptualReviewEvidence = z.infer<typeof FactoryConceptualReviewEvidenceSchema>;
+
 const FindingSchema = z.strictObject({
   id: FactoryConceptualReviewNodeIdSchema,
   type: z.literal("finding"),
@@ -447,7 +482,7 @@ export const FactoryConceptualReviewDraftSchema = z
     summary: ReviewTextSchema,
     outcomes: z.array(FactoryConceptualReviewOutcomeSchema).min(1).max(40),
     behavioralSteps: z.array(FactoryConceptualReviewBehavioralStepSchema).max(800),
-    evidence: z.array(FactoryConceptualReviewSourceEvidenceSchema).max(800),
+    evidence: z.array(FactoryConceptualReviewEvidenceSchema).max(800),
     problems: z.array(FactoryConceptualReviewProblemSchema).max(800),
     edges: z.array(FactoryConceptualReviewEdgeSchema).max(2400),
     limitations: ReviewLimitationsSchema,
@@ -500,10 +535,14 @@ export const FactoryConceptualReviewDraftSchema = z
     }
     for (const outcome of value.outcomes) {
       const mapped = outcome.coverage === "mapped";
-      if (mapped !== outcome.behavioralStepIds.length > 0)
+      if (
+        (mapped && outcome.behavioralStepIds.length === 0) ||
+        (["gap", "not_applicable"].includes(outcome.coverage) &&
+          outcome.behavioralStepIds.length > 0)
+      )
         context.addIssue({
           code: "custom",
-          message: "Outcome coverage must name its mapped steps",
+          message: "Outcome coverage must identify only relevant Behavioral Steps",
         });
       if (
         mapped &&
@@ -547,7 +586,10 @@ export const FactoryConceptualReviewDraftSchema = z
           !edgeKeys.has(reviewEdgeKey(step.id, "supported_by", evidenceId))
         )
           context.addIssue({ code: "custom", message: "Behavioral Step evidence must resolve" });
-      const evidenceSides = step.evidenceIds.map((id) => evidence.get(id)?.side);
+      const evidenceSides = step.evidenceIds.flatMap((id) => {
+        const item = evidence.get(id);
+        return item?.type === "source" ? [item.side] : [];
+      });
       if (["added", "modified"].includes(step.change) && !evidenceSides.includes("head"))
         context.addIssue({
           code: "custom",
@@ -568,7 +610,10 @@ export const FactoryConceptualReviewDraftSchema = z
           context.addIssue({ code: "custom", message: "Problem evidence must resolve" });
       if (
         problem.type === "finding" &&
-        problem.evidenceIds.some((id) => evidence.get(id)?.side !== "head")
+        problem.evidenceIds.some((id) => {
+          const item = evidence.get(id);
+          return item?.type === "source" && item.side !== "head";
+        })
       )
         context.addIssue({
           code: "custom",
@@ -609,22 +654,51 @@ export const FactoryConceptualReviewArtifactSchema = z
     baseCommitId: GitObjectIdSchema,
     headCommitId: GitObjectIdSchema,
     status: z.enum(["complete", "partial"]),
-    evidenceScope: z.strictObject({
-      source: z.literal("exact_retained_revision"),
-      executedChecks: z.literal("not_linked"),
-      narrativeAuthority: z.literal("source_only_model_interpretation"),
-    }),
+    evidenceScope: z.union([
+      z.strictObject({
+        source: z.literal("exact_retained_revision"),
+        executedChecks: z.literal("not_linked"),
+        narrativeAuthority: z.literal("source_only_model_interpretation"),
+      }),
+      z.strictObject({
+        source: z.literal("exact_retained_revision"),
+        executedChecks: z.literal("linked_final_certificate"),
+        narrativeAuthority: z.literal("host_resolved_evidence_model_judgment"),
+      }),
+    ]),
     graph: FactoryConceptualReviewDraftSchema,
     createdAt: z.iso.datetime(),
   })
   .superRefine((value, context) => {
     if (value.status !== value.graph.result)
       context.addIssue({ code: "custom", message: "Artifact status must match graph coverage" });
-    if (value.status !== "partial")
+    if (value.evidenceScope.executedChecks === "not_linked" && value.status !== "partial")
       context.addIssue({
         code: "custom",
         message: "A review without linked executed checks must remain Partial",
       });
+    if (
+      value.evidenceScope.executedChecks === "linked_final_certificate" &&
+      value.status === "complete"
+    ) {
+      const evidence = new Map(value.graph.evidence.map((item) => [item.id, item]));
+      const missingCheck = value.graph.behavioralSteps.some(
+        (step) =>
+          step.change !== "context" &&
+          !step.evidenceIds.some((id) => {
+            const item = evidence.get(id);
+            return item?.type === "check" && item.relation === "supports";
+          }),
+      );
+      const uncovered = value.graph.outcomes.some(({ coverage }) =>
+        ["gap", "unclear"].includes(coverage),
+      );
+      if (missingCheck || uncovered)
+        context.addIssue({
+          code: "custom",
+          message: "A Complete review requires supported final checks for every changed behavior",
+        });
+    }
   });
 export type FactoryConceptualReviewArtifact = z.infer<typeof FactoryConceptualReviewArtifactSchema>;
 
@@ -635,6 +709,7 @@ export const FactoryConceptualReviewFailureSchema = z.enum([
   "timeout",
   "invalid_output",
   "source_unavailable",
+  "check_unavailable",
   "resource_exhausted",
   "interrupted",
   "stop_unconfirmed",
@@ -685,3 +760,24 @@ export const FactoryConceptualReviewCurrentSchema = z.strictObject({
   review: FactoryConceptualReviewWorkflowReadSchema.nullable(),
 });
 export type FactoryConceptualReviewCurrent = z.infer<typeof FactoryConceptualReviewCurrentSchema>;
+
+export const FactoryConceptualReviewHistorySchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  reviews: z
+    .array(
+      z.strictObject({
+        artifactId: KestrelIdSchema,
+        workflowId: KestrelIdSchema,
+        status: z.enum(["complete", "partial"]),
+        headCommitId: GitObjectIdSchema,
+        requestedAt: z.iso.datetime(),
+        finishedAt: z.iso.datetime(),
+        currency: z.enum(["up_to_date", "outdated", "unknown"]),
+      }),
+    )
+    .max(50),
+  offset: z.int().min(0),
+  total: z.int().min(0),
+  nextOffset: z.int().min(1).nullable(),
+});
+export type FactoryConceptualReviewHistory = z.infer<typeof FactoryConceptualReviewHistorySchema>;

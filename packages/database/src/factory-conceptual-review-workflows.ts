@@ -2,6 +2,7 @@ import {
   FactoryConceptualReviewArtifactSchema,
   FactoryConceptualReviewDraftSchema,
   FactoryConceptualReviewFailureSchema,
+  FactoryConceptualReviewHistorySchema,
   FactoryConceptualReviewPreparationSchema,
   FactoryConceptualReviewStartCommandSchema,
   FactoryConceptualReviewWorkflowReadSchema,
@@ -9,6 +10,7 @@ import {
   type FactoryConceptualReviewArtifact,
   type FactoryConceptualReviewDraft,
   type FactoryConceptualReviewFailure,
+  type FactoryConceptualReviewHistory,
   type FactoryConceptualReviewPreparation,
   type FactoryConceptualReviewStartCommand,
   type FactoryConceptualReviewWorkflowRead,
@@ -182,7 +184,7 @@ function uniqueness(error: unknown): boolean {
 
 async function readWorkflow(
   pool: DatabasePool,
-  input: { projectId: string; featureId: string; workflowId?: string },
+  input: { projectId: string; featureId: string; workflowId?: string; artifactId?: string },
 ): Promise<FactoryConceptualReviewWorkflowRead | null> {
   const result = await pool.query<WorkflowRow>(
     `SELECT ${workflowColumns}
@@ -191,9 +193,10 @@ async function readWorkflow(
        ON artifact.id = workflow.artifact_id AND artifact.workflow_id = workflow.id
      WHERE workflow.project_id = $1 AND workflow.feature_id = $2
        AND ($3::uuid IS NULL OR workflow.id = $3)
+       AND ($4::uuid IS NULL OR artifact.id = $4)
      ORDER BY workflow.requested_at DESC, workflow.id DESC
      LIMIT 1`,
-    [input.projectId, input.featureId, input.workflowId ?? null],
+    [input.projectId, input.featureId, input.workflowId ?? null, input.artifactId ?? null],
   );
   const row = result.rows[0];
   return row === undefined ? null : mapWorkflow(row);
@@ -214,6 +217,78 @@ export function readFactoryConceptualReviewWorkflow(
   workflowId: string,
 ): Promise<FactoryConceptualReviewWorkflowRead | null> {
   return readWorkflow(pool, { projectId, featureId, workflowId });
+}
+
+export function readFactoryConceptualReviewArtifact(
+  pool: DatabasePool,
+  projectId: string,
+  featureId: string,
+  artifactId: string,
+): Promise<FactoryConceptualReviewWorkflowRead | null> {
+  return readWorkflow(pool, { projectId, featureId, artifactId });
+}
+
+export async function readFactoryConceptualReviewHistory(
+  pool: DatabasePool,
+  projectId: string,
+  featureId: string,
+  offset = 0,
+  limit = 20,
+): Promise<FactoryConceptualReviewHistory> {
+  if (
+    !Number.isSafeInteger(offset) ||
+    offset < 0 ||
+    !Number.isSafeInteger(limit) ||
+    limit < 1 ||
+    limit > 50
+  )
+    throw new FactoryConceptualReviewWorkflowPersistenceError("invalid_state");
+  const [counted, selected] = await Promise.all([
+    pool.query<{ total: string }>(
+      `SELECT COUNT(*)::text AS total
+       FROM review_workflows AS workflow
+       JOIN factory_conceptual_review_artifacts AS artifact
+         ON artifact.id = workflow.artifact_id AND artifact.workflow_id = workflow.id
+       WHERE workflow.project_id = $1 AND workflow.feature_id = $2
+         AND workflow.workflow_state = 'published'`,
+      [projectId, featureId],
+    ),
+    pool.query<WorkflowRow>(
+      `SELECT ${workflowColumns}
+       FROM review_workflows AS workflow
+       JOIN factory_conceptual_review_artifacts AS artifact
+         ON artifact.id = workflow.artifact_id AND artifact.workflow_id = workflow.id
+       WHERE workflow.project_id = $1 AND workflow.feature_id = $2
+         AND workflow.workflow_state = 'published'
+       ORDER BY workflow.requested_at DESC, workflow.id DESC
+       OFFSET $3 LIMIT $4`,
+      [projectId, featureId, offset, limit],
+    ),
+  ]);
+  const total = Number(counted.rows[0]?.total ?? 0);
+  if (!Number.isSafeInteger(total) || total < 0)
+    throw new FactoryConceptualReviewWorkflowPersistenceError("invalid_state");
+  const reviews = selected.rows.map((row) => {
+    const read = mapWorkflow(row);
+    if (read.artifact === null || read.workflow.finishedAt === null)
+      throw new FactoryConceptualReviewWorkflowPersistenceError("invalid_state");
+    return {
+      artifactId: read.artifact.id,
+      workflowId: read.workflow.id,
+      status: read.artifact.status,
+      headCommitId: read.artifact.headCommitId,
+      requestedAt: read.workflow.requestedAt,
+      finishedAt: read.workflow.finishedAt,
+      currency: read.currency,
+    };
+  });
+  return FactoryConceptualReviewHistorySchema.parse({
+    schemaVersion: 1,
+    reviews,
+    offset,
+    total,
+    nextOffset: offset + reviews.length < total ? offset + reviews.length : null,
+  });
 }
 
 export async function readFactoryConceptualReviewWorkflowSourceBinding(
@@ -903,6 +978,7 @@ export async function publishFactoryConceptualReview(
     assertNotAborted(signal);
     const identity = generated.rows[0];
     if (identity === undefined) throw new Error("Artifact identity unavailable");
+    const checksLinked = draft.evidence.some(({ type }) => type === "check");
     const artifact = FactoryConceptualReviewArtifactSchema.parse({
       schemaVersion: 1,
       id: identity.id,
@@ -914,8 +990,10 @@ export async function publishFactoryConceptualReview(
       status: draft.result,
       evidenceScope: {
         source: "exact_retained_revision",
-        executedChecks: "not_linked",
-        narrativeAuthority: "source_only_model_interpretation",
+        executedChecks: checksLinked ? "linked_final_certificate" : "not_linked",
+        narrativeAuthority: checksLinked
+          ? "host_resolved_evidence_model_judgment"
+          : "source_only_model_interpretation",
       },
       graph: draft,
       createdAt: identity.created_at.toISOString(),

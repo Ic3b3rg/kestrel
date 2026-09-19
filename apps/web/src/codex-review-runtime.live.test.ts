@@ -225,7 +225,7 @@ Return result partial because executed checks are not linked. Account for the ou
         expect(finding).toBeDefined();
         const cited = graph.evidence.find((evidence) => finding?.evidenceIds.includes(evidence.id));
         expect(cited).toMatchObject({ side: "head", path: "src/search.mjs" });
-        if (cited === undefined) throw new Error("The live finding omitted source evidence");
+        if (cited?.type !== "source") throw new Error("The live finding omitted source evidence");
         const lines = source
           .split("\n")
           .slice(cited.startLine - 1, cited.endLine)

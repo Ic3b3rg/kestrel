@@ -249,6 +249,7 @@ export function App() {
           projectId: feature.projectId,
           featureId: feature.id,
           ...(route.view === undefined ? {} : { view: route.view }),
+          ...(route.artifactId === undefined ? {} : { artifactId: route.artifactId }),
         };
         window.history.replaceState(window.history.state, "", appPath(canonicalRoute));
         setRoute(canonicalRoute);
@@ -1031,6 +1032,7 @@ export function App() {
             }
             featureId={route.featureId}
             {...(route.view === undefined ? {} : { view: route.view })}
+            {...(route.artifactId === undefined ? {} : { artifactId: route.artifactId })}
             onPlanDirtyChange={setPlanDirty}
             online={online}
             onNavigate={navigate}

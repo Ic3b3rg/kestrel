@@ -6,7 +6,7 @@ import type {
   FactoryConceptualReviewPreparation,
   FactoryConceptualReviewWorkflowRead,
 } from "@kestrel/contracts";
-import { ApiErrorSchema } from "@kestrel/contracts";
+import { ApiErrorSchema, FactoryConceptualReviewHistorySchema } from "@kestrel/contracts";
 import {
   FactoryConceptualReviewPersistenceError,
   FactoryConceptualReviewWorkflowPersistenceError,
@@ -31,6 +31,7 @@ const digest = "d".repeat(64);
 const at = "2026-09-19T12:00:00.000Z";
 const requestId = "65cc9964-10c2-49d1-86c4-8f13f5019e86";
 const workflowId = "01991c36-7f90-7000-8000-000000000009";
+const artifactId = "01991c36-7f90-7000-8000-000000000010";
 const command = { program: "npm", args: ["test"], cwd: ".", timeoutSeconds: 60 };
 const preparation: FactoryConceptualReviewPreparation = {
   schemaVersion: 1,
@@ -219,6 +220,52 @@ const workflowRead = {
   artifact: null,
   currency: "up_to_date" as const,
 };
+const publishedRead: FactoryConceptualReviewWorkflowRead = {
+  ...workflowRead,
+  workflow: {
+    ...workflowRead.workflow,
+    state: "published",
+    artifactId,
+    startedAt: at,
+    finishedAt: at,
+  },
+  artifact: {
+    schemaVersion: 1,
+    id: artifactId,
+    workflowId,
+    inputDigest: digest,
+    reviewRevisionId: projectId,
+    baseCommitId,
+    headCommitId,
+    status: "partial",
+    evidenceScope: {
+      source: "exact_retained_revision",
+      executedChecks: "not_linked",
+      narrativeAuthority: "source_only_model_interpretation",
+    },
+    graph: {
+      result: "partial",
+      summary: "The approved outcome remains unclear.",
+      outcomes: [
+        {
+          id: "outcome:refresh",
+          outcomeKey: "refresh",
+          title: "New result appears",
+          coverage: "unclear",
+          behavioralStepIds: [],
+          reason: "No adequate support was linked.",
+        },
+      ],
+      behavioralSteps: [],
+      evidence: [],
+      problems: [],
+      edges: [],
+      limitations: ["No check was linked."],
+    },
+    createdAt: at,
+  },
+  currency: "outdated",
+};
 
 let app: FastifyInstance;
 let service: FactoryConceptualReviewService;
@@ -229,6 +276,11 @@ let workflowSourceLinesReader: MockedFunction<
   FactoryConceptualReviewService["workflowSourceLines"]
 >;
 let startWorkflow: MockedFunction<FactoryConceptualReviewService["start"]>;
+let artifactReader: MockedFunction<FactoryConceptualReviewService["artifact"]>;
+let artifactSourceLinesReader: MockedFunction<
+  FactoryConceptualReviewService["artifactSourceLines"]
+>;
+let artifactCheckReader: MockedFunction<FactoryConceptualReviewService["artifactCheck"]>;
 beforeEach(() => {
   prepare = vi.fn(() => Promise.resolve(preparation));
   sourceCatalog = vi.fn(() =>
@@ -245,6 +297,9 @@ beforeEach(() => {
   sourceLinesReader = vi.fn(() => Promise.resolve(sourceLines));
   workflowSourceLinesReader = vi.fn(() => Promise.resolve(sourceLines));
   startWorkflow = vi.fn(() => Promise.resolve(workflowRead));
+  artifactReader = vi.fn(() => Promise.resolve(publishedRead));
+  artifactSourceLinesReader = vi.fn(() => Promise.resolve(sourceLines));
+  artifactCheckReader = vi.fn(() => Promise.resolve(check));
   service = {
     prepare,
     sourceCatalog,
@@ -265,6 +320,28 @@ beforeEach(() => {
     start: startWorkflow,
     current: vi.fn(() => Promise.resolve({ schemaVersion: 1 as const, review: workflowRead })),
     workflow: vi.fn(() => Promise.resolve(workflowRead)),
+    history: vi.fn(() =>
+      Promise.resolve({
+        schemaVersion: 1 as const,
+        reviews: [
+          {
+            artifactId,
+            workflowId,
+            status: "partial" as const,
+            headCommitId,
+            requestedAt: at,
+            finishedAt: at,
+            currency: "outdated" as const,
+          },
+        ],
+        offset: 0,
+        total: 1,
+        nextOffset: null,
+      }),
+    ),
+    artifact: artifactReader,
+    artifactSourceLines: artifactSourceLinesReader,
+    artifactCheck: artifactCheckReader,
   };
   app = Fastify({
     genReqId: () => randomUUID(),
@@ -374,6 +451,37 @@ it("reads published evidence through the workflow's frozen revision", async () =
     endLine: 4,
   });
   expect(sourceLinesReader).not.toHaveBeenCalled();
+});
+
+it("reopens the selected immutable artifact with its own source and check evidence", async () => {
+  const history = await app.inject({ method: "GET", url: `${root}/artifacts?offset=0&limit=20` });
+  const artifact = await app.inject({ method: "GET", url: `${root}/artifacts/${artifactId}` });
+  const source = await app.inject({
+    method: "GET",
+    url: `${root}/artifacts/${artifactId}/source/lines?side=head&path=src%2Fsearch.ts&startLine=4&endLine=4`,
+  });
+  const evidence = await app.inject({
+    method: "GET",
+    url: `${root}/artifacts/${artifactId}/checks/${evidenceId}`,
+  });
+  expect(history.statusCode).toBe(200);
+  const historyBody = FactoryConceptualReviewHistorySchema.parse(history.json());
+  expect(historyBody.reviews[0]).toMatchObject({ artifactId, workflowId });
+  expect(artifact.json()).toEqual(publishedRead);
+  expect(source.json()).toEqual(sourceLines);
+  expect(evidence.json()).toEqual(check);
+  expect(artifactReader).toHaveBeenCalledWith({ projectId, featureId }, artifactId);
+  expect(artifactSourceLinesReader).toHaveBeenCalledWith({ projectId, featureId }, artifactId, {
+    side: "head",
+    path: "src/search.ts",
+    startLine: 4,
+    endLine: 4,
+  });
+  expect(artifactCheckReader).toHaveBeenCalledWith(
+    { projectId, featureId },
+    artifactId,
+    evidenceId,
+  );
 });
 
 it("rejects traversal before retained storage is consulted", async () => {

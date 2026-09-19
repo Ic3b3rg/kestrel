@@ -3,6 +3,7 @@ import type {
   FactoryConceptualReviewBlocker,
   FactoryConceptualReviewCheck,
   FactoryConceptualReviewCheckCatalog,
+  FactoryConceptualReviewHistory,
   FactoryConceptualReviewPreparation,
   FactoryConceptualReviewSourceCatalog,
   FactoryConceptualReviewSourceLines,
@@ -12,14 +13,17 @@ import type {
 import { CheckCircle2, FileCode2, GitPullRequest, RefreshCw, ShieldAlert } from "lucide-react";
 
 import {
+  fetchFactoryConceptualReviewArtifact,
+  fetchFactoryConceptualReviewArtifactCheck,
+  fetchFactoryConceptualReviewArtifactSourceLines,
   fetchFactoryConceptualReviewCheck,
   fetchFactoryConceptualReviewChecks,
   fetchFactoryConceptualReviewPreparation,
+  fetchFactoryConceptualReviewHistory,
   fetchCurrentFactoryConceptualReview,
   fetchFactoryConceptualReviewSourceCatalog,
   fetchFactoryConceptualReviewSourceLines,
   fetchFactoryConceptualReviewWorkflow,
-  fetchFactoryConceptualReviewWorkflowSourceLines,
   startFactoryConceptualReview,
 } from "./conceptual-review-api.js";
 import { ConceptualReviewPanel } from "./ConceptualReviewPanel.js";
@@ -44,6 +48,8 @@ export interface FeatureReviewPanelProps {
   projectId: string;
   featureId: string;
   online: boolean;
+  selectedArtifactId?: string;
+  onSelectArtifact?: (artifactId: string | undefined) => void;
   onAuthenticationError: (error: unknown) => boolean;
   loadPreparation?: typeof fetchFactoryConceptualReviewPreparation;
   loadSourceCatalog?: typeof fetchFactoryConceptualReviewSourceCatalog;
@@ -52,7 +58,10 @@ export interface FeatureReviewPanelProps {
   loadCheck?: typeof fetchFactoryConceptualReviewCheck;
   loadCurrentReview?: typeof fetchCurrentFactoryConceptualReview;
   loadReviewWorkflow?: typeof fetchFactoryConceptualReviewWorkflow;
-  loadReviewSourceLines?: typeof fetchFactoryConceptualReviewWorkflowSourceLines;
+  loadReviewSourceLines?: typeof fetchFactoryConceptualReviewArtifactSourceLines;
+  loadReviewCheck?: typeof fetchFactoryConceptualReviewArtifactCheck;
+  loadReviewHistory?: typeof fetchFactoryConceptualReviewHistory;
+  loadReviewArtifact?: typeof fetchFactoryConceptualReviewArtifact;
   startReview?: typeof startFactoryConceptualReview;
 }
 
@@ -566,6 +575,8 @@ function FeatureReviewPanelContent({
   projectId,
   featureId,
   online,
+  selectedArtifactId,
+  onSelectArtifact = () => undefined,
   onAuthenticationError,
   loadPreparation = fetchFactoryConceptualReviewPreparation,
   loadSourceCatalog = fetchFactoryConceptualReviewSourceCatalog,
@@ -574,13 +585,17 @@ function FeatureReviewPanelContent({
   loadCheck = fetchFactoryConceptualReviewCheck,
   loadCurrentReview = fetchCurrentFactoryConceptualReview,
   loadReviewWorkflow = fetchFactoryConceptualReviewWorkflow,
-  loadReviewSourceLines = fetchFactoryConceptualReviewWorkflowSourceLines,
+  loadReviewSourceLines = fetchFactoryConceptualReviewArtifactSourceLines,
+  loadReviewCheck = fetchFactoryConceptualReviewArtifactCheck,
+  loadReviewHistory = fetchFactoryConceptualReviewHistory,
+  loadReviewArtifact = fetchFactoryConceptualReviewArtifact,
   startReview = startFactoryConceptualReview,
 }: FeatureReviewPanelProps) {
   const [preparation, setPreparation] = useState<FactoryConceptualReviewPreparation | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [review, setReview] = useState<FactoryConceptualReviewWorkflowRead | null>(null);
+  const [reviewHistory, setReviewHistory] = useState<FactoryConceptualReviewHistory | null>(null);
   const [reviewBusy, setReviewBusy] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const request = useRef<AbortController | null>(null);
@@ -612,10 +627,18 @@ function FeatureReviewPanelContent({
     reviewRequest.current?.abort();
     reviewRequest.current = controller;
     try {
-      const current = await loadCurrentReview(projectId, featureId, controller.signal);
+      const [selected, history] = await Promise.all([
+        selectedArtifactId === undefined
+          ? loadCurrentReview(projectId, featureId, controller.signal).then(
+              (current) => current.review,
+            )
+          : loadReviewArtifact(projectId, featureId, selectedArtifactId, controller.signal),
+        loadReviewHistory(projectId, featureId, 0, 50, controller.signal),
+      ]);
       if (!controller.signal.aborted && reviewGeneration.current === generation) {
-        if (current.review !== null) pendingReviewStart.current = null;
-        setReview(current.review);
+        if (selected !== null) pendingReviewStart.current = null;
+        setReview(selected);
+        setReviewHistory(history);
         setReviewError(null);
       }
     } catch (failure) {
@@ -625,16 +648,32 @@ function FeatureReviewPanelContent({
         !onAuthenticationError(failure)
       )
         setReviewError(
-          planningRequestError(failure, "The current Conceptual Review is unavailable."),
+          planningRequestError(
+            failure,
+            selectedArtifactId === undefined
+              ? "The current Conceptual Review is unavailable."
+              : "The selected immutable Conceptual Review is unavailable.",
+          ),
         );
     }
-  }, [featureId, loadCurrentReview, onAuthenticationError, online, projectId]);
+  }, [
+    featureId,
+    loadCurrentReview,
+    loadReviewArtifact,
+    loadReviewHistory,
+    onAuthenticationError,
+    online,
+    projectId,
+    selectedArtifactId,
+  ]);
   useEffect(() => {
     reviewGeneration.current += 1;
     reviewRequest.current?.abort();
     pendingReviewStart.current = null;
     setReviewBusy(false);
-  }, [featureId, projectId]);
+    setReview(null);
+    setReviewError(null);
+  }, [featureId, projectId, selectedArtifactId]);
   useEffect(() => {
     void read();
     void readReview();
@@ -652,6 +691,7 @@ function FeatureReviewPanelContent({
   useEffect(() => {
     if (!online || activeReviewId === null) return;
     const controller = new AbortController();
+    const aborted = () => controller.signal.aborted;
     let timer: number | undefined;
     const poll = async () => {
       try {
@@ -662,13 +702,28 @@ function FeatureReviewPanelContent({
           controller.signal,
         );
         if (controller.signal.aborted) return;
-        setReview(result);
-        setReviewError(null);
-        if (
+        const stillActive =
           ["queued", "running"].includes(result.workflow.state) ||
-          (result.workflow.state === "failed" && result.workflow.failure === "stop_unconfirmed")
-        )
+          (result.workflow.state === "failed" && result.workflow.failure === "stop_unconfirmed");
+        if (stillActive) {
+          setReview(result);
+          setReviewError(null);
           timer = window.setTimeout(() => void poll(), 1_000);
+          return;
+        }
+        try {
+          const history = await loadReviewHistory(projectId, featureId, 0, 50, controller.signal);
+          if (aborted()) return;
+          setReviewHistory(history);
+          setReviewError(null);
+        } catch (failure) {
+          if (aborted()) return;
+          if (!onAuthenticationError(failure))
+            setReviewError(
+              planningRequestError(failure, "Conceptual Review history is unavailable."),
+            );
+        }
+        if (!aborted()) setReview(result);
       } catch (failure) {
         if (controller.signal.aborted) return;
         if (!onAuthenticationError(failure))
@@ -683,7 +738,15 @@ function FeatureReviewPanelContent({
       controller.abort();
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [activeReviewId, featureId, loadReviewWorkflow, onAuthenticationError, online, projectId]);
+  }, [
+    activeReviewId,
+    featureId,
+    loadReviewHistory,
+    loadReviewWorkflow,
+    onAuthenticationError,
+    online,
+    projectId,
+  ]);
 
   const start = async () => {
     if (
@@ -709,6 +772,7 @@ function FeatureReviewPanelContent({
     try {
       const accepted = await startReview(projectId, featureId, command);
       if (reviewGeneration.current === generation) {
+        onSelectArtifact(undefined);
         setReview(accepted);
         pendingReviewStart.current = null;
       }
@@ -811,6 +875,52 @@ function FeatureReviewPanelContent({
           {reviewError}
         </p>
       )}
+      {reviewHistory === null || reviewHistory.reviews.length === 0 ? null : (
+        <section
+          className="min-w-0 space-y-3 rounded-xl border border-border bg-card p-4"
+          aria-label="Conceptual Review history"
+        >
+          <div>
+            <h3 className="font-semibold">Review history</h3>
+            <p className="text-sm text-muted-foreground">
+              Open an immutable artifact. Its graph, source pair, and final-check records keep their
+              original identities.
+            </p>
+          </div>
+          <div className="flex max-w-full gap-2 overflow-x-auto pb-1">
+            <Button
+              type="button"
+              size="sm"
+              variant={selectedArtifactId === undefined ? "default" : "outline"}
+              aria-pressed={selectedArtifactId === undefined}
+              onClick={() => onSelectArtifact(undefined)}
+            >
+              Current review
+            </Button>
+            {reviewHistory.reviews.map((entry, index) => (
+              <Button
+                key={entry.artifactId}
+                type="button"
+                size="sm"
+                variant={selectedArtifactId === entry.artifactId ? "default" : "outline"}
+                aria-pressed={selectedArtifactId === entry.artifactId}
+                className="h-auto min-w-48 justify-start whitespace-normal py-2 text-left"
+                onClick={() => onSelectArtifact(entry.artifactId)}
+              >
+                <span>
+                  <span className="block font-medium">
+                    Review {reviewHistory.offset + index + 1} · {entry.status}
+                  </span>
+                  <span className="block text-xs opacity-75">
+                    {new Date(entry.finishedAt).toLocaleString()} · head{" "}
+                    {shortId(entry.headCommitId)} · {entry.currency.replaceAll("_", " ")}
+                  </span>
+                </span>
+              </Button>
+            ))}
+          </div>
+        </section>
+      )}
       {review === null ? null : (
         <div className="grid min-w-0 gap-3">
           {reviewInputsChanged ? (
@@ -834,6 +944,7 @@ function FeatureReviewPanelContent({
             projectId={projectId}
             featureId={featureId}
             loadSourceLines={loadReviewSourceLines}
+            loadCheck={loadReviewCheck}
             onAuthenticationError={onAuthenticationError}
           />
         </div>

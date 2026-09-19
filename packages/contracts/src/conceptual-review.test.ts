@@ -8,6 +8,7 @@ import {
   FactoryConceptualReviewWorkflowReadSchema,
   FactoryConceptualReviewSourceLinesSchema,
   FactoryConceptualReviewCheckSchema,
+  FactoryConceptualReviewHistorySchema,
 } from "./conceptual-review.js";
 
 const id = "01991c36-7f90-7000-8000-000000000001";
@@ -220,6 +221,59 @@ it("keeps executed check provenance distinct from the claim it may support", () 
   });
   expect(result.result.outcome).toBe("passed");
   expect(result).not.toHaveProperty("supportedOutcomeKeys");
+});
+
+it("keeps a server-resolved check and its model judgment distinct in the review graph", () => {
+  const checkEvidence = {
+    id: "check:search",
+    type: "check" as const,
+    evidenceId: id,
+    relation: "supports" as const,
+    proposition: "The approved search verification command succeeds on the reviewed head.",
+    description: "The final feature verification ran the approved search command.",
+    sufficiency: "Establishes command success; product behavior still depends on model judgment.",
+    limitations: ["The command does not itself prove browser timing."],
+    record: {
+      evidenceId: id,
+      runId: secondId,
+      manifestPosition: 1,
+      origins: [{ workItemKey: "search", position: 1 }],
+      command,
+      headCommitId,
+      treeId,
+      outcome: "passed" as const,
+      exitCode: 0,
+      stdoutTruncated: false,
+      stderrTruncated: false,
+      durationMs: 123,
+      createdAt: at,
+    },
+  };
+  const linked = {
+    ...graph,
+    result: "complete" as const,
+    behavioralSteps: [
+      { ...graph.behavioralSteps[0], evidenceIds: ["source:refresh", "check:search"] },
+    ],
+    evidence: [...graph.evidence, checkEvidence],
+    edges: [
+      ...graph.edges,
+      { from: "step:refresh", to: "check:search", kind: "supported_by" as const },
+    ],
+  };
+  expect(FactoryConceptualReviewDraftSchema.parse(linked)).toEqual(linked);
+  expect(() =>
+    FactoryConceptualReviewDraftSchema.parse({
+      ...linked,
+      evidence: [
+        ...graph.evidence,
+        {
+          ...checkEvidence,
+          record: { ...checkEvidence.record, outcome: "failed", exitCode: 1 },
+        },
+      ],
+    }),
+  ).toThrow();
 });
 
 const graph = {
@@ -502,4 +556,26 @@ it("models explicit idempotent starts and durable pending, failed, partial and o
   });
   expect(read.artifact?.status).toBe("partial");
   expect(read.currency).toBe("outdated");
+});
+
+it("models a paged immutable artifact history without embedding replacement graphs", () => {
+  const history = FactoryConceptualReviewHistorySchema.parse({
+    schemaVersion: 1,
+    reviews: [
+      {
+        artifactId: id,
+        workflowId: secondId,
+        status: "partial",
+        headCommitId,
+        requestedAt: at,
+        finishedAt: at,
+        currency: "outdated",
+      },
+    ],
+    offset: 0,
+    total: 1,
+    nextOffset: null,
+  });
+  expect(history.reviews[0]?.artifactId).toBe(id);
+  expect(history.reviews[0]).not.toHaveProperty("graph");
 });

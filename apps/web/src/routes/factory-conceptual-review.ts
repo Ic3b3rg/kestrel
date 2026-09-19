@@ -6,6 +6,7 @@ import {
   FactoryConceptualReviewCheckCatalogSchema,
   FactoryConceptualReviewCheckSchema,
   FactoryConceptualReviewCurrentSchema,
+  FactoryConceptualReviewHistorySchema,
   FactoryConceptualReviewPreparationSchema,
   FactoryConceptualReviewStartCommandSchema,
   FactoryConceptualReviewSourceCatalogSchema,
@@ -16,6 +17,7 @@ import {
   type FactoryConceptualReviewCheck,
   type FactoryConceptualReviewCheckCatalog,
   type FactoryConceptualReviewCurrent,
+  type FactoryConceptualReviewHistory,
   type FactoryConceptualReviewPreparation,
   type FactoryConceptualReviewStartCommand,
   type FactoryConceptualReviewSourceCatalog,
@@ -27,11 +29,14 @@ import {
   FactoryConceptualReviewPersistenceError,
   FactoryConceptualReviewWorkflowPersistenceError,
   readCurrentFactoryConceptualReviewWorkflow,
+  readFactoryConceptualReviewArtifact,
   readFactoryConceptualReviewCheck,
   readFactoryConceptualReviewChecks,
   readFactoryConceptualReviewPreparation,
+  readFactoryConceptualReviewHistory,
   readFactoryConceptualReviewSourceBinding,
   readFactoryConceptualReviewWorkflow,
+  readFactoryConceptualReviewWorkflowCheck,
   readFactoryConceptualReviewWorkflowPullRequest,
   readFactoryConceptualReviewWorkflowSourceBinding,
   observePublishedFactoryConceptualReviewHead,
@@ -94,11 +99,29 @@ export interface FactoryConceptualReviewService {
     context: FactoryConceptualReviewContext,
     workflowId: string,
   ): Promise<FactoryConceptualReviewWorkflowRead | null>;
+  history(
+    context: FactoryConceptualReviewContext,
+    input: { offset: number; limit: number },
+  ): Promise<FactoryConceptualReviewHistory>;
+  artifact(
+    context: FactoryConceptualReviewContext,
+    artifactId: string,
+  ): Promise<FactoryConceptualReviewWorkflowRead | null>;
   workflowSourceLines(
     context: FactoryConceptualReviewContext,
     workflowId: string,
     input: FactoryConceptualReviewSourceLineInput,
   ): Promise<FactoryConceptualReviewSourceLines>;
+  artifactSourceLines(
+    context: FactoryConceptualReviewContext,
+    artifactId: string,
+    input: FactoryConceptualReviewSourceLineInput,
+  ): Promise<FactoryConceptualReviewSourceLines>;
+  artifactCheck(
+    context: FactoryConceptualReviewContext,
+    artifactId: string,
+    evidenceId: string,
+  ): Promise<FactoryConceptualReviewCheck>;
 }
 
 export async function refreshFactoryConceptualReviewCurrency(
@@ -285,6 +308,17 @@ export function createDatabaseFactoryConceptualReviewService(
       );
       return refreshCurrency(review);
     },
+    history: (context, { offset, limit }) =>
+      readFactoryConceptualReviewHistory(pool, context.projectId, context.featureId, offset, limit),
+    async artifact(context, artifactId) {
+      const review = await readFactoryConceptualReviewArtifact(
+        pool,
+        context.projectId,
+        context.featureId,
+        artifactId,
+      );
+      return refreshCurrency(review);
+    },
     async workflowSourceLines(context, workflowId, input) {
       const workflow = await readFactoryConceptualReviewWorkflow(
         pool,
@@ -299,12 +333,46 @@ export function createDatabaseFactoryConceptualReviewService(
       ]);
       return readConceptualReviewSourceLines(config, { ...binding, ...input });
     },
+    async artifactSourceLines(context, artifactId, input) {
+      const review = await readFactoryConceptualReviewArtifact(
+        pool,
+        context.projectId,
+        context.featureId,
+        artifactId,
+      );
+      if (review === null || review.artifact === null)
+        throw new FactoryConceptualReviewWorkflowPersistenceError("not_found");
+      const [config, binding] = await Promise.all([
+        readSourceConfig(),
+        readFactoryConceptualReviewWorkflowSourceBinding(pool, review.workflow.id),
+      ]);
+      return readConceptualReviewSourceLines(config, { ...binding, ...input });
+    },
+    async artifactCheck(context, artifactId, evidenceId) {
+      const review = await readFactoryConceptualReviewArtifact(
+        pool,
+        context.projectId,
+        context.featureId,
+        artifactId,
+      );
+      if (review === null || review.artifact === null)
+        throw new FactoryConceptualReviewWorkflowPersistenceError("not_found");
+      return readFactoryConceptualReviewWorkflowCheck(
+        pool,
+        context.projectId,
+        context.featureId,
+        review.workflow.id,
+        evidenceId,
+      );
+    },
   };
 }
 
 const params = z.strictObject({ projectId: KestrelIdSchema, featureId: KestrelIdSchema });
 const checkParams = params.extend({ evidenceId: KestrelIdSchema });
 const workflowParams = params.extend({ workflowId: KestrelIdSchema });
+const artifactParams = params.extend({ artifactId: KestrelIdSchema });
+const artifactCheckParams = artifactParams.extend({ evidenceId: KestrelIdSchema });
 const side = z.enum(["base", "head"]);
 const sourceCatalogQuery = z.strictObject({
   side,
@@ -330,6 +398,10 @@ const sourceLinesQuery = z.strictObject({
 const checksQuery = z.strictObject({
   offset: z.coerce.number().int().min(0).default(0),
   limit: z.coerce.number().int().min(1).max(100).default(100),
+});
+const historyQuery = z.strictObject({
+  offset: z.coerce.number().int().min(0).default(0),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
 });
 const json = (schema: z.ZodType) => z.toJSONSchema(schema, { target: "draft-7" });
 const errors = {
@@ -521,6 +593,96 @@ export function registerFactoryConceptualReviewRoutes(
             workflowId,
             sourceLinesQuery.parse(request.query),
           ),
+        );
+      } catch (error) {
+        const mapped = failure(request, error);
+        return reply.code(mapped.status).send(mapped.body);
+      }
+    },
+  );
+  app.get(
+    `${root}/artifacts`,
+    {
+      schema: {
+        params: json(params),
+        querystring: json(historyQuery),
+        response: { ...errors, 200: json(FactoryConceptualReviewHistorySchema) },
+      },
+    },
+    async (request, reply) => {
+      try {
+        return FactoryConceptualReviewHistorySchema.parse(
+          await service.history(params.parse(request.params), historyQuery.parse(request.query)),
+        );
+      } catch (error) {
+        const mapped = failure(request, error);
+        return reply.code(mapped.status).send(mapped.body);
+      }
+    },
+  );
+  app.get(
+    `${root}/artifacts/:artifactId`,
+    {
+      schema: {
+        params: json(artifactParams),
+        response: { ...errors, 200: json(FactoryConceptualReviewWorkflowReadSchema) },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const { projectId, featureId, artifactId } = artifactParams.parse(request.params);
+        const result = await service.artifact({ projectId, featureId }, artifactId);
+        if (result === null)
+          return await reply
+            .code(404)
+            .send(apiError(request, "NOT_FOUND", "The Conceptual Review artifact is unavailable"));
+        return FactoryConceptualReviewWorkflowReadSchema.parse(result);
+      } catch (error) {
+        const mapped = failure(request, error);
+        return reply.code(mapped.status).send(mapped.body);
+      }
+    },
+  );
+  app.get(
+    `${root}/artifacts/:artifactId/source/lines`,
+    {
+      schema: {
+        params: json(artifactParams),
+        querystring: json(sourceLinesQuery),
+        response: { ...errors, 200: json(FactoryConceptualReviewSourceLinesSchema) },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const { projectId, featureId, artifactId } = artifactParams.parse(request.params);
+        return FactoryConceptualReviewSourceLinesSchema.parse(
+          await service.artifactSourceLines(
+            { projectId, featureId },
+            artifactId,
+            sourceLinesQuery.parse(request.query),
+          ),
+        );
+      } catch (error) {
+        const mapped = failure(request, error);
+        return reply.code(mapped.status).send(mapped.body);
+      }
+    },
+  );
+  app.get(
+    `${root}/artifacts/:artifactId/checks/:evidenceId`,
+    {
+      schema: {
+        params: json(artifactCheckParams),
+        response: { ...errors, 200: json(FactoryConceptualReviewCheckSchema) },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const { projectId, featureId, artifactId, evidenceId } = artifactCheckParams.parse(
+          request.params,
+        );
+        return FactoryConceptualReviewCheckSchema.parse(
+          await service.artifactCheck({ projectId, featureId }, artifactId, evidenceId),
         );
       } catch (error) {
         const mapped = failure(request, error);
