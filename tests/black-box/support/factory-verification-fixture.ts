@@ -98,13 +98,19 @@ export async function verificationModule<T>(stack: ModuleStack, source: string):
   ) as T;
 }
 
-export async function createVerificationFixture() {
+export async function createVerificationFixture(
+  options: Pick<
+    NonNullable<Parameters<typeof startStack>[0]>,
+    "githubFixture" | "gitHubRemoteMappings"
+  > = {},
+) {
   const source = await createGitFixture();
   let stack: RunningStack;
   try {
     stack = await startStack({
       repositoryRoot: source.rootPath,
-      githubFixture: factoryGitHubFixture,
+      ...options,
+      githubFixture: options.githubFixture ?? factoryGitHubFixture,
     });
   } catch (error) {
     await source.close();
@@ -121,7 +127,7 @@ export async function createVerificationFixture() {
     // Hold delivery, not scheduler admission. Tests invoke the actual worker explicitly.
     await stack.executeSql(`
       CREATE FUNCTION hold_verification_delivery() RETURNS trigger LANGUAGE plpgsql AS $$
-      BEGIN IF NEW.name='factory-execution-v1' THEN NEW.start_after=clock_timestamp()+interval '1 hour'; END IF; RETURN NEW; END $$;
+      BEGIN IF NEW.name IN ('factory-execution-v1','factory-feature-pr-publication-v1') THEN NEW.start_after=clock_timestamp()+interval '1 hour'; END IF; RETURN NEW; END $$;
       CREATE TRIGGER hold_verification_delivery BEFORE INSERT ON pgboss.job FOR EACH ROW EXECUTE FUNCTION hold_verification_delivery();
     `);
     const inventory = LocalRepositoryInventorySchema.parse(

@@ -4,7 +4,13 @@ export type AppRoute =
   | { kind: "feature"; projectId: string; featureId: string; view?: "plan" | "board" }
   | { kind: "not_found" }
   | { kind: "planning"; projectId: string; requestId: string }
-  | { kind: "project"; projectId: string; proposalId?: string; view?: "pull_requests" }
+  | {
+      kind: "project";
+      projectId: string;
+      proposalId?: string;
+      revisionId?: string;
+      view?: "pull_requests";
+    }
   | { kind: "projects" }
   | { kind: "settings"; projectId?: string };
 
@@ -38,13 +44,19 @@ export function readAppRoute(pathname: string, search = ""): AppRoute {
           }
         : { kind: "not_found" };
     }
-    const proposalId = KestrelIdSchema.safeParse(new URLSearchParams(search).get("proposalId"));
+    const parameters = new URLSearchParams(search);
+    const proposalId = KestrelIdSchema.safeParse(parameters.get("proposalId"));
+    const revisionId = KestrelIdSchema.safeParse(parameters.get("revisionId"));
+    if (parameters.has("revisionId") && (!proposalId.success || !revisionId.success)) {
+      return { kind: "not_found" };
+    }
     return projectId.success
       ? {
           kind: "project",
           projectId: projectId.data,
           ...(proposalId.success ? { proposalId: proposalId.data } : {}),
-          ...(!proposalId.success && new URLSearchParams(search).get("view") === "pull_requests"
+          ...(proposalId.success && revisionId.success ? { revisionId: revisionId.data } : {}),
+          ...(!proposalId.success && parameters.get("view") === "pull_requests"
             ? { view: "pull_requests" as const }
             : {}),
         }
@@ -65,6 +77,6 @@ export function appPath(route: Exclude<AppRoute, { kind: "not_found" }>): string
     case "settings":
       return `/settings${route.projectId === undefined ? "" : `?projectId=${encodeURIComponent(route.projectId)}`}`;
     case "project":
-      return `/projects/${encodeURIComponent(route.projectId)}${route.proposalId === undefined ? (route.view === "pull_requests" ? "?view=pull_requests" : "") : `?proposalId=${encodeURIComponent(route.proposalId)}`}`;
+      return `/projects/${encodeURIComponent(route.projectId)}${route.proposalId === undefined ? (route.view === "pull_requests" ? "?view=pull_requests" : "") : `?proposalId=${encodeURIComponent(route.proposalId)}${route.revisionId === undefined ? "" : `&revisionId=${encodeURIComponent(route.revisionId)}`}`}`;
   }
 }

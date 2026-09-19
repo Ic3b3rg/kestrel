@@ -57,6 +57,8 @@ function sourceProvenance(source: ChangeIntentSource): string {
       return `${provenance.side} ${provenance.objectId.slice(0, 12)} · ${provenance.ref}`;
     case "operator_input":
       return "Operator-confirmed input";
+    case "approved_feature_plan":
+      return `Approved Feature plan v${String(provenance.approvedVersion)} · ${provenance.featureId}`;
   }
 }
 

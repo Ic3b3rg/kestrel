@@ -21,7 +21,10 @@ Umbrella: https://github.com/Ic3b3rg/kestrel/issues/209
    [final cumulative verification #234](https://github.com/Ic3b3rg/kestrel/issues/234) and
    [certified Feature PR publication #235](https://github.com/Ic3b3rg/kestrel/issues/235)
 8. [Factory 0.1-08 — Requirements-first Conceptual Review with an explorable evidence graph](https://github.com/Ic3b3rg/kestrel/issues/217)
-   — blocked by #216
+   — blocked by #216 — implemented through
+   [retained review inputs and inspectors #237](https://github.com/Ic3b3rg/kestrel/issues/237),
+   [explicit Conceptual Review and graph #238](https://github.com/Ic3b3rg/kestrel/issues/238), and
+   [executed-check evidence and immutable history #239](https://github.com/Ic3b3rg/kestrel/issues/239)
 9. [Factory 0.1-09 — Selected corrections and exact-head merge from Kestrel](https://github.com/Ic3b3rg/kestrel/issues/218)
    — blocked by #217
 10. [Factory 0.1-10 — Accept the runnable Factory 0.1 on real runtime and pilot context](https://github.com/Ic3b3rg/kestrel/issues/219)

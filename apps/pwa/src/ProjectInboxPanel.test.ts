@@ -130,10 +130,11 @@ const localInbox: ProjectInbox = {
   ],
 };
 
-function render(inbox: ProjectInbox | null, loading = false): string {
+function render(inbox: ProjectInbox | null, loading = false, selectedRevisionId?: string): string {
   return renderToStaticMarkup(
     createElement(ProjectInboxPanel, {
       selectedProposalId: inbox?.projects[0]?.changeProposals[0]?.id ?? "",
+      ...(selectedRevisionId === undefined ? {} : { selectedRevisionId }),
       error: null,
       inbox,
       loading,
@@ -157,6 +158,44 @@ it("shows independent PR readiness facts without offering review execution befor
 });
 
 describe("ProjectInboxPanel", () => {
+  it("shows the bound retained revision after the proposal head moved", () => {
+    const project = localInbox.projects[0];
+    const proposal = project?.changeProposals[0];
+    const retained = proposal?.reviewRevisions[0];
+    if (project === undefined || proposal?.kind !== "local" || retained === undefined) {
+      throw new Error("Local retained revision fixture is unavailable");
+    }
+    const moved: ProjectInbox = {
+      schemaVersion: 1,
+      projects: [
+        {
+          ...project,
+          changeProposals: [
+            {
+              ...proposal,
+              head: { objectId: "c".repeat(40), ref: "refs/heads/current" },
+              reviewRevisions: [
+                {
+                  ...retained,
+                  id: "018f0f89-9a21-7271-b92d-f1cb0d48bb48",
+                  head: { objectId: "c".repeat(40), ref: "refs/heads/current" },
+                },
+                {
+                  ...retained,
+                  head: { ...retained.head, ref: "refs/heads/certified" },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const html = render(moved, false, retained.id);
+    expect(html).toContain("refs/heads/certified");
+    expect(html).not.toContain("<dt>Retained head</dt><dd><span>refs/heads/current</span>");
+  });
+
   it("keeps Project actions enabled while a populated inbox refreshes in the background", () => {
     const html = render(populatedInbox, true);
 

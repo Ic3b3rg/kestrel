@@ -1,6 +1,7 @@
 export * from "./config.js";
 export * from "./artifact.js";
 export * from "./feature-workspace.js";
+export * from "./feature-publication.js";
 export * from "./discovery.js";
 export * from "./errors.js";
 export * from "./git.js";

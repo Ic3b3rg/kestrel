@@ -2,6 +2,10 @@ import { z, type ZodType } from "zod";
 import { FactoryExecutionSchema, FactoryExecutionRunSchema } from "./factory-execution.js";
 import { FactoryGateSchema, ResolveFactoryGateCommandSchema } from "./factory-gates.js";
 import {
+  FactoryFeaturePublicationSchema,
+  RetryFactoryFeaturePublicationCommandSchema,
+} from "./factory-feature-publication.js";
+import {
   StartPlanningFeatureCommandSchema,
   PlanningFeatureStartedSchema,
   PlanningFeatureRequestSchema,
@@ -198,6 +202,10 @@ const factoryComponents = {
   FactoryIssueImports: asComponentSchema(asJsonSchema(FactoryIssueImportsSchema)),
   ImportFactoryIssuesCommand: asComponentSchema(asJsonSchema(ImportFactoryIssuesCommandSchema)),
   FactoryIssuePublication: asComponentSchema(asJsonSchema(FactoryIssuePublicationSchema)),
+  FactoryFeaturePublication: asComponentSchema(asJsonSchema(FactoryFeaturePublicationSchema)),
+  RetryFactoryFeaturePublicationCommand: asComponentSchema(
+    asJsonSchema(RetryFactoryFeaturePublicationCommandSchema),
+  ),
   RetryFactoryPublicationCommand: asComponentSchema(
     asJsonSchema(RetryFactoryPublicationCommandSchema),
   ),
@@ -986,6 +994,19 @@ export const openApiDocument = sortJson({
         "retryFactoryPublication",
         "RetryFactoryPublicationCommand",
         "FactoryIssuePublication",
+        202,
+      ),
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/pull-request": {
+      parameters: factoryParameters(),
+      get: factoryRead("readFactoryFeaturePublication", "FactoryFeaturePublication"),
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/pull-request/retry": {
+      parameters: factoryParameters(),
+      post: factoryTurnMutation(
+        "retryFactoryFeaturePublication",
+        "RetryFactoryFeaturePublicationCommand",
+        "FactoryFeaturePublication",
         202,
       ),
     },

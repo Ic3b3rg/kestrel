@@ -623,12 +623,25 @@ export const ChangeIntentSourceProvenanceSchema = z.discriminatedUnion("kind", [
   z.strictObject({
     kind: z.literal("operator_input"),
   }),
+  z.strictObject({
+    kind: z.literal("approved_feature_plan"),
+    featureId: KestrelIdSchema,
+    approvedVersion: z.int().min(1).max(200),
+    certificateId: KestrelIdSchema,
+    approvalId: KestrelIdSchema,
+  }),
 ]);
 
 export const ChangeIntentSourceSchema = z
   .strictObject({
     id: ChangeIntentSourceIdSchema,
-    kind: z.enum(["provider_field", "commit_author", "commit_message", "operator_input"]),
+    kind: z.enum([
+      "provider_field",
+      "commit_author",
+      "commit_message",
+      "operator_input",
+      "approved_feature_plan",
+    ]),
     label: z.string().trim().min(1).max(256),
     text: ChangeIntentSourceTextSchema,
     version: z.string().min(1).max(128),

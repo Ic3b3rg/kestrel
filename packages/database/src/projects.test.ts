@@ -488,6 +488,18 @@ describe("Project persistence mapping", () => {
     expect(query.mock.calls[0]?.[0]).toContain("ORDER BY intent.version DESC");
   });
 
+  it("prioritizes an explicitly required retained Review Revision", async () => {
+    const requiredRevisionId = "018f0f89-9a21-7271-b92d-f1cb0d48bb47";
+    const query = vi.fn(() => ({ rowCount: 1, rows: [localProjectRow()] }));
+
+    await readProject({ query } as never, projectId, requiredRevisionId);
+
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining("ORDER BY (revision.id = $2::uuid) DESC"),
+      [projectId, requiredRevisionId],
+    );
+  });
+
   it("reads attached GitHub coordinates against the Installation schema", async () => {
     const query = vi.fn((statement: string) => {
       expect(statement).not.toContain("installation.singleton");

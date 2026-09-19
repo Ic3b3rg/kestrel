@@ -197,6 +197,25 @@ describe("Project routes", () => {
     });
   });
 
+  it("requests an exact retained revision when the Project route binds one", async () => {
+    const revisionId = "018f0f89-9a21-7271-b92d-f1cb0d48bb47";
+    const response = await app.inject({
+      headers: authenticatedHeaders,
+      method: "GET",
+      url: `/api/v1/projects?projectId=${project.id}&revisionId=${revisionId}`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(projectService.readInbox).toHaveBeenCalledWith({ projectId: project.id, revisionId });
+
+    const incomplete = await app.inject({
+      headers: authenticatedHeaders,
+      method: "GET",
+      url: `/api/v1/projects?revisionId=${revisionId}`,
+    });
+    expect(incomplete.statusCode).toBe(400);
+  });
+
   it("reads the attributed host GitHub route for one Project", async () => {
     const response = await app.inject({
       headers: authenticatedHeaders,

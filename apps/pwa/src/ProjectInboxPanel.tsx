@@ -24,6 +24,7 @@ import { useProjectConnections, type ProjectConnections } from "./use-project-co
 
 interface ProjectInboxPanelProps {
   selectedProposalId?: string;
+  selectedRevisionId?: string;
   onSelectProposal?: (proposalId: string | null) => void;
   error: string | null;
   inbox: ProjectInbox | null;
@@ -265,6 +266,7 @@ function ChangeProposalRecord({
   onProjectOpened,
   onRefresh,
   projectId,
+  requiredRevisionId,
 }: {
   canAcquire: boolean;
   connections: ProjectConnections;
@@ -277,8 +279,9 @@ function ChangeProposalRecord({
   onProjectOpened: (result: ProjectUpserted) => void;
   onRefresh: () => void;
   projectId: string;
+  requiredRevisionId?: string;
 }) {
-  const revision = currentReviewRevision(changeProposal);
+  const revision = currentReviewRevision(changeProposal, requiredRevisionId);
   const changeOverview = changeProposal.changeOverview ?? {
     exactHeadObjectId: changeProposal.head.objectId,
     state: "awaiting_source" as const,
@@ -360,6 +363,7 @@ function ChangeProposalRecord({
         disabled={disabled}
         project={project}
         proposal={changeProposal}
+        {...(requiredRevisionId === undefined ? {} : { requiredRevisionId })}
         sourceCorrection={
           <OpenProjectForm
             disabled={disabled}
@@ -621,11 +625,17 @@ function ProjectRecord({
           <ChangeProposalRecord
             connections={connections}
             project={project}
-            canAcquire={project.localRepositorySource?.state === "attached"}
+            canAcquire={
+              project.localRepositorySource?.state === "attached" &&
+              props.selectedRevisionId === undefined
+            }
             changeProposal={changeProposal}
             disabled={unavailable}
             key={changeProposal.id}
             projectId={project.id}
+            {...(props.selectedRevisionId === undefined
+              ? {}
+              : { requiredRevisionId: props.selectedRevisionId })}
             {...(props.onAuthenticationError === undefined
               ? {}
               : { onAuthenticationError: props.onAuthenticationError })}

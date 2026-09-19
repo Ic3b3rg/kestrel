@@ -2,11 +2,51 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
-import type { FactoryBoard, FactoryIssuePublication, FactoryWorkItem } from "@kestrel/contracts";
+import type {
+  FactoryBoard,
+  FactoryFeaturePublicationReview,
+  FactoryIssuePublication,
+  FactoryWorkItem,
+} from "@kestrel/contracts";
 import { FeatureBoardPanel } from "./FeatureBoardPanel.js";
 
 // Execution's own request/polling behavior is covered by FeatureExecutionPanel.test.ts.
 vi.mock("./FeatureExecutionPanel.js", () => ({ FeatureExecutionPanel: () => null }));
+const retainedReview = vi.hoisted(
+  () =>
+    ({
+      projectId: "018f0f89-949a-75a8-8f61-6df78a843b1e",
+      changeProposalId: "018f0f89-949a-75a8-8f61-6df78a843b20",
+      manifestDigest: "d".repeat(64),
+      revision: {
+        id: "018f0f89-949a-75a8-8f61-6df78a843b21",
+        state: "available",
+        objectFormat: "sha1",
+        base: { objectId: "a".repeat(40), ref: "master" },
+        head: { objectId: "b".repeat(40), ref: "kestrel/feature/example" },
+        objectCount: 2,
+        retainedBytes: 256,
+        failureReason: null,
+        createdAt: "2026-09-08T12:00:00.000Z",
+        availableAt: "2026-09-08T12:00:00.000Z",
+      },
+    }) satisfies FactoryFeaturePublicationReview,
+);
+vi.mock("./FeaturePublicationPanel.js", async () => {
+  const { createElement } = await import("react");
+  return {
+    FeaturePublicationPanel: ({
+      onOpenRevision,
+    }: {
+      onOpenRevision: (review: FactoryFeaturePublicationReview) => void;
+    }) =>
+      createElement(
+        "button",
+        { type: "button", onClick: () => onOpenRevision(retainedReview) },
+        "Open retained revision",
+      ),
+  };
+});
 
 const projectId = "018f0f89-949a-75a8-8f61-6df78a843b1e";
 const featureId = "018f0f89-9192-755f-aa96-f72094c734df";
@@ -109,6 +149,7 @@ it("moves cards through execution after GitHub publication has finished without 
             Promise.resolve({ ...blocked, state: "published", failure: null }),
           onAuthenticationError: () => false,
           onViewPlan: vi.fn(),
+          onOpenRevision: vi.fn(),
         }),
       );
       await Promise.resolve();
@@ -163,6 +204,7 @@ it("retains successful links and retries the same uncertain publication request 
           retryPublication,
           onAuthenticationError,
           onViewPlan: vi.fn(),
+          onOpenRevision: vi.fn(),
         }),
       );
       await Promise.resolve();
@@ -236,6 +278,7 @@ it("shows completed publication when a refresh takes longer than the polling int
           loadPublication,
           onAuthenticationError: () => false,
           onViewPlan: vi.fn(),
+          onOpenRevision: vi.fn(),
         }),
       );
       await Promise.resolve();
@@ -253,6 +296,48 @@ it("shows completed publication when a refresh takes longer than the polling int
     });
     container.remove();
     vi.useRealTimers();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("opens the retained exact revision from the Feature board", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const onOpenRevision = vi.fn();
+  try {
+    await act(async () => {
+      root.render(
+        createElement(FeatureBoardPanel, {
+          projectId,
+          featureId,
+          online: true,
+          loadBoard: () => Promise.resolve(board),
+          loadPublication: () =>
+            Promise.resolve({ ...blocked, state: "published" as const, failure: null }),
+          onAuthenticationError: () => false,
+          onViewPlan: vi.fn(),
+          onOpenRevision,
+        }),
+      );
+      await Promise.resolve();
+    });
+    const open = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Open retained revision",
+    );
+    expect(open).toBeDefined();
+    await act(async () => {
+      open?.click();
+      await Promise.resolve();
+    });
+    expect(onOpenRevision).toHaveBeenCalledWith(retainedReview);
+  } finally {
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+    container.remove();
     vi.unstubAllGlobals();
   }
 });

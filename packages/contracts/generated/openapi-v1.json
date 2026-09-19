@@ -297,7 +297,8 @@
                         "provider_field",
                         "commit_author",
                         "commit_message",
-                        "operator_input"
+                        "operator_input",
+                        "approved_feature_plan"
                       ],
                       "type": "string"
                     },
@@ -422,6 +423,43 @@
                           },
                           "required": [
                             "kind"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "approvalId": {
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                              "type": "string"
+                            },
+                            "approvedVersion": {
+                              "maximum": 200,
+                              "minimum": 1,
+                              "type": "integer"
+                            },
+                            "certificateId": {
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                              "type": "string"
+                            },
+                            "featureId": {
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                              "type": "string"
+                            },
+                            "kind": {
+                              "const": "approved_feature_plan",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "featureId",
+                            "approvedVersion",
+                            "certificateId",
+                            "approvalId"
                           ],
                           "type": "object"
                         }
@@ -4988,6 +5026,697 @@
             "type": "object"
           }
         ]
+      },
+      "FactoryFeaturePublication": {
+        "additionalProperties": false,
+        "properties": {
+          "approvedVersion": {
+            "anyOf": [
+              {
+                "maximum": 200,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "canRetry": {
+            "type": "boolean"
+          },
+          "cancelled": {
+            "type": "boolean"
+          },
+          "certificate": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "approvedVersion": {
+                    "maximum": 200,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "createdAt": {
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                    "type": "string"
+                  },
+                  "evidenceIds": {
+                    "items": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                      "type": "string"
+                    },
+                    "maxItems": 480,
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "featureId": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                    "type": "string"
+                  },
+                  "id": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                    "type": "string"
+                  },
+                  "manifest": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "command": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "args": {
+                              "items": {
+                                "maxLength": 2048,
+                                "pattern": "^[^\\x00]*$",
+                                "type": "string"
+                              },
+                              "maxItems": 32,
+                              "type": "array"
+                            },
+                            "cwd": {
+                              "maxLength": 256,
+                              "minLength": 1,
+                              "pattern": "^[^\\x00]*$",
+                              "type": "string"
+                            },
+                            "program": {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._+-]*$",
+                              "type": "string"
+                            },
+                            "timeoutSeconds": {
+                              "maximum": 7200,
+                              "minimum": 1,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "program",
+                            "args",
+                            "cwd",
+                            "timeoutSeconds"
+                          ],
+                          "type": "object"
+                        },
+                        "origins": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "position": {
+                                "maximum": 12,
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "workItemKey": {
+                                "maxLength": 48,
+                                "minLength": 1,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "workItemKey",
+                              "position"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 480,
+                          "minItems": 1,
+                          "type": "array"
+                        },
+                        "position": {
+                          "maximum": 480,
+                          "minimum": 1,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "position",
+                        "command",
+                        "origins"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 480,
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "manifestDigest": {
+                    "pattern": "^[a-f0-9]{64}$",
+                    "type": "string"
+                  },
+                  "revision": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "baseCommitId": {
+                        "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                        "type": "string"
+                      },
+                      "branch": {
+                        "maxLength": 200,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "headCommitId": {
+                        "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                        "type": "string"
+                      },
+                      "treeId": {
+                        "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "baseCommitId",
+                      "headCommitId",
+                      "treeId",
+                      "branch"
+                    ],
+                    "type": "object"
+                  },
+                  "runId": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                    "type": "string"
+                  },
+                  "source": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "identity": {
+                        "maxLength": 512,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "repositoryId": {
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "repositoryId",
+                      "identity"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "id",
+                  "featureId",
+                  "approvedVersion",
+                  "runId",
+                  "source",
+                  "revision",
+                  "manifest",
+                  "manifestDigest",
+                  "evidenceIds",
+                  "createdAt"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "failure": {
+            "anyOf": [
+              {
+                "enum": [
+                  "verification_required",
+                  "certificate_stale",
+                  "issue_identity_missing",
+                  "source_changed",
+                  "remote_changed",
+                  "target_changed",
+                  "target_unavailable",
+                  "feature_ref_conflict",
+                  "workspace_changed",
+                  "unavailable",
+                  "cancelled",
+                  "timeout",
+                  "push_rejected",
+                  "needs_authentication",
+                  "access_denied",
+                  "rate_limited",
+                  "invalid_response",
+                  "project_not_supported",
+                  "repository_changed",
+                  "uncertain_write",
+                  "reconciliation_limit",
+                  "retention_unavailable",
+                  "retry_limit"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "featureId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "issues": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "issue": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "maxLength": 32,
+                      "pattern": "^[1-9][0-9]*$",
+                      "type": "string"
+                    },
+                    "number": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 2147483647,
+                      "type": "integer"
+                    },
+                    "repository": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "maxLength": 32,
+                          "pattern": "^[1-9][0-9]*$",
+                          "type": "string"
+                        },
+                        "name": {
+                          "pattern": "^[a-zA-Z0-9_.-]{1,100}$",
+                          "type": "string"
+                        },
+                        "owner": {
+                          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9-]{0,99}$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "owner",
+                        "name"
+                      ],
+                      "type": "object"
+                    },
+                    "url": {
+                      "maxLength": 512,
+                      "pattern": "^https:\\/\\/github\\.com\\/[^/]+\\/[^/]+\\/issues\\/[1-9][0-9]*$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "repository",
+                    "id",
+                    "number",
+                    "url"
+                  ],
+                  "type": "object"
+                },
+                "key": {
+                  "maxLength": 48,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "title": {
+                  "maxLength": 160,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "workItemId": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "workItemId",
+                "key",
+                "title",
+                "issue"
+              ],
+              "type": "object"
+            },
+            "maxItems": 40,
+            "type": "array"
+          },
+          "pullRequest": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "author": {
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "authorNodeId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "baseCommitId": {
+                    "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                    "type": "string"
+                  },
+                  "baseRef": {
+                    "maxLength": 244,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "body": {
+                    "maxLength": 65536,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "headCommitId": {
+                    "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                    "type": "string"
+                  },
+                  "headRef": {
+                    "maxLength": 244,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "id": {
+                    "maxLength": 32,
+                    "pattern": "^[1-9][0-9]*$",
+                    "type": "string"
+                  },
+                  "marker": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "nodeId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "number": {
+                    "exclusiveMinimum": 0,
+                    "maximum": 2147483647,
+                    "type": "integer"
+                  },
+                  "repository": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "maxLength": 32,
+                        "pattern": "^[1-9][0-9]*$",
+                        "type": "string"
+                      },
+                      "name": {
+                        "pattern": "^[a-zA-Z0-9_.-]{1,100}$",
+                        "type": "string"
+                      },
+                      "owner": {
+                        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9-]{0,99}$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "owner",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  "repositoryNodeId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "state": {
+                    "enum": [
+                      "open",
+                      "closed"
+                    ],
+                    "type": "string"
+                  },
+                  "title": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "url": {
+                    "format": "uri",
+                    "maxLength": 512,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "title",
+                  "body",
+                  "marker",
+                  "baseRef",
+                  "headRef",
+                  "baseCommitId",
+                  "headCommitId",
+                  "repository",
+                  "id",
+                  "nodeId",
+                  "repositoryNodeId",
+                  "authorNodeId",
+                  "number",
+                  "url",
+                  "state",
+                  "author"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "review": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "changeProposalId": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                    "type": "string"
+                  },
+                  "manifestDigest": {
+                    "pattern": "^[a-f0-9]{64}$",
+                    "type": "string"
+                  },
+                  "projectId": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                    "type": "string"
+                  },
+                  "revision": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "availableAt": {
+                        "anyOf": [
+                          {
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "base": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "objectId": {
+                            "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                            "type": "string"
+                          },
+                          "ref": {
+                            "maxLength": 255,
+                            "minLength": 1,
+                            "pattern": "^[^\\p{Cc}]+$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "objectId",
+                          "ref"
+                        ],
+                        "type": "object"
+                      },
+                      "createdAt": {
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                        "type": "string"
+                      },
+                      "failureReason": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "source_not_available",
+                              "source_containment_violation",
+                              "reference_not_available",
+                              "base_revision_unresolvable",
+                              "head_revision_unresolvable",
+                              "pull_ref_mismatch",
+                              "provider_authentication_required",
+                              "provider_resource_unavailable",
+                              "revision_limit_exceeded",
+                              "object_missing",
+                              "object_verification_failed",
+                              "artifact_finalization_failed",
+                              "acquisition_interrupted"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "head": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "objectId": {
+                            "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                            "type": "string"
+                          },
+                          "ref": {
+                            "maxLength": 255,
+                            "minLength": 1,
+                            "pattern": "^[^\\p{Cc}]+$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "objectId",
+                          "ref"
+                        ],
+                        "type": "object"
+                      },
+                      "id": {
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      "objectCount": {
+                        "anyOf": [
+                          {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "objectFormat": {
+                        "enum": [
+                          "sha1",
+                          "sha256"
+                        ],
+                        "type": "string"
+                      },
+                      "retainedBytes": {
+                        "anyOf": [
+                          {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "state": {
+                        "enum": [
+                          "acquiring",
+                          "available",
+                          "unavailable"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "state",
+                      "objectFormat",
+                      "base",
+                      "head",
+                      "objectCount",
+                      "retainedBytes",
+                      "failureReason",
+                      "createdAt",
+                      "availableAt"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "projectId",
+                  "changeProposalId",
+                  "revision",
+                  "manifestDigest"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "schemaVersion": {
+            "const": 1,
+            "type": "number"
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "publishing",
+              "blocked",
+              "uncertain",
+              "published",
+              "cancelled"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "featureId",
+          "approvedVersion",
+          "state",
+          "cancelled",
+          "failure",
+          "canRetry",
+          "updatedAt",
+          "certificate",
+          "issues",
+          "pullRequest",
+          "review"
+        ],
+        "type": "object"
       },
       "FactoryGate": {
         "anyOf": [
@@ -10407,7 +11136,8 @@
                                             "provider_field",
                                             "commit_author",
                                             "commit_message",
-                                            "operator_input"
+                                            "operator_input",
+                                            "approved_feature_plan"
                                           ],
                                           "type": "string"
                                         },
@@ -10534,6 +11264,43 @@
                                                 "kind"
                                               ],
                                               "type": "object"
+                                            },
+                                            {
+                                              "additionalProperties": false,
+                                              "properties": {
+                                                "approvalId": {
+                                                  "format": "uuid",
+                                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                                  "type": "string"
+                                                },
+                                                "approvedVersion": {
+                                                  "maximum": 200,
+                                                  "minimum": 1,
+                                                  "type": "integer"
+                                                },
+                                                "certificateId": {
+                                                  "format": "uuid",
+                                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                                  "type": "string"
+                                                },
+                                                "featureId": {
+                                                  "format": "uuid",
+                                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                                  "type": "string"
+                                                },
+                                                "kind": {
+                                                  "const": "approved_feature_plan",
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "kind",
+                                                "featureId",
+                                                "approvedVersion",
+                                                "certificateId",
+                                                "approvalId"
+                                              ],
+                                              "type": "object"
                                             }
                                           ]
                                         },
@@ -10606,7 +11373,8 @@
                                     "provider_field",
                                     "commit_author",
                                     "commit_message",
-                                    "operator_input"
+                                    "operator_input",
+                                    "approved_feature_plan"
                                   ],
                                   "type": "string"
                                 },
@@ -10731,6 +11499,43 @@
                                       },
                                       "required": [
                                         "kind"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "approvalId": {
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                          "type": "string"
+                                        },
+                                        "approvedVersion": {
+                                          "maximum": 200,
+                                          "minimum": 1,
+                                          "type": "integer"
+                                        },
+                                        "certificateId": {
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                          "type": "string"
+                                        },
+                                        "featureId": {
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                          "type": "string"
+                                        },
+                                        "kind": {
+                                          "const": "approved_feature_plan",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "featureId",
+                                        "approvedVersion",
+                                        "certificateId",
+                                        "approvalId"
                                       ],
                                       "type": "object"
                                     }
@@ -11006,7 +11811,8 @@
                                                 "provider_field",
                                                 "commit_author",
                                                 "commit_message",
-                                                "operator_input"
+                                                "operator_input",
+                                                "approved_feature_plan"
                                               ],
                                               "type": "string"
                                             },
@@ -11131,6 +11937,43 @@
                                                   },
                                                   "required": [
                                                     "kind"
+                                                  ],
+                                                  "type": "object"
+                                                },
+                                                {
+                                                  "additionalProperties": false,
+                                                  "properties": {
+                                                    "approvalId": {
+                                                      "format": "uuid",
+                                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                                      "type": "string"
+                                                    },
+                                                    "approvedVersion": {
+                                                      "maximum": 200,
+                                                      "minimum": 1,
+                                                      "type": "integer"
+                                                    },
+                                                    "certificateId": {
+                                                      "format": "uuid",
+                                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                                      "type": "string"
+                                                    },
+                                                    "featureId": {
+                                                      "format": "uuid",
+                                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                                      "type": "string"
+                                                    },
+                                                    "kind": {
+                                                      "const": "approved_feature_plan",
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "kind",
+                                                    "featureId",
+                                                    "approvedVersion",
+                                                    "certificateId",
+                                                    "approvalId"
                                                   ],
                                                   "type": "object"
                                                 }
@@ -12301,7 +13144,8 @@
                                         "provider_field",
                                         "commit_author",
                                         "commit_message",
-                                        "operator_input"
+                                        "operator_input",
+                                        "approved_feature_plan"
                                       ],
                                       "type": "string"
                                     },
@@ -12428,6 +13272,43 @@
                                             "kind"
                                           ],
                                           "type": "object"
+                                        },
+                                        {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "approvalId": {
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                              "type": "string"
+                                            },
+                                            "approvedVersion": {
+                                              "maximum": 200,
+                                              "minimum": 1,
+                                              "type": "integer"
+                                            },
+                                            "certificateId": {
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                              "type": "string"
+                                            },
+                                            "featureId": {
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                              "type": "string"
+                                            },
+                                            "kind": {
+                                              "const": "approved_feature_plan",
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "featureId",
+                                            "approvedVersion",
+                                            "certificateId",
+                                            "approvalId"
+                                          ],
+                                          "type": "object"
                                         }
                                       ]
                                     },
@@ -12495,7 +13376,8 @@
                                     "provider_field",
                                     "commit_author",
                                     "commit_message",
-                                    "operator_input"
+                                    "operator_input",
+                                    "approved_feature_plan"
                                   ],
                                   "type": "string"
                                 },
@@ -12620,6 +13502,43 @@
                                       },
                                       "required": [
                                         "kind"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "approvalId": {
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                          "type": "string"
+                                        },
+                                        "approvedVersion": {
+                                          "maximum": 200,
+                                          "minimum": 1,
+                                          "type": "integer"
+                                        },
+                                        "certificateId": {
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                          "type": "string"
+                                        },
+                                        "featureId": {
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                          "type": "string"
+                                        },
+                                        "kind": {
+                                          "const": "approved_feature_plan",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "featureId",
+                                        "approvedVersion",
+                                        "certificateId",
+                                        "approvalId"
                                       ],
                                       "type": "object"
                                     }
@@ -12895,7 +13814,8 @@
                                                 "provider_field",
                                                 "commit_author",
                                                 "commit_message",
-                                                "operator_input"
+                                                "operator_input",
+                                                "approved_feature_plan"
                                               ],
                                               "type": "string"
                                             },
@@ -13020,6 +13940,43 @@
                                                   },
                                                   "required": [
                                                     "kind"
+                                                  ],
+                                                  "type": "object"
+                                                },
+                                                {
+                                                  "additionalProperties": false,
+                                                  "properties": {
+                                                    "approvalId": {
+                                                      "format": "uuid",
+                                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                                      "type": "string"
+                                                    },
+                                                    "approvedVersion": {
+                                                      "maximum": 200,
+                                                      "minimum": 1,
+                                                      "type": "integer"
+                                                    },
+                                                    "certificateId": {
+                                                      "format": "uuid",
+                                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                                      "type": "string"
+                                                    },
+                                                    "featureId": {
+                                                      "format": "uuid",
+                                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                                      "type": "string"
+                                                    },
+                                                    "kind": {
+                                                      "const": "approved_feature_plan",
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "kind",
+                                                    "featureId",
+                                                    "approvedVersion",
+                                                    "certificateId",
+                                                    "approvalId"
                                                   ],
                                                   "type": "object"
                                                 }
@@ -14454,7 +15411,8 @@
                                           "provider_field",
                                           "commit_author",
                                           "commit_message",
-                                          "operator_input"
+                                          "operator_input",
+                                          "approved_feature_plan"
                                         ],
                                         "type": "string"
                                       },
@@ -14581,6 +15539,43 @@
                                               "kind"
                                             ],
                                             "type": "object"
+                                          },
+                                          {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "approvalId": {
+                                                "format": "uuid",
+                                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                                "type": "string"
+                                              },
+                                              "approvedVersion": {
+                                                "maximum": 200,
+                                                "minimum": 1,
+                                                "type": "integer"
+                                              },
+                                              "certificateId": {
+                                                "format": "uuid",
+                                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                                "type": "string"
+                                              },
+                                              "featureId": {
+                                                "format": "uuid",
+                                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                                "type": "string"
+                                              },
+                                              "kind": {
+                                                "const": "approved_feature_plan",
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "featureId",
+                                              "approvedVersion",
+                                              "certificateId",
+                                              "approvalId"
+                                            ],
+                                            "type": "object"
                                           }
                                         ]
                                       },
@@ -14653,7 +15648,8 @@
                                   "provider_field",
                                   "commit_author",
                                   "commit_message",
-                                  "operator_input"
+                                  "operator_input",
+                                  "approved_feature_plan"
                                 ],
                                 "type": "string"
                               },
@@ -14778,6 +15774,43 @@
                                     },
                                     "required": [
                                       "kind"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "approvalId": {
+                                        "format": "uuid",
+                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                        "type": "string"
+                                      },
+                                      "approvedVersion": {
+                                        "maximum": 200,
+                                        "minimum": 1,
+                                        "type": "integer"
+                                      },
+                                      "certificateId": {
+                                        "format": "uuid",
+                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                        "type": "string"
+                                      },
+                                      "featureId": {
+                                        "format": "uuid",
+                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                        "type": "string"
+                                      },
+                                      "kind": {
+                                        "const": "approved_feature_plan",
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "featureId",
+                                      "approvedVersion",
+                                      "certificateId",
+                                      "approvalId"
                                     ],
                                     "type": "object"
                                   }
@@ -15053,7 +16086,8 @@
                                               "provider_field",
                                               "commit_author",
                                               "commit_message",
-                                              "operator_input"
+                                              "operator_input",
+                                              "approved_feature_plan"
                                             ],
                                             "type": "string"
                                           },
@@ -15178,6 +16212,43 @@
                                                 },
                                                 "required": [
                                                   "kind"
+                                                ],
+                                                "type": "object"
+                                              },
+                                              {
+                                                "additionalProperties": false,
+                                                "properties": {
+                                                  "approvalId": {
+                                                    "format": "uuid",
+                                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                                    "type": "string"
+                                                  },
+                                                  "approvedVersion": {
+                                                    "maximum": 200,
+                                                    "minimum": 1,
+                                                    "type": "integer"
+                                                  },
+                                                  "certificateId": {
+                                                    "format": "uuid",
+                                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                                    "type": "string"
+                                                  },
+                                                  "featureId": {
+                                                    "format": "uuid",
+                                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                                    "type": "string"
+                                                  },
+                                                  "kind": {
+                                                    "const": "approved_feature_plan",
+                                                    "type": "string"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "featureId",
+                                                  "approvedVersion",
+                                                  "certificateId",
+                                                  "approvalId"
                                                 ],
                                                 "type": "object"
                                               }
@@ -16348,7 +17419,8 @@
                                       "provider_field",
                                       "commit_author",
                                       "commit_message",
-                                      "operator_input"
+                                      "operator_input",
+                                      "approved_feature_plan"
                                     ],
                                     "type": "string"
                                   },
@@ -16475,6 +17547,43 @@
                                           "kind"
                                         ],
                                         "type": "object"
+                                      },
+                                      {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "approvalId": {
+                                            "format": "uuid",
+                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                            "type": "string"
+                                          },
+                                          "approvedVersion": {
+                                            "maximum": 200,
+                                            "minimum": 1,
+                                            "type": "integer"
+                                          },
+                                          "certificateId": {
+                                            "format": "uuid",
+                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                            "type": "string"
+                                          },
+                                          "featureId": {
+                                            "format": "uuid",
+                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                            "type": "string"
+                                          },
+                                          "kind": {
+                                            "const": "approved_feature_plan",
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "kind",
+                                          "featureId",
+                                          "approvedVersion",
+                                          "certificateId",
+                                          "approvalId"
+                                        ],
+                                        "type": "object"
                                       }
                                     ]
                                   },
@@ -16542,7 +17651,8 @@
                                   "provider_field",
                                   "commit_author",
                                   "commit_message",
-                                  "operator_input"
+                                  "operator_input",
+                                  "approved_feature_plan"
                                 ],
                                 "type": "string"
                               },
@@ -16667,6 +17777,43 @@
                                     },
                                     "required": [
                                       "kind"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "approvalId": {
+                                        "format": "uuid",
+                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                        "type": "string"
+                                      },
+                                      "approvedVersion": {
+                                        "maximum": 200,
+                                        "minimum": 1,
+                                        "type": "integer"
+                                      },
+                                      "certificateId": {
+                                        "format": "uuid",
+                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                        "type": "string"
+                                      },
+                                      "featureId": {
+                                        "format": "uuid",
+                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                        "type": "string"
+                                      },
+                                      "kind": {
+                                        "const": "approved_feature_plan",
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "featureId",
+                                      "approvedVersion",
+                                      "certificateId",
+                                      "approvalId"
                                     ],
                                     "type": "object"
                                   }
@@ -16942,7 +18089,8 @@
                                               "provider_field",
                                               "commit_author",
                                               "commit_message",
-                                              "operator_input"
+                                              "operator_input",
+                                              "approved_feature_plan"
                                             ],
                                             "type": "string"
                                           },
@@ -17067,6 +18215,43 @@
                                                 },
                                                 "required": [
                                                   "kind"
+                                                ],
+                                                "type": "object"
+                                              },
+                                              {
+                                                "additionalProperties": false,
+                                                "properties": {
+                                                  "approvalId": {
+                                                    "format": "uuid",
+                                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                                    "type": "string"
+                                                  },
+                                                  "approvedVersion": {
+                                                    "maximum": 200,
+                                                    "minimum": 1,
+                                                    "type": "integer"
+                                                  },
+                                                  "certificateId": {
+                                                    "format": "uuid",
+                                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                                    "type": "string"
+                                                  },
+                                                  "featureId": {
+                                                    "format": "uuid",
+                                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                                    "type": "string"
+                                                  },
+                                                  "kind": {
+                                                    "const": "approved_feature_plan",
+                                                    "type": "string"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "featureId",
+                                                  "approvedVersion",
+                                                  "certificateId",
+                                                  "approvalId"
                                                 ],
                                                 "type": "object"
                                               }
@@ -18405,6 +19590,20 @@
           }
         ]
       },
+      "RetryFactoryFeaturePublicationCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "requestId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId"
+        ],
+        "type": "object"
+      },
       "RetryFactoryPublicationCommand": {
         "additionalProperties": false,
         "properties": {
@@ -18681,7 +19880,8 @@
                             "provider_field",
                             "commit_author",
                             "commit_message",
-                            "operator_input"
+                            "operator_input",
+                            "approved_feature_plan"
                           ],
                           "type": "string"
                         },
@@ -18806,6 +20006,43 @@
                               },
                               "required": [
                                 "kind"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "approvalId": {
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                  "type": "string"
+                                },
+                                "approvedVersion": {
+                                  "maximum": 200,
+                                  "minimum": 1,
+                                  "type": "integer"
+                                },
+                                "certificateId": {
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                  "type": "string"
+                                },
+                                "featureId": {
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "const": "approved_feature_plan",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "featureId",
+                                "approvedVersion",
+                                "certificateId",
+                                "approvalId"
                               ],
                               "type": "object"
                             }
@@ -19594,7 +20831,8 @@
                         "provider_field",
                         "commit_author",
                         "commit_message",
-                        "operator_input"
+                        "operator_input",
+                        "approved_feature_plan"
                       ],
                       "type": "string"
                     },
@@ -19719,6 +20957,43 @@
                           },
                           "required": [
                             "kind"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "approvalId": {
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                              "type": "string"
+                            },
+                            "approvedVersion": {
+                              "maximum": 200,
+                              "minimum": 1,
+                              "type": "integer"
+                            },
+                            "certificateId": {
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                              "type": "string"
+                            },
+                            "featureId": {
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                              "type": "string"
+                            },
+                            "kind": {
+                              "const": "approved_feature_plan",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "featureId",
+                            "approvedVersion",
+                            "certificateId",
+                            "approvalId"
                           ],
                           "type": "object"
                         }
@@ -19984,7 +21259,8 @@
                                     "provider_field",
                                     "commit_author",
                                     "commit_message",
-                                    "operator_input"
+                                    "operator_input",
+                                    "approved_feature_plan"
                                   ],
                                   "type": "string"
                                 },
@@ -20111,6 +21387,43 @@
                                         "kind"
                                       ],
                                       "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "approvalId": {
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                          "type": "string"
+                                        },
+                                        "approvedVersion": {
+                                          "maximum": 200,
+                                          "minimum": 1,
+                                          "type": "integer"
+                                        },
+                                        "certificateId": {
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                          "type": "string"
+                                        },
+                                        "featureId": {
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                          "type": "string"
+                                        },
+                                        "kind": {
+                                          "const": "approved_feature_plan",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "featureId",
+                                        "approvedVersion",
+                                        "certificateId",
+                                        "approvalId"
+                                      ],
+                                      "type": "object"
                                     }
                                   ]
                                 },
@@ -20183,7 +21496,8 @@
                             "provider_field",
                             "commit_author",
                             "commit_message",
-                            "operator_input"
+                            "operator_input",
+                            "approved_feature_plan"
                           ],
                           "type": "string"
                         },
@@ -20308,6 +21622,43 @@
                               },
                               "required": [
                                 "kind"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "approvalId": {
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                  "type": "string"
+                                },
+                                "approvedVersion": {
+                                  "maximum": 200,
+                                  "minimum": 1,
+                                  "type": "integer"
+                                },
+                                "certificateId": {
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                  "type": "string"
+                                },
+                                "featureId": {
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "const": "approved_feature_plan",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "featureId",
+                                "approvedVersion",
+                                "certificateId",
+                                "approvalId"
                               ],
                               "type": "object"
                             }
@@ -20583,7 +21934,8 @@
                                         "provider_field",
                                         "commit_author",
                                         "commit_message",
-                                        "operator_input"
+                                        "operator_input",
+                                        "approved_feature_plan"
                                       ],
                                       "type": "string"
                                     },
@@ -20708,6 +22060,43 @@
                                           },
                                           "required": [
                                             "kind"
+                                          ],
+                                          "type": "object"
+                                        },
+                                        {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "approvalId": {
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                              "type": "string"
+                                            },
+                                            "approvedVersion": {
+                                              "maximum": 200,
+                                              "minimum": 1,
+                                              "type": "integer"
+                                            },
+                                            "certificateId": {
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                              "type": "string"
+                                            },
+                                            "featureId": {
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                              "type": "string"
+                                            },
+                                            "kind": {
+                                              "const": "approved_feature_plan",
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "featureId",
+                                            "approvedVersion",
+                                            "certificateId",
+                                            "approvalId"
                                           ],
                                           "type": "object"
                                         }
@@ -21878,7 +23267,8 @@
                                 "provider_field",
                                 "commit_author",
                                 "commit_message",
-                                "operator_input"
+                                "operator_input",
+                                "approved_feature_plan"
                               ],
                               "type": "string"
                             },
@@ -22005,6 +23395,43 @@
                                     "kind"
                                   ],
                                   "type": "object"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "approvalId": {
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                      "type": "string"
+                                    },
+                                    "approvedVersion": {
+                                      "maximum": 200,
+                                      "minimum": 1,
+                                      "type": "integer"
+                                    },
+                                    "certificateId": {
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                      "type": "string"
+                                    },
+                                    "featureId": {
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                      "type": "string"
+                                    },
+                                    "kind": {
+                                      "const": "approved_feature_plan",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "featureId",
+                                    "approvedVersion",
+                                    "certificateId",
+                                    "approvalId"
+                                  ],
+                                  "type": "object"
                                 }
                               ]
                             },
@@ -22072,7 +23499,8 @@
                             "provider_field",
                             "commit_author",
                             "commit_message",
-                            "operator_input"
+                            "operator_input",
+                            "approved_feature_plan"
                           ],
                           "type": "string"
                         },
@@ -22197,6 +23625,43 @@
                               },
                               "required": [
                                 "kind"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "approvalId": {
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                  "type": "string"
+                                },
+                                "approvedVersion": {
+                                  "maximum": 200,
+                                  "minimum": 1,
+                                  "type": "integer"
+                                },
+                                "certificateId": {
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                  "type": "string"
+                                },
+                                "featureId": {
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "const": "approved_feature_plan",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "featureId",
+                                "approvedVersion",
+                                "certificateId",
+                                "approvalId"
                               ],
                               "type": "object"
                             }
@@ -22472,7 +23937,8 @@
                                         "provider_field",
                                         "commit_author",
                                         "commit_message",
-                                        "operator_input"
+                                        "operator_input",
+                                        "approved_feature_plan"
                                       ],
                                       "type": "string"
                                     },
@@ -22597,6 +24063,43 @@
                                           },
                                           "required": [
                                             "kind"
+                                          ],
+                                          "type": "object"
+                                        },
+                                        {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "approvalId": {
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                              "type": "string"
+                                            },
+                                            "approvedVersion": {
+                                              "maximum": 200,
+                                              "minimum": 1,
+                                              "type": "integer"
+                                            },
+                                            "certificateId": {
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                              "type": "string"
+                                            },
+                                            "featureId": {
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                              "type": "string"
+                                            },
+                                            "kind": {
+                                              "const": "approved_feature_plan",
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "featureId",
+                                            "approvedVersion",
+                                            "certificateId",
+                                            "approvalId"
                                           ],
                                           "type": "object"
                                         }
@@ -23849,7 +25352,8 @@
                                           "provider_field",
                                           "commit_author",
                                           "commit_message",
-                                          "operator_input"
+                                          "operator_input",
+                                          "approved_feature_plan"
                                         ],
                                         "type": "string"
                                       },
@@ -23976,6 +25480,43 @@
                                               "kind"
                                             ],
                                             "type": "object"
+                                          },
+                                          {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "approvalId": {
+                                                "format": "uuid",
+                                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                                "type": "string"
+                                              },
+                                              "approvedVersion": {
+                                                "maximum": 200,
+                                                "minimum": 1,
+                                                "type": "integer"
+                                              },
+                                              "certificateId": {
+                                                "format": "uuid",
+                                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                                "type": "string"
+                                              },
+                                              "featureId": {
+                                                "format": "uuid",
+                                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                                "type": "string"
+                                              },
+                                              "kind": {
+                                                "const": "approved_feature_plan",
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "featureId",
+                                              "approvedVersion",
+                                              "certificateId",
+                                              "approvalId"
+                                            ],
+                                            "type": "object"
                                           }
                                         ]
                                       },
@@ -24048,7 +25589,8 @@
                                   "provider_field",
                                   "commit_author",
                                   "commit_message",
-                                  "operator_input"
+                                  "operator_input",
+                                  "approved_feature_plan"
                                 ],
                                 "type": "string"
                               },
@@ -24173,6 +25715,43 @@
                                     },
                                     "required": [
                                       "kind"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "approvalId": {
+                                        "format": "uuid",
+                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                        "type": "string"
+                                      },
+                                      "approvedVersion": {
+                                        "maximum": 200,
+                                        "minimum": 1,
+                                        "type": "integer"
+                                      },
+                                      "certificateId": {
+                                        "format": "uuid",
+                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                        "type": "string"
+                                      },
+                                      "featureId": {
+                                        "format": "uuid",
+                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                        "type": "string"
+                                      },
+                                      "kind": {
+                                        "const": "approved_feature_plan",
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "featureId",
+                                      "approvedVersion",
+                                      "certificateId",
+                                      "approvalId"
                                     ],
                                     "type": "object"
                                   }
@@ -24448,7 +26027,8 @@
                                               "provider_field",
                                               "commit_author",
                                               "commit_message",
-                                              "operator_input"
+                                              "operator_input",
+                                              "approved_feature_plan"
                                             ],
                                             "type": "string"
                                           },
@@ -24573,6 +26153,43 @@
                                                 },
                                                 "required": [
                                                   "kind"
+                                                ],
+                                                "type": "object"
+                                              },
+                                              {
+                                                "additionalProperties": false,
+                                                "properties": {
+                                                  "approvalId": {
+                                                    "format": "uuid",
+                                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                                    "type": "string"
+                                                  },
+                                                  "approvedVersion": {
+                                                    "maximum": 200,
+                                                    "minimum": 1,
+                                                    "type": "integer"
+                                                  },
+                                                  "certificateId": {
+                                                    "format": "uuid",
+                                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                                    "type": "string"
+                                                  },
+                                                  "featureId": {
+                                                    "format": "uuid",
+                                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                                    "type": "string"
+                                                  },
+                                                  "kind": {
+                                                    "const": "approved_feature_plan",
+                                                    "type": "string"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "featureId",
+                                                  "approvedVersion",
+                                                  "certificateId",
+                                                  "approvalId"
                                                 ],
                                                 "type": "object"
                                               }
@@ -25743,7 +27360,8 @@
                                       "provider_field",
                                       "commit_author",
                                       "commit_message",
-                                      "operator_input"
+                                      "operator_input",
+                                      "approved_feature_plan"
                                     ],
                                     "type": "string"
                                   },
@@ -25870,6 +27488,43 @@
                                           "kind"
                                         ],
                                         "type": "object"
+                                      },
+                                      {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "approvalId": {
+                                            "format": "uuid",
+                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                            "type": "string"
+                                          },
+                                          "approvedVersion": {
+                                            "maximum": 200,
+                                            "minimum": 1,
+                                            "type": "integer"
+                                          },
+                                          "certificateId": {
+                                            "format": "uuid",
+                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                            "type": "string"
+                                          },
+                                          "featureId": {
+                                            "format": "uuid",
+                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                            "type": "string"
+                                          },
+                                          "kind": {
+                                            "const": "approved_feature_plan",
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "kind",
+                                          "featureId",
+                                          "approvedVersion",
+                                          "certificateId",
+                                          "approvalId"
+                                        ],
+                                        "type": "object"
                                       }
                                     ]
                                   },
@@ -25937,7 +27592,8 @@
                                   "provider_field",
                                   "commit_author",
                                   "commit_message",
-                                  "operator_input"
+                                  "operator_input",
+                                  "approved_feature_plan"
                                 ],
                                 "type": "string"
                               },
@@ -26062,6 +27718,43 @@
                                     },
                                     "required": [
                                       "kind"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "approvalId": {
+                                        "format": "uuid",
+                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                        "type": "string"
+                                      },
+                                      "approvedVersion": {
+                                        "maximum": 200,
+                                        "minimum": 1,
+                                        "type": "integer"
+                                      },
+                                      "certificateId": {
+                                        "format": "uuid",
+                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                        "type": "string"
+                                      },
+                                      "featureId": {
+                                        "format": "uuid",
+                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                        "type": "string"
+                                      },
+                                      "kind": {
+                                        "const": "approved_feature_plan",
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "featureId",
+                                      "approvedVersion",
+                                      "certificateId",
+                                      "approvalId"
                                     ],
                                     "type": "object"
                                   }
@@ -26337,7 +28030,8 @@
                                               "provider_field",
                                               "commit_author",
                                               "commit_message",
-                                              "operator_input"
+                                              "operator_input",
+                                              "approved_feature_plan"
                                             ],
                                             "type": "string"
                                           },
@@ -26462,6 +28156,43 @@
                                                 },
                                                 "required": [
                                                   "kind"
+                                                ],
+                                                "type": "object"
+                                              },
+                                              {
+                                                "additionalProperties": false,
+                                                "properties": {
+                                                  "approvalId": {
+                                                    "format": "uuid",
+                                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                                    "type": "string"
+                                                  },
+                                                  "approvedVersion": {
+                                                    "maximum": 200,
+                                                    "minimum": 1,
+                                                    "type": "integer"
+                                                  },
+                                                  "certificateId": {
+                                                    "format": "uuid",
+                                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                                    "type": "string"
+                                                  },
+                                                  "featureId": {
+                                                    "format": "uuid",
+                                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                                    "type": "string"
+                                                  },
+                                                  "kind": {
+                                                    "const": "approved_feature_plan",
+                                                    "type": "string"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "featureId",
+                                                  "approvedVersion",
+                                                  "certificateId",
+                                                  "approvalId"
                                                 ],
                                                 "type": "object"
                                               }
@@ -33180,6 +34911,290 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/FactoryIssuePublication"
+                }
+              }
+            },
+            "description": "Durable Factory result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/pull-request": {
+      "get": {
+        "operationId": "readFactoryFeaturePublication",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FactoryFeaturePublication"
+                }
+              }
+            },
+            "description": "Current durable Factory state"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          }
+        }
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "featureId",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/pull-request/retry": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "featureId",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "retryFactoryFeaturePublication",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Origin",
+            "required": true,
+            "schema": {
+              "format": "uri",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Kestrel-CSRF",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetryFactoryFeaturePublicationCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FactoryFeaturePublication"
                 }
               }
             },

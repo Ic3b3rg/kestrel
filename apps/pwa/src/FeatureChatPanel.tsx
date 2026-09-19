@@ -669,6 +669,14 @@ export function FeatureChatPanel({
             online={online}
             onAuthenticationError={onAuthenticationError}
             onViewPlan={() => selectView("plan")}
+            onOpenRevision={(review) =>
+              onNavigate({
+                kind: "project",
+                projectId: review.projectId,
+                proposalId: review.changeProposalId,
+                revisionId: review.revision.id,
+              })
+            }
             onFeatureChanged={() => void refresh()}
           />
         </TabsContent>
