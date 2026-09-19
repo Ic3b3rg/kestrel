@@ -104,6 +104,57 @@
         }
       ]
     },
+    "ApproveFactoryFeatureMergeCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "decision": {
+          "const": "approve_merge",
+          "type": "string"
+        },
+        "expectedPlanVersion": {
+          "maximum": 200,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "requestId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        },
+        "review": {
+          "additionalProperties": false,
+          "properties": {
+            "artifactId": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "headCommitId": {
+              "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+              "type": "string"
+            },
+            "workflowId": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "workflowId",
+            "artifactId",
+            "headCommitId"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "requestId",
+        "decision",
+        "expectedPlanVersion",
+        "review"
+      ],
+      "type": "object"
+    },
     "ApproveFeaturePlanCommand": {
       "additionalProperties": false,
       "properties": {
@@ -1888,7 +1939,12 @@
                   "correction_requested",
                   "correction_verified",
                   "correction_published",
-                  "correction_reviewed"
+                  "correction_reviewed",
+                  "merge_approved",
+                  "merge_blocked",
+                  "merge_confirmed",
+                  "issue_closed",
+                  "merge_completed"
                 ],
                 "type": "string"
               },
@@ -1981,7 +2037,12 @@
                               "correction_requested",
                               "correction_verified",
                               "correction_published",
-                              "correction_reviewed"
+                              "correction_reviewed",
+                              "merge_approved",
+                              "merge_blocked",
+                              "merge_confirmed",
+                              "issue_closed",
+                              "merge_completed"
                             ],
                             "type": "string"
                           },
@@ -2265,6 +2326,8 @@
                 "implementing",
                 "gated",
                 "in_review",
+                "merging",
+                "completed",
                 "cancelled"
               ],
               "type": "string"
@@ -10370,6 +10433,831 @@
         }
       ]
     },
+    "FactoryFeatureMerge": {
+      "additionalProperties": false,
+      "properties": {
+        "approvedVersion": {
+          "maximum": 200,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "canRetry": {
+          "type": "boolean"
+        },
+        "certificateId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        },
+        "completedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+          "type": "string"
+        },
+        "failure": {
+          "anyOf": [
+            {
+              "enum": [
+                "review_required",
+                "review_outdated",
+                "review_partial",
+                "certificate_stale",
+                "active_correction",
+                "pull_request_changed",
+                "pull_request_closed",
+                "checks_pending",
+                "checks_failed",
+                "merge_conflict",
+                "uncertain_write",
+                "issue_closure_failed",
+                "needs_authentication",
+                "access_denied",
+                "rate_limited",
+                "invalid_response",
+                "unavailable",
+                "timeout",
+                "retry_limit"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "featureId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        },
+        "issues": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "attempts": {
+                "maximum": 20,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "closedAt": {
+                "anyOf": [
+                  {
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "failure": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "needs_authentication",
+                      "access_denied",
+                      "rate_limited",
+                      "invalid_response",
+                      "unavailable",
+                      "timeout"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "key": {
+                "maxLength": 48,
+                "minLength": 1,
+                "type": "string"
+              },
+              "number": {
+                "exclusiveMinimum": 0,
+                "maximum": 2147483647,
+                "type": "integer"
+              },
+              "state": {
+                "enum": [
+                  "pending",
+                  "closing",
+                  "closed",
+                  "failed"
+                ],
+                "type": "string"
+              },
+              "url": {
+                "format": "uri",
+                "maxLength": 512,
+                "type": "string"
+              },
+              "workItemId": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "workItemId",
+              "key",
+              "number",
+              "url",
+              "state",
+              "failure",
+              "attempts",
+              "closedAt"
+            ],
+            "type": "object"
+          },
+          "maxItems": 40,
+          "minItems": 1,
+          "type": "array"
+        },
+        "provider": {
+          "additionalProperties": false,
+          "properties": {
+            "mergeCommitId": {
+              "anyOf": [
+                {
+                  "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "merged": {
+              "type": "boolean"
+            },
+            "mergedAt": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "merged",
+            "mergeCommitId",
+            "mergedAt"
+          ],
+          "type": "object"
+        },
+        "pullRequest": {
+          "additionalProperties": false,
+          "properties": {
+            "author": {
+              "maxLength": 100,
+              "minLength": 1,
+              "type": "string"
+            },
+            "authorNodeId": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "baseCommitId": {
+              "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+              "type": "string"
+            },
+            "baseRef": {
+              "maxLength": 244,
+              "minLength": 1,
+              "type": "string"
+            },
+            "body": {
+              "maxLength": 65536,
+              "minLength": 1,
+              "type": "string"
+            },
+            "headCommitId": {
+              "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+              "type": "string"
+            },
+            "headRef": {
+              "maxLength": 244,
+              "minLength": 1,
+              "type": "string"
+            },
+            "id": {
+              "maxLength": 32,
+              "pattern": "^[1-9][0-9]*$",
+              "type": "string"
+            },
+            "marker": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "nodeId": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "number": {
+              "exclusiveMinimum": 0,
+              "maximum": 2147483647,
+              "type": "integer"
+            },
+            "repository": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 32,
+                  "pattern": "^[1-9][0-9]*$",
+                  "type": "string"
+                },
+                "name": {
+                  "pattern": "^[a-zA-Z0-9_.-]{1,100}$",
+                  "type": "string"
+                },
+                "owner": {
+                  "pattern": "^[a-zA-Z0-9][a-zA-Z0-9-]{0,99}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "owner",
+                "name"
+              ],
+              "type": "object"
+            },
+            "repositoryNodeId": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "state": {
+              "enum": [
+                "open",
+                "closed"
+              ],
+              "type": "string"
+            },
+            "title": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "url": {
+              "format": "uri",
+              "maxLength": 512,
+              "type": "string"
+            }
+          },
+          "required": [
+            "title",
+            "body",
+            "marker",
+            "baseRef",
+            "headRef",
+            "baseCommitId",
+            "headCommitId",
+            "repository",
+            "id",
+            "nodeId",
+            "repositoryNodeId",
+            "authorNodeId",
+            "number",
+            "url",
+            "state",
+            "author"
+          ],
+          "type": "object"
+        },
+        "requestedByOperatorId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "type": "number"
+        },
+        "sourceReview": {
+          "additionalProperties": false,
+          "properties": {
+            "artifactId": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "baseCommitId": {
+              "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+              "type": "string"
+            },
+            "headCommitId": {
+              "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+              "type": "string"
+            },
+            "reviewRevisionId": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "workflowId": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "workflowId",
+            "artifactId",
+            "reviewRevisionId",
+            "baseCommitId",
+            "headCommitId"
+          ],
+          "type": "object"
+        },
+        "state": {
+          "enum": [
+            "queued",
+            "checking",
+            "merging",
+            "uncertain",
+            "closing_issues",
+            "blocked",
+            "completed"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "id",
+        "featureId",
+        "approvedVersion",
+        "requestedByOperatorId",
+        "sourceReview",
+        "pullRequest",
+        "certificateId",
+        "state",
+        "failure",
+        "canRetry",
+        "provider",
+        "issues",
+        "createdAt",
+        "updatedAt",
+        "completedAt"
+      ],
+      "type": "object"
+    },
+    "FactoryFeatureMergeCurrent": {
+      "additionalProperties": false,
+      "properties": {
+        "merge": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "approvedVersion": {
+                  "maximum": 200,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "canRetry": {
+                  "type": "boolean"
+                },
+                "certificateId": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                },
+                "completedAt": {
+                  "anyOf": [
+                    {
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "createdAt": {
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                  "type": "string"
+                },
+                "failure": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "review_required",
+                        "review_outdated",
+                        "review_partial",
+                        "certificate_stale",
+                        "active_correction",
+                        "pull_request_changed",
+                        "pull_request_closed",
+                        "checks_pending",
+                        "checks_failed",
+                        "merge_conflict",
+                        "uncertain_write",
+                        "issue_closure_failed",
+                        "needs_authentication",
+                        "access_denied",
+                        "rate_limited",
+                        "invalid_response",
+                        "unavailable",
+                        "timeout",
+                        "retry_limit"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "featureId": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                },
+                "issues": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "attempts": {
+                        "maximum": 20,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "closedAt": {
+                        "anyOf": [
+                          {
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "failure": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "needs_authentication",
+                              "access_denied",
+                              "rate_limited",
+                              "invalid_response",
+                              "unavailable",
+                              "timeout"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "key": {
+                        "maxLength": 48,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "number": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 2147483647,
+                        "type": "integer"
+                      },
+                      "state": {
+                        "enum": [
+                          "pending",
+                          "closing",
+                          "closed",
+                          "failed"
+                        ],
+                        "type": "string"
+                      },
+                      "url": {
+                        "format": "uri",
+                        "maxLength": 512,
+                        "type": "string"
+                      },
+                      "workItemId": {
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "workItemId",
+                      "key",
+                      "number",
+                      "url",
+                      "state",
+                      "failure",
+                      "attempts",
+                      "closedAt"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 40,
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "provider": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "mergeCommitId": {
+                      "anyOf": [
+                        {
+                          "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "merged": {
+                      "type": "boolean"
+                    },
+                    "mergedAt": {
+                      "anyOf": [
+                        {
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "merged",
+                    "mergeCommitId",
+                    "mergedAt"
+                  ],
+                  "type": "object"
+                },
+                "pullRequest": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "author": {
+                      "maxLength": 100,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "authorNodeId": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "baseCommitId": {
+                      "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                      "type": "string"
+                    },
+                    "baseRef": {
+                      "maxLength": 244,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "body": {
+                      "maxLength": 65536,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "headCommitId": {
+                      "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                      "type": "string"
+                    },
+                    "headRef": {
+                      "maxLength": 244,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "id": {
+                      "maxLength": 32,
+                      "pattern": "^[1-9][0-9]*$",
+                      "type": "string"
+                    },
+                    "marker": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "nodeId": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "number": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 2147483647,
+                      "type": "integer"
+                    },
+                    "repository": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "maxLength": 32,
+                          "pattern": "^[1-9][0-9]*$",
+                          "type": "string"
+                        },
+                        "name": {
+                          "pattern": "^[a-zA-Z0-9_.-]{1,100}$",
+                          "type": "string"
+                        },
+                        "owner": {
+                          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9-]{0,99}$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "owner",
+                        "name"
+                      ],
+                      "type": "object"
+                    },
+                    "repositoryNodeId": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "state": {
+                      "enum": [
+                        "open",
+                        "closed"
+                      ],
+                      "type": "string"
+                    },
+                    "title": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "url": {
+                      "format": "uri",
+                      "maxLength": 512,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "title",
+                    "body",
+                    "marker",
+                    "baseRef",
+                    "headRef",
+                    "baseCommitId",
+                    "headCommitId",
+                    "repository",
+                    "id",
+                    "nodeId",
+                    "repositoryNodeId",
+                    "authorNodeId",
+                    "number",
+                    "url",
+                    "state",
+                    "author"
+                  ],
+                  "type": "object"
+                },
+                "requestedByOperatorId": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                },
+                "schemaVersion": {
+                  "const": 1,
+                  "type": "number"
+                },
+                "sourceReview": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "artifactId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                      "type": "string"
+                    },
+                    "baseCommitId": {
+                      "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                      "type": "string"
+                    },
+                    "headCommitId": {
+                      "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                      "type": "string"
+                    },
+                    "reviewRevisionId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                      "type": "string"
+                    },
+                    "workflowId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "workflowId",
+                    "artifactId",
+                    "reviewRevisionId",
+                    "baseCommitId",
+                    "headCommitId"
+                  ],
+                  "type": "object"
+                },
+                "state": {
+                  "enum": [
+                    "queued",
+                    "checking",
+                    "merging",
+                    "uncertain",
+                    "closing_issues",
+                    "blocked",
+                    "completed"
+                  ],
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "schemaVersion",
+                "id",
+                "featureId",
+                "approvedVersion",
+                "requestedByOperatorId",
+                "sourceReview",
+                "pullRequest",
+                "certificateId",
+                "state",
+                "failure",
+                "canRetry",
+                "provider",
+                "issues",
+                "createdAt",
+                "updatedAt",
+                "completedAt"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "schemaVersion": {
+          "const": 1,
+          "type": "number"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "merge"
+      ],
+      "type": "object"
+    },
     "FactoryFeaturePublication": {
       "additionalProperties": false,
       "properties": {
@@ -11852,6 +12740,8 @@
                 "implementing",
                 "gated",
                 "in_review",
+                "merging",
+                "completed",
                 "cancelled"
               ],
               "type": "string"
@@ -12816,6 +13706,8 @@
             "implementing",
             "gated",
             "in_review",
+            "merging",
+            "completed",
             "cancelled"
           ],
           "type": "string"
@@ -13051,6 +13943,8 @@
                 "implementing",
                 "gated",
                 "in_review",
+                "merging",
+                "completed",
                 "cancelled"
               ],
               "type": "string"
@@ -13507,6 +14401,8 @@
                   "implementing",
                   "gated",
                   "in_review",
+                  "merging",
+                  "completed",
                   "cancelled"
                 ],
                 "type": "string"
@@ -15051,6 +15947,8 @@
                 "implementing",
                 "gated",
                 "in_review",
+                "merging",
+                "completed",
                 "cancelled"
               ],
               "type": "string"
@@ -16498,6 +17396,8 @@
                     "implementing",
                     "gated",
                     "in_review",
+                    "merging",
+                    "completed",
                     "cancelled"
                   ],
                   "type": "string"
@@ -16572,6 +17472,8 @@
                 "implementing",
                 "gated",
                 "in_review",
+                "merging",
+                "completed",
                 "cancelled"
               ],
               "type": "string"
@@ -25669,6 +26571,20 @@
           "type": "object"
         }
       ]
+    },
+    "RetryFactoryFeatureMergeCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "requestId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "requestId"
+      ],
+      "type": "object"
     },
     "RetryFactoryFeaturePublicationCommand": {
       "additionalProperties": false,

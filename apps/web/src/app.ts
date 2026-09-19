@@ -21,6 +21,11 @@ import {
   registerFactoryReviewCorrectionRoutes,
   type FactoryReviewCorrectionService,
 } from "./routes/factory-review-corrections.js";
+import {
+  createDatabaseFactoryFeatureMergeService,
+  registerFactoryFeatureMergeRoutes,
+  type FactoryFeatureMergeService,
+} from "./routes/factory-feature-merge.js";
 import type { FactoryGitHubAdapter } from "./factory-github.js";
 import {
   createCodexAppServerAgentRuntime,
@@ -95,6 +100,7 @@ export interface BuildAppOptions {
   reviewWorkflowService?: ReviewWorkflowService;
   factoryConceptualReviewService?: FactoryConceptualReviewService;
   factoryReviewCorrectionService?: FactoryReviewCorrectionService;
+  factoryFeatureMergeService?: FactoryFeatureMergeService;
   factoryConceptualReviewRuntimeProfile?: {
     containerImage: string;
     containerUser: string;
@@ -209,6 +215,7 @@ export async function buildApp({
     { boss, runtimeProfile: factoryConceptualReviewRuntimeProfile },
   ),
   factoryReviewCorrectionService = createDatabaseFactoryReviewCorrectionService(pool, boss),
+  factoryFeatureMergeService = createDatabaseFactoryFeatureMergeService(pool, boss),
   sessionSigningKey,
 }: BuildAppOptions): Promise<FastifyInstance> {
   const app = Fastify({
@@ -267,6 +274,7 @@ export async function buildApp({
   registerFactoryFeaturePublicationRoutes(app, pool);
   registerFactoryConceptualReviewRoutes(app, factoryConceptualReviewService);
   registerFactoryReviewCorrectionRoutes(app, factoryReviewCorrectionService);
+  registerFactoryFeatureMergeRoutes(app, factoryFeatureMergeService);
   registerEventRoutes(app, eventPool);
   registerHealthRoutes(app, pool);
   registerInstallationRoutes(app, pool);

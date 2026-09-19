@@ -611,7 +611,8 @@ export function FeaturePlanPanel({
           </NativeSelect>
         </div>
       )}
-      {plans === null || plans.feature.state === "cancelled" ? null : (
+      {plans === null ||
+      ["cancelled", "merging", "completed"].includes(plans.feature.state) ? null : (
         <Dialog
           open={cancelOpen}
           onOpenChange={(open) => {

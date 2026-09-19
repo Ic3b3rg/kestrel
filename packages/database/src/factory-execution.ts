@@ -152,7 +152,7 @@ export async function queueFactoryExecutions(
            JOIN projects prior_owner ON prior_owner.id = prior.project_id
            JOIN factory_plan_approvals prior_approval ON prior_approval.feature_id = prior.id AND prior_approval.plan_version = prior.approved_plan_version
            WHERE COALESCE(prior_owner.canonical_project_id, prior_owner.id) = COALESCE(owner.canonical_project_id, owner.id)
-             AND prior.state IN ('queued', 'implementing', 'gated', 'in_review')
+             AND prior.state IN ('queued', 'implementing', 'gated', 'in_review', 'merging')
              AND (prior_approval.approved_at, prior.id) < (approval.approved_at, feature.id))
        ORDER BY approval.approved_at, feature.id LIMIT 32 FOR UPDATE OF feature`,
     );

@@ -28,6 +28,7 @@ import {
 } from "./conceptual-review-api.js";
 import { ConceptualReviewPanel } from "./ConceptualReviewPanel.js";
 import { FeatureCorrectionPanel } from "./FeatureCorrectionPanel.js";
+import { FeatureMergePanel } from "./FeatureMergePanel.js";
 import { planningRequestError } from "./FeatureNavigation.js";
 import { Button } from "./components/ui/button.js";
 import { Input } from "./components/ui/input.js";
@@ -51,6 +52,7 @@ export interface FeatureReviewPanelProps {
   online: boolean;
   selectedArtifactId?: string;
   onSelectArtifact?: (artifactId: string | undefined) => void;
+  onFeatureChanged?: () => void;
   onAuthenticationError: (error: unknown) => boolean;
   loadPreparation?: typeof fetchFactoryConceptualReviewPreparation;
   loadSourceCatalog?: typeof fetchFactoryConceptualReviewSourceCatalog;
@@ -578,6 +580,7 @@ function FeatureReviewPanelContent({
   online,
   selectedArtifactId,
   onSelectArtifact = () => undefined,
+  onFeatureChanged = () => undefined,
   onAuthenticationError,
   loadPreparation = fetchFactoryConceptualReviewPreparation,
   loadSourceCatalog = fetchFactoryConceptualReviewSourceCatalog,
@@ -965,6 +968,23 @@ function FeatureReviewPanelContent({
               online={online}
               onAuthenticationError={onAuthenticationError}
               onReplacementReview={openReplacementReview}
+            />
+          ) : null}
+          {selectedArtifactId === undefined &&
+          review.workflow.state === "published" &&
+          review.artifact !== null &&
+          review.currency === "up_to_date" &&
+          basis !== null &&
+          preparation.publication !== null ? (
+            <FeatureMergePanel
+              projectId={projectId}
+              featureId={featureId}
+              approvedVersion={basis.provenance.version}
+              review={review}
+              publication={preparation.publication}
+              online={online}
+              onAuthenticationError={onAuthenticationError}
+              onFeatureChanged={onFeatureChanged}
             />
           ) : null}
         </div>

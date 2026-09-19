@@ -13,6 +13,10 @@ export interface FactoryFeaturePublicationFixtureControls {
   limitedPullRequests?: boolean;
   moveTargetAfterPullRequestCreate?: string;
   moveHeadAfterPullRequestCreate?: string;
+  requiredCheckState?: "success" | "pending" | "failure";
+  mergeConflict?: boolean;
+  uncertainMerge?: boolean;
+  failIssueCloseOnce?: boolean;
   auth?: boolean;
   account?: string;
   repositoryId?: number;
@@ -65,17 +69,22 @@ if (parts.length === 3) {
 }
 function observePullRequest(original) {
   const value = {...original,
-    state: state.controls.closedPullRequests ? "closed" : original.state,
+    state: original.merged || state.controls.closedPullRequests ? "closed" : original.state,
     user: state.controls.foreignPullRequest ? {login: "other", node_id: "U_other"} : original.user,
     base: {...original.base, sha: publicationRef(original.base.ref)},
     head: {...original.head, sha: publicationRef(original.head.ref)},
   };
   if (!projection.includes("authorNodeId")) return value;
   const repository = repo => repo === null ? null : {id: String(repo.id), nodeId: repo.node_id, owner: repo.owner.login, name: repo.name};
-  return {id: String(value.id), nodeId: value.node_id, number: value.number, title: value.title, body: value.body,
+  const projected = {id: String(value.id), nodeId: value.node_id, number: value.number, title: value.title, body: value.body,
     state: value.state, html_url: value.html_url, author: value.user.login, authorNodeId: value.user.node_id,
     base: {ref: value.base.ref, sha: value.base.sha, repo: repository(value.base.repo)},
     head: {ref: value.head.ref, sha: value.head.sha, repo: repository(value.head.repo)}};
+  return projection.includes("merge_commit_sha") ? {...projected,
+    merged: value.merged === true, merge_commit_sha: value.merge_commit_sha ?? null,
+    merged_at: value.merged_at ?? null,
+    mergeable: value.merged === true ? null : !state.controls.mergeConflict,
+    mergeable_state: state.controls.mergeConflict ? "dirty" : value.merged === true ? "unknown" : "clean"} : projected;
 }
 function movePublicationRef(control, branch) {
   const sha = state.controls[control];
@@ -98,7 +107,8 @@ if (parts[3] === "pulls") {
       title: input.title, body: input.body, state: "open", html_url: repoUrl + "/pull/" + number,
       user: {login: state.controls.account ?? "fixture", node_id: "U_fixture"},
       base: {ref: input.base, sha: baseSha, repo: publicationRepository},
-      head: {ref: input.head, sha: headSha, repo: publicationRepository}};
+      head: {ref: input.head, sha: headSha, repo: publicationRepository},
+      merged: false, merge_commit_sha: null, merged_at: null};
     state.pullRequests.push(pullRequest);
     save();
     movePublicationRef("moveTargetAfterPullRequestCreate", input.base);
@@ -109,6 +119,26 @@ if (parts[3] === "pulls") {
       process.exit(1);
     }
     output(201, observePullRequest(pullRequest));
+  }
+  if (parts.length === 6 && parts[5] === "merge" && method === "PUT") {
+    const pullRequest = state.pullRequests.find(pr => String(pr.number) === parts[4]);
+    if (!pullRequest) output(404, {message: "Not found"});
+    if (pullRequest.merged) output(200, {merged: true, sha: pullRequest.merge_commit_sha, message: "Already merged"});
+    const headSha = publicationRef(pullRequest.head.ref);
+    if (input?.sha !== headSha) output(409, {message: "Head branch was modified"});
+    if (state.controls.mergeConflict) output(405, {message: "Pull Request is not mergeable"});
+    publicationGit(["update-ref", "refs/heads/" + pullRequest.base.ref, headSha]);
+    pullRequest.state = "closed";
+    pullRequest.merged = true;
+    pullRequest.merge_commit_sha = headSha;
+    pullRequest.merged_at = "2026-09-20T10:00:00.000Z";
+    save();
+    if (state.controls.uncertainMerge) {
+      state.controls.uncertainMerge = false;
+      save();
+      process.exit(1);
+    }
+    output(200, {merged: true, sha: headSha, message: "Pull Request successfully merged"});
   }
   if (method !== "GET") output(422, {message: "Fixture prohibits other PR mutations"});
   const visible = state.controls.hidePullRequests ? [] : state.pullRequests;
@@ -127,6 +157,21 @@ if (parts[3] === "pulls") {
   const headers = state.controls.limitedPullRequests || values.length > page * size
     ? {Link: "<" + apiUrl + "/pulls?state=" + requestedState + "&per_page=" + size + "&page=" + (page + 1) + '>; rel="next"'} : {};
   output(200, values.slice((page - 1) * size, page * size).map(observePullRequest), headers);
+}
+if (parts[3] === "branches" && parts.length === 5 && method === "GET") {
+  const branch = decodeURIComponent(parts[4]);
+  publicationRef(branch);
+  output(200, {name: branch, protected: true,
+    requiredContexts: ["fixture-ci"]});
+}
+if (parts[3] === "commits" && parts[5] === "status" && method === "GET") {
+  const commit = parts[4], stateValue = state.controls.requiredCheckState ?? "success";
+  if (!/^[a-f0-9]{40}$/.test(commit)) output(422, {message: "Invalid commit"});
+  publicationGit(["cat-file", "-e", commit + "^{commit}"]);
+  output(200, {state: stateValue, statuses: [{context: "fixture-ci", state: stateValue}]});
+}
+if (parts[3] === "commits" && parts[5] === "check-runs" && method === "GET") {
+  output(200, {check_runs: []});
 }
 `;
   let script = replaceOnce(
@@ -148,8 +193,40 @@ if (["POST", "PATCH", "PUT", "DELETE"].includes(method)) state.writes.push({args
   );
   script = replaceOnce(
     script,
+    String.raw`if (parts.length === 5) {
+  if (method !== "GET") output(422, { message: "Fixture prohibits issue mutation" });
+  output(200, projectIssue(issue));
+}`,
+    String.raw`if (parts.length === 5) {
+  if (method === "PATCH") {
+    if (input?.state !== "closed" || input?.state_reason !== "completed")
+      output(422, {message: "Invalid issue close payload"});
+    if (state.controls.failIssueCloseOnce) {
+      state.controls.failIssueCloseOnce = false;
+      save();
+      output(503, {message: "Controlled issue close failure"});
+    }
+    issue.state = "closed";
+    issue.closed_at = issue.closed_at ?? "2026-09-20T10:01:00.000Z";
+    output(200, projectIssue(issue));
+  }
+  if (method !== "GET") output(422, { message: "Fixture prohibits issue mutation" });
+  output(200, projectIssue(issue));
+}`,
+  );
+  script = replaceOnce(
+    script,
     "function output(status, body, headers = {}) {",
     "save();\nfunction output(status, body, headers = {}) {",
+  );
+  script = replaceOnce(
+    script,
+    'if (status < 400 && projection.includes("issue_url")) {',
+    String.raw`if (status < 400 && projection.includes("closed_at") && projection.includes("repository_url")) {
+    const project = ({id,number,state,closed_at,html_url,repository_url,isPullRequest}) =>
+      ({id,number,state,closed_at:closed_at ?? null,html_url,repository_url,isPullRequest});
+    body = Array.isArray(body) ? body.map(project) : project(body);
+  } else if (status < 400 && projection.includes("issue_url")) {`,
   );
   script = replaceOnce(
     script,

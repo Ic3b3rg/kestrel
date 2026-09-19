@@ -208,6 +208,9 @@ function setup(change: Partial<database.ClaimedFactoryFeaturePublication> = {}) 
           value: { ...pull, ...input },
         }),
     ),
+    inspectPullRequestForMerge: vi.fn(),
+    mergePullRequest: vi.fn(),
+    closeIssue: vi.fn(),
   };
   let remoteHead: string | null = null;
   const git = {
