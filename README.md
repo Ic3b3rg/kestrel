@@ -563,20 +563,30 @@ npm run contracts:check
 
 Review preparation now exposes the exact retained revision, resolved intent, source provenance,
 analysis profile and route availability, authority, Resource Envelope, and blockers before
-confirmation. A configured Resource Envelope includes explicit memory, process, writable-disk, CPU,
-and concurrency limits plus its terminal exhaustion boundary; the built-in profile remains blocked
-until benchmark-derived limits are supplied rather than inventing a default. Starting a ready Review
-Workflow freezes those bindings transactionally. Direct API profile configuration supplies optional
-Change Overview wording; binding it into Conceptual Review execution, resource admission, and
-workflow execution is delivered by later issues. TLS/Caddy and Repository Provider Connections are
-outside the local-first V1 contract.
+confirmation. The local Conceptual Review runner freezes an immutable execution image, the certified
+Codex `0.155.1` executable identity, model, exact base/head source, and bounded memory, processes,
+CPU, aggregate tmpfs, workspace, output, graph, evidence, attempts, and wall time. The host review
+process uses a per-attempt Codex home containing only a protected copy of authentication and a
+minimal configuration that disables Project-document discovery. A highest-priority CLI override is
+verified through App Server configuration before inference, so host `AGENTS.md` instructions,
+skills, plugins, notifiers, providers, and endpoints are not inherited. The executor runs as a
+non-root user with retained source mounted read-only, swap and networking disabled, Docker logging
+disabled, verified shared-memory and tmpfs allocations, and a capability-protected loopback bridge.
+Kestrel durably records the container lifecycle, verifies the materialized source again after
+teardown, validates every graph locator against the authoritative base-to-head change, and publishes
+an immutable source-only Partial review. Model prose is stamped as source-only interpretation;
+executed-check authority remains explicitly unlinked and cannot make the artifact Complete.
+Executed-check linking remains a separate review slice. TLS/Caddy and Repository Provider
+Connections are outside the local-first V1 contract.
 
 The development Compose files keep database ownership out of the host-native long-running services.
 The one-shot migration and role-preparation containers use the database owner; host web and worker
 connect over loopback as `kestrel_runtime`, which cannot alter schema or update, delete, truncate,
 or disable protection on Installation Audit records. Review-domain grants are similarly narrow:
 Change Intent is select/insert-only and the Project, proposal, source, and revision lifecycle tables
-expose no DELETE authority; Review Workflow records are select/insert-only, and database constraints
-preserve frozen inputs, immutable revisions, and canonical-family associations. The loopback-only
+expose no DELETE authority. The runtime may update Review Workflow lifecycle fields and its own
+attempt checkpoints, while a trigger rejects any change to frozen workflow inputs; published
+Conceptual Review artifacts are select/insert-only and reject update, delete, and truncate. Database
+constraints preserve immutable revisions and canonical-family associations. The loopback-only
 development defaults can be overridden with `KESTREL_MIGRATOR_DATABASE_PASSWORD` and
 `KESTREL_RUNTIME_DATABASE_PASSWORD`; a certified release must supply generated values.

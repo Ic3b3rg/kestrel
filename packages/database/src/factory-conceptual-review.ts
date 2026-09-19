@@ -32,12 +32,21 @@ export class FactoryConceptualReviewPersistenceError extends Error {
 }
 
 export interface FactoryConceptualReviewRuntimeReadiness {
-  runtimeAvailable: boolean;
+  profile: {
+    containerImage: string;
+    containerUser: string;
+    codexExecutable: string;
+    codexExecutableDigest: string;
+    codexVersion: string;
+  } | null;
 }
 
 const RUNTIME_POLICY = {
   kind: "retained_source_review" as const,
   version: 1 as const,
+  adapter: "codex_app_server" as const,
+  adapterVersion: 1 as const,
+  codexProtocol: "app_server_v2" as const,
   sourceAccess: "retained_read_only" as const,
   networkAccess: false as const,
   writeAccess: false as const,
@@ -45,9 +54,15 @@ const RUNTIME_POLICY = {
 const REVIEW_RESOURCES = {
   maximumAttempts: 3,
   timeoutSeconds: 900,
-  maximumSourceReads: 400,
+  maximumEvidenceItems: 400,
+  maximumWorkspaceFiles: 20_000,
+  maximumWorkspaceBytes: 256 * 1024 * 1024,
   maximumGraphNodes: 800,
-  maximumOutputBytes: 256 * 1024,
+  maximumOutputBytes: 128 * 1024,
+  containerPidsLimit: 128,
+  containerMemoryBytes: 1024 * 1024 * 1024,
+  containerNanoCpus: 2_000_000_000,
+  containerTmpfsBytes: 64 * 1024 * 1024,
 } as const;
 
 interface PreparationRow {
@@ -420,12 +435,17 @@ export async function readFactoryConceptualReviewPreparation(
   const blockers: FactoryConceptualReviewBlocker[] = [];
   if (resolved.exact === null) blockers.push(resolved.blocker);
   if (resolved.row.selected_model_id === null) blockers.push("model_not_selected");
-  if (!readiness.runtimeAvailable) blockers.push("review_runtime_unavailable");
+  if (readiness.profile === null) blockers.push("review_runtime_unavailable");
   const configuration = {
     model: { route: "codex_subscription" as const, modelId: resolved.row.selected_model_id },
     runtimePolicy: {
       ...RUNTIME_POLICY,
-      status: readiness.runtimeAvailable ? ("available" as const) : ("unavailable" as const),
+      containerImage: readiness.profile?.containerImage ?? null,
+      containerUser: readiness.profile?.containerUser ?? null,
+      codexExecutable: readiness.profile?.codexExecutable ?? null,
+      codexExecutableDigest: readiness.profile?.codexExecutableDigest ?? null,
+      codexVersion: readiness.profile?.codexVersion ?? null,
+      status: readiness.profile === null ? ("unavailable" as const) : ("available" as const),
     },
     resources: REVIEW_RESOURCES,
   };

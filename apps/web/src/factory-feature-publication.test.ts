@@ -193,6 +193,13 @@ function setup(change: Partial<database.ClaimedFactoryFeaturePublication> = {}) 
     identify: vi.fn<FactoryFeatureGitHubAdapter["identify"]>(() => Promise.resolve(identity)),
     readTargetBranch: vi.fn(() => Promise.resolve("master")),
     readPullRequest: vi.fn(() => Promise.resolve(pull)),
+    observePullRequest: vi.fn(() =>
+      Promise.resolve({
+        baseCommitId: pull.baseCommitId,
+        headCommitId: pull.headCommitId,
+        state: pull.state,
+      }),
+    ),
     findPullRequest: vi.fn(() => Promise.resolve({ state: "found" as const, value: pull })),
     createPullRequest: vi.fn(
       (_identity: FactoryGitHubIdentity, input: FactoryFeaturePullRequestPayload) =>

@@ -89,6 +89,13 @@ export interface BuildAppOptions {
   reviewRevisionService?: ReviewRevisionService;
   reviewWorkflowService?: ReviewWorkflowService;
   factoryConceptualReviewService?: FactoryConceptualReviewService;
+  factoryConceptualReviewRuntimeProfile?: {
+    containerImage: string;
+    containerUser: string;
+    codexExecutable: string;
+    codexExecutableDigest: string;
+    codexVersion: string;
+  } | null;
   pwaRoot?: string;
   sessionSigningKey: Buffer;
 }
@@ -189,8 +196,11 @@ export async function buildApp({
     retain: () => Promise.reject(new Error("Review Revision acquisition is not configured")),
   },
   reviewWorkflowService = createDatabaseReviewWorkflowService(pool),
-  factoryConceptualReviewService = createDatabaseFactoryConceptualReviewService(pool, () =>
-    readLocalSourceConfig(),
+  factoryConceptualReviewRuntimeProfile = null,
+  factoryConceptualReviewService = createDatabaseFactoryConceptualReviewService(
+    pool,
+    () => readLocalSourceConfig(),
+    { boss, runtimeProfile: factoryConceptualReviewRuntimeProfile },
   ),
   sessionSigningKey,
 }: BuildAppOptions): Promise<FastifyInstance> {

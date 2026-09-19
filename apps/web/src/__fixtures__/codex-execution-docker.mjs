@@ -14,6 +14,7 @@ if (args[0] === "image") {
   if (mode === "image_missing") process.exit(1);
   console.log("sha256:" + "1".repeat(64));
 } else if (args[0] === "create") {
+  if (mode === "create_uncertain_absent" && value("--entrypoint") !== "/bin/true") process.exit(1);
   const mounts = args.flatMap((arg, index) =>
     arg === "--mount"
       ? [Object.fromEntries(args[index + 1].split(",").map((part) => part.split("=")))]
@@ -26,11 +27,26 @@ if (args[0] === "image") {
     status: "created",
     exitCode: 0,
     image: "sha256:" + "1".repeat(64),
+    user: mode === "limit_user" ? "0:0" : value("--user"),
     network: mode === "unsafe_container" ? "host" : value("--network"),
+    logDriver: mode === "limit_log" ? "json-file" : value("--log-driver"),
     readonly: args.includes("--read-only"),
     privileged: false,
     pidMode: "",
     restart: value("--restart"),
+    pidsLimit: mode === "limit_pids" ? 0 : Number(value("--pids-limit")),
+    memory: mode === "limit_memory" ? 0 : Number(value("--memory")),
+    memorySwap: mode === "limit_swap" ? 0 : Number(value("--memory-swap")),
+    nanoCpus: mode === "limit_cpu" ? 0 : Number(value("--cpus")) * 1_000_000_000,
+    shmSize: mode === "limit_shm" ? 0 : Number(value("--shm-size")),
+    tmpfs:
+      mode === "limit_tmpfs"
+        ? {}
+        : Object.fromEntries(
+            args.flatMap((arg, index) =>
+              arg === "--tmpfs" ? [args[index + 1].split(/:(.*)/su).slice(0, 2)] : [],
+            ),
+          ),
     capDrop: [value("--cap-drop")],
     securityOpt: [value("--security-opt")],
     mounts: mounts.map((mount) => ({

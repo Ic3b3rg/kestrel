@@ -155,6 +155,128 @@ describe("exact Conceptual Review inputs through authenticated HTTP and retained
          console.log(JSON.stringify({workflows,reviewWrites}));`,
       );
       expect(effects).toEqual({ workflows: 0, reviewWrites: 0 });
+      const lockedLifecycle = await verificationModule<{
+        stop: { code: string; elapsedMs: number };
+        claim: { code: string; elapsedMs: number };
+        reconcile: { completed: boolean; elapsedMs: number };
+      }>(
+        journey.stack,
+        `const featureId=${JSON.stringify(featureId)};
+         const factoryInput=${JSON.stringify(prepared)};
+         const identity=(await pool.query(
+           \`SELECT binding.project_id, binding.change_proposal_id,
+              binding.review_revision_id, revision.acquisition_change_intent_id AS change_intent_id,
+              (SELECT id FROM operators LIMIT 1) AS operator_id
+            FROM factory_feature_pr_revisions AS binding
+            JOIN review_revisions AS revision ON revision.id=binding.review_revision_id
+            WHERE binding.feature_id=$1\`, [featureId])).rows[0];
+         const workflowId=randomUUID(), attemptId=randomUUID();
+         await pool.query(
+           \`INSERT INTO review_workflows
+             (id,project_id,change_proposal_id,review_revision_id,change_intent_id,
+              requested_by_operator_id,input_digest,analysis_configuration,authority,
+              resource_envelope,workflow_state,feature_id,request_id,factory_input,job_id,
+              attempt_count,maximum_attempts,attempt_id,started_at,heartbeat_at)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,'{}','{}','{}','running',$8,$9,'{}',$10,
+              1,1,$11,clock_timestamp(),clock_timestamp())\`,
+           [workflowId,identity.project_id,identity.change_proposal_id,
+            identity.review_revision_id,identity.change_intent_id,identity.operator_id,
+            'd'.repeat(64),featureId,randomUUID(),randomUUID(),attemptId]);
+         const containerName='kestrel-factory-'+'a'.repeat(32);
+         await pool.query(
+           \`INSERT INTO review_workflow_attempts
+             (workflow_id,attempt_number,attempt_id,attempt_state,container_name)
+            VALUES ($1,1,$2,'running',$3)\`, [workflowId,attemptId,containerName]);
+         const locker=await pool.connect();
+         await locker.query('BEGIN');
+         await locker.query(
+           'SELECT 1 FROM review_workflow_attempts WHERE workflow_id=$1 FOR UPDATE',
+           [workflowId]);
+         const started=Date.now(); let code='none';
+         try {
+           await db.stopFactoryConceptualReviewContainer(
+             pool,{workflowId,attemptId,attemptNumber:1},{name:containerName,id:null},100);
+         } catch (error) { code=error?.code ?? 'unknown'; }
+         const elapsedMs=Date.now()-started;
+         await locker.query('ROLLBACK'); locker.release();
+         await pool.query(
+           "UPDATE review_workflow_attempts SET attempt_state='failed',failure_code='internal_error',finished_at=clock_timestamp() WHERE workflow_id=$1",
+           [workflowId]);
+         await pool.query(
+           "UPDATE review_workflows SET workflow_state='failed',failure_code='internal_error',finished_at=clock_timestamp() WHERE id=$1",
+           [workflowId]);
+
+         const queuedWorkflowId=randomUUID();
+         await pool.query(
+           \`INSERT INTO review_workflows
+             (id,project_id,change_proposal_id,review_revision_id,change_intent_id,
+              requested_by_operator_id,input_digest,analysis_configuration,authority,
+              resource_envelope,workflow_state,feature_id,request_id,factory_input,job_id,
+              attempt_count,maximum_attempts)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,'{}','{}','{}','queued',$8,$9,$10::jsonb,$11,0,1)\`,
+           [queuedWorkflowId,identity.project_id,identity.change_proposal_id,
+            identity.review_revision_id,identity.change_intent_id,identity.operator_id,
+            factoryInput.preparationDigest,featureId,randomUUID(),JSON.stringify(factoryInput),randomUUID()]);
+         const claimLocker=await pool.connect();
+         await claimLocker.query('BEGIN');
+         await claimLocker.query('SELECT 1 FROM review_workflows WHERE id=$1 FOR UPDATE',[queuedWorkflowId]);
+         const claimStarted=Date.now(); let claimCode='none';
+         try { await db.claimFactoryConceptualReviewWorkflow(pool,queuedWorkflowId,100); }
+         catch (error) { claimCode=error?.code ?? 'unknown'; }
+         const claimElapsedMs=Date.now()-claimStarted;
+         await claimLocker.query('ROLLBACK'); claimLocker.release();
+         await pool.query(
+           "UPDATE review_workflows SET workflow_state='failed',failure_code='internal_error',finished_at=clock_timestamp() WHERE id=$1",
+           [queuedWorkflowId]);
+
+         const staleWorkflowId=randomUUID(), staleAttemptId=randomUUID();
+         await pool.query(
+           \`INSERT INTO review_workflows
+             (id,project_id,change_proposal_id,review_revision_id,change_intent_id,
+              requested_by_operator_id,input_digest,analysis_configuration,authority,
+              resource_envelope,workflow_state,feature_id,request_id,factory_input,job_id,
+              attempt_count,maximum_attempts,attempt_id,started_at,heartbeat_at)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,'{}','{}','{}','running',$8,$9,$10::jsonb,$11,
+              1,1,$12,clock_timestamp()-interval '1 minute',clock_timestamp()-interval '1 minute')\`,
+           [staleWorkflowId,identity.project_id,identity.change_proposal_id,
+            identity.review_revision_id,identity.change_intent_id,identity.operator_id,
+            factoryInput.preparationDigest,featureId,randomUUID(),JSON.stringify(factoryInput),randomUUID(),staleAttemptId]);
+         await pool.query(
+           \`INSERT INTO review_workflow_attempts
+             (workflow_id,attempt_number,attempt_id,attempt_state,heartbeat_at)
+            VALUES ($1,1,$2,'running',clock_timestamp()-interval '1 minute')\`,
+           [staleWorkflowId,staleAttemptId]);
+         const reconcileLocker=await pool.connect();
+         await reconcileLocker.query('BEGIN');
+         await reconcileLocker.query(
+           \`SELECT 1 FROM review_workflows AS workflow
+             JOIN review_workflow_attempts AS attempt ON attempt.workflow_id=workflow.id
+             WHERE workflow.id=$1 FOR UPDATE OF workflow,attempt\`,[staleWorkflowId]);
+         const reconcileStarted=Date.now(); let reconcileCompleted=false;
+         await db.reconcileFactoryConceptualReviewWorkflows(
+           pool,{send:async()=>{throw new Error('Unexpected reconciliation send')}},
+           undefined,async()=>{},100);
+         reconcileCompleted=true;
+         const reconcileElapsedMs=Date.now()-reconcileStarted;
+         await reconcileLocker.query('ROLLBACK'); reconcileLocker.release();
+         await pool.query(
+           "UPDATE review_workflow_attempts SET attempt_state='failed',failure_code='internal_error',finished_at=clock_timestamp() WHERE workflow_id=$1",
+           [staleWorkflowId]);
+         await pool.query(
+           "UPDATE review_workflows SET workflow_state='failed',failure_code='internal_error',finished_at=clock_timestamp() WHERE id=$1",
+           [staleWorkflowId]);
+         console.log(JSON.stringify({
+           stop:{code,elapsedMs},
+           claim:{code:claimCode,elapsedMs:claimElapsedMs},
+           reconcile:{completed:reconcileCompleted,elapsedMs:reconcileElapsedMs}
+         }));`,
+      );
+      expect(lockedLifecycle.stop.code).toBe("timeout");
+      expect(lockedLifecycle.stop.elapsedMs).toBeLessThan(3_000);
+      expect(lockedLifecycle.claim.code).toBe("timeout");
+      expect(lockedLifecycle.claim.elapsedMs).toBeLessThan(3_000);
+      expect(lockedLifecycle.reconcile.completed).toBe(true);
+      expect(lockedLifecycle.reconcile.elapsedMs).toBeLessThan(3_000);
       expect((await publicationProviderState(journey.stack)).writes).toEqual(before.writes);
     },
   );

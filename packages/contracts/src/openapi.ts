@@ -8,9 +8,12 @@ import {
 import {
   FactoryConceptualReviewCheckCatalogSchema,
   FactoryConceptualReviewCheckSchema,
+  FactoryConceptualReviewCurrentSchema,
   FactoryConceptualReviewPreparationSchema,
+  FactoryConceptualReviewStartCommandSchema,
   FactoryConceptualReviewSourceCatalogSchema,
   FactoryConceptualReviewSourceLinesSchema,
+  FactoryConceptualReviewWorkflowReadSchema,
 } from "./conceptual-review.js";
 import {
   StartPlanningFeatureCommandSchema,
@@ -223,6 +226,15 @@ const factoryComponents = {
     asJsonSchema(FactoryConceptualReviewCheckCatalogSchema),
   ),
   FactoryConceptualReviewCheck: asComponentSchema(asJsonSchema(FactoryConceptualReviewCheckSchema)),
+  FactoryConceptualReviewStartCommand: asComponentSchema(
+    asJsonSchema(FactoryConceptualReviewStartCommandSchema),
+  ),
+  FactoryConceptualReviewWorkflowRead: asComponentSchema(
+    asJsonSchema(FactoryConceptualReviewWorkflowReadSchema),
+  ),
+  FactoryConceptualReviewCurrent: asComponentSchema(
+    asJsonSchema(FactoryConceptualReviewCurrentSchema),
+  ),
   RetryFactoryFeaturePublicationCommand: asComponentSchema(
     asJsonSchema(RetryFactoryFeaturePublicationCommandSchema),
   ),
@@ -1037,6 +1049,69 @@ export const openApiDocument = sortJson({
         "FactoryConceptualReviewPreparation",
       ),
     },
+    "/api/v1/projects/{projectId}/features/{featureId}/review/workflows": {
+      parameters: factoryParameters(),
+      post: factoryTurnMutation(
+        "startFactoryConceptualReview",
+        "FactoryConceptualReviewStartCommand",
+        "FactoryConceptualReviewWorkflowRead",
+        202,
+      ),
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/review/workflows/current": {
+      parameters: factoryParameters(),
+      get: factoryRead("readCurrentFactoryConceptualReview", "FactoryConceptualReviewCurrent"),
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/review/workflows/{workflowId}": {
+      parameters: [
+        ...factoryParameters(),
+        {
+          in: "path",
+          name: "workflowId",
+          required: true,
+          schema: { type: "string", format: "uuid" },
+        },
+      ],
+      get: factoryRead(
+        "readFactoryConceptualReviewWorkflow",
+        "FactoryConceptualReviewWorkflowRead",
+      ),
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/review/workflows/{workflowId}/source/lines":
+      {
+        parameters: [
+          ...factoryParameters(),
+          {
+            in: "path",
+            name: "workflowId",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+          {
+            in: "query",
+            name: "side",
+            required: true,
+            schema: { type: "string", enum: ["base", "head"] },
+          },
+          { in: "query", name: "path", required: true, schema: { type: "string" } },
+          {
+            in: "query",
+            name: "startLine",
+            required: true,
+            schema: { type: "integer", minimum: 1 },
+          },
+          {
+            in: "query",
+            name: "endLine",
+            required: true,
+            schema: { type: "integer", minimum: 1 },
+          },
+        ],
+        get: factoryRead(
+          "readFactoryConceptualReviewWorkflowSourceLines",
+          "FactoryConceptualReviewSourceLines",
+        ),
+      },
     "/api/v1/projects/{projectId}/features/{featureId}/review/source": {
       parameters: [
         ...factoryParameters(),

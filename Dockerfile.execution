@@ -6,10 +6,10 @@ RUN apt-get update \
   && mkdir -p /home/codex /workspace
 
 COPY --chmod=755 codex /usr/local/bin/codex
-RUN codex --version | grep -Fx 'codex-cli 0.153.4'
+RUN codex --version | grep -Fx 'codex-cli 0.155.1'
 
 LABEL org.opencontainers.image.title="Kestrel Factory executor" \
-  org.opencontainers.image.version="0.153.4"
+  org.opencontainers.image.version="0.155.1"
 WORKDIR /workspace
 ENV HOME=/home/codex
 ENTRYPOINT ["/usr/local/bin/codex"]

@@ -34,20 +34,20 @@ const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f
 const MANIFEST_NAME = "manifest.json";
 const MAX_MANIFEST_BYTES = 16 * 1024 * 1024;
 
-interface ManifestEntry {
+export interface ManifestEntry {
   mode: GitTreeEntry["mode"];
   objectId: string;
   path: string;
   type: GitTreeEntry["type"];
 }
 
-interface ManifestObject {
+export interface ManifestObject {
   id: string;
   size: number;
   type: GitObjectType;
 }
 
-interface RevisionManifest {
+export interface RevisionManifest {
   base: { commitObjectId: string; entries: readonly ManifestEntry[]; ref: string };
   head: { commitObjectId: string; entries: readonly ManifestEntry[]; ref: string };
   objectFormat: GitObjectFormat;
@@ -895,9 +895,10 @@ async function readRetainedObject(
   revisionRoot: string,
   manifest: RevisionManifest,
   objectId: string,
+  knownMetadata?: ManifestObject,
 ): Promise<RawGitObject> {
-  const objectMetadata = manifest.objects.find(({ id }) => id === objectId);
-  if (objectMetadata === undefined) {
+  const objectMetadata = knownMetadata ?? manifest.objects.find(({ id }) => id === objectId);
+  if (objectMetadata === undefined || objectMetadata.id !== objectId) {
     throw new LocalSourceError("object_verification_failed");
   }
   const retainedPath = objectPath(revisionRoot, objectId);
@@ -914,6 +915,63 @@ async function readRetainedObject(
   const object = { ...objectMetadata, content: await readFile(retainedPath) };
   verifyRawObject(manifest.objectFormat, object);
   return object;
+}
+
+export interface RetainedSourceSnapshot {
+  manifest: RevisionManifest;
+  identity: {
+    objectFormat: GitObjectFormat;
+    base: { commitObjectId: string; treeObjectId: string };
+    head: { commitObjectId: string; treeObjectId: string };
+  };
+  readBlob(objectId: string): Promise<Buffer>;
+}
+
+/**
+ * Verifies one retained manifest and exposes a cached blob reader over only the
+ * objects named by that manifest. This avoids reparsing the manifest per path
+ * while keeping filesystem locations private to the local-source boundary.
+ */
+export async function openRetainedSourceSnapshot(
+  config: LocalSourceConfig,
+  input: ReadRetainedChangeOverviewFactsInput,
+): Promise<RetainedSourceSnapshot> {
+  const { manifest, revisionRoot } = await readRetainedManifest(config, input);
+  const metadata = new Map(manifest.objects.map((object) => [object.id, object]));
+  const objects = new Map<string, Promise<RawGitObject>>();
+  const readObject = (objectId: string) => {
+    const known = metadata.get(objectId);
+    if (known === undefined)
+      return Promise.reject(new LocalSourceError("object_verification_failed"));
+    const existing = objects.get(objectId);
+    if (existing !== undefined) return existing;
+    const pending = readRetainedObject(revisionRoot, manifest, objectId, known);
+    objects.set(objectId, pending);
+    return pending;
+  };
+  const [baseCommit, headCommit] = await Promise.all([
+    readObject(manifest.base.commitObjectId),
+    readObject(manifest.head.commitObjectId),
+  ]);
+  return {
+    manifest,
+    identity: {
+      objectFormat: manifest.objectFormat,
+      base: {
+        commitObjectId: manifest.base.commitObjectId,
+        treeObjectId: rootTreeId(baseCommit, manifest.objectFormat),
+      },
+      head: {
+        commitObjectId: manifest.head.commitObjectId,
+        treeObjectId: rootTreeId(headCommit, manifest.objectFormat),
+      },
+    },
+    async readBlob(objectId) {
+      const object = await readObject(objectId);
+      if (object.type !== "blob") throw new LocalSourceError("object_verification_failed");
+      return object.content;
+    },
+  };
 }
 
 function validateRequestedPath(path: string): void {

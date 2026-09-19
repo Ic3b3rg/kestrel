@@ -47,6 +47,18 @@ if (args[0] === "info") {
   const filter = args[args.indexOf("--filter") + 1];
   if (container && (filter === "id=" + container.id || filter === "name=^" + container.name + "$"))
     console.log(container.id);
+} else if (args[0] === "create") {
+  if (container) process.exit(1);
+  const created = {
+    id: ${JSON.stringify(id)},
+    name: "/" + args[args.indexOf("--name") + 1],
+    image: args.at(-1),
+    labels: {
+      "kestrel.factory.execution": args[args.indexOf("--label") + 1].split("=")[1],
+    },
+  };
+  await writeFile(statePath, JSON.stringify(created));
+  console.log(created.id);
 } else if (args[0] === "inspect") {
   if (!container || args.at(-1) !== container.id) process.exit(1);
   console.log(JSON.stringify(container));
@@ -116,6 +128,21 @@ it("retains an absent reservation without an ID because a delayed create may sti
   ).rejects.toMatchObject({ code: "stop_unconfirmed" });
   expect(identified).not.toHaveBeenCalled();
   expect((await calls()).some((args) => args[0] === "rm")).toBe(false);
+});
+
+it("claims an absent reserved name with the frozen image before confirming teardown", async () => {
+  const image = `sha256:${"1".repeat(64)}`;
+  const { recover, calls } = await fixture(null);
+  const identified = vi.fn(() => Promise.resolve());
+
+  await expect(
+    recover({ name, id: null, daemonId, image }, identified, AbortSignal.timeout(5_000)),
+  ).resolves.toEqual({ name, id });
+
+  expect(identified).toHaveBeenCalledWith(id);
+  const create = (await calls()).find((args) => args[0] === "create");
+  expect(create).toEqual(expect.arrayContaining(["--entrypoint", "/bin/true", image]));
+  expect((await calls()).filter((args) => args[0] === "rm")).toEqual([["rm", "--force", id]]);
 });
 
 it("retains an initially absent ID because the current Docker daemon may differ from the original", async () => {

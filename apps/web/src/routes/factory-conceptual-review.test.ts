@@ -2,13 +2,21 @@ import { randomUUID } from "node:crypto";
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, expect, it, vi, type MockedFunction } from "vitest";
 
-import type { FactoryConceptualReviewPreparation } from "@kestrel/contracts";
+import type {
+  FactoryConceptualReviewPreparation,
+  FactoryConceptualReviewWorkflowRead,
+} from "@kestrel/contracts";
 import { ApiErrorSchema } from "@kestrel/contracts";
-import { FactoryConceptualReviewPersistenceError } from "@kestrel/database";
+import {
+  FactoryConceptualReviewPersistenceError,
+  FactoryConceptualReviewWorkflowPersistenceError,
+} from "@kestrel/database";
 import { LocalSourceError } from "@kestrel/local-source";
+import { FactoryGitHubError } from "../factory-github.js";
 
 import {
   blockPreparationForRetainedRevisionFailure,
+  refreshFactoryConceptualReviewCurrency,
   registerFactoryConceptualReviewRoutes,
   type FactoryConceptualReviewService,
 } from "./factory-conceptual-review.js";
@@ -21,6 +29,8 @@ const headCommitId = "b".repeat(40);
 const treeId = "c".repeat(40);
 const digest = "d".repeat(64);
 const at = "2026-09-19T12:00:00.000Z";
+const requestId = "65cc9964-10c2-49d1-86c4-8f13f5019e86";
+const workflowId = "01991c36-7f90-7000-8000-000000000009";
 const command = { program: "npm", args: ["test"], cwd: ".", timeoutSeconds: 60 };
 const preparation: FactoryConceptualReviewPreparation = {
   schemaVersion: 1,
@@ -117,6 +127,14 @@ const preparation: FactoryConceptualReviewPreparation = {
     runtimePolicy: {
       kind: "retained_source_review",
       version: 1,
+      adapter: "codex_app_server",
+      adapterVersion: 1,
+      containerImage: null,
+      containerUser: null,
+      codexExecutable: null,
+      codexExecutableDigest: null,
+      codexVersion: null,
+      codexProtocol: "app_server_v2",
       sourceAccess: "retained_read_only",
       networkAccess: false,
       writeAccess: false,
@@ -125,9 +143,15 @@ const preparation: FactoryConceptualReviewPreparation = {
     resources: {
       maximumAttempts: 3,
       timeoutSeconds: 900,
-      maximumSourceReads: 400,
+      maximumEvidenceItems: 400,
+      maximumWorkspaceFiles: 20_000,
+      maximumWorkspaceBytes: 268435456,
       maximumGraphNodes: 800,
-      maximumOutputBytes: 262144,
+      maximumOutputBytes: 131072,
+      containerPidsLimit: 128,
+      containerMemoryBytes: 1073741824,
+      containerNanoCpus: 2000000000,
+      containerTmpfsBytes: 67108864,
     },
   },
   readiness: {
@@ -174,12 +198,37 @@ const check = {
     createdAt: at,
   },
 };
+const workflowRead = {
+  schemaVersion: 1 as const,
+  workflow: {
+    id: workflowId,
+    requestId,
+    projectId,
+    featureId,
+    changeProposalId: featureId,
+    inputDigest: digest,
+    reviewRevisionId: projectId,
+    state: "queued" as const,
+    attempt: { current: 0, maximum: 3 },
+    failure: null,
+    artifactId: null,
+    requestedAt: at,
+    startedAt: null,
+    finishedAt: null,
+  },
+  artifact: null,
+  currency: "up_to_date" as const,
+};
 
 let app: FastifyInstance;
 let service: FactoryConceptualReviewService;
 let prepare: MockedFunction<FactoryConceptualReviewService["prepare"]>;
 let sourceCatalog: MockedFunction<FactoryConceptualReviewService["sourceCatalog"]>;
 let sourceLinesReader: MockedFunction<FactoryConceptualReviewService["sourceLines"]>;
+let workflowSourceLinesReader: MockedFunction<
+  FactoryConceptualReviewService["workflowSourceLines"]
+>;
+let startWorkflow: MockedFunction<FactoryConceptualReviewService["start"]>;
 beforeEach(() => {
   prepare = vi.fn(() => Promise.resolve(preparation));
   sourceCatalog = vi.fn(() =>
@@ -194,10 +243,13 @@ beforeEach(() => {
     }),
   );
   sourceLinesReader = vi.fn(() => Promise.resolve(sourceLines));
+  workflowSourceLinesReader = vi.fn(() => Promise.resolve(sourceLines));
+  startWorkflow = vi.fn(() => Promise.resolve(workflowRead));
   service = {
     prepare,
     sourceCatalog,
     sourceLines: sourceLinesReader,
+    workflowSourceLines: workflowSourceLinesReader,
     checks: vi.fn(() =>
       Promise.resolve({
         schemaVersion: 1 as const,
@@ -210,6 +262,9 @@ beforeEach(() => {
       }),
     ),
     check: vi.fn(() => Promise.resolve(check)),
+    start: startWorkflow,
+    current: vi.fn(() => Promise.resolve({ schemaVersion: 1 as const, review: workflowRead })),
+    workflow: vi.fn(() => Promise.resolve(workflowRead)),
   };
   app = Fastify({
     genReqId: () => randomUUID(),
@@ -244,6 +299,54 @@ it("reads preparation without creating a workflow or invoking a model", async ()
   expect(prepare).toHaveBeenCalledWith({ projectId, featureId });
 });
 
+it("starts one explicit workflow and durably reads it after reload", async () => {
+  const started = await app.inject({
+    method: "POST",
+    url: `${root}/workflows`,
+    payload: { requestId, preparationDigest: digest },
+  });
+  expect(started.statusCode).toBe(202);
+  expect(started.json()).toEqual(workflowRead);
+  expect(startWorkflow).toHaveBeenCalledWith(
+    { projectId, featureId },
+    { requestId, preparationDigest: digest },
+    expect.objectContaining({ actorId: projectId }),
+  );
+  const current = await app.inject({ method: "GET", url: `${root}/workflows/current` });
+  const exact = await app.inject({ method: "GET", url: `${root}/workflows/${workflowId}` });
+  expect(current.json()).toEqual({ schemaVersion: 1, review: workflowRead });
+  expect(exact.json()).toEqual(workflowRead);
+});
+
+it("replays an accepted request after its first HTTP response is lost", async () => {
+  const payload = { requestId, preparationDigest: digest };
+  const first = await app.inject({ method: "POST", url: `${root}/workflows`, payload });
+  const replay = await app.inject({ method: "POST", url: `${root}/workflows`, payload });
+
+  expect(first.statusCode).toBe(202);
+  expect(replay.statusCode).toBe(202);
+  expect(replay.json()).toEqual(first.json());
+  expect(startWorkflow).toHaveBeenCalledTimes(2);
+});
+
+it.each([
+  ["preparation_conflict", "REVIEW_PREPARATION_CONFLICT"],
+  ["active_review", "REQUEST_REJECTED"],
+] as const)("returns a readable conflict for %s", async (failureCode, apiCode) => {
+  startWorkflow.mockRejectedValueOnce(
+    new FactoryConceptualReviewWorkflowPersistenceError(failureCode),
+  );
+
+  const response = await app.inject({
+    method: "POST",
+    url: `${root}/workflows`,
+    payload: { requestId, preparationDigest: digest },
+  });
+
+  expect(response.statusCode).toBe(409);
+  expect(response.json()).toMatchObject({ code: apiCode });
+});
+
 it("reads bounded retained lines through canonical Feature scope", async () => {
   const response = await app.inject({
     method: "GET",
@@ -255,6 +358,22 @@ it("reads bounded retained lines through canonical Feature scope", async () => {
     { projectId, featureId },
     { side: "head", path: "src/search.ts", startLine: 4, endLine: 4 },
   );
+});
+
+it("reads published evidence through the workflow's frozen revision", async () => {
+  const response = await app.inject({
+    method: "GET",
+    url: `${root}/workflows/${workflowId}/source/lines?side=head&path=src%2Fsearch.ts&startLine=4&endLine=4`,
+  });
+  expect(response.statusCode).toBe(200);
+  expect(response.json()).toEqual(sourceLines);
+  expect(workflowSourceLinesReader).toHaveBeenCalledWith({ projectId, featureId }, workflowId, {
+    side: "head",
+    path: "src/search.ts",
+    startLine: 4,
+    endLine: 4,
+  });
+  expect(sourceLinesReader).not.toHaveBeenCalled();
 });
 
 it("rejects traversal before retained storage is consulted", async () => {
@@ -295,4 +414,33 @@ it("turns a missing retained revision directory into a readable preparation bloc
       blockers: ["exact_revision_mismatch", "review_runtime_unavailable"],
     },
   });
+});
+
+it("refreshes published review currency from the live PR and degrades provider failures to unknown", async () => {
+  const review = {
+    ...workflowRead,
+    workflow: { ...workflowRead.workflow, state: "published" },
+    artifact: { headCommitId },
+    currency: "up_to_date",
+  } as FactoryConceptualReviewWorkflowRead;
+  const pullRequest = preparation.publication?.pullRequest;
+  if (pullRequest === undefined) throw new Error("Test preparation has no pull request");
+  const movedHead = "e".repeat(40);
+  const recordHead = vi.fn(() => Promise.resolve());
+  const observed = await refreshFactoryConceptualReviewCurrency(review, {
+    readPullRequest: vi.fn(() => Promise.resolve(pullRequest)),
+    observePullRequest: vi.fn(() =>
+      Promise.resolve({ baseCommitId, headCommitId: movedHead, state: "open" as const }),
+    ),
+    recordHead,
+  });
+  expect(observed?.currency).toBe("outdated");
+  expect(recordHead).toHaveBeenCalledWith(movedHead);
+
+  const unavailable = await refreshFactoryConceptualReviewCurrency(review, {
+    readPullRequest: vi.fn(() => Promise.resolve(pullRequest)),
+    observePullRequest: vi.fn(() => Promise.reject(new FactoryGitHubError("unavailable"))),
+    recordHead: vi.fn(),
+  });
+  expect(unavailable?.currency).toBe("unknown");
 });

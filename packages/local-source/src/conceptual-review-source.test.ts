@@ -21,9 +21,17 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { readRetainedSourceManifest, retainRevision } from "./artifact.js";
 import { readLocalSourceConfig } from "./config.js";
 import {
+  openConceptualReviewSourceReader,
   readConceptualReviewSourceCatalog,
   readConceptualReviewSourceLines,
 } from "./conceptual-review-source.js";
+import {
+  disposeConceptualReviewAttemptResources,
+  disposeConceptualReviewControlDirectory,
+  disposeConceptualReviewWorkspace,
+  materializeConceptualReviewWorkspace,
+  prepareConceptualReviewControlDirectory,
+} from "./conceptual-review-workspace.js";
 import { discoverRepositories, resolveRepository } from "./discovery.js";
 import { listRepositoryReferences, resolveSelectedRevision } from "./git.js";
 
@@ -66,6 +74,10 @@ async function createFixture() {
   await git(repository, ["config", "user.email", "source@example.invalid"]);
   await writeFile(join(repository, "Z.txt"), "base Z\n");
   await writeFile(join(repository, "a.txt"), "base α\r\nsecond base\r\n");
+  await writeFile(
+    join(repository, "zz-large-rewrite.txt"),
+    Array.from({ length: 1_000 }, (_, index) => `base-${String(index)}\n`).join(""),
+  );
   await git(repository, ["add", "."]);
   await git(repository, ["commit", "-m", "Base source"]);
   const baseCommitId = await git(repository, ["rev-parse", "HEAD"]);
@@ -73,6 +85,10 @@ async function createFixture() {
   await git(repository, ["switch", "-c", "review-source"]);
   await writeFile(join(repository, "B.txt"), "head B\n");
   await writeFile(join(repository, "a.txt"), "head α\nline 2\r\nline 3");
+  await writeFile(
+    join(repository, "zz-large-rewrite.txt"),
+    Array.from({ length: 1_000 }, (_, index) => `head-${String(index)}\n`).join(""),
+  );
   await mkdir(join(repository, "pages"));
   for (let index = 0; index < 205; index += 1) {
     await writeFile(
@@ -178,11 +194,12 @@ describe("retained Conceptual Review source catalog", () => {
       side: "base",
       commitId: fixture.binding.expectedBaseCommitId,
       offset: 0,
-      total: 2,
+      total: 3,
       nextOffset: null,
       entries: [
         expect.objectContaining({ path: "Z.txt", mode: "100644", type: "blob" }),
         { path: "a.txt", mode: "100644", type: "blob", objectId: fixture.baseBlobId },
+        expect.objectContaining({ path: "zz-large-rewrite.txt", mode: "100644", type: "blob" }),
       ],
     });
     const head = await readConceptualReviewSourceCatalog(fixture.config, {
@@ -193,7 +210,7 @@ describe("retained Conceptual Review source catalog", () => {
     expect(head).toMatchObject({
       side: "head",
       commitId: fixture.binding.expectedHeadCommitId,
-      total: 229,
+      total: 230,
       offset: 0,
       nextOffset: 200,
     });
@@ -211,19 +228,20 @@ describe("retained Conceptual Review source catalog", () => {
       offset: 200,
       limit: 200,
     });
-    expect(tail).toMatchObject({ total: 229, offset: 200, nextOffset: null });
-    expect(tail.entries).toHaveLength(29);
+    expect(tail).toMatchObject({ total: 230, offset: 200, nextOffset: null });
+    expect(tail.entries).toHaveLength(30);
     expect(tail.entries[0]?.path).toBe("pages/item196.txt");
     expect(tail.entries[8]?.path).toBe("pages/item204.txt");
     expect(tail.entries[28]?.path).toBe("z/submodule");
+    expect(tail.entries[29]?.path).toBe("zz-large-rewrite.txt");
     await expect(
       readConceptualReviewSourceCatalog(fixture.config, {
         ...fixture.binding,
         side: "head",
-        offset: 229,
+        offset: 230,
         limit: 1,
       }),
-    ).resolves.toMatchObject({ entries: [], total: 229, offset: 229, nextOffset: null });
+    ).resolves.toMatchObject({ entries: [], total: 230, offset: 230, nextOffset: null });
     expect(JSON.stringify(head)).not.toContain(fixture.directory);
     expect(JSON.stringify(head)).not.toContain(fixture.binding.artifactLocator);
   });
@@ -272,7 +290,211 @@ describe("retained Conceptual Review source catalog", () => {
   });
 });
 
+describe("contained Conceptual Review workspace", () => {
+  const attemptId = "85cc9964-10c2-49d1-86c4-8f13f5019e86";
+  const limits = { maximumFiles: 1_000, maximumBytes: 16 * 1024 * 1024 };
+
+  it("materializes only verified regular blobs from both frozen revisions", async () => {
+    const workspace = await materializeConceptualReviewWorkspace(
+      fixture.config,
+      fixture.binding,
+      attemptId,
+      limits,
+    );
+    try {
+      expect(workspace.path).toBe(
+        join(fixture.config.artifactRoot, "review-workspaces", attemptId),
+      );
+      expect(await readFile(join(workspace.path, "base", "a.txt"), "utf8")).toBe(
+        "base α\r\nsecond base\r\n",
+      );
+      expect(await readFile(join(workspace.path, "head", "a.txt"), "utf8")).toBe(
+        "head α\nline 2\r\nline 3",
+      );
+      expect(await readFile(join(workspace.path, ".git"), "utf8")).toBe(
+        "gitdir: /kestrel-review-no-git\n",
+      );
+      await expect(lstat(join(workspace.path, "head", "z", "link"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      await expect(lstat(join(workspace.path, "head", "z", "submodule"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      await workspace.verify();
+    } finally {
+      await workspace.dispose();
+    }
+    await expect(lstat(workspace.path)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("detects any mutation before a review result can be published", async () => {
+    const workspace = await materializeConceptualReviewWorkspace(
+      fixture.config,
+      fixture.binding,
+      attemptId,
+      limits,
+    );
+    try {
+      const path = join(workspace.path, "head", "a.txt");
+      await chmod(path, 0o600);
+      await writeFile(path, "tampered\n");
+      await expect(workspace.verify()).rejects.toMatchObject({
+        code: "object_verification_failed",
+      });
+    } finally {
+      await workspace.dispose();
+    }
+  });
+
+  it("still verifies workspace integrity after the review deadline aborts", async () => {
+    const deadline = new AbortController();
+    const workspace = await materializeConceptualReviewWorkspace(
+      fixture.config,
+      fixture.binding,
+      attemptId,
+      limits,
+      deadline.signal,
+    );
+    try {
+      deadline.abort();
+      await expect(workspace.verify()).resolves.toBeUndefined();
+
+      const path = join(workspace.path, "head", "a.txt");
+      await chmod(path, 0o600);
+      await writeFile(path, "tampered after timeout\n");
+      await expect(workspace.verify()).rejects.toMatchObject({
+        code: "object_verification_failed",
+      });
+    } finally {
+      await workspace.dispose();
+    }
+  });
+
+  it("reconciles an attempt-owned workspace left behind by a process crash", async () => {
+    const workspace = await materializeConceptualReviewWorkspace(
+      fixture.config,
+      fixture.binding,
+      attemptId,
+      limits,
+    );
+
+    await disposeConceptualReviewWorkspace(fixture.config, attemptId);
+
+    await expect(lstat(workspace.path)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(
+      disposeConceptualReviewWorkspace(fixture.config, attemptId),
+    ).resolves.toBeUndefined();
+  });
+
+  it("uses and reconciles a deterministic attempt-owned runtime control directory", async () => {
+    const control = await prepareConceptualReviewControlDirectory(fixture.config, attemptId);
+    expect(control).toBe(join(fixture.config.artifactRoot, "review-controls", attemptId));
+    expect(await readFile(join(control, ".kestrel-review-control-owner"), "utf8")).toBe(
+      `${attemptId}\n`,
+    );
+
+    await disposeConceptualReviewControlDirectory(fixture.config, attemptId);
+
+    await expect(lstat(control)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(
+      disposeConceptualReviewControlDirectory(fixture.config, attemptId),
+    ).resolves.toBeUndefined();
+  });
+
+  it("disposes both source and runtime control resources only by persisted attempt identity", async () => {
+    const workspace = await materializeConceptualReviewWorkspace(
+      fixture.config,
+      fixture.binding,
+      attemptId,
+      limits,
+    );
+    const control = await prepareConceptualReviewControlDirectory(fixture.config, attemptId);
+
+    await disposeConceptualReviewAttemptResources(fixture.config, attemptId);
+
+    await expect(lstat(workspace.path)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(lstat(control)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it.each(["missing", "truncated"] as const)(
+    "removes a DB-scoped crash workspace with a %s owner marker",
+    async (marker) => {
+      const root = join(fixture.config.artifactRoot, "review-workspaces", attemptId);
+      await mkdir(root, { mode: 0o700 });
+      if (marker === "truncated")
+        await writeFile(join(root, ".kestrel-review-owner"), "85cc", { mode: 0o400 });
+
+      await disposeConceptualReviewWorkspace(fixture.config, attemptId);
+
+      await expect(lstat(root)).rejects.toMatchObject({ code: "ENOENT" });
+    },
+  );
+
+  it("bounds repeated-blob fan-out before materializing an oversized workspace", async () => {
+    await expect(
+      materializeConceptualReviewWorkspace(fixture.config, fixture.binding, attemptId, {
+        maximumFiles: 5,
+        maximumBytes: 16 * 1024 * 1024,
+      }),
+    ).rejects.toMatchObject({ code: "review_workspace_limit_exceeded" });
+    await expect(
+      lstat(join(fixture.config.artifactRoot, "review-workspaces", attemptId)),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+});
+
 describe("retained Conceptual Review source lines", () => {
+  it("derives changed ranges from the frozen base and head instead of model claims", async () => {
+    const reader = await openConceptualReviewSourceReader(fixture.config, fixture.binding);
+
+    await expect(
+      reader.readChange({ side: "head", path: "a.txt", startLine: 1, endLine: 1 }),
+    ).resolves.toEqual({ status: "modified", rangeChanged: true });
+    await expect(
+      reader.readChange({ side: "head", path: "Z.txt", startLine: 1, endLine: 1 }),
+    ).resolves.toEqual({ status: "unchanged", rangeChanged: false });
+    await expect(
+      reader.readChange({ side: "head", path: "B.txt", startLine: 1, endLine: 1 }),
+    ).resolves.toEqual({ status: "added", rangeChanged: true });
+  });
+
+  it("reports an indeterminate range when a valid rewrite exceeds the bounded diff", async () => {
+    const reader = await openConceptualReviewSourceReader(fixture.config, fixture.binding);
+
+    await expect(
+      reader.readChange({
+        side: "head",
+        path: "zz-large-rewrite.txt",
+        startLine: 1,
+        endLine: 1,
+      }),
+    ).resolves.toEqual({ status: "modified", rangeChanged: null });
+  });
+
+  it("reuses one verified manifest and object snapshot across a bounded evidence batch", async () => {
+    const reader = await openConceptualReviewSourceReader(fixture.config, fixture.binding);
+    const manifestPath = join(
+      fixture.config.artifactRoot,
+      fixture.binding.artifactLocator,
+      "manifest.json",
+    );
+    const hiddenManifest = join(fixture.directory, "hidden-batch-manifest.json");
+    await chmod(dirname(manifestPath), 0o700);
+    await rename(manifestPath, hiddenManifest);
+    try {
+      const evidence = await Promise.all(
+        Array.from({ length: 400 }, () =>
+          reader.readLines({ side: "head", path: "a.txt", startLine: 1, endLine: 1 }),
+        ),
+      );
+      expect(evidence).toHaveLength(400);
+      expect(evidence.every((item) => item.status === "available")).toBe(true);
+    } finally {
+      await rename(hiddenManifest, manifestPath);
+      await chmod(dirname(manifestPath), 0o500);
+    }
+  });
+
   it("stamps the exact side and blob while preserving UTF-8 and retained line endings", async () => {
     const base = await readConceptualReviewSourceLines(fixture.config, {
       ...fixture.binding,
