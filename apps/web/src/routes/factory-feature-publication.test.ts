@@ -38,16 +38,14 @@ beforeEach(() => {
   });
   app.setErrorHandler((error, request, reply) => {
     const validation = error instanceof Error && "validation" in error;
-    return reply
-      .code(validation ? 400 : 500)
-      .send(
-        ApiErrorSchema.parse({
-          schemaVersion: 1,
-          code: validation ? "INVALID_REQUEST" : "INTERNAL_ERROR",
-          message: "Request failed",
-          correlationId: request.id,
-        }),
-      );
+    return reply.code(validation ? 400 : 500).send(
+      ApiErrorSchema.parse({
+        schemaVersion: 1,
+        code: validation ? "INVALID_REQUEST" : "INTERNAL_ERROR",
+        message: "Request failed",
+        correlationId: request.id,
+      }),
+    );
   });
   app.decorateRequest("operatorSession", null);
   app.addHook("onRequest", (request, _reply, done) => {

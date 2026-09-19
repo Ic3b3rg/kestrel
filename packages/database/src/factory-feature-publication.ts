@@ -604,9 +604,10 @@ export function failFactoryFeaturePublication(
       "SELECT count(*) FROM factory_feature_pr_retry_requests WHERE feature_id = $1",
       [feature.id],
     );
-    const effectiveFailure = Number(retries.rows[0]?.count ?? 0) >= 200 ? "retry_limit" : failure;
     const uncertain =
       (row.push_attempted && row.push_confirmed_at === null) || (row.pr_attempted && pull === null);
+    const effectiveFailure =
+      !uncertain && Number(retries.rows[0]?.count ?? 0) >= 200 ? "retry_limit" : failure;
     await client.query(
       "UPDATE factory_feature_pr_publications SET state = $2, failure = $3, retry_after = $4, updated_at = clock_timestamp() WHERE feature_id = $1",
       [
@@ -677,7 +678,7 @@ async function publicationView(client: PoolClient, feature: FeatureRow) {
     canRetry:
       row !== undefined &&
       ["blocked", "uncertain"].includes(row.state) &&
-      row.failure !== "retry_limit" &&
+      (row.failure !== "retry_limit" || uncertain) &&
       (!cancelled || uncertain || (pullRequest !== null && review === null)) &&
       (row.retry_after === null || row.retry_after.getTime() <= Date.now()),
     updatedAt: row?.updated_at.toISOString() ?? null,
@@ -718,7 +719,7 @@ export function retryFactoryFeaturePublication(
       "SELECT count(*) FROM factory_feature_pr_retry_requests WHERE feature_id = $1",
       [featureId],
     );
-    if (Number(retries.rows[0]?.count) >= 200) {
+    if (Number(retries.rows[0]?.count) >= 200 && current.state !== "uncertain") {
       await client.query(
         "UPDATE factory_feature_pr_publications SET failure = 'retry_limit', updated_at = clock_timestamp() WHERE feature_id = $1",
         [featureId],

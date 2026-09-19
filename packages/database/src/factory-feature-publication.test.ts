@@ -7,6 +7,7 @@ import {
   failFactoryFeaturePublication,
   markFactoryFeaturePublicationWrite,
   readFactoryFeaturePublication,
+  retryFactoryFeaturePublication,
 } from "./factory-feature-publication.js";
 
 const id = "01991c36-7f90-7000-8000-000000000001";
@@ -316,4 +317,150 @@ it("persists a terminal retry-limit failure after the final admitted attempt fai
     expect.stringContaining("UPDATE factory_feature_pr_publications SET state"),
     [id, "blocked", "retry_limit", null],
   );
+});
+
+it("preserves exact reconciliation after the retry cap when a provider write is unresolved", async () => {
+  const query = vi.fn((sql: string) => {
+    if (sql.includes("FROM factory_features") && sql.includes("FOR UPDATE"))
+      return {
+        rows: [
+          {
+            id,
+            project_id: secondId,
+            state: "in_review",
+            approved_plan_version: 1,
+          },
+        ],
+      };
+    if (sql.includes("FROM factory_feature_pr_publications") && sql.includes("attempt_id"))
+      return {
+        rows: [
+          {
+            feature_id: id,
+            plan_version: 1,
+            state: "running",
+            attempt_id: id,
+            push_attempted: true,
+            push_confirmed_at: null,
+            pr_attempted: false,
+          },
+        ],
+      };
+    if (sql.includes("FROM factory_feature_pr_results")) return { rows: [] };
+    if (sql.includes("count(*) FROM factory_feature_pr_retry_requests"))
+      return { rows: [{ count: "200" }] };
+    return { rows: [], rowCount: 1 };
+  });
+  const client = { query, release: vi.fn() };
+  const pool = { connect: () => Promise.resolve(client), query };
+
+  await failFactoryFeaturePublication(
+    pool as never,
+    { featureId: id, projectId: secondId, attemptId: id },
+    "uncertain_write",
+  );
+
+  expect(query).toHaveBeenCalledWith(
+    expect.stringContaining("UPDATE factory_feature_pr_publications SET state"),
+    [id, "uncertain", "uncertain_write", null],
+  );
+});
+
+it("admits a reconciliation-only retry after the ordinary retry cap", async () => {
+  let publicationState = "uncertain";
+  let publicationFailure: string | null = "uncertain_write";
+  const query = vi.fn((sql: string) => {
+    if (sql.includes("FROM factory_features") && sql.includes("FOR UPDATE"))
+      return {
+        rows: [
+          {
+            id,
+            project_id: secondId,
+            state: "in_review",
+            approved_plan_version: 1,
+          },
+        ],
+      };
+    if (sql.includes("SELECT actor_id FROM factory_feature_pr_retry_requests")) return { rows: [] };
+    if (sql === "SELECT * FROM factory_feature_pr_publications WHERE feature_id = $1")
+      return {
+        rows: [
+          {
+            feature_id: id,
+            plan_version: 1,
+            certificate_id: certificate.id,
+            state: publicationState,
+            job_id: secondId,
+            attempt_id: null,
+            started_at: null,
+            push_attempted: true,
+            push_confirmed_at: null,
+            pr_attempted: false,
+            failure: publicationFailure,
+            retry_after: null,
+            updated_at: new Date(certificate.createdAt),
+          },
+        ],
+      };
+    if (sql.includes("FROM factory_feature_workspaces"))
+      return {
+        rows: [
+          {
+            base_commit_id: revision.baseCommitId,
+            head_commit_id: revision.headCommitId,
+            tree_id: revision.treeId,
+            branch: revision.branch,
+          },
+        ],
+      };
+    if (sql.includes("FROM factory_feature_verifications"))
+      return {
+        rows: [
+          {
+            id: certificate.id,
+            feature_id: id,
+            plan_version: 1,
+            run_id: certificate.runId,
+            source: certificate.source,
+            revision: certificate.revision,
+            manifest: certificate.manifest,
+            manifest_digest: certificate.manifestDigest,
+            evidence_ids: certificate.evidenceIds,
+            created_at: new Date(certificate.createdAt),
+          },
+        ],
+      };
+    if (sql.includes("FROM factory_feature_pr_operations")) return { rows: [operationRow] };
+    if (sql.includes("FROM factory_feature_pr_results")) return { rows: [] };
+    if (sql.includes("FROM factory_feature_pr_revisions")) return { rows: [] };
+    if (sql.includes("count(*) FROM factory_feature_pr_retry_requests"))
+      return { rows: [{ count: "200" }] };
+    if (sql.startsWith("UPDATE factory_feature_pr_publications SET state = 'queued'")) {
+      publicationState = "queued";
+      publicationFailure = null;
+    }
+    return { rows: [], rowCount: 1 };
+  });
+  const client = { query, release: vi.fn() };
+  const pool = { connect: () => Promise.resolve(client), query };
+
+  const result = await retryFactoryFeaturePublication(
+    pool as never,
+    secondId,
+    id,
+    secondId,
+    "01991c36-7f90-7000-8000-000000000004",
+  );
+
+  expect(result).toMatchObject({ state: "pending", canRetry: false });
+  expect(
+    query.mock.calls.some(([sql]) =>
+      sql.startsWith("INSERT INTO factory_feature_pr_retry_requests"),
+    ),
+  ).toBe(true);
+  expect(
+    query.mock.calls.some(([sql]) =>
+      sql.startsWith("UPDATE factory_feature_pr_publications SET state = 'queued'"),
+    ),
+  ).toBe(true);
 });

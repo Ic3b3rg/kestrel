@@ -141,7 +141,7 @@ describe("certified Feature PR publication through HTTP, PostgreSQL, Git and Git
       await setPublicationGitControls(journey.stack, { pauseAfterPush: false });
       expect(await journey.publication(featureId)).toMatchObject({
         state: "uncertain",
-        failure: "uncertain_write",
+        failure: "unavailable",
         canRetry: true,
         pullRequest: null,
       });

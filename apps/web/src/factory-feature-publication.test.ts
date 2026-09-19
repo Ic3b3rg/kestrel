@@ -207,7 +207,7 @@ function setup(change: Partial<database.ClaimedFactoryFeaturePublication> = {}) 
     identifyRemote: vi.fn<typeof source.identifyFeaturePublicationRemote>(() =>
       Promise.resolve(remote),
     ),
-    readRefs: vi.fn(() =>
+    readRefs: vi.fn<typeof source.readFeaturePublicationRefs>(() =>
       Promise.resolve({ targetHead: revision.baseCommitId, featureHead: remoteHead }),
     ),
     push: vi.fn<typeof source.pushFeaturePublicationHead>(() => {
@@ -408,6 +408,41 @@ it("reports an active publication interrupted by processor shutdown as unavailab
   await processor.stop();
   await processing;
 
+  expect(database.failFactoryFeaturePublication).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.anything(),
+    "unavailable",
+    undefined,
+  );
+});
+
+it("overrides a real adapter's typed cancellation when processor shutdown caused it", async () => {
+  const { processor, git } = setup();
+  let readStarted: (() => void) | undefined;
+  const started = new Promise<void>((resolve) => {
+    readStarted = resolve;
+  });
+  git.readRefs.mockImplementation((_config, _source, _remote, options) => {
+    const signal = options?.signal;
+    if (signal === undefined) throw new Error("Publication read has no cancellation signal");
+    readStarted?.();
+    return new Promise<Awaited<ReturnType<typeof source.readFeaturePublicationRefs>>>(
+      (_resolve, reject) => {
+        signal.addEventListener(
+          "abort",
+          () => reject(new source.FeaturePublicationGitError("cancelled")),
+          { once: true },
+        );
+      },
+    );
+  });
+
+  const processing = processor.process({ featureId: id });
+  await started;
+  await processor.stop();
+  await processing;
+
+  expect(git.push).not.toHaveBeenCalled();
   expect(database.failFactoryFeaturePublication).toHaveBeenCalledWith(
     expect.anything(),
     expect.anything(),

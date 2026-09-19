@@ -360,23 +360,22 @@ export function createFactoryFeaturePublicationProcessor({
     try {
       await publish(claim, signal);
     } catch (error) {
-      const code =
-        error instanceof FactoryFeaturePublicationError ||
-        error instanceof FeaturePublicationGitError
-          ? error.code
-          : error instanceof FactoryGitHubError
-            ? error.failure
-            : deadline.aborted
-              ? "timeout"
-              : shutdown.signal.aborted
-                ? "unavailable"
-                : controller.signal.reason instanceof FactoryFeaturePublicationError
-                  ? controller.signal.reason.code
-                  : signal.aborted
-                    ? "unavailable"
-                    : error instanceof FeatureWorkspaceError
-                      ? "workspace_changed"
-                      : "unavailable";
+      const code = deadline.aborted
+        ? "timeout"
+        : shutdown.signal.aborted
+          ? "unavailable"
+          : controller.signal.reason instanceof FactoryFeaturePublicationError
+            ? controller.signal.reason.code
+            : jobSignal?.aborted === true
+              ? "unavailable"
+              : error instanceof FactoryFeaturePublicationError ||
+                  error instanceof FeaturePublicationGitError
+                ? error.code
+                : error instanceof FactoryGitHubError
+                  ? error.failure
+                  : error instanceof FeatureWorkspaceError
+                    ? "workspace_changed"
+                    : "unavailable";
       try {
         await failFactoryFeaturePublication(
           pool,
