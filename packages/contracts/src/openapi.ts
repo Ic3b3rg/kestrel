@@ -6,6 +6,12 @@ import {
   RetryFactoryFeaturePublicationCommandSchema,
 } from "./factory-feature-publication.js";
 import {
+  FactoryReviewCorrectionCommandSchema,
+  FactoryReviewCorrectionCurrentSchema,
+  FactoryReviewCorrectionSchema,
+  RetryFactoryReviewCorrectionCommandSchema,
+} from "./factory-review-corrections.js";
+import {
   FactoryConceptualReviewCheckCatalogSchema,
   FactoryConceptualReviewCheckSchema,
   FactoryConceptualReviewCurrentSchema,
@@ -213,6 +219,16 @@ const factoryComponents = {
   ImportFactoryIssuesCommand: asComponentSchema(asJsonSchema(ImportFactoryIssuesCommandSchema)),
   FactoryIssuePublication: asComponentSchema(asJsonSchema(FactoryIssuePublicationSchema)),
   FactoryFeaturePublication: asComponentSchema(asJsonSchema(FactoryFeaturePublicationSchema)),
+  FactoryReviewCorrectionCommand: asComponentSchema(
+    asJsonSchema(FactoryReviewCorrectionCommandSchema),
+  ),
+  RetryFactoryReviewCorrectionCommand: asComponentSchema(
+    asJsonSchema(RetryFactoryReviewCorrectionCommandSchema),
+  ),
+  FactoryReviewCorrection: asComponentSchema(asJsonSchema(FactoryReviewCorrectionSchema)),
+  FactoryReviewCorrectionCurrent: asComponentSchema(
+    asJsonSchema(FactoryReviewCorrectionCurrentSchema),
+  ),
   FactoryConceptualReviewPreparation: asComponentSchema(
     asJsonSchema(FactoryConceptualReviewPreparationSchema),
   ),
@@ -1196,6 +1212,36 @@ export const openApiDocument = sortJson({
         },
       ],
       get: factoryRead("readFactoryConceptualReviewCheck", "FactoryConceptualReviewCheck"),
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/review/corrections": {
+      parameters: factoryParameters(),
+      post: factoryTurnMutation(
+        "requestFactoryReviewCorrection",
+        "FactoryReviewCorrectionCommand",
+        "FactoryReviewCorrection",
+        202,
+      ),
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/review/corrections/current": {
+      parameters: factoryParameters(),
+      get: factoryRead("readCurrentFactoryReviewCorrection", "FactoryReviewCorrectionCurrent"),
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/review/corrections/{correctionId}/retry": {
+      parameters: [
+        ...factoryParameters(),
+        {
+          in: "path",
+          name: "correctionId",
+          required: true,
+          schema: { type: "string", format: "uuid" },
+        },
+      ],
+      post: factoryTurnMutation(
+        "retryFactoryReviewCorrection",
+        "RetryFactoryReviewCorrectionCommand",
+        "FactoryReviewCorrection",
+        202,
+      ),
     },
     "/api/v1/projects/{projectId}/features/{featureId}/plans": {
       parameters: factoryParameters(),

@@ -424,6 +424,50 @@ it("checks more than 12 final commands without model access or an implementation
   });
 }, 20_000);
 
+it("applies only the selected correction authority before rechecking the full manifest", async () => {
+  const processing = processor();
+  await processing.process({ runId: run.id });
+  if (storedWorkspace === null) throw new Error("Missing verified workspace");
+  Object.assign(run, {
+    id: "01991c36-7f90-7000-8000-000000000004",
+    purpose: "correction",
+    workItemId: null,
+    key: "Selected review correction",
+    correction: {
+      id: "01991c36-7f90-7000-8000-000000000005",
+      instruction: "Keep the empty-state action visible after refresh.",
+      findings: [{ id: "finding.empty-state", title: "Action disappears", riskLevel: "medium" }],
+      sourceReview: {
+        workflowId: randomUUID(),
+        artifactId: randomUUID(),
+        reviewRevisionId: randomUUID(),
+        baseCommitId: storedWorkspace.baseCommitId,
+        headCommitId: storedWorkspace.headCommitId,
+      },
+    },
+    verificationManifest: factoryVerificationManifest(run.plan),
+    initialRevision: { ...storedWorkspace },
+  });
+  runTurn.mockClear();
+  runVerification.mockClear();
+  await processing.process({ runId: run.id });
+  const turn = runTurn.mock.calls[0]?.[0];
+  if (turn === undefined) throw new Error("No correction turn started");
+  const authority = JSON.parse(turn.prompt.split("\n").at(-1) ?? "null") as {
+    correction: unknown;
+    workItem?: unknown;
+  };
+  expect(turn.prompt).toContain("Apply only the Operator-selected correction");
+  expect(authority.correction).toEqual(run.correction);
+  expect(authority).not.toHaveProperty("workItem");
+  expect(runVerification).toHaveBeenCalledTimes(1);
+  expect(finishFactoryExecution).toHaveBeenLastCalledWith(
+    pool,
+    expect.objectContaining({ id: run.id }),
+    expect.objectContaining({ verified: true, writerStopped: true }),
+  );
+}, 20_000);
+
 it("rechecks earlier successes on the repair checkpoint and retains evidence from both heads", async () => {
   const processing = await prepareFinalAttempt();
   const original = run.plan.workItems[0];

@@ -9,6 +9,7 @@ const projectId = "01991c36-7f90-7000-8000-000000000001";
 const featureId = "01991c36-7f90-7000-8000-000000000002";
 const runId = "01991c36-7f90-7000-8000-000000000003";
 const itemId = "01991c36-7f90-7000-8000-000000000004";
+const correctionId = "01991c36-7f90-7000-8000-000000000005";
 const name = `kestrel-factory-${"1".repeat(32)}`;
 const containerId = "a".repeat(64);
 const daemonId = "c20f7230-59a2-4824-a2f4-fda71c982ee6";
@@ -227,6 +228,26 @@ it("converges to cancellation if Stop arrives while orphan teardown is running",
   ).toBe(false);
 });
 
+it("settles a cancelled correction instead of leaving an unresolvable active gate", async () => {
+  const state = fixture();
+  Object.assign(state.run, {
+    purpose: "correction",
+    work_item_id: null,
+    correction_id: correctionId,
+  });
+  await expect(
+    recoverFactoryExecutions(state.pool, async (_container, onIdentified) => {
+      await onIdentified(containerId);
+      state.feature.state = "cancelled";
+      state.run.state = "stopping";
+      return { name, id: containerId };
+    }),
+  ).resolves.toEqual([runId]);
+  expect(
+    state.query.mock.calls.find(([sql]) => sql.includes("UPDATE factory_review_corrections"))?.[1],
+  ).toEqual([correctionId, "cancelled", "cancelled", runId]);
+});
+
 it("rejects a late identity callback after another owner has completed recovery", async () => {
   const state = fixture(null);
   let identityError: unknown;
@@ -298,4 +319,31 @@ it("recovers a large final verification lifecycle in bounded batches without rep
     false,
   );
   expect(state.run.accepted_commands).toEqual(["unchanged"]);
+});
+
+it("retains an interrupted correction behind its Human Gate without replaying a Work Item", async () => {
+  const state = fixture();
+  Object.assign(state.run, {
+    purpose: "correction",
+    work_item_id: null,
+    correction_id: correctionId,
+    failure: "input_required",
+  });
+
+  await expect(
+    recoverFactoryExecutions(state.pool, (container) => {
+      if (container.id === null) throw new Error("Missing container identity");
+      return Promise.resolve({ name: container.name, id: container.id });
+    }),
+  ).resolves.toEqual([runId]);
+
+  expect(state.query.mock.calls.some(([sql]) => sql.includes("UPDATE factory_work_items"))).toBe(
+    false,
+  );
+  expect(
+    state.query.mock.calls.find(([sql]) => sql.includes("UPDATE factory_review_corrections"))?.[1],
+  ).toEqual([correctionId, "gated", "input_required", runId]);
+  expect(
+    state.query.mock.calls.find(([sql]) => sql.includes("INSERT INTO factory_human_gates"))?.[1],
+  ).toEqual(expect.arrayContaining([runId, "input_required"]));
 });

@@ -408,6 +408,32 @@ export async function pushFeaturePublicationHead(
   remote: FeaturePublicationRemote,
   options: Options = {},
 ): Promise<FeaturePublicationPushResult> {
+  return pushFeatureHead(config, source, remote, null, options);
+}
+
+/** Updates a published Feature branch only when it still names the reviewed head. */
+export async function pushFeatureCorrectionHead(
+  config: LocalSourceConfig,
+  source: FeaturePublicationSource,
+  remote: FeaturePublicationRemote,
+  reviewedHeadCommitId: string,
+  options: Options = {},
+): Promise<FeaturePublicationPushResult> {
+  if (
+    !/^[a-f0-9]{40}$/u.test(reviewedHeadCommitId) ||
+    reviewedHeadCommitId === source.snapshot.headCommitId
+  )
+    return { state: "not_sent", failure: "invalid_input" };
+  return pushFeatureHead(config, source, remote, reviewedHeadCommitId, options);
+}
+
+async function pushFeatureHead(
+  config: LocalSourceConfig,
+  source: FeaturePublicationSource,
+  remote: FeaturePublicationRemote,
+  expectedFeatureHead: string | null,
+  options: Options,
+): Promise<FeaturePublicationPushResult> {
   const confirmed = {
     state: "confirmed" as const,
     value: { headCommitId: source.snapshot.headCommitId, ref: source.workspace.identity.branch },
@@ -419,7 +445,8 @@ export async function pushFeaturePublicationHead(
     if (refs.targetHead !== source.workspace.identity.baseCommitId)
       throw new FeaturePublicationGitError("target_changed");
     if (refs.featureHead === source.snapshot.headCommitId) return confirmed;
-    if (refs.featureHead !== null) return { state: "rejected", failure: "feature_ref_conflict" };
+    if (refs.featureHead !== expectedFeatureHead)
+      return { state: "rejected", failure: "feature_ref_conflict" };
     environment = safeFetchEnvironment(await readCredentialConfiguration(config, options.signal));
   } catch (error) {
     return { state: "not_sent", failure: failure(error) };
@@ -433,7 +460,7 @@ export async function pushFeaturePublicationHead(
       "--atomic",
       "--no-follow-tags",
       "--recurse-submodules=no",
-      "--force-with-lease=" + source.workspace.identity.branch + ":",
+      "--force-with-lease=" + source.workspace.identity.branch + ":" + (expectedFeatureHead ?? ""),
       "--",
       remote.canonicalUrl,
       source.snapshot.headCommitId + ":" + source.workspace.identity.branch,

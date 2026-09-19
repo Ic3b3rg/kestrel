@@ -210,6 +210,13 @@ export function cancelFactoryFeature(
        WHERE feature_id = $1 AND state IN ('queued', 'running')`,
       [featureId],
     );
+    await client.query(
+      `UPDATE factory_review_corrections SET state = 'cancelled', failure = 'cancelled',
+       retry_after = NULL, updated_at = clock_timestamp()
+       WHERE feature_id = $1
+         AND state IN ('executing','gated','publishing','blocked','uncertain','reviewing')`,
+      [featureId],
+    );
     const updated = await client.query<FeatureRow>(
       "UPDATE factory_features SET state = 'cancelled', cancel_request_id = $2, runtime_thread_id = NULL, updated_at = clock_timestamp() WHERE id = $1 RETURNING *",
       [featureId, command.requestId],

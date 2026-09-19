@@ -15,6 +15,11 @@ import {
   FACTORY_CONCEPTUAL_REVIEW_WORK_OPTIONS,
 } from "./conceptual-review-processor.js";
 import {
+  createFactoryReviewCorrectionProcessor,
+  FACTORY_REVIEW_CORRECTION_WORK_OPTIONS,
+} from "./factory-review-correction-processor.js";
+import { createDatabaseFactoryConceptualReviewService } from "./routes/factory-conceptual-review.js";
+import {
   createLocalRepositoryService,
   inspectLocalSourceAttachments,
 } from "./routes/local-repository-sources.js";
@@ -50,6 +55,7 @@ import {
   FACTORY_FEATURE_PUBLICATION_QUEUE,
   FACTORY_EXECUTION_QUEUE,
   FACTORY_CONCEPTUAL_REVIEW_QUEUE,
+  FACTORY_CORRECTION_QUEUE,
   readReferencedArtifactLocators,
   readDatabaseConfig,
   readEventRetentionLimit,
@@ -61,6 +67,7 @@ import {
   reconcileFactoryFeaturePublications,
   reconcileFactoryExecutions,
   reconcileFactoryConceptualReviewWorkflows,
+  reconcileFactoryReviewCorrections,
   withArtifactLifecycleLock,
 } from "@kestrel/database";
 import {
@@ -143,6 +150,11 @@ const factoryConceptualReviewRuntimeProfile =
         codexVersion: codexConnection.cli.version,
       }
     : null;
+const factoryConceptualReviewService = createDatabaseFactoryConceptualReviewService(
+  pool,
+  () => readLocalSourceConfig(),
+  { boss, runtimeProfile: factoryConceptualReviewRuntimeProfile },
+);
 await withArtifactLifecycleLock(pool, async (lockedPool) => {
   await reconcileAcquiringRevisions(lockedPool);
   const referenced = await readReferencedArtifactLocators(lockedPool);
@@ -155,6 +167,7 @@ await withArtifactLifecycleLock(pool, async (lockedPool) => {
 const app = await buildApp({
   boss,
   factoryConceptualReviewRuntimeProfile,
+  factoryConceptualReviewService,
   codexAgentRuntime,
   eventPool,
   eventRetentionLimit: readEventRetentionLimit(),
@@ -187,14 +200,21 @@ const planningProcessor = createFactoryPlanningProcessor({
   readSourceConfig: () => readLocalSourceConfig(),
 });
 const publicationProcessor = createFactoryPublicationProcessor({ pool });
+const featureRevisionRetainer = createFactoryFeatureRevisionRetainer({
+  pool,
+  readSourceConfig: () => readLocalSourceConfig(),
+  renderingCoordinator: boss,
+});
 const featurePublicationProcessor = createFactoryFeaturePublicationProcessor({
   pool,
   readSourceConfig: () => readLocalSourceConfig(),
-  retain: createFactoryFeatureRevisionRetainer({
-    pool,
-    readSourceConfig: () => readLocalSourceConfig(),
-    renderingCoordinator: boss,
-  }),
+  retain: featureRevisionRetainer,
+});
+const reviewCorrectionProcessor = createFactoryReviewCorrectionProcessor({
+  pool,
+  readSourceConfig: () => readLocalSourceConfig(),
+  retain: featureRevisionRetainer,
+  review: factoryConceptualReviewService,
 });
 const recoverExecutionContainer = createCodexExecutionContainerRecovery(
   factoryDockerExecutable === undefined ? {} : { dockerExecutable: factoryDockerExecutable },
@@ -227,6 +247,8 @@ let executionReconciliation: NodeJS.Timeout | undefined;
 let reconcilingExecution: Promise<void> | null = null;
 let conceptualReviewReconciliation: NodeJS.Timeout | undefined;
 let reconcilingConceptualReview: Promise<void> | null = null;
+let reviewCorrectionReconciliation: NodeJS.Timeout | undefined;
+let reconcilingReviewCorrection: Promise<void> | null = null;
 boss.on("error", (error) => {
   app.log.error({ err: error, event: "pgboss.error" });
 });
@@ -236,15 +258,18 @@ async function stopExecutionAndHttp(): Promise<void> {
   // Interrupt tool execution before HTTP draining can wait on an open client.
   const stoppingExecution = executionProcessor.stop();
   const stoppingConceptualReview = conceptualReviewProcessor.stop();
+  const stoppingReviewCorrection = reviewCorrectionProcessor.stop();
   const stoppingPublication = featurePublicationProcessor.stop();
   await Promise.all([
     stoppingExecution,
     stoppingConceptualReview,
+    stoppingReviewCorrection,
     stoppingPublication,
     app.close(),
   ]);
   await reconcilingExecution;
   await reconcilingConceptualReview;
+  await reconcilingReviewCorrection;
   await reconcilingFeaturePublication;
 }
 
@@ -257,6 +282,7 @@ async function shutdown(signal: string): Promise<void> {
   clearInterval(featurePublicationReconciliation);
   clearInterval(executionReconciliation);
   clearInterval(conceptualReviewReconciliation);
+  clearInterval(reviewCorrectionReconciliation);
   app.log.info({ event: "web.stopping", signal });
   await stopExecutionAndHttp();
   await boss.stop();
@@ -284,6 +310,7 @@ try {
     recoverExecutionContainer,
     (attemptId) => disposeConceptualReviewAttemptResources(localSourceConfig, attemptId),
   );
+  await reconcileFactoryReviewCorrections(pool, boss);
   await reconcileFactoryFeaturePublications(pool, boss);
   featurePublicationReconciliation = setInterval(() => {
     if (reconcilingFeaturePublication !== null || shuttingDown) return;
@@ -323,6 +350,17 @@ try {
       });
   }, 2_000);
   conceptualReviewReconciliation.unref();
+  reviewCorrectionReconciliation = setInterval(() => {
+    if (reconcilingReviewCorrection !== null || shuttingDown) return;
+    reconcilingReviewCorrection = reconcileFactoryReviewCorrections(pool, boss)
+      .catch((error: unknown) =>
+        app.log.error({ err: error, event: "factory.review_correction_reconciliation_failed" }),
+      )
+      .finally(() => {
+        reconcilingReviewCorrection = null;
+      });
+  }, 2_000);
+  reviewCorrectionReconciliation.unref();
   let reconcilingPublication = false;
   publicationReconciliation = setInterval(() => {
     if (reconcilingPublication || shuttingDown) return;
@@ -373,6 +411,14 @@ try {
     },
   );
   await boss.work<unknown>(
+    FACTORY_CORRECTION_QUEUE,
+    FACTORY_REVIEW_CORRECTION_WORK_OPTIONS,
+    async (jobs) => {
+      const job = jobs[0];
+      if (job !== undefined) await reviewCorrectionProcessor.process(job.data, job.signal);
+    },
+  );
+  await boss.work<unknown>(
     CHANGE_OVERVIEW_RENDER_QUEUE,
     CHANGE_OVERVIEW_RENDER_WORK_OPTIONS,
     async (jobs) => {
@@ -394,6 +440,7 @@ try {
   clearInterval(featurePublicationReconciliation);
   clearInterval(executionReconciliation);
   clearInterval(conceptualReviewReconciliation);
+  clearInterval(reviewCorrectionReconciliation);
   app.log.error({ err: error, event: "web.start_failed" });
   await stopExecutionAndHttp();
   await boss.stop({ graceful: false });

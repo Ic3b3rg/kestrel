@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import {
+  FactoryConceptualReviewArtifactSchema,
   FactoryFeaturePublicationSchema,
+  FactoryReviewCorrectionCurrentSchema,
+  type FactoryConceptualReviewDraft,
+  type FactoryConceptualReviewArtifact,
+  type FactoryReviewCorrectionCurrent,
   type FactoryFeatureVerification,
 } from "@kestrel/contracts";
 import type { RunningStack } from "./compose.js";
@@ -94,6 +99,99 @@ export function processPublicationFixture(stack: ModuleStack, featureId: string)
     console.log('null');
   `,
   );
+}
+
+const controlledReviewProfile = {
+  containerImage: `sha256:${"1".repeat(64)}`,
+  containerUser: "1000:1000",
+  codexExecutable: "/usr/local/bin/codex",
+  codexExecutableDigest: "2".repeat(64),
+  codexVersion: "0.155.1",
+};
+
+export function publishConceptualReviewFixture(
+  stack: ModuleStack,
+  context: { projectId: string; featureId: string },
+  graph: FactoryConceptualReviewDraft,
+): Promise<FactoryConceptualReviewArtifact> {
+  return verificationModule<FactoryConceptualReviewArtifact>(
+    stack,
+    `
+    const {createDatabaseFactoryConceptualReviewService}=await import('./apps/web/dist/routes/factory-conceptual-review.js');
+    const {readLocalSourceConfig}=await import('@kestrel/local-source');
+    await db.selectCodexReviewModel(pool,'controlled-model');
+    const context=${JSON.stringify(context)}, graph=${JSON.stringify(graph)};
+    const actorId=(await pool.query('SELECT id FROM operators ORDER BY created_at,id LIMIT 1')).rows[0].id;
+    const service=createDatabaseFactoryConceptualReviewService(pool,()=>readLocalSourceConfig(),{
+      boss,runtimeProfile:${JSON.stringify(controlledReviewProfile)}});
+    const preparation=await service.prepare(context);
+    if(!preparation.readiness.startAllowed || preparation.preparationDigest===null)
+      throw new Error('Controlled Conceptual Review is not ready');
+    const started=await service.start(context,{requestId:randomUUID(),preparationDigest:preparation.preparationDigest},
+      {actorId,correlationId:randomUUID()});
+    const claim=await db.claimFactoryConceptualReviewWorkflow(pool,started.workflow.id);
+    if(claim===null) throw new Error('Controlled Conceptual Review was not claimed');
+    console.log(JSON.stringify(await db.publishFactoryConceptualReview(pool,claim,graph)));
+  `,
+  ).then((value) => FactoryConceptualReviewArtifactSchema.parse(value));
+}
+
+export function processCorrectionPublicationFixture(
+  stack: ModuleStack,
+  correctionId: string,
+): Promise<FactoryReviewCorrectionCurrent> {
+  return verificationModule<FactoryReviewCorrectionCurrent>(
+    stack,
+    `
+    const {createFactoryReviewCorrectionProcessor}=await import('./apps/web/dist/factory-review-correction-processor.js');
+    const {createFactoryFeatureRevisionRetainer}=await import('./apps/web/dist/factory-feature-revision.js');
+    const {createDatabaseFactoryConceptualReviewService}=await import('./apps/web/dist/routes/factory-conceptual-review.js');
+    const {readLocalSourceConfig}=await import('@kestrel/local-source');
+    const readSourceConfig=async()=>({...await readLocalSourceConfig(),gitExecutable:${JSON.stringify(publicationGitExecutablePath)}});
+    const review=createDatabaseFactoryConceptualReviewService(pool,()=>readLocalSourceConfig(),{
+      boss,runtimeProfile:${JSON.stringify(controlledReviewProfile)}});
+    await db.reconcileFactoryReviewCorrections(pool,boss);
+    const processor=createFactoryReviewCorrectionProcessor({pool,readSourceConfig,review,
+      retain:createFactoryFeatureRevisionRetainer({pool,readSourceConfig,renderingCoordinator:boss})});
+    try {await processor.process({correctionId:${JSON.stringify(correctionId)}});}
+    finally {await processor.stop();}
+    const row=(await pool.query('SELECT project_id,feature_id FROM factory_review_corrections WHERE id=$1',[${JSON.stringify(correctionId)}])).rows[0];
+    console.log(JSON.stringify(await db.readCurrentFactoryReviewCorrection(pool,row.project_id,row.feature_id)));
+  `,
+  ).then((value) => FactoryReviewCorrectionCurrentSchema.parse(value));
+}
+
+export function publishQueuedConceptualReviewFixture(
+  stack: ModuleStack,
+  workflowId: string,
+  graph: FactoryConceptualReviewDraft,
+): Promise<FactoryReviewCorrectionCurrent> {
+  return verificationModule<FactoryReviewCorrectionCurrent>(
+    stack,
+    `
+    const claim=await db.claimFactoryConceptualReviewWorkflow(pool,${JSON.stringify(workflowId)});
+    if(claim===null) throw new Error('Replacement Conceptual Review was not claimable');
+    const graph=${JSON.stringify(graph)};
+    if(graph.result==='complete') {
+      const catalog=await db.readFactoryConceptualReviewWorkflowChecks(
+        pool,claim.preparation.projectId,claim.preparation.featureId,claim.workflowId,0,1);
+      const record=catalog.checks[0];
+      if(!record || record.outcome!=='passed' || record.exitCode!==0)
+        throw new Error('Replacement review has no passing correction evidence');
+      const evidenceId='check:replacement-verification';
+      graph.evidence.push({id:evidenceId,type:'check',evidenceId:record.evidenceId,
+        relation:'supports',proposition:'The corrected exact revision passed an approved command.',
+        description:'Correction verification',sufficiency:'The server resolved this record from the immutable correction certificate.',
+        limitations:[],record});
+      graph.behavioralSteps=graph.behavioralSteps.map(step=>({...step,evidenceIds:[...step.evidenceIds,evidenceId]}));
+      graph.edges.push(...graph.behavioralSteps.map(step=>({from:step.id,to:evidenceId,kind:'supported_by'})));
+    }
+    await db.publishFactoryConceptualReview(pool,claim,graph);
+    await db.reconcileFactoryReviewCorrections(pool,boss);
+    console.log(JSON.stringify(await db.readCurrentFactoryReviewCorrection(
+      pool,claim.preparation.projectId,claim.preparation.featureId)));
+  `,
+  ).then((value) => FactoryReviewCorrectionCurrentSchema.parse(value));
 }
 
 export function interruptPublicationFixtureDuringPush(stack: ModuleStack, featureId: string) {

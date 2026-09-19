@@ -42,7 +42,16 @@ const featureSummary = runSummary.extend({
   purpose: z.literal("feature_verification"),
   workItemId: z.null(),
 });
-export const FactoryExecutionRunSummarySchema = z.union([workItemSummary, featureSummary]);
+const correctionSummary = runSummary.extend({
+  purpose: z.literal("correction"),
+  workItemId: z.null(),
+  correctionId: KestrelIdSchema,
+});
+export const FactoryExecutionRunSummarySchema = z.union([
+  workItemSummary,
+  featureSummary,
+  correctionSummary,
+]);
 export type FactoryExecutionRunSummary = z.infer<typeof FactoryExecutionRunSummarySchema>;
 
 export const FactoryVerificationResultSchema = z.strictObject({
@@ -106,6 +115,13 @@ export const FactoryExecutionRunSchema = z.union([
       .max(36),
   }),
   featureSummary.extend({
+    ...runDetails,
+    acceptedCommands: z.array(FactoryVerificationCommandSchema).min(1).max(480),
+    verificationManifest: FactoryVerificationManifestSchema,
+    initialRevision: FactoryExecutionRevisionSchema,
+    verification: z.array(FactoryVerificationResultSchema).max(1440),
+  }),
+  correctionSummary.extend({
     ...runDetails,
     acceptedCommands: z.array(FactoryVerificationCommandSchema).min(1).max(480),
     verificationManifest: FactoryVerificationManifestSchema,

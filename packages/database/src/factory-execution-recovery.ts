@@ -1,4 +1,8 @@
-import { FactoryExecutionFailureSchema } from "@kestrel/contracts";
+import {
+  FactoryExecutionFailureSchema,
+  type FactoryExecutionFailure,
+  type FactoryReviewCorrectionFailure,
+} from "@kestrel/contracts";
 import type { PoolClient } from "pg";
 
 import { ensureFactoryGate } from "./factory-gates.js";
@@ -18,12 +22,36 @@ interface RunIdentity {
 }
 interface RecoveryRun extends RunIdentity {
   work_item_id: string | null;
-  purpose?: "work_item" | "feature_verification";
+  purpose?: "work_item" | "feature_verification" | "correction";
+  correction_id: string | null;
   state: string;
   stop_requested_at: Date | null;
   reservation_released_at: Date | null;
   failure: string | null;
   question: string | null;
+}
+
+function correctionFailure(failure: FactoryExecutionFailure): FactoryReviewCorrectionFailure {
+  switch (failure) {
+    case "authentication":
+      return "authentication_required";
+    case "usage_limit":
+      return "usage_limit";
+    case "input_required":
+      return "input_required";
+    case "verification_failed":
+      return "verification_failed";
+    case "source_changed":
+      return "source_changed";
+    case "revision_changed":
+      return "head_changed";
+    case "timeout":
+      return "timeout";
+    case "cancelled":
+      return "cancelled";
+    default:
+      return "runtime_unavailable";
+  }
 }
 interface ContainerRow {
   name: string;
@@ -152,10 +180,21 @@ export async function recoverFactoryExecutions(
          WHERE id = $1`,
         [run.id, cancelled ? "cancelled" : "blocked", failure],
       );
-      if (run.purpose !== "feature_verification")
+      if ((run.purpose ?? "work_item") === "work_item")
         await client.query("UPDATE factory_work_items SET board_column = 'todo' WHERE id = $1", [
           run.work_item_id,
         ]);
+      if (run.purpose === "correction")
+        await client.query(
+          `UPDATE factory_review_corrections SET state = $2, failure = $3,
+           updated_at = clock_timestamp() WHERE id = $1 AND current_run_id = $4`,
+          [
+            run.correction_id,
+            cancelled ? "cancelled" : "gated",
+            cancelled ? "cancelled" : correctionFailure(failure),
+            run.id,
+          ],
+        );
       if (!cancelled) {
         await client.query(
           "UPDATE factory_features SET state = 'gated', updated_at = clock_timestamp() WHERE id = $1",

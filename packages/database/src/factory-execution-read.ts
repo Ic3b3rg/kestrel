@@ -19,7 +19,8 @@ export interface ExecutionRunRow {
   feature_id: string;
   project_id: string;
   work_item_id: string | null;
-  purpose?: "work_item" | "feature_verification";
+  purpose?: "work_item" | "feature_verification" | "correction";
+  correction_id?: string | null;
   verification_manifest?: unknown;
   initial_revision?: unknown;
   plan_version: number;
@@ -49,6 +50,7 @@ function summary(row: ExecutionRunRow) {
     createdAt: row.created_at.toISOString(),
     startedAt: row.started_at?.toISOString() ?? null,
     completedAt: row.completed_at?.toISOString() ?? null,
+    ...(row.purpose === "correction" ? { correctionId: row.correction_id } : {}),
   });
 }
 
@@ -218,7 +220,7 @@ export function readFactoryExecutionRun(
       runtime: row.runtime,
       revision: row.revision,
       acceptedCommands: row.accepted_commands,
-      ...(row.purpose === "feature_verification"
+      ...(row.purpose === "feature_verification" || row.purpose === "correction"
         ? { verificationManifest: row.verification_manifest, initialRevision: row.initial_revision }
         : {}),
       activity: activity.rows.toReversed().map((event) => ({

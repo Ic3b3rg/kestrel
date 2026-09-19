@@ -16,6 +16,11 @@ import {
   registerFactoryConceptualReviewRoutes,
   type FactoryConceptualReviewService,
 } from "./routes/factory-conceptual-review.js";
+import {
+  createDatabaseFactoryReviewCorrectionService,
+  registerFactoryReviewCorrectionRoutes,
+  type FactoryReviewCorrectionService,
+} from "./routes/factory-review-corrections.js";
 import type { FactoryGitHubAdapter } from "./factory-github.js";
 import {
   createCodexAppServerAgentRuntime,
@@ -89,6 +94,7 @@ export interface BuildAppOptions {
   reviewRevisionService?: ReviewRevisionService;
   reviewWorkflowService?: ReviewWorkflowService;
   factoryConceptualReviewService?: FactoryConceptualReviewService;
+  factoryReviewCorrectionService?: FactoryReviewCorrectionService;
   factoryConceptualReviewRuntimeProfile?: {
     containerImage: string;
     containerUser: string;
@@ -202,6 +208,7 @@ export async function buildApp({
     () => readLocalSourceConfig(),
     { boss, runtimeProfile: factoryConceptualReviewRuntimeProfile },
   ),
+  factoryReviewCorrectionService = createDatabaseFactoryReviewCorrectionService(pool, boss),
   sessionSigningKey,
 }: BuildAppOptions): Promise<FastifyInstance> {
   const app = Fastify({
@@ -259,6 +266,7 @@ export async function buildApp({
   registerFactoryExecutionRoutes(app, pool);
   registerFactoryFeaturePublicationRoutes(app, pool);
   registerFactoryConceptualReviewRoutes(app, factoryConceptualReviewService);
+  registerFactoryReviewCorrectionRoutes(app, factoryReviewCorrectionService);
   registerEventRoutes(app, eventPool);
   registerHealthRoutes(app, pool);
   registerInstallationRoutes(app, pool);
