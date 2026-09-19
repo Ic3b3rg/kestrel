@@ -153,7 +153,11 @@ const row = {
   revision_created_at: at,
   available_at: at,
   canonical_revision_project_id: projectId,
-  canonical_proposal_id: proposalId,
+  canonical_binding_project_id: projectId,
+  canonical_binding_proposal_id: proposalId,
+  revision_change_proposal_id: proposalId,
+  canonical_revision_proposal_project_id: projectId,
+  canonical_revision_proposal_id: proposalId,
   revision_source_repository_id: projectId,
   revision_source_identity: sourceIdentity,
   selected_model_id: "gpt-6-astra",
@@ -213,6 +217,34 @@ it.each([
     "an aliased Project binding",
     { canonical_revision_project_id: featureId },
     "exact_revision_mismatch",
+  ],
+  [
+    "a retained revision from another canonical proposal",
+    {
+      revision_change_proposal_id: featureId,
+      canonical_revision_proposal_id: featureId,
+    },
+    "exact_revision_mismatch",
+  ],
+  [
+    "a retained revision proposal from another canonical Project",
+    { canonical_revision_proposal_project_id: featureId },
+    "exact_revision_mismatch",
+  ],
+  [
+    "a pull request from another repository",
+    {
+      pull_request: {
+        ...pullRequest,
+        repository: { id: "99", owner: "foreign", name: "search" },
+      },
+    },
+    "certificate_mismatch",
+  ],
+  [
+    "a pull request from another account",
+    { pull_request: { ...pullRequest, author: "intruder" } },
+    "certificate_mismatch",
   ],
   [
     "a different manifest digest",

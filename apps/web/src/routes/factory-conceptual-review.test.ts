@@ -1,12 +1,14 @@
 import { randomUUID } from "node:crypto";
 import Fastify, { type FastifyInstance } from "fastify";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi, type MockedFunction } from "vitest";
 
 import type { FactoryConceptualReviewPreparation } from "@kestrel/contracts";
 import { ApiErrorSchema } from "@kestrel/contracts";
 import { FactoryConceptualReviewPersistenceError } from "@kestrel/database";
+import { LocalSourceError } from "@kestrel/local-source";
 
 import {
+  blockPreparationForRetainedRevisionFailure,
   registerFactoryConceptualReviewRoutes,
   type FactoryConceptualReviewService,
 } from "./factory-conceptual-review.js";
@@ -175,9 +177,9 @@ const check = {
 
 let app: FastifyInstance;
 let service: FactoryConceptualReviewService;
-let prepare: ReturnType<typeof vi.fn>;
-let sourceCatalog: ReturnType<typeof vi.fn>;
-let sourceLinesReader: ReturnType<typeof vi.fn>;
+let prepare: MockedFunction<FactoryConceptualReviewService["prepare"]>;
+let sourceCatalog: MockedFunction<FactoryConceptualReviewService["sourceCatalog"]>;
+let sourceLinesReader: MockedFunction<FactoryConceptualReviewService["sourceLines"]>;
 beforeEach(() => {
   prepare = vi.fn(() => Promise.resolve(preparation));
   sourceCatalog = vi.fn(() =>
@@ -277,4 +279,20 @@ it("returns a readable conflict while exact retained evidence is not ready", asy
   const response = await app.inject({ method: "GET", url: `${root}/source?side=head` });
   expect(response.statusCode).toBe(409);
   expect(response.json()).toMatchObject({ code: "REVIEW_NOT_READY" });
+});
+
+it("turns a missing retained revision directory into a readable preparation blocker", () => {
+  const blocked = blockPreparationForRetainedRevisionFailure(
+    preparation,
+    new LocalSourceError("path_not_retained"),
+  );
+  expect(blocked).toMatchObject({
+    preparationDigest: null,
+    evidence: null,
+    readiness: {
+      state: "blocked",
+      startAllowed: false,
+      blockers: ["exact_revision_mismatch", "review_runtime_unavailable"],
+    },
+  });
 });

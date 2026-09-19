@@ -85,7 +85,11 @@ interface PreparationRow {
   revision_created_at: Date | null;
   available_at: Date | null;
   canonical_revision_project_id: string | null;
-  canonical_proposal_id: string | null;
+  canonical_binding_project_id: string | null;
+  canonical_binding_proposal_id: string | null;
+  revision_change_proposal_id: string | null;
+  canonical_revision_proposal_project_id: string | null;
+  canonical_revision_proposal_id: string | null;
   revision_source_repository_id: string | null;
   revision_source_identity: string | null;
   selected_model_id: string | null;
@@ -123,7 +127,15 @@ const preparationQuery = `
     revision.manifest_digest AS retained_manifest_digest,
     revision.created_at AS revision_created_at, revision.available_at,
     COALESCE(revision_project.canonical_project_id, revision_project.id) AS canonical_revision_project_id,
-    COALESCE(proposal.canonical_change_proposal_id, proposal.id) AS canonical_proposal_id,
+    COALESCE(binding_proposal_project.canonical_project_id, binding_proposal_project.id)
+      AS canonical_binding_project_id,
+    COALESCE(binding_proposal.canonical_change_proposal_id, binding_proposal.id)
+      AS canonical_binding_proposal_id,
+    revision.change_proposal_id AS revision_change_proposal_id,
+    COALESCE(revision_proposal_project.canonical_project_id, revision_proposal_project.id)
+      AS canonical_revision_proposal_project_id,
+    COALESCE(revision_proposal.canonical_change_proposal_id, revision_proposal.id)
+      AS canonical_revision_proposal_id,
     revision_source.repository_id AS revision_source_repository_id,
     revision_source.source_identity AS revision_source_identity,
     model.selected_model_id
@@ -142,7 +154,14 @@ const preparationQuery = `
   LEFT JOIN projects AS revision_project ON revision_project.id = revision.project_id
   LEFT JOIN local_repository_sources AS revision_source
     ON revision_source.id = revision.local_repository_source_id
-  LEFT JOIN change_proposals AS proposal ON proposal.id = binding.change_proposal_id
+  LEFT JOIN change_proposals AS binding_proposal
+    ON binding_proposal.id = binding.change_proposal_id
+  LEFT JOIN projects AS binding_proposal_project
+    ON binding_proposal_project.id = binding_proposal.project_id
+  LEFT JOIN change_proposals AS revision_proposal
+    ON revision_proposal.id = revision.change_proposal_id
+  LEFT JOIN projects AS revision_proposal_project
+    ON revision_proposal_project.id = revision_proposal.project_id
   LEFT JOIN LATERAL (
     SELECT preference.selected_model_id
     FROM installations AS installation
@@ -294,6 +313,9 @@ async function resolveExactReviewInputs(
     target.data.source.repositoryId !== certificate.data.source.repositoryId ||
     target.data.source.identity !== certificate.data.source.identity ||
     target.data.revision.branch !== certificate.data.revision.branch ||
+    JSON.stringify(pullRequest.data.repository) !==
+      JSON.stringify(target.data.identity.repository) ||
+    pullRequest.data.author.toLowerCase() !== target.data.identity.account.toLowerCase() ||
     JSON.stringify(factoryVerificationManifest(plan.data)) !==
       JSON.stringify(certificate.data.manifest) ||
     sha256(certificate.data.manifest) !== certificate.data.manifestDigest ||
@@ -313,7 +335,10 @@ async function resolveExactReviewInputs(
   if (
     row.binding_project_id !== projectId ||
     row.canonical_revision_project_id !== projectId ||
-    row.canonical_proposal_id !== row.binding_change_proposal_id ||
+    row.canonical_binding_project_id !== projectId ||
+    row.canonical_revision_proposal_project_id !== projectId ||
+    row.canonical_binding_proposal_id !== row.binding_change_proposal_id ||
+    row.canonical_revision_proposal_id !== row.canonical_binding_proposal_id ||
     row.revision_source_repository_id !== certificate.data.source.repositoryId ||
     row.revision_source_identity !== certificate.data.source.identity ||
     row.revision_state !== "available" ||

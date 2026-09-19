@@ -255,6 +255,10 @@ it("explains the exact approved basis and exposes source and check inspectors wi
   ).not.toBeNull();
   expect(button("Start review")).toHaveProperty("disabled", true);
   expect(container.textContent).toContain("review runner is not available yet");
+  expect(container.textContent).toContain(digest);
+  expect(container.textContent).toContain("gpt-6-astra");
+  expect(container.textContent).toContain("400 source reads");
+  expect(container.textContent).toContain("200 paths per page");
 
   await renderAct(() => button("Browse head source").click());
   await renderAct(() => button("src/search.ts").click());
@@ -265,4 +269,215 @@ it("explains the exact approved basis and exposes source and check inspectors wi
   expect(container.textContent).toContain("npm test");
   await renderAct(() => button("Open result").click());
   expect(container.textContent).toContain("search passed");
+});
+
+it("pages every bounded catalog and reads an operator-selected exact source range", async () => {
+  const secondEvidenceId = "01991c36-7f90-7000-8000-000000000004";
+  const loadSourceCatalog = vi
+    .fn()
+    .mockResolvedValueOnce({
+      schemaVersion: 1 as const,
+      side: "head" as const,
+      commitId: headCommitId,
+      entries: [],
+      offset: 0,
+      total: 201,
+      nextOffset: 200,
+    })
+    .mockResolvedValueOnce({
+      schemaVersion: 1 as const,
+      side: "head" as const,
+      commitId: headCommitId,
+      entries: [
+        { mode: "100644" as const, type: "blob" as const, objectId: treeId, path: "src/last.ts" },
+      ],
+      offset: 200,
+      total: 201,
+      nextOffset: null,
+    });
+  const loadSourceLines = vi.fn(
+    (
+      _project: string,
+      _feature: string,
+      side: "base" | "head",
+      path: string,
+      startLine: number,
+      endLine: number,
+    ) =>
+      Promise.resolve({
+        status: "available" as const,
+        side,
+        commitId: headCommitId,
+        mode: "100644" as const,
+        type: "blob" as const,
+        objectId: treeId,
+        path,
+        startLine,
+        endLine,
+        totalLines: 500,
+        hasFinalNewline: true,
+        lineEndings: ["lf" as const],
+        text: `lines ${String(startLine)}-${String(endLine)}\n`,
+      }),
+  );
+  const checkSummary = (id: string, position: number) => ({
+    evidenceId: id,
+    runId: featureId,
+    manifestPosition: position,
+    origins: [{ workItemKey: "search", position }],
+    command,
+    headCommitId,
+    treeId,
+    outcome: "passed" as const,
+    exitCode: 0,
+    stdoutTruncated: false,
+    stderrTruncated: false,
+    durationMs: 123,
+    createdAt: at,
+  });
+  const loadChecks = vi
+    .fn()
+    .mockResolvedValueOnce({
+      schemaVersion: 1 as const,
+      runId: featureId,
+      manifestDigest: digest,
+      checks: [checkSummary(evidenceId, 1)],
+      offset: 0,
+      total: 101,
+      nextOffset: 100,
+    })
+    .mockResolvedValueOnce({
+      schemaVersion: 1 as const,
+      runId: featureId,
+      manifestDigest: digest,
+      checks: [checkSummary(secondEvidenceId, 101)],
+      offset: 100,
+      total: 101,
+      nextOffset: null,
+    });
+  await renderAct(() =>
+    root.render(
+      createElement(FeatureReviewPanel, {
+        projectId,
+        featureId,
+        online: true,
+        onAuthenticationError: vi.fn(() => false),
+        loadPreparation: vi.fn(() => Promise.resolve(preparation)),
+        loadSourceCatalog,
+        loadSourceLines,
+        loadChecks,
+        loadCheck: vi.fn(),
+      }),
+    ),
+  );
+
+  await renderAct(() => button("Browse head source").click());
+  await renderAct(() => button("Next source page").click());
+  expect(loadSourceCatalog).toHaveBeenLastCalledWith(projectId, featureId, "head", 200, 200);
+  await renderAct(() => button("src/last.ts").click());
+  expect(loadSourceLines).toHaveBeenLastCalledWith(
+    projectId,
+    featureId,
+    "head",
+    "src/last.ts",
+    1,
+    1,
+  );
+
+  const setNumber = async (label: string, value: string) => {
+    const input = container.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`);
+    if (input === null) throw new Error(`No input: ${label}`);
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- called with its concrete input.
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    if (setter === undefined) throw new Error("Native input setter unavailable");
+    await renderAct(() => {
+      setter.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  };
+  await setNumber("Start line", "201");
+  await setNumber("End line", "350");
+  await renderAct(() => button("Read source range").click());
+  expect(loadSourceLines).toHaveBeenLastCalledWith(
+    projectId,
+    featureId,
+    "head",
+    "src/last.ts",
+    201,
+    350,
+  );
+
+  await renderAct(() => button("Inspect final checks").click());
+  await renderAct(() => button("Next checks page").click());
+  expect(loadChecks).toHaveBeenLastCalledWith(projectId, featureId, 100, 100);
+});
+
+it("clears loaded evidence when refreshed preparation no longer matches", async () => {
+  const blocked: FactoryConceptualReviewPreparation = {
+    ...preparation,
+    preparationDigest: null,
+    evidence: null,
+    readiness: {
+      state: "blocked",
+      startAllowed: false,
+      blockers: ["exact_revision_mismatch", "review_runtime_unavailable"],
+    },
+  };
+  const loadPreparation = vi.fn().mockResolvedValueOnce(preparation).mockResolvedValueOnce(blocked);
+  await renderAct(() =>
+    root.render(
+      createElement(FeatureReviewPanel, {
+        projectId,
+        featureId,
+        online: true,
+        onAuthenticationError: vi.fn(() => false),
+        loadPreparation,
+        loadSourceCatalog: vi.fn(() =>
+          Promise.resolve({
+            schemaVersion: 1 as const,
+            side: "head" as const,
+            commitId: headCommitId,
+            entries: [
+              {
+                mode: "100644" as const,
+                type: "blob" as const,
+                objectId: treeId,
+                path: "src/old.ts",
+              },
+            ],
+            offset: 0,
+            total: 1,
+            nextOffset: null,
+          }),
+        ),
+        loadSourceLines: vi.fn(() =>
+          Promise.resolve({
+            status: "available" as const,
+            side: "head" as const,
+            commitId: headCommitId,
+            mode: "100644" as const,
+            type: "blob" as const,
+            objectId: treeId,
+            path: "src/old.ts",
+            startLine: 1,
+            endLine: 1,
+            totalLines: 1,
+            hasFinalNewline: true,
+            lineEndings: ["lf" as const],
+            text: "stale exact evidence\n",
+          }),
+        ),
+        loadChecks: vi.fn(),
+        loadCheck: vi.fn(),
+      }),
+    ),
+  );
+  await renderAct(() => button("Browse head source").click());
+  await renderAct(() => button("src/old.ts").click());
+  expect(container.textContent).toContain("stale exact evidence");
+
+  await renderAct(() => button("Refresh exact inputs").click());
+  expect(container.textContent).toContain("retained source does not match");
+  expect(container.textContent).not.toContain("stale exact evidence");
+  expect(container.textContent).not.toContain("src/old.ts");
 });

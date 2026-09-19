@@ -62,6 +62,37 @@ export interface FactoryConceptualReviewService {
   ): Promise<FactoryConceptualReviewCheck>;
 }
 
+export function blockPreparationForRetainedRevisionFailure(
+  preparation: FactoryConceptualReviewPreparation,
+  error: unknown,
+): FactoryConceptualReviewPreparation | null {
+  const mismatch =
+    (error instanceof ConceptualReviewSourceError && error.code === "revision_mismatch") ||
+    (error instanceof LocalSourceError &&
+      [
+        "object_missing",
+        "object_verification_failed",
+        "path_not_retained",
+        "source_containment_violation",
+      ].includes(error.code));
+  if (!mismatch) return null;
+  return FactoryConceptualReviewPreparationSchema.parse({
+    ...preparation,
+    preparationDigest: null,
+    evidence: null,
+    readiness: {
+      state: "blocked",
+      startAllowed: false,
+      blockers: [
+        "exact_revision_mismatch",
+        ...preparation.readiness.blockers.filter(
+          (blocker) => blocker !== "exact_revision_mismatch",
+        ),
+      ],
+    },
+  });
+}
+
 export function createDatabaseFactoryConceptualReviewService(
   pool: DatabasePool,
   readSourceConfig: () => Promise<LocalSourceConfig>,
@@ -89,27 +120,9 @@ export function createDatabaseFactoryConceptualReviewService(
         await validateRetainedHead(context);
         return preparation;
       } catch (error) {
-        if (!(
-          (error instanceof ConceptualReviewSourceError && error.code === "revision_mismatch") ||
-          (error instanceof LocalSourceError &&
-            ["object_missing", "object_verification_failed"].includes(error.code))
-        ))
-          throw error;
-        return FactoryConceptualReviewPreparationSchema.parse({
-          ...preparation,
-          preparationDigest: null,
-          evidence: null,
-          readiness: {
-            state: "blocked",
-            startAllowed: false,
-            blockers: [
-              "exact_revision_mismatch",
-              ...preparation.readiness.blockers.filter(
-                (blocker) => blocker !== "exact_revision_mismatch",
-              ),
-            ],
-          },
-        });
+        const blocked = blockPreparationForRetainedRevisionFailure(preparation, error);
+        if (blocked !== null) return blocked;
+        throw error;
       }
     },
     async sourceCatalog({ projectId, featureId }, input) {
