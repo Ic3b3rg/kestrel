@@ -945,6 +945,38 @@ export async function readRetainedFile(
   return object.content;
 }
 
+/** Verified retained metadata for source inspectors; no artifact filesystem path escapes. */
+export async function readRetainedSourceManifest(
+  config: LocalSourceConfig,
+  input: ReadRetainedChangeOverviewFactsInput,
+) {
+  const { manifest } = await readRetainedManifest(config, input);
+  return manifest;
+}
+
+/** Verified commit/tree identity for binding a certificate to the retained source itself. */
+export async function readRetainedRevisionIdentity(
+  config: LocalSourceConfig,
+  input: ReadRetainedChangeOverviewFactsInput,
+) {
+  const { manifest, revisionRoot } = await readRetainedManifest(config, input);
+  const [baseCommit, headCommit] = await Promise.all([
+    readRetainedObject(revisionRoot, manifest, manifest.base.commitObjectId),
+    readRetainedObject(revisionRoot, manifest, manifest.head.commitObjectId),
+  ]);
+  return {
+    objectFormat: manifest.objectFormat,
+    base: {
+      commitObjectId: manifest.base.commitObjectId,
+      treeObjectId: rootTreeId(baseCommit, manifest.objectFormat),
+    },
+    head: {
+      commitObjectId: manifest.head.commitObjectId,
+      treeObjectId: rootTreeId(headCommit, manifest.objectFormat),
+    },
+  };
+}
+
 export async function readRetainedChangeOverviewFacts(
   config: LocalSourceConfig,
   input: ReadRetainedChangeOverviewFactsInput,

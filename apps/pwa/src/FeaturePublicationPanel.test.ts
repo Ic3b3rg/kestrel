@@ -179,7 +179,7 @@ it("opens the exact retained revision and preserves ordered Work Item links", as
   ).toContain("W1");
   expect(container.textContent).toContain(revision.headCommitId);
   expect(container.textContent).toContain("e".repeat(64));
-  await renderAct(() => button("Open retained revision").click());
+  await renderAct(() => button("Open Feature review").click());
   expect(selected.onOpenRevision).toHaveBeenCalledWith(certified.review);
 });
 
@@ -293,7 +293,7 @@ it("polls a pending publication through to its confirmed PR and revision", async
   await renderAct(() => root.render(createElement(FeaturePublicationPanel, props())));
   await renderAct(() => vi.advanceTimersByTimeAsync(2_000));
   expect(container.textContent).toContain("Pull request published");
-  expect(button("Open retained revision").disabled).toBe(false);
+  expect(button("Open Feature review").disabled).toBe(false);
 });
 
 it("does not let an older status poll overwrite a confirmed retry", async () => {

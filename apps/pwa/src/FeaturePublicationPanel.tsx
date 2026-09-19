@@ -128,7 +128,7 @@ function PublicationDetails({
               disabled={!active}
               onClick={() => onOpenRevision(review)}
             >
-              Open retained revision
+              Open Feature review
             </Button>
           )}
         </div>

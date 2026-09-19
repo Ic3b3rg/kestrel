@@ -1,7 +1,7 @@
 import { KestrelIdSchema, StartPlanningFeatureCommandSchema } from "@kestrel/contracts";
 
 export type AppRoute =
-  | { kind: "feature"; projectId: string; featureId: string; view?: "plan" | "board" }
+  | { kind: "feature"; projectId: string; featureId: string; view?: "plan" | "board" | "review" }
   | { kind: "not_found" }
   | { kind: "planning"; projectId: string; requestId: string }
   | {
@@ -40,7 +40,7 @@ export function readAppRoute(pathname: string, search = ""): AppRoute {
             kind: "feature",
             projectId: projectId.data,
             featureId: featureId.data,
-            ...(view === "plan" || view === "board" ? { view } : {}),
+            ...(view === "plan" || view === "board" || view === "review" ? { view } : {}),
           }
         : { kind: "not_found" };
     }

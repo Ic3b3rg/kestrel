@@ -11,6 +11,11 @@ import { registerFactoryPlanningRoutes } from "./routes/factory-planning.js";
 import { registerFactoryIssueRoutes } from "./routes/factory-issues.js";
 import { registerFactoryExecutionRoutes } from "./routes/factory-execution.js";
 import { registerFactoryFeaturePublicationRoutes } from "./routes/factory-feature-publication.js";
+import {
+  createDatabaseFactoryConceptualReviewService,
+  registerFactoryConceptualReviewRoutes,
+  type FactoryConceptualReviewService,
+} from "./routes/factory-conceptual-review.js";
 import type { FactoryGitHubAdapter } from "./factory-github.js";
 import {
   createCodexAppServerAgentRuntime,
@@ -64,6 +69,7 @@ import {
   type ReviewWorkflowService,
 } from "./routes/review-workflows.js";
 import { registerAuthentication } from "./authentication.js";
+import { readLocalSourceConfig } from "@kestrel/local-source";
 
 export interface BuildAppOptions {
   boss: DiagnosticJobSender;
@@ -82,6 +88,7 @@ export interface BuildAppOptions {
   codexReviewModelPreferenceService?: CodexReviewModelPreferenceService;
   reviewRevisionService?: ReviewRevisionService;
   reviewWorkflowService?: ReviewWorkflowService;
+  factoryConceptualReviewService?: FactoryConceptualReviewService;
   pwaRoot?: string;
   sessionSigningKey: Buffer;
 }
@@ -182,6 +189,9 @@ export async function buildApp({
     retain: () => Promise.reject(new Error("Review Revision acquisition is not configured")),
   },
   reviewWorkflowService = createDatabaseReviewWorkflowService(pool),
+  factoryConceptualReviewService = createDatabaseFactoryConceptualReviewService(pool, () =>
+    readLocalSourceConfig(),
+  ),
   sessionSigningKey,
 }: BuildAppOptions): Promise<FastifyInstance> {
   const app = Fastify({
@@ -238,6 +248,7 @@ export async function buildApp({
   registerFactoryIssueRoutes(app, pool, factoryGitHub);
   registerFactoryExecutionRoutes(app, pool);
   registerFactoryFeaturePublicationRoutes(app, pool);
+  registerFactoryConceptualReviewRoutes(app, factoryConceptualReviewService);
   registerEventRoutes(app, eventPool);
   registerHealthRoutes(app, pool);
   registerInstallationRoutes(app, pool);

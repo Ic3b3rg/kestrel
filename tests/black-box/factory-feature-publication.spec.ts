@@ -8,7 +8,7 @@ import {
   type FeaturePublicationJourney,
 } from "./support/factory-feature-publication-journey.js";
 
-test.describe("certified Feature PR in the Project board", () => {
+test.describe("certified Feature PR and Conceptual Review entry", () => {
   let journey: FeaturePublicationJourney;
   let featureId: string;
   let publication: FactoryFeaturePublication;
@@ -30,7 +30,7 @@ test.describe("certified Feature PR in the Project board", () => {
     await closeJourney?.();
   });
 
-  test("explains the cumulative PR and opens the exact retained revision", async ({
+  test("opens the exact approved review basis and its retained evidence", async ({
     page,
   }, testInfo) => {
     await page.goto(journey.stack.pwaUrl);
@@ -88,27 +88,58 @@ test.describe("certified Feature PR in the Project board", () => {
       fullPage: true,
     });
 
-    const open = panel.getByRole("button", { name: "Open retained revision", exact: true });
+    const open = panel.getByRole("button", { name: "Open Feature review", exact: true });
     await open.focus();
     await open.press("Enter");
     await expect(page).toHaveURL(
-      `${journey.stack.pwaUrl}/projects/${review.projectId}?proposalId=${review.changeProposalId}&revisionId=${review.revision.id}`,
+      `${journey.stack.pwaUrl}/projects/${journey.projectId}/features/${featureId}?view=review`,
     );
     await expect(
       page.getByRole("heading", {
-        name: `#${String(pullRequest.number)} · Publish the certified Feature`,
+        name: "Did this Feature deliver what you approved?",
         exact: true,
       }),
     ).toBeVisible();
-    await expect(page.getByText("Approved Feature plan", { exact: true })).toBeVisible();
     await expect(
-      page.getByText(`Approved Feature plan v1 · ${featureId}`, { exact: true }),
+      page.getByRole("heading", {
+        name: "Preserve stable ordering while adding its consumer",
+        exact: true,
+      }),
     ).toBeVisible();
-    const readiness = page.getByRole("region", { name: "PR readiness", exact: true });
-    await expect(readiness.getByText("Revision State", { exact: true })).toBeVisible();
-    await expect(readiness.getByText("Available", { exact: true })).toBeVisible();
-    await expect(page.getByRole("region", { name: "Change Overview", exact: true })).toContainText(
-      "Exact head",
+    await expect(
+      page.getByText("Equal values retain their original order", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText(pullRequest.headCommitId, { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Start review", exact: true })).toBeDisabled();
+    await expect(page.getByText(/bounded review runner is not available yet/u)).toBeVisible();
+
+    const source = page.getByRole("region", { name: "Retained source inspector", exact: true });
+    const browse = source.getByRole("button", { name: "Browse head source", exact: true });
+    await browse.focus();
+    await browse.press("Enter");
+    const valueSource = source.getByRole("button", { name: "value.mjs", exact: true });
+    await valueSource.focus();
+    await valueSource.press("Enter");
+    await expect(source.getByText(/consumer = 2/u)).toBeVisible();
+
+    const checks = page.getByRole("region", {
+      name: "Final verification inspector",
+      exact: true,
+    });
+    await checks.getByRole("button", { name: "Inspect final checks", exact: true }).click();
+    await expect(checks.getByText("node --test order.test.mjs", { exact: true })).toBeVisible();
+    await checks.getByRole("button", { name: "Open result", exact: true }).first().click();
+    await expect(checks.getByText(/pass/u).first()).toBeVisible();
+
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+    ).toBe(true);
+    expect((await new AxeBuilder({ page }).include(".feature-tabs").analyze()).violations).toEqual(
+      [],
     );
+    await page.screenshot({
+      path: testInfo.outputPath("feature-conceptual-review-mobile.png"),
+      fullPage: true,
+    });
   });
 });

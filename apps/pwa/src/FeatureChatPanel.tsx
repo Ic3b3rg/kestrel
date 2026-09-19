@@ -22,6 +22,7 @@ import { DocumentInspector, failures, pendingTurn } from "./PlanningDetails.js";
 import { FeaturePlanPanel } from "./FeaturePlanPanel.js";
 import { GeneratedPlanDocuments } from "./FeaturePlanDocuments.js";
 import { FeatureBoardPanel } from "./FeatureBoardPanel.js";
+import { FeatureReviewPanel } from "./FeatureReviewPanel.js";
 import { PlanningSkillsPanel, SkillProvenance } from "./PlanningSkillsPanel.js";
 import { FeatureGitHubIssuesPanel } from "./FeatureGitHubIssuesPanel.js";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs.js";
@@ -167,7 +168,7 @@ export interface FeatureChatPanelProps {
   projectName: string;
   featureId: string;
   online: boolean;
-  view?: "chat" | "plan" | "board";
+  view?: "chat" | "plan" | "board" | "review";
   onPlanDirtyChange?: (dirty: boolean) => void;
   onNavigate: (route: Exclude<AppRoute, { kind: "not_found" }>) => void;
   onAuthenticationError: (error: unknown) => boolean;
@@ -325,7 +326,7 @@ export function FeatureChatPanel({
   };
   const editable = chat?.feature.state === "planning";
   const selectView = (value: string) => {
-    if (value !== "chat" && value !== "plan" && value !== "board") return;
+    if (value !== "chat" && value !== "plan" && value !== "board" && value !== "review") return;
     onNavigate({
       kind: "feature",
       projectId,
@@ -415,7 +416,7 @@ export function FeatureChatPanel({
       </header>
       <Tabs value={view} onValueChange={selectView} className="feature-tabs">
         <TabsList aria-label="Feature views" className="feature-tab-list">
-          {(["chat", "plan", "board"] as const).map((value) => {
+          {(["chat", "plan", "board", "review"] as const).map((value) => {
             const route = {
               kind: "feature" as const,
               projectId,
@@ -446,7 +447,13 @@ export function FeatureChatPanel({
                     })
                   }
                 >
-                  {value === "chat" ? "Chat" : value === "plan" ? "Plan" : "Board"}
+                  {value === "chat"
+                    ? "Chat"
+                    : value === "plan"
+                      ? "Plan"
+                      : value === "board"
+                        ? "Board"
+                        : "Review"}
                 </a>
               </TabsTrigger>
             );
@@ -669,15 +676,16 @@ export function FeatureChatPanel({
             online={online}
             onAuthenticationError={onAuthenticationError}
             onViewPlan={() => selectView("plan")}
-            onOpenRevision={(review) =>
-              onNavigate({
-                kind: "project",
-                projectId: review.projectId,
-                proposalId: review.changeProposalId,
-                revisionId: review.revision.id,
-              })
-            }
+            onOpenRevision={() => selectView("review")}
             onFeatureChanged={() => void refresh()}
+          />
+        </TabsContent>
+        <TabsContent value="review">
+          <FeatureReviewPanel
+            projectId={projectId}
+            featureId={featureId}
+            online={online}
+            onAuthenticationError={onAuthenticationError}
           />
         </TabsContent>
       </Tabs>

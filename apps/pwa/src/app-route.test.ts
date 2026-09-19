@@ -19,7 +19,7 @@ describe("authenticated app routing", () => {
     expect(readAppRoute(`/projects/${projectId}`, "?view=pull_requests")).toEqual(route);
     expect(appPath(route)).toBe(`/projects/${projectId}?view=pull_requests`);
   });
-  it.each(["plan", "board"] as const)("restores the %s view of a feature", (view) => {
+  it.each(["plan", "board", "review"] as const)("restores the %s view of a feature", (view) => {
     const featureId = "018f0f89-9192-755f-aa96-f72094c734df";
     const path = `/projects/${projectId}/features/${featureId}`;
     const route = { kind: "feature" as const, projectId, featureId, view };
