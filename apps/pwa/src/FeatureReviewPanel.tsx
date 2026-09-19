@@ -6,6 +6,8 @@ import type {
   FactoryConceptualReviewPreparation,
   FactoryConceptualReviewSourceCatalog,
   FactoryConceptualReviewSourceLines,
+  FactoryConceptualReviewStartCommand,
+  FactoryConceptualReviewWorkflowRead,
 } from "@kestrel/contracts";
 import { CheckCircle2, FileCode2, GitPullRequest, RefreshCw, ShieldAlert } from "lucide-react";
 
@@ -13,9 +15,14 @@ import {
   fetchFactoryConceptualReviewCheck,
   fetchFactoryConceptualReviewChecks,
   fetchFactoryConceptualReviewPreparation,
+  fetchCurrentFactoryConceptualReview,
   fetchFactoryConceptualReviewSourceCatalog,
   fetchFactoryConceptualReviewSourceLines,
+  fetchFactoryConceptualReviewWorkflow,
+  fetchFactoryConceptualReviewWorkflowSourceLines,
+  startFactoryConceptualReview,
 } from "./conceptual-review-api.js";
+import { ConceptualReviewPanel } from "./ConceptualReviewPanel.js";
 import { planningRequestError } from "./FeatureNavigation.js";
 import { Button } from "./components/ui/button.js";
 import { Input } from "./components/ui/input.js";
@@ -43,6 +50,10 @@ export interface FeatureReviewPanelProps {
   loadSourceLines?: typeof fetchFactoryConceptualReviewSourceLines;
   loadChecks?: typeof fetchFactoryConceptualReviewChecks;
   loadCheck?: typeof fetchFactoryConceptualReviewCheck;
+  loadCurrentReview?: typeof fetchCurrentFactoryConceptualReview;
+  loadReviewWorkflow?: typeof fetchFactoryConceptualReviewWorkflow;
+  loadReviewSourceLines?: typeof fetchFactoryConceptualReviewWorkflowSourceLines;
+  startReview?: typeof startFactoryConceptualReview;
 }
 
 function shortId(value: string): string {
@@ -133,9 +144,16 @@ function PreparationDetails({ preparation }: { preparation: FactoryConceptualRev
         <p className="text-sm text-muted-foreground">
           {configuration.resources.maximumAttempts} attempts ·{" "}
           {configuration.resources.timeoutSeconds} seconds ·{" "}
-          {configuration.resources.maximumSourceReads} source reads ·{" "}
+          {configuration.resources.maximumEvidenceItems} source evidence items ·{" "}
+          {configuration.resources.maximumWorkspaceFiles} workspace files ·{" "}
+          {configuration.resources.maximumWorkspaceBytes} workspace bytes ·{" "}
           {configuration.resources.maximumGraphNodes} graph nodes ·{" "}
-          {configuration.resources.maximumOutputBytes} output bytes
+          {configuration.resources.maximumOutputBytes} output bytes ·{" "}
+          {configuration.resources.containerPidsLimit} container processes ·{" "}
+          {configuration.resources.containerMemoryBytes} container memory bytes ·{" "}
+          {configuration.resources.containerNanoCpus / 1_000_000_000} container CPUs ·{" "}
+          {configuration.resources.containerTmpfsBytes} aggregate tmpfs bytes (home, temp, shared
+          memory; swap disabled)
         </p>
         {evidence === null ? (
           <p className="text-sm text-muted-foreground">
@@ -544,7 +562,7 @@ function CheckInspector({
   );
 }
 
-export function FeatureReviewPanel({
+function FeatureReviewPanelContent({
   projectId,
   featureId,
   online,
@@ -554,11 +572,21 @@ export function FeatureReviewPanel({
   loadSourceLines = fetchFactoryConceptualReviewSourceLines,
   loadChecks = fetchFactoryConceptualReviewChecks,
   loadCheck = fetchFactoryConceptualReviewCheck,
+  loadCurrentReview = fetchCurrentFactoryConceptualReview,
+  loadReviewWorkflow = fetchFactoryConceptualReviewWorkflow,
+  loadReviewSourceLines = fetchFactoryConceptualReviewWorkflowSourceLines,
+  startReview = startFactoryConceptualReview,
 }: FeatureReviewPanelProps) {
   const [preparation, setPreparation] = useState<FactoryConceptualReviewPreparation | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [review, setReview] = useState<FactoryConceptualReviewWorkflowRead | null>(null);
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
   const request = useRef<AbortController | null>(null);
+  const reviewRequest = useRef<AbortController | null>(null);
+  const reviewGeneration = useRef(0);
+  const pendingReviewStart = useRef<FactoryConceptualReviewStartCommand | null>(null);
   const read = useCallback(async () => {
     if (!online) return;
     const controller = new AbortController();
@@ -576,10 +604,121 @@ export function FeatureReviewPanel({
       if (!controller.signal.aborted) setLoading(false);
     }
   }, [online, loadPreparation, projectId, featureId, onAuthenticationError]);
+  const readReview = useCallback(async () => {
+    if (!online) return;
+    const controller = new AbortController();
+    const generation = reviewGeneration.current + 1;
+    reviewGeneration.current = generation;
+    reviewRequest.current?.abort();
+    reviewRequest.current = controller;
+    try {
+      const current = await loadCurrentReview(projectId, featureId, controller.signal);
+      if (!controller.signal.aborted && reviewGeneration.current === generation) {
+        if (current.review !== null) pendingReviewStart.current = null;
+        setReview(current.review);
+        setReviewError(null);
+      }
+    } catch (failure) {
+      if (
+        !controller.signal.aborted &&
+        reviewGeneration.current === generation &&
+        !onAuthenticationError(failure)
+      )
+        setReviewError(
+          planningRequestError(failure, "The current Conceptual Review is unavailable."),
+        );
+    }
+  }, [featureId, loadCurrentReview, onAuthenticationError, online, projectId]);
+  useEffect(() => {
+    reviewGeneration.current += 1;
+    reviewRequest.current?.abort();
+    pendingReviewStart.current = null;
+    setReviewBusy(false);
+  }, [featureId, projectId]);
   useEffect(() => {
     void read();
-    return () => request.current?.abort();
-  }, [read]);
+    void readReview();
+    return () => {
+      request.current?.abort();
+      reviewRequest.current?.abort();
+    };
+  }, [read, readReview]);
+  const activeReviewId =
+    review !== null &&
+    (["queued", "running"].includes(review.workflow.state) ||
+      (review.workflow.state === "failed" && review.workflow.failure === "stop_unconfirmed"))
+      ? review.workflow.id
+      : null;
+  useEffect(() => {
+    if (!online || activeReviewId === null) return;
+    const controller = new AbortController();
+    let timer: number | undefined;
+    const poll = async () => {
+      try {
+        const result = await loadReviewWorkflow(
+          projectId,
+          featureId,
+          activeReviewId,
+          controller.signal,
+        );
+        if (controller.signal.aborted) return;
+        setReview(result);
+        setReviewError(null);
+        if (
+          ["queued", "running"].includes(result.workflow.state) ||
+          (result.workflow.state === "failed" && result.workflow.failure === "stop_unconfirmed")
+        )
+          timer = window.setTimeout(() => void poll(), 1_000);
+      } catch (failure) {
+        if (controller.signal.aborted) return;
+        if (!onAuthenticationError(failure))
+          setReviewError(
+            planningRequestError(failure, "The running review status is unavailable."),
+          );
+        timer = window.setTimeout(() => void poll(), 1_000);
+      }
+    };
+    timer = window.setTimeout(() => void poll(), 1_000);
+    return () => {
+      controller.abort();
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [activeReviewId, featureId, loadReviewWorkflow, onAuthenticationError, online, projectId]);
+
+  const start = async () => {
+    if (
+      !online ||
+      reviewBusy ||
+      preparation?.preparationDigest === null ||
+      preparation?.preparationDigest === undefined
+    )
+      return;
+    setReviewBusy(true);
+    setReviewError(null);
+    const command =
+      pendingReviewStart.current?.preparationDigest === preparation.preparationDigest
+        ? pendingReviewStart.current
+        : {
+            requestId: crypto.randomUUID(),
+            preparationDigest: preparation.preparationDigest,
+          };
+    pendingReviewStart.current = command;
+    reviewRequest.current?.abort();
+    const generation = reviewGeneration.current + 1;
+    reviewGeneration.current = generation;
+    try {
+      const accepted = await startReview(projectId, featureId, command);
+      if (reviewGeneration.current === generation) {
+        setReview(accepted);
+        pendingReviewStart.current = null;
+      }
+    } catch (failure) {
+      if (reviewGeneration.current === generation && !onAuthenticationError(failure))
+        setReviewError(planningRequestError(failure, "The Conceptual Review was not started."));
+    } finally {
+      if (reviewGeneration.current === generation) setReviewBusy(false);
+    }
+  };
 
   if (preparation === null)
     return (
@@ -605,6 +744,12 @@ export function FeatureReviewPanel({
 
   const basis = preparation.basis;
   const active = online && preparation.publication !== null && preparation.evidence !== null;
+  const teardownPending =
+    review?.workflow.state === "failed" && review.workflow.failure === "stop_unconfirmed";
+  const reviewInputsChanged =
+    review !== null &&
+    (preparation.preparationDigest === null ||
+      review.workflow.inputDigest !== preparation.preparationDigest);
   const inspectionIdentity = [
     preparation.preparationDigest ?? "unprepared",
     preparation.publication?.revision.id ?? "no-revision",
@@ -629,10 +774,25 @@ export function FeatureReviewPanel({
           <Button
             type="button"
             className="w-full"
-            disabled={!online || !preparation.readiness.startAllowed}
+            disabled={
+              !online ||
+              reviewBusy ||
+              !preparation.readiness.startAllowed ||
+              teardownPending ||
+              review?.workflow.state === "queued" ||
+              review?.workflow.state === "running"
+            }
+            onClick={() => void start()}
           >
-            Start review
+            {reviewBusy ? "Starting review…" : "Start review"}
           </Button>
+          {teardownPending ? (
+            <p className="flex gap-2 text-xs text-amber-300">
+              <ShieldAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" /> Review
+              environment cleanup is still pending. Kestrel will enable a new review after it
+              confirms teardown.
+            </p>
+          ) : null}
           {preparation.readiness.blockers.map((blocker) => (
             <p key={blocker} className="flex gap-2 text-xs text-muted-foreground">
               <ShieldAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />{" "}
@@ -645,6 +805,38 @@ export function FeatureReviewPanel({
         <p role="alert" className="rounded-lg border border-border p-3 text-sm">
           {error}
         </p>
+      )}
+      {reviewError === null ? null : (
+        <p role="alert" className="rounded-lg border border-border p-3 text-sm">
+          {reviewError}
+        </p>
+      )}
+      {review === null ? null : (
+        <div className="grid min-w-0 gap-3">
+          {reviewInputsChanged ? (
+            <section
+              className="rounded-xl border border-amber-400/40 bg-amber-400/10 p-4"
+              aria-label="Operator attention"
+            >
+              <p className="text-xs font-medium uppercase tracking-[0.16em] text-amber-300">
+                Operator attention
+              </p>
+              <h3 className="mt-1 font-semibold">Review inputs changed</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                This is an earlier immutable review. Resolve any current blockers, then start a new
+                review to evaluate the current approved plan, revision, evidence, model, runtime,
+                and limits.
+              </p>
+            </section>
+          ) : null}
+          <ConceptualReviewPanel
+            review={review}
+            projectId={projectId}
+            featureId={featureId}
+            loadSourceLines={loadReviewSourceLines}
+            onAuthenticationError={onAuthenticationError}
+          />
+        </div>
       )}
       {basis === null ? (
         <section className="rounded-xl border border-border bg-card p-4">
@@ -706,10 +898,14 @@ export function FeatureReviewPanel({
         size="sm"
         className="w-fit"
         disabled={!online || loading}
-        onClick={() => void read()}
+        onClick={() => void Promise.all([read(), readReview()])}
       >
         <RefreshCw className="size-4" aria-hidden="true" /> Refresh exact inputs
       </Button>
     </div>
   );
+}
+
+export function FeatureReviewPanel(props: FeatureReviewPanelProps) {
+  return <FeatureReviewPanelContent key={`${props.projectId}:${props.featureId}`} {...props} />;
 }

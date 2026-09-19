@@ -102,6 +102,7 @@ const RateLimitWindowSchema = z.strictObject({
   resetsAt: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).nullable().optional(),
 });
 const RateLimitsResultSchema = z.strictObject({
+  ordinaryUsageAllowed: z.boolean().optional(),
   accountId: z.unknown().optional(),
   rateLimitResetCredits: z.unknown().optional(),
   rateLimitUpsell: z.unknown().optional(),
@@ -110,6 +111,7 @@ const RateLimitsResultSchema = z.strictObject({
     individualLimit: z.unknown().optional(),
     limitId: z.unknown().optional(),
     limitName: z.unknown().optional(),
+    normalModelSlug: z.string().min(1).max(128).nullable().optional(),
     planType: CodexChatGptPlanSchema.nullable().optional(),
     primary: RateLimitWindowSchema.nullable().optional(),
     secondary: RateLimitWindowSchema.nullable().optional(),
@@ -196,6 +198,7 @@ function delay(milliseconds: number): Promise<void> {
 class AppServerSession {
   readonly #child: ChildProcessWithoutNullStreams;
   readonly #closed: Promise<void>;
+  readonly #exited: Promise<void>;
   readonly #lines;
   readonly #timeout: NodeJS.Timeout;
   readonly #signal: AbortSignal | undefined;
@@ -220,6 +223,7 @@ class AppServerSession {
       stdio: ["pipe", "pipe", "pipe"],
     });
     this.#closed = new Promise((resolve) => this.#child.once("close", () => resolve()));
+    this.#exited = new Promise((resolve) => this.#child.once("exit", () => resolve()));
     this.#lines = createInterface({ input: this.#child.stdout, crlfDelay: Infinity });
     this.#timeout = setTimeout(() => this.#fail(new CodexAppServerError("timeout")), timeoutMs);
     this.#timeout.unref();
@@ -339,16 +343,35 @@ class AppServerSession {
     ]);
   }
 
+  async #waitForCloseOrExit(): Promise<"closed" | "exited" | "timeout"> {
+    return Promise.race([
+      this.#closed.then(() => "closed" as const),
+      this.#exited.then(() => "exited" as const),
+      delay(PROCESS_STOP_TIMEOUT_MS).then(() => "timeout" as const),
+    ]);
+  }
+
+  async #closeExitedProcessPipes(): Promise<void> {
+    this.#child.stdin.destroy();
+    this.#child.stdout.destroy();
+    this.#child.stderr.destroy();
+    await this.#waitForClose();
+  }
+
   async close(): Promise<void> {
     this.#closing = true;
     clearTimeout(this.#timeout);
     this.#signal?.removeEventListener("abort", this.#onAbort);
     this.#child.stdin.end();
-    const closedNormally = await this.#waitForClose();
-    if (!closedNormally) {
+    let settlement = await this.#waitForCloseOrExit();
+    if (settlement === "exited") {
+      await this.#closeExitedProcessPipes();
+    } else if (settlement === "timeout") {
       killProcessGroup(this.#child, "SIGTERM");
-      const stopped = await this.#waitForClose();
-      if (!stopped) {
+      settlement = await this.#waitForCloseOrExit();
+      if (settlement === "exited") {
+        await this.#closeExitedProcessPipes();
+      } else if (settlement === "timeout") {
         killProcessGroup(this.#child, "SIGKILL");
         if (!(await this.#waitForClose())) {
           this.#child.unref();

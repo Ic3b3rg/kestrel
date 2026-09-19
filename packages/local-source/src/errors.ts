@@ -15,6 +15,7 @@ export type LocalSourceErrorCode =
   | "reference_not_available"
   | "repository_invalid"
   | "repository_not_available"
+  | "review_workspace_limit_exceeded"
   | "revision_limit_exceeded"
   | "source_containment_violation";
 

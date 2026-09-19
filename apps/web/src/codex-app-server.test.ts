@@ -211,8 +211,10 @@ lines.on("line", (line) => {
     }}));
   } else if (message.method === "account/rateLimits/read") {
     console.log(JSON.stringify({ id: message.id, result: {
+      ordinaryUsageAllowed: true,
       rateLimits: {
         planType: "plus",
+        normalModelSlug: null,
         primary: { usedPercent: 25, windowDurationMins: 300, resetsAt: 1788386400 },
         secondary: null,
         rateLimitReachedType: null,

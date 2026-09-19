@@ -1,11 +1,19 @@
+import { createHash } from "node:crypto";
+import { readFile, realpath } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 
 import { buildApp } from "./app.js";
+import { createCodexAppServerAgentRuntime } from "./codex-app-server.js";
 import { createCodexExecutionContainerRecovery } from "./codex-execution-runtime.js";
+import { CERTIFIED_CODEX_REVIEW_VERSION } from "./codex-review-runtime.js";
 import {
   createFactoryExecutionProcessor,
   FACTORY_EXECUTION_WORK_OPTIONS,
 } from "./factory-execution-processor.js";
+import {
+  createFactoryConceptualReviewProcessor,
+  FACTORY_CONCEPTUAL_REVIEW_WORK_OPTIONS,
+} from "./conceptual-review-processor.js";
 import {
   createLocalRepositoryService,
   inspectLocalSourceAttachments,
@@ -41,6 +49,7 @@ import {
   FACTORY_PUBLICATION_QUEUE,
   FACTORY_FEATURE_PUBLICATION_QUEUE,
   FACTORY_EXECUTION_QUEUE,
+  FACTORY_CONCEPTUAL_REVIEW_QUEUE,
   readReferencedArtifactLocators,
   readDatabaseConfig,
   readEventRetentionLimit,
@@ -51,9 +60,14 @@ import {
   reconcileFactoryPublications,
   reconcileFactoryFeaturePublications,
   reconcileFactoryExecutions,
+  reconcileFactoryConceptualReviewWorkflows,
   withArtifactLifecycleLock,
 } from "@kestrel/database";
-import { readLocalSourceConfig, reconcileArtifactRoot } from "@kestrel/local-source";
+import {
+  disposeConceptualReviewAttemptResources,
+  readLocalSourceConfig,
+  reconcileArtifactRoot,
+} from "@kestrel/local-source";
 import { createOpenAiTransport, FileCredentialStore } from "@kestrel/model-provider";
 
 function readPort(value: string | undefined): number {
@@ -92,6 +106,43 @@ const localRepositoryService = createLocalRepositoryService(
   pool,
   process.env.LOCAL_REPOSITORY_ROOTS_FILE === undefined ? undefined : () => readLocalSourceConfig(),
 );
+const factoryExecutionImage = process.env.KESTREL_FACTORY_EXECUTION_IMAGE;
+const factoryDockerExecutable = process.env.KESTREL_FACTORY_DOCKER_EXECUTABLE;
+const configuredCodexExecutable = process.env.KESTREL_CODEX_EXECUTABLE;
+const codexExecutable =
+  configuredCodexExecutable !== undefined && isAbsolute(configuredCodexExecutable)
+    ? await realpath(configuredCodexExecutable).catch(() => null)
+    : null;
+const codexAgentRuntime = createCodexAppServerAgentRuntime({
+  ...(codexExecutable === null ? {} : { executable: codexExecutable }),
+});
+const codexConnection =
+  codexExecutable === null ? null : await codexAgentRuntime.readConnection().catch(() => null);
+const codexExecutableDigest =
+  codexExecutable === null
+    ? null
+    : await readFile(codexExecutable)
+        .then((bytes) => createHash("sha256").update(bytes).digest("hex"))
+        .catch(() => null);
+const runtimeUid = process.getuid?.() ?? 1000;
+const runtimeGid = process.getgid?.() ?? 1000;
+const factoryConceptualReviewRuntimeProfile =
+  factoryExecutionImage?.trim() &&
+  /^sha256:[a-f0-9]{64}$/u.test(factoryExecutionImage) &&
+  runtimeUid > 0 &&
+  runtimeGid > 0 &&
+  codexExecutable !== null &&
+  codexExecutableDigest !== null &&
+  codexConnection?.cli?.supported === true &&
+  codexConnection.cli.version === CERTIFIED_CODEX_REVIEW_VERSION
+    ? {
+        containerImage: factoryExecutionImage,
+        containerUser: `${String(runtimeUid)}:${String(runtimeGid)}`,
+        codexExecutable,
+        codexExecutableDigest,
+        codexVersion: codexConnection.cli.version,
+      }
+    : null;
 await withArtifactLifecycleLock(pool, async (lockedPool) => {
   await reconcileAcquiringRevisions(lockedPool);
   const referenced = await readReferencedArtifactLocators(lockedPool);
@@ -103,6 +154,8 @@ await withArtifactLifecycleLock(pool, async (lockedPool) => {
 });
 const app = await buildApp({
   boss,
+  factoryConceptualReviewRuntimeProfile,
+  codexAgentRuntime,
   eventPool,
   eventRetentionLimit: readEventRetentionLimit(),
   directApiProfileService: createDirectApiProfileService(
@@ -144,25 +197,36 @@ const featurePublicationProcessor = createFactoryFeaturePublicationProcessor({
   }),
 });
 const recoverExecutionContainer = createCodexExecutionContainerRecovery(
-  process.env.KESTREL_FACTORY_DOCKER_EXECUTABLE === undefined
-    ? {}
-    : { dockerExecutable: process.env.KESTREL_FACTORY_DOCKER_EXECUTABLE },
+  factoryDockerExecutable === undefined ? {} : { dockerExecutable: factoryDockerExecutable },
 );
 const executionProcessor = createFactoryExecutionProcessor({
   pool,
   readSourceConfig: () => readLocalSourceConfig(),
-  ...(process.env.KESTREL_FACTORY_EXECUTION_IMAGE === undefined
+  ...(factoryExecutionImage === undefined ? {} : { containerImage: factoryExecutionImage }),
+  ...(factoryDockerExecutable === undefined ? {} : { dockerExecutable: factoryDockerExecutable }),
+});
+const conceptualReviewProcessor = createFactoryConceptualReviewProcessor({
+  pool,
+  boss,
+  readSourceConfig: () => readLocalSourceConfig(),
+  ...(factoryExecutionImage === undefined ? {} : { containerImage: factoryExecutionImage }),
+  ...(factoryDockerExecutable === undefined ? {} : { dockerExecutable: factoryDockerExecutable }),
+  ...(factoryConceptualReviewRuntimeProfile === null
     ? {}
-    : { containerImage: process.env.KESTREL_FACTORY_EXECUTION_IMAGE }),
-  ...(process.env.KESTREL_FACTORY_DOCKER_EXECUTABLE === undefined
-    ? {}
-    : { dockerExecutable: process.env.KESTREL_FACTORY_DOCKER_EXECUTABLE }),
+    : {
+        codexExecutable: factoryConceptualReviewRuntimeProfile.codexExecutable,
+        codexExecutableDigest: factoryConceptualReviewRuntimeProfile.codexExecutableDigest,
+        codexVersion: factoryConceptualReviewRuntimeProfile.codexVersion,
+        containerUser: factoryConceptualReviewRuntimeProfile.containerUser,
+      }),
 });
 let publicationReconciliation: NodeJS.Timeout | undefined;
 let featurePublicationReconciliation: NodeJS.Timeout | undefined;
 let reconcilingFeaturePublication: Promise<void> | null = null;
 let executionReconciliation: NodeJS.Timeout | undefined;
 let reconcilingExecution: Promise<void> | null = null;
+let conceptualReviewReconciliation: NodeJS.Timeout | undefined;
+let reconcilingConceptualReview: Promise<void> | null = null;
 boss.on("error", (error) => {
   app.log.error({ err: error, event: "pgboss.error" });
 });
@@ -171,9 +235,16 @@ let shuttingDown = false;
 async function stopExecutionAndHttp(): Promise<void> {
   // Interrupt tool execution before HTTP draining can wait on an open client.
   const stoppingExecution = executionProcessor.stop();
+  const stoppingConceptualReview = conceptualReviewProcessor.stop();
   const stoppingPublication = featurePublicationProcessor.stop();
-  await Promise.all([stoppingExecution, stoppingPublication, app.close()]);
+  await Promise.all([
+    stoppingExecution,
+    stoppingConceptualReview,
+    stoppingPublication,
+    app.close(),
+  ]);
   await reconcilingExecution;
+  await reconcilingConceptualReview;
   await reconcilingFeaturePublication;
 }
 
@@ -185,6 +256,7 @@ async function shutdown(signal: string): Promise<void> {
   clearInterval(publicationReconciliation);
   clearInterval(featurePublicationReconciliation);
   clearInterval(executionReconciliation);
+  clearInterval(conceptualReviewReconciliation);
   app.log.info({ event: "web.stopping", signal });
   await stopExecutionAndHttp();
   await boss.stop();
@@ -206,6 +278,12 @@ try {
   await reconcilePlanningTurns(pool);
   await reconcileFactoryPublications(pool, boss);
   await reconcileFactoryExecutions(pool, boss, recoverExecutionContainer);
+  await reconcileFactoryConceptualReviewWorkflows(
+    pool,
+    boss,
+    recoverExecutionContainer,
+    (attemptId) => disposeConceptualReviewAttemptResources(localSourceConfig, attemptId),
+  );
   await reconcileFactoryFeaturePublications(pool, boss);
   featurePublicationReconciliation = setInterval(() => {
     if (reconcilingFeaturePublication !== null || shuttingDown) return;
@@ -229,6 +307,22 @@ try {
       });
   }, 2_000);
   executionReconciliation.unref();
+  conceptualReviewReconciliation = setInterval(() => {
+    if (reconcilingConceptualReview !== null || shuttingDown) return;
+    reconcilingConceptualReview = reconcileFactoryConceptualReviewWorkflows(
+      pool,
+      boss,
+      recoverExecutionContainer,
+      (attemptId) => disposeConceptualReviewAttemptResources(localSourceConfig, attemptId),
+    )
+      .catch((error: unknown) =>
+        app.log.error({ err: error, event: "factory.conceptual_review_reconciliation_failed" }),
+      )
+      .finally(() => {
+        reconcilingConceptualReview = null;
+      });
+  }, 2_000);
+  conceptualReviewReconciliation.unref();
   let reconcilingPublication = false;
   publicationReconciliation = setInterval(() => {
     if (reconcilingPublication || shuttingDown) return;
@@ -271,6 +365,14 @@ try {
     },
   );
   await boss.work<unknown>(
+    FACTORY_CONCEPTUAL_REVIEW_QUEUE,
+    FACTORY_CONCEPTUAL_REVIEW_WORK_OPTIONS,
+    async (jobs) => {
+      const job = jobs[0];
+      if (job !== undefined) await conceptualReviewProcessor.process(job.data, job.signal);
+    },
+  );
+  await boss.work<unknown>(
     CHANGE_OVERVIEW_RENDER_QUEUE,
     CHANGE_OVERVIEW_RENDER_WORK_OPTIONS,
     async (jobs) => {
@@ -291,6 +393,7 @@ try {
   clearInterval(publicationReconciliation);
   clearInterval(featurePublicationReconciliation);
   clearInterval(executionReconciliation);
+  clearInterval(conceptualReviewReconciliation);
   app.log.error({ err: error, event: "web.start_failed" });
   await stopExecutionAndHttp();
   await boss.stop({ graceful: false });

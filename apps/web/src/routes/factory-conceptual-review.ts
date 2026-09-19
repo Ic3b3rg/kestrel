@@ -5,24 +5,39 @@ import {
   ApiErrorSchema,
   FactoryConceptualReviewCheckCatalogSchema,
   FactoryConceptualReviewCheckSchema,
+  FactoryConceptualReviewCurrentSchema,
   FactoryConceptualReviewPreparationSchema,
+  FactoryConceptualReviewStartCommandSchema,
   FactoryConceptualReviewSourceCatalogSchema,
   FactoryConceptualReviewSourceLinesSchema,
+  FactoryConceptualReviewWorkflowReadSchema,
   KestrelIdSchema,
   type ApiError,
   type FactoryConceptualReviewCheck,
   type FactoryConceptualReviewCheckCatalog,
+  type FactoryConceptualReviewCurrent,
   type FactoryConceptualReviewPreparation,
+  type FactoryConceptualReviewStartCommand,
   type FactoryConceptualReviewSourceCatalog,
   type FactoryConceptualReviewSourceLines,
+  type FactoryConceptualReviewWorkflowRead,
+  type FactoryFeaturePullRequest,
 } from "@kestrel/contracts";
 import {
   FactoryConceptualReviewPersistenceError,
+  FactoryConceptualReviewWorkflowPersistenceError,
+  readCurrentFactoryConceptualReviewWorkflow,
   readFactoryConceptualReviewCheck,
   readFactoryConceptualReviewChecks,
   readFactoryConceptualReviewPreparation,
   readFactoryConceptualReviewSourceBinding,
+  readFactoryConceptualReviewWorkflow,
+  readFactoryConceptualReviewWorkflowPullRequest,
+  readFactoryConceptualReviewWorkflowSourceBinding,
+  observePublishedFactoryConceptualReviewHead,
+  startFactoryConceptualReviewWorkflow,
   type DatabasePool,
+  type DiagnosticJobSender,
 } from "@kestrel/database";
 import {
   ConceptualReviewSourceError,
@@ -32,9 +47,23 @@ import {
   type LocalSourceConfig,
 } from "@kestrel/local-source";
 
+import { AUTHENTICATED_MUTATION_ROUTE_CONFIG } from "../authentication.js";
+import {
+  createFactoryFeatureGitHubAdapter,
+  type FactoryFeatureGitHubAdapter,
+} from "../factory-feature-github.js";
+import { FactoryGitHubError } from "../factory-github.js";
+
 export interface FactoryConceptualReviewContext {
   projectId: string;
   featureId: string;
+}
+
+export interface FactoryConceptualReviewSourceLineInput {
+  side: "base" | "head";
+  path: string;
+  startLine: number;
+  endLine: number;
 }
 
 export interface FactoryConceptualReviewService {
@@ -45,12 +74,7 @@ export interface FactoryConceptualReviewService {
   ): Promise<FactoryConceptualReviewSourceCatalog>;
   sourceLines(
     context: FactoryConceptualReviewContext,
-    input: {
-      side: "base" | "head";
-      path: string;
-      startLine: number;
-      endLine: number;
-    },
+    input: FactoryConceptualReviewSourceLineInput,
   ): Promise<FactoryConceptualReviewSourceLines>;
   checks(
     context: FactoryConceptualReviewContext,
@@ -60,6 +84,49 @@ export interface FactoryConceptualReviewService {
     context: FactoryConceptualReviewContext,
     evidenceId: string,
   ): Promise<FactoryConceptualReviewCheck>;
+  start(
+    context: FactoryConceptualReviewContext,
+    command: FactoryConceptualReviewStartCommand,
+    actor: { actorId: string; correlationId: string },
+  ): Promise<FactoryConceptualReviewWorkflowRead>;
+  current(context: FactoryConceptualReviewContext): Promise<FactoryConceptualReviewCurrent>;
+  workflow(
+    context: FactoryConceptualReviewContext,
+    workflowId: string,
+  ): Promise<FactoryConceptualReviewWorkflowRead | null>;
+  workflowSourceLines(
+    context: FactoryConceptualReviewContext,
+    workflowId: string,
+    input: FactoryConceptualReviewSourceLineInput,
+  ): Promise<FactoryConceptualReviewSourceLines>;
+}
+
+export async function refreshFactoryConceptualReviewCurrency(
+  review: FactoryConceptualReviewWorkflowRead | null,
+  dependencies: {
+    readPullRequest(): Promise<FactoryFeaturePullRequest>;
+    observePullRequest: FactoryFeatureGitHubAdapter["observePullRequest"];
+    recordHead(headCommitId: string): Promise<void>;
+  },
+): Promise<FactoryConceptualReviewWorkflowRead | null> {
+  if (review === null || review.workflow.state !== "published" || review.artifact === null)
+    return review;
+  try {
+    const pullRequest = await dependencies.readPullRequest();
+    const observation = await dependencies.observePullRequest(
+      { repository: pullRequest.repository, account: pullRequest.author },
+      pullRequest,
+    );
+    await dependencies.recordHead(observation.headCommitId);
+    return {
+      ...review,
+      currency:
+        review.artifact.headCommitId === observation.headCommitId ? "up_to_date" : "outdated",
+    };
+  } catch (error) {
+    if (error instanceof FactoryGitHubError) return { ...review, currency: "unknown" };
+    throw error;
+  }
 }
 
 export function blockPreparationForRetainedRevisionFailure(
@@ -96,35 +163,60 @@ export function blockPreparationForRetainedRevisionFailure(
 export function createDatabaseFactoryConceptualReviewService(
   pool: DatabasePool,
   readSourceConfig: () => Promise<LocalSourceConfig>,
+  options: {
+    boss?: DiagnosticJobSender;
+    runtimeProfile?: {
+      containerImage: string;
+      containerUser: string;
+      codexExecutable: string;
+      codexExecutableDigest: string;
+      codexVersion: string;
+    } | null;
+    github?: Pick<FactoryFeatureGitHubAdapter, "observePullRequest">;
+  } = {},
 ): FactoryConceptualReviewService {
-  const validateRetainedHead = async ({ projectId, featureId }: FactoryConceptualReviewContext) => {
+  const github = options.github ?? createFactoryFeatureGitHubAdapter();
+  const refreshCurrency = (review: FactoryConceptualReviewWorkflowRead | null) =>
+    refreshFactoryConceptualReviewCurrency(review, {
+      readPullRequest: () => {
+        if (review === null) throw new FactoryConceptualReviewWorkflowPersistenceError("not_found");
+        return readFactoryConceptualReviewWorkflowPullRequest(pool, review.workflow.id);
+      },
+      observePullRequest: github.observePullRequest,
+      recordHead: (headCommitId) => {
+        if (review === null) throw new FactoryConceptualReviewWorkflowPersistenceError("not_found");
+        return observePublishedFactoryConceptualReviewHead(pool, review.workflow.id, headCommitId);
+      },
+    });
+  const validateRetainedHead = async (
+    database: DatabasePool,
+    { projectId, featureId }: FactoryConceptualReviewContext,
+  ) => {
     const [config, binding] = await Promise.all([
       readSourceConfig(),
-      readFactoryConceptualReviewSourceBinding(pool, projectId, featureId, "head"),
+      readFactoryConceptualReviewSourceBinding(database, projectId, featureId, "head"),
     ]);
     await readConceptualReviewSourceCatalog(config, { ...binding, offset: 0, limit: 1 });
   };
+  const prepare = async (database: DatabasePool, context: FactoryConceptualReviewContext) => {
+    const preparation = await readFactoryConceptualReviewPreparation(
+      database,
+      context.projectId,
+      context.featureId,
+      { profile: options.runtimeProfile ?? null },
+    );
+    if (preparation.publication === null || preparation.evidence === null) return preparation;
+    try {
+      await validateRetainedHead(database, context);
+      return preparation;
+    } catch (error) {
+      const blocked = blockPreparationForRetainedRevisionFailure(preparation, error);
+      if (blocked !== null) return blocked;
+      throw error;
+    }
+  };
   return {
-    async prepare(context) {
-      const preparation = await readFactoryConceptualReviewPreparation(
-        pool,
-        context.projectId,
-        context.featureId,
-        {
-          // Slice #237 deliberately exposes preparation before the bounded Review runtime exists.
-          runtimeAvailable: false,
-        },
-      );
-      if (preparation.publication === null || preparation.evidence === null) return preparation;
-      try {
-        await validateRetainedHead(context);
-        return preparation;
-      } catch (error) {
-        const blocked = blockPreparationForRetainedRevisionFailure(preparation, error);
-        if (blocked !== null) return blocked;
-        throw error;
-      }
-    },
+    prepare: (context) => prepare(pool, context),
     async sourceCatalog({ projectId, featureId }, input) {
       const [config, binding] = await Promise.all([
         readSourceConfig(),
@@ -145,7 +237,7 @@ export function createDatabaseFactoryConceptualReviewService(
       );
     },
     async checks(context, { offset, limit }) {
-      await validateRetainedHead(context);
+      await validateRetainedHead(pool, context);
       return readFactoryConceptualReviewChecks(
         pool,
         context.projectId,
@@ -155,7 +247,7 @@ export function createDatabaseFactoryConceptualReviewService(
       );
     },
     async check(context, evidenceId) {
-      await validateRetainedHead(context);
+      await validateRetainedHead(pool, context);
       return readFactoryConceptualReviewCheck(
         pool,
         context.projectId,
@@ -163,11 +255,56 @@ export function createDatabaseFactoryConceptualReviewService(
         evidenceId,
       );
     },
+    async start(context, command, actor) {
+      if (options.boss === undefined)
+        throw new FactoryConceptualReviewWorkflowPersistenceError("not_ready");
+      return startFactoryConceptualReviewWorkflow(
+        pool,
+        options.boss,
+        { ...context, ...actor, command },
+        (database) => prepare(database, context),
+      );
+    },
+    async current(context) {
+      const review = await readCurrentFactoryConceptualReviewWorkflow(
+        pool,
+        context.projectId,
+        context.featureId,
+      );
+      return FactoryConceptualReviewCurrentSchema.parse({
+        schemaVersion: 1,
+        review: await refreshCurrency(review),
+      });
+    },
+    async workflow(context, workflowId) {
+      const review = await readFactoryConceptualReviewWorkflow(
+        pool,
+        context.projectId,
+        context.featureId,
+        workflowId,
+      );
+      return refreshCurrency(review);
+    },
+    async workflowSourceLines(context, workflowId, input) {
+      const workflow = await readFactoryConceptualReviewWorkflow(
+        pool,
+        context.projectId,
+        context.featureId,
+        workflowId,
+      );
+      if (workflow === null) throw new FactoryConceptualReviewWorkflowPersistenceError("not_found");
+      const [config, binding] = await Promise.all([
+        readSourceConfig(),
+        readFactoryConceptualReviewWorkflowSourceBinding(pool, workflowId),
+      ]);
+      return readConceptualReviewSourceLines(config, { ...binding, ...input });
+    },
   };
 }
 
 const params = z.strictObject({ projectId: KestrelIdSchema, featureId: KestrelIdSchema });
 const checkParams = params.extend({ evidenceId: KestrelIdSchema });
+const workflowParams = params.extend({ workflowId: KestrelIdSchema });
 const side = z.enum(["base", "head"]);
 const sourceCatalogQuery = z.strictObject({
   side,
@@ -231,6 +368,28 @@ function failure(request: FastifyRequest, error: unknown) {
       body: apiError(request, "INVALID_REQUEST", "The Review evidence request is invalid"),
     };
   }
+  if (error instanceof FactoryConceptualReviewWorkflowPersistenceError) {
+    if (error.code === "not_found")
+      return {
+        status: 404 as const,
+        body: apiError(request, "NOT_FOUND", "The Conceptual Review is unavailable"),
+      };
+    if (error.code === "not_ready")
+      return {
+        status: 409 as const,
+        body: apiError(request, "REVIEW_NOT_READY", "The exact Review inputs are not ready"),
+      };
+    if (error.code === "preparation_conflict")
+      return {
+        status: 409 as const,
+        body: apiError(request, "REVIEW_PREPARATION_CONFLICT", "The Review inputs changed"),
+      };
+    if (error.code === "active_review")
+      return {
+        status: 409 as const,
+        body: apiError(request, "REQUEST_REJECTED", "A Conceptual Review is already active"),
+      };
+  }
   if (error instanceof ConceptualReviewSourceError) {
     if (error.code === "revision_mismatch")
       return {
@@ -274,6 +433,101 @@ export function registerFactoryConceptualReviewRoutes(
   service: FactoryConceptualReviewService,
 ): void {
   const root = "/api/v1/projects/:projectId/features/:featureId/review";
+  app.post(
+    `${root}/workflows`,
+    {
+      config: AUTHENTICATED_MUTATION_ROUTE_CONFIG,
+      bodyLimit: 512,
+      schema: {
+        params: json(params),
+        body: json(FactoryConceptualReviewStartCommandSchema),
+        response: { ...errors, 202: json(FactoryConceptualReviewWorkflowReadSchema) },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const context = params.parse(request.params);
+        const actorId = request.operatorSession?.operator.id;
+        if (actorId === undefined) throw new Error("Authenticated Review start has no Operator");
+        const result = await service.start(
+          context,
+          FactoryConceptualReviewStartCommandSchema.parse(request.body),
+          { actorId, correlationId: request.id },
+        );
+        return await reply.code(202).send(FactoryConceptualReviewWorkflowReadSchema.parse(result));
+      } catch (error) {
+        const mapped = failure(request, error);
+        return reply.code(mapped.status).send(mapped.body);
+      }
+    },
+  );
+  app.get(
+    `${root}/workflows/current`,
+    {
+      schema: {
+        params: json(params),
+        response: { ...errors, 200: json(FactoryConceptualReviewCurrentSchema) },
+      },
+    },
+    async (request, reply) => {
+      try {
+        return FactoryConceptualReviewCurrentSchema.parse(
+          await service.current(params.parse(request.params)),
+        );
+      } catch (error) {
+        const mapped = failure(request, error);
+        return reply.code(mapped.status).send(mapped.body);
+      }
+    },
+  );
+  app.get(
+    `${root}/workflows/:workflowId`,
+    {
+      schema: {
+        params: json(workflowParams),
+        response: { ...errors, 200: json(FactoryConceptualReviewWorkflowReadSchema) },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const { projectId, featureId, workflowId } = workflowParams.parse(request.params);
+        const result = await service.workflow({ projectId, featureId }, workflowId);
+        if (result === null)
+          return await reply
+            .code(404)
+            .send(apiError(request, "NOT_FOUND", "The Conceptual Review is unavailable"));
+        return FactoryConceptualReviewWorkflowReadSchema.parse(result);
+      } catch (error) {
+        const mapped = failure(request, error);
+        return reply.code(mapped.status).send(mapped.body);
+      }
+    },
+  );
+  app.get(
+    `${root}/workflows/:workflowId/source/lines`,
+    {
+      schema: {
+        params: json(workflowParams),
+        querystring: json(sourceLinesQuery),
+        response: { ...errors, 200: json(FactoryConceptualReviewSourceLinesSchema) },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const { projectId, featureId, workflowId } = workflowParams.parse(request.params);
+        return FactoryConceptualReviewSourceLinesSchema.parse(
+          await service.workflowSourceLines(
+            { projectId, featureId },
+            workflowId,
+            sourceLinesQuery.parse(request.query),
+          ),
+        );
+      } catch (error) {
+        const mapped = failure(request, error);
+        return reply.code(mapped.status).send(mapped.body);
+      }
+    },
+  );
   app.get(
     `${root}/preparation`,
     {

@@ -1,6 +1,6 @@
 # Factory execution runtime contract
 
-Verified against Codex CLI `0.153.4` on 2026-09-08. Product authority remains the
+Verified against Codex CLI `0.155.1` on 2026-09-19. Product authority remains the
 [approved Factory specification](../factory-v01/spec.md); this note records the implementation
 boundary for [#214](https://github.com/Ic3b3rg/kestrel/issues/214).
 
@@ -11,8 +11,8 @@ and process tools are routed to the official remote `exec-server` protocol, sele
 for each thread and turn. The runtime verifies that the local environment is unavailable and
 the selected remote environment points to the owned workspace. It does not fall back to host
 execution. This split exists in the pinned version, including experimental environment
-selection. [Codex App Server protocol](https://github.com/openai/codex/blob/rust-v0.153.4/codex-rs/app-server/README.md),
-[exec-server protocol](https://github.com/openai/codex/blob/rust-v0.153.4/codex-rs/exec-server/README.md).
+selection. [Codex App Server protocol](https://github.com/openai/codex/blob/rust-v0.155.1/codex-rs/app-server/README.md),
+[exec-server protocol](https://github.com/openai/codex/blob/rust-v0.155.1/codex-rs/exec-server/README.md).
 
 The remote executor runs in a disposable Linux container with an immutable image ID, no
 network, a read-only root filesystem, dropped capabilities, no additional privileges, and
@@ -57,7 +57,7 @@ Docker image ID in the local Kestrel state directory. The host launcher passes t
 its resolved Docker executable to the background web service. The executor itself never
 pulls an image or installs dependencies.
 
-The default image contains Codex 0.153.4, Node 24, npm, Git, Bash and ripgrep. Project-specific
+The default image contains Codex 0.155.1, Node 24, npm, Git, Bash and ripgrep. Project-specific
 dependencies must be available in the execution environment; missing tools or dependencies
 produce an inspectable blocker. The Operator's ignored `node_modules`, caches or local files
 are never copied into a Feature checkout. An installation may configure another immutable

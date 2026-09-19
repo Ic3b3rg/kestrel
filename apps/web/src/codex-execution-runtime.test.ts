@@ -1,4 +1,13 @@
-import { mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,7 +16,10 @@ import { setTimeout as realDelay } from "node:timers/promises";
 import { afterEach, expect, it, vi } from "vitest";
 import { z } from "zod";
 
-import { createCodexExecutionRuntime } from "./codex-execution-runtime.js";
+import {
+  createCodexExecutionRuntime,
+  type CodexExecutionRuntimeOptions,
+} from "./codex-execution-runtime.js";
 
 const directories: string[] = [];
 const daemonId = "c20f7230-59a2-4824-a2f4-fda71c982ee6";
@@ -19,7 +31,7 @@ const dockerFixturePath = fileURLToPath(
   new URL("./__fixtures__/codex-execution-docker.mjs", import.meta.url),
 );
 
-async function fixture(mode = "happy") {
+async function fixture(mode = "happy", runtimeOptions: Partial<CodexExecutionRuntimeOptions> = {}) {
   const cwd = await realpath(await mkdtemp(join(tmpdir(), "kestrel-execution-runtime-")));
   directories.push(cwd);
   await writeFile(join(cwd, ".git"), "gitdir: /controller-owned-fixture\n");
@@ -41,10 +53,33 @@ async function fixture(mode = "happy") {
       arguments: [fixturePath, mode, logPath],
       dockerExecutable: dockerPath,
       containerImage: `sha256:${"1".repeat(64)}`,
+      containerUser: "1000:1000",
       timeoutMs: 120_000,
+      ...runtimeOptions,
     }),
   };
 }
+
+it("mounts review source read-only and rejects every file-change event", async () => {
+  const instructions = "Inspect retained source only. Never implement or repair it.";
+  const { cwd, runtime, logPath } = await fixture("happy", {
+    workspaceReadonly: true,
+    allowFileChanges: false,
+    developerInstructions: instructions,
+  });
+  const turn = input(cwd);
+  await expect(runtime.runTurn(turn)).rejects.toMatchObject({ code: "permission_required" });
+  expect(turn.onStopped).toHaveBeenCalledOnce();
+  const create = (await dockerCalls(cwd)).find((args) => args[0] === "create");
+  expect(create).toContain(`type=bind,source=${cwd},target=/workspace,readonly`);
+  const thread = (await protocolMessages(logPath)).find(
+    (message) => message.method === "thread/start",
+  );
+  expect(
+    z.looseObject({ developerInstructions: z.string() }).parse(thread?.params)
+      .developerInstructions,
+  ).toBe(instructions);
+});
 
 afterEach(async () => {
   vi.useRealTimers();
@@ -112,6 +147,161 @@ it("persists the selected Docker Engine identity before the container can be cre
   );
 });
 
+it("rejects a local bridge client without the per-run capability before docker exec", async () => {
+  const { cwd, runtime, logPath } = await fixture("bridge_probe");
+  await runtime.runTurn(input(cwd));
+
+  expect(await protocolMessages(logPath)).toContainEqual({ unauthorizedBridgeClosed: true });
+  expect((await dockerCalls(cwd)).some((args) => args[0] === "exec" && args.includes("-i"))).toBe(
+    false,
+  );
+});
+
+it("authenticates the per-run bridge capability and hides it from the contained server", async () => {
+  const { cwd, runtime, logPath } = await fixture("bridge_authorized_probe");
+  await runtime.runTurn(input(cwd));
+
+  expect(await protocolMessages(logPath)).toContainEqual({ bridgeForwardedRoot: true });
+  expect(
+    (await dockerCalls(cwd)).filter((args) => args[0] === "exec" && args.includes("-i")),
+  ).toHaveLength(1);
+});
+
+it("rejects a root container identity before reserving an environment", async () => {
+  const { cwd, runtime } = await fixture("happy", { containerUser: "0:0" });
+  const turn = input(cwd);
+
+  await expect(runtime.runTurn(turn)).rejects.toMatchObject({ code: "invalid_response" });
+
+  expect(turn.beforeContainerCreate).not.toHaveBeenCalled();
+  expect((await dockerCalls(cwd)).some((args) => args[0] === "create")).toBe(false);
+});
+
+it("rejects a changed host Codex executable before reserving an environment", async () => {
+  const { cwd, runtime } = await fixture("happy", {
+    expectedExecutableDigest: "f".repeat(64),
+    expectedCodexVersion: "0.155.1",
+  });
+  const turn = input(cwd);
+
+  await expect(runtime.runTurn(turn)).rejects.toMatchObject({
+    code: "sandbox_unavailable",
+    reason: "runtime_profile_mismatch",
+  });
+
+  expect(turn.beforeContainerCreate).not.toHaveBeenCalled();
+});
+
+it("rejects a host Codex version different from the frozen runtime profile", async () => {
+  const executableDigest = createHash("sha256")
+    .update(await readFile(process.execPath))
+    .digest("hex");
+  const { cwd, runtime } = await fixture("happy", {
+    expectedExecutableDigest: executableDigest,
+    expectedCodexVersion: "0.999.0",
+  });
+  const turn = input(cwd);
+
+  await expect(runtime.runTurn(turn)).rejects.toMatchObject({ code: "permission_required" });
+
+  expect(turn.onStopped).toHaveBeenCalledOnce();
+  expect(turn.onThread).not.toHaveBeenCalled();
+});
+
+it("uses and removes a caller-owned deterministic control directory after confirmed teardown", async () => {
+  const initial = await fixture();
+  const control = join(initial.cwd, "review-controls", "attempt-1");
+  await mkdir(control, { recursive: true, mode: 0o700 });
+  const runtime = createCodexExecutionRuntime({
+    dockerExecutable: join(initial.cwd, "docker.mjs"),
+    containerImage: `sha256:${"1".repeat(64)}`,
+    timeoutMs: 120_000,
+    controlDirectory: control,
+    executable: process.execPath,
+    arguments: [fixturePath, "happy", initial.logPath],
+  });
+
+  await runtime.runTurn(input(initial.cwd));
+
+  await expect(lstat(control)).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+it("runs Codex from a minimal per-attempt host profile containing only copied authentication", async () => {
+  const initial = await fixture();
+  const operatorProfile = join(initial.cwd, "operator-profile");
+  const authenticationFile = join(operatorProfile, "auth.json");
+  const notifierCanary = join(initial.cwd, "operator-notifier-ran");
+  await mkdir(operatorProfile, { recursive: true, mode: 0o700 });
+  await writeFile(authenticationFile, "{}", { mode: 0o600 });
+  await writeFile(
+    join(operatorProfile, "config.toml"),
+    `instructions = "OPERATOR_PROFILE_CANARY"\nnotify = ["touch", ${JSON.stringify(notifierCanary)}]\n`,
+  );
+  await writeFile(join(operatorProfile, "AGENTS.md"), "OPERATOR_PROFILE_CANARY\n");
+  const runtime = createCodexExecutionRuntime({
+    dockerExecutable: join(initial.cwd, "docker.mjs"),
+    containerImage: `sha256:${"1".repeat(64)}`,
+    timeoutMs: 120_000,
+    executable: process.execPath,
+    arguments: [fixturePath, "happy", initial.logPath],
+    isolateHostProfile: true,
+    authenticationFile,
+  });
+
+  await runtime.runTurn(input(initial.cwd));
+
+  const profile = z
+    .object({
+      codexHome: z.string(),
+      home: z.string(),
+      xdgConfigHome: z.string(),
+      entries: z.array(z.string()),
+      config: z.string(),
+      authenticationPresent: z.boolean(),
+    })
+    .parse((await protocolMessages(initial.logPath))[0]?.hostProfile);
+  expect(profile.codexHome).not.toBe(operatorProfile);
+  expect(profile.codexHome).toContain("host-profile/codex");
+  expect(profile.home).toContain("host-profile/home");
+  expect(profile.xdgConfigHome).toContain("host-profile/xdg");
+  expect(profile.entries).toEqual(["auth.json", "config.toml"]);
+  expect(profile.config).toBe("project_doc_max_bytes = 0\n");
+  expect(profile.authenticationPresent).toBe(true);
+  expect(
+    z
+      .object({ args: z.array(z.string()) })
+      .parse((await protocolMessages(initial.logPath))[0])
+      .args.join(" "),
+  ).toContain("-c project_doc_max_bytes=0");
+  await expect(lstat(notifierCanary)).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+it("fails closed when an isolated Codex profile reports project instruction discovery enabled", async () => {
+  const initial = await fixture("project_docs_enabled");
+  const operatorProfile = join(initial.cwd, "operator-profile");
+  const authenticationFile = join(operatorProfile, "auth.json");
+  await mkdir(operatorProfile, { recursive: true, mode: 0o700 });
+  await writeFile(authenticationFile, "{}", { mode: 0o600 });
+  const runtime = createCodexExecutionRuntime({
+    dockerExecutable: join(initial.cwd, "docker.mjs"),
+    containerImage: `sha256:${"1".repeat(64)}`,
+    timeoutMs: 120_000,
+    executable: process.execPath,
+    arguments: [fixturePath, "project_docs_enabled", initial.logPath],
+    isolateHostProfile: true,
+    authenticationFile,
+  });
+  const turn = input(initial.cwd);
+
+  await expect(runtime.runTurn(turn)).rejects.toMatchObject({ code: "permission_required" });
+
+  expect(turn.onStopped).toHaveBeenCalledOnce();
+  expect(turn.onThread).not.toHaveBeenCalled();
+  expect(
+    (await protocolMessages(initial.logPath)).some((message) => message.method === "turn/start"),
+  ).toBe(false);
+});
+
 it("retains an uncertain reservation when Docker changes after its durable create intent", async () => {
   const { cwd, runtime, daemonPath } = await fixture();
   const turn = {
@@ -125,7 +315,7 @@ it("retains an uncertain reservation when Docker changes after its durable creat
   expect((await dockerCalls(cwd)).some((args) => args[0] === "create")).toBe(false);
 });
 
-it("honors cancellation while the caller is persisting container intent, without starting a writer", async () => {
+it("settles durable container intent before honoring cancellation and starting teardown", async () => {
   const { cwd, runtime } = await fixture();
   const controller = new AbortController();
   let release!: () => void;
@@ -152,11 +342,11 @@ it("honors cancellation while the caller is persisting container intent, without
   controller.abort();
   const result = await Promise.race([
     running,
-    realDelay(5_000, undefined, { ref: false }).then(() => "pending"),
+    realDelay(100, undefined, { ref: false }).then(() => "pending"),
   ]);
+  expect(result).toBe("pending");
   release();
-  await running;
-  expect(result).toBe("cancelled");
+  expect(await running).toBe("cancelled");
   expect(turn.onContainer).not.toHaveBeenCalled();
   expect(turn.onStopped).toHaveBeenCalledWith(expect.objectContaining({ id: null }));
 });
@@ -192,7 +382,7 @@ it("retains the writer reservation and does not remove a container whose capture
   expect(calls.some((args) => args[0] === "rm")).toBe(false);
 });
 
-it.each(["unsafe_container", "local_enabled"])(
+it.each(["unsafe_container", "local_enabled", "unknown_feature"])(
   "rejects %s before inference and still destroys its owned container",
   async (mode) => {
     const { cwd, runtime, logPath } = await fixture(mode);
@@ -204,6 +394,23 @@ it.each(["unsafe_container", "local_enabled"])(
     expect(messages.some((message) => message.method === "turn/start")).toBe(false);
   },
 );
+
+it.each([
+  "limit_user",
+  "limit_pids",
+  "limit_memory",
+  "limit_swap",
+  "limit_cpu",
+  "limit_shm",
+  "limit_tmpfs",
+  "limit_log",
+])("fails closed when Docker does not apply %s", async (mode) => {
+  const { cwd, runtime, logPath } = await fixture(mode);
+  const turn = input(cwd);
+  await expect(runtime.runTurn(turn)).rejects.toMatchObject({ code: "permission_required" });
+  expect(turn.onStopped).toHaveBeenCalledOnce();
+  expect(await protocolMessages(logPath).catch(() => [])).toHaveLength(0);
+});
 
 it.each([
   ["authentication", "authentication"],
@@ -263,6 +470,23 @@ it("reconciles a lost create response without ever starting or creating a second
   expect(turn.onStopped).toHaveBeenCalledWith(expect.objectContaining({ id: "a".repeat(64) }));
   const calls = await dockerCalls(cwd);
   expect(calls.filter((args) => args[0] === "create")).toHaveLength(1);
+  expect(calls.some((args) => args[0] === "start")).toBe(false);
+  expect(calls.filter((args) => args[0] === "rm")).toHaveLength(1);
+});
+
+it("claims the reserved name before reporting an uncertain absent create as stopped", async () => {
+  const { cwd, runtime } = await fixture("create_uncertain_absent");
+  const turn = input(cwd);
+  await expect(runtime.runTurn(turn)).rejects.toMatchObject({ code: "sandbox_unavailable" });
+  expect(turn.onContainer).toHaveBeenCalledWith(expect.objectContaining({ id: "a".repeat(64) }));
+  expect(turn.onStopped).toHaveBeenCalledWith(expect.objectContaining({ id: "a".repeat(64) }));
+  const calls = await dockerCalls(cwd);
+  expect(calls.filter((args) => args[0] === "create")).toHaveLength(2);
+  expect(
+    calls.some(
+      (args) => args[0] === "create" && args.includes("--entrypoint") && args.includes("/bin/true"),
+    ),
+  ).toBe(true);
   expect(calls.some((args) => args[0] === "start")).toBe(false);
   expect(calls.filter((args) => args[0] === "rm")).toHaveLength(1);
 });
@@ -536,3 +760,4 @@ it("persists container intent before creation and stops the isolated writer befo
     ),
   ).toBe(false);
 });
+import { createHash } from "node:crypto";

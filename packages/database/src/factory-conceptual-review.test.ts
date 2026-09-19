@@ -180,12 +180,17 @@ it("prepares the exact published Feature while making the missing review runtime
     database as never,
     projectId,
     featureId,
-    { runtimeAvailable: false },
+    { profile: null },
   );
   expect(preparation.basis?.objective).toBe(plan.objective);
   expect(preparation.publication?.pullRequest.url).toBe(pullRequest.url);
   expect(preparation.publication?.revision.id).toBe(revisionId);
   expect(preparation.evidence?.checks.total).toBe(1);
+  expect(preparation.configuration.resources).toMatchObject({
+    maximumOutputBytes: 128 * 1024,
+    maximumWorkspaceFiles: 20_000,
+    maximumWorkspaceBytes: 256 * 1024 * 1024,
+  });
   expect(preparation.preparationDigest).toMatch(/^[a-f0-9]{64}$/u);
   expect(preparation.readiness).toEqual({
     state: "blocked",
@@ -194,12 +199,40 @@ it("prepares the exact published Feature while making the missing review runtime
   });
 });
 
+it("freezes the immutable runtime profile and changes the preparation identity when it changes", async () => {
+  const profile = {
+    containerImage: `sha256:${"1".repeat(64)}`,
+    containerUser: "501:20",
+    codexExecutable: "/usr/local/bin/codex",
+    codexExecutableDigest: "e".repeat(64),
+    codexVersion: "0.155.1",
+  };
+  const first = await readFactoryConceptualReviewPreparation(
+    pool() as never,
+    projectId,
+    featureId,
+    { profile },
+  );
+  const changed = await readFactoryConceptualReviewPreparation(
+    pool() as never,
+    projectId,
+    featureId,
+    {
+      profile: { ...profile, containerImage: `sha256:${"2".repeat(64)}` },
+    },
+  );
+
+  expect(first.readiness).toEqual({ state: "ready", startAllowed: true, blockers: [] });
+  expect(first.configuration.runtimePolicy).toMatchObject(profile);
+  expect(first.preparationDigest).not.toBe(changed.preparationDigest);
+});
+
 it("never substitutes stale check evidence for the final certificate", async () => {
   const preparation = await readFactoryConceptualReviewPreparation(
     pool({}, { ...result, headCommitId: "f".repeat(40) }) as never,
     projectId,
     featureId,
-    { runtimeAvailable: false },
+    { profile: null },
   );
   expect(preparation.preparationDigest).toBeNull();
   expect(preparation.publication).toBeNull();
@@ -268,7 +301,7 @@ it.each([
       pool(change) as never,
       projectId,
       featureId,
-      { runtimeAvailable: false },
+      { profile: null },
     );
     expect(preparation.preparationDigest).toBeNull();
     expect(preparation.readiness.blockers).toContain(blocker);
@@ -279,7 +312,7 @@ it("rejects a Feature outside the canonical Project scope", async () => {
   const query = vi.fn(() => ({ rows: [] }));
   await expect(
     readFactoryConceptualReviewPreparation({ query } as never, projectId, featureId, {
-      runtimeAvailable: false,
+      profile: null,
     }),
   ).rejects.toEqual(new FactoryConceptualReviewPersistenceError("not_found"));
 });

@@ -38,6 +38,11 @@ export interface FactoryFeaturePullRequest extends FactoryFeaturePullRequestPayl
   state: "open" | "closed";
   author: string;
 }
+export interface FactoryFeaturePullRequestObservation {
+  baseCommitId: string;
+  headCommitId: string;
+  state: "open" | "closed";
+}
 export interface FactoryFeatureGitHubAdapter {
   identify(
     coordinates: Pick<FactoryGitHubRepository, "owner" | "name">,
@@ -50,6 +55,11 @@ export interface FactoryFeatureGitHubAdapter {
     number: number,
     signal?: AbortSignal,
   ): Promise<FactoryFeaturePullRequest>;
+  observePullRequest(
+    identity: FactoryGitHubIdentity,
+    expected: FactoryFeaturePullRequest,
+    signal?: AbortSignal,
+  ): Promise<FactoryFeaturePullRequestObservation>;
   findPullRequest(
     identity: FactoryGitHubIdentity,
     payload: FactoryFeaturePullRequestPayload,
@@ -123,6 +133,17 @@ const PullRequestSchema = z.strictObject({
   head: refSchema,
 });
 type ProviderPullRequest = z.infer<typeof PullRequestSchema>;
+const ExpectedPullRequestSchema = PayloadSchema.extend({
+  repository: FactoryGitHubRepositorySchema,
+  id: PullRequestSchema.shape.id,
+  nodeId,
+  repositoryNodeId: nodeId,
+  authorNodeId: nodeId,
+  number: numberSchema,
+  url: z.url().max(512),
+  state: z.enum(["open", "closed"]),
+  author: z.string().min(1).max(100),
+});
 const REPO_FIELDS =
   "if . == null then null else {id:(.id|tostring),nodeId:.node_id,owner:.owner.login,name} end";
 const PR_FIELDS =
@@ -192,6 +213,39 @@ function retainedPullRequest(
     url: value.html_url,
     state: value.state,
     author: value.author,
+  };
+}
+
+function observedPullRequest(
+  identity: FactoryGitHubIdentity,
+  input: FactoryFeaturePullRequest,
+  value: ProviderPullRequest,
+): FactoryFeaturePullRequestObservation {
+  const expected = parse(ExpectedPullRequestSchema, input);
+  if (
+    value.author === null ||
+    value.authorNodeId === null ||
+    value.base.repo === null ||
+    value.head.repo === null ||
+    !same(value.author, identity.account) ||
+    !same(expected.author, identity.account) ||
+    !ownedRepository(value.base.repo, identity.repository) ||
+    !ownedRepository(value.head.repo, identity.repository) ||
+    value.id !== expected.id ||
+    value.nodeId !== expected.nodeId ||
+    value.authorNodeId !== expected.authorNodeId ||
+    value.base.repo.nodeId !== expected.repositoryNodeId ||
+    value.head.repo.nodeId !== expected.repositoryNodeId ||
+    value.number !== expected.number ||
+    !same(value.html_url, expected.url) ||
+    value.base.ref !== expected.baseRef ||
+    value.head.ref !== expected.headRef
+  )
+    throw new FactoryGitHubError("invalid_response");
+  return {
+    baseCommitId: value.base.sha,
+    headCommitId: value.head.sha,
+    state: value.state,
   };
 }
 
@@ -305,6 +359,17 @@ export function createFactoryFeatureGitHubAdapter(
       );
       if (value.number !== number) throw new FactoryGitHubError("invalid_response");
       const result = retainedPullRequest(identity, payload, value);
+      await verify(identity, signal);
+      return result;
+    },
+    async observePullRequest(identity, expected, signal) {
+      const input = parse(ExpectedPullRequestSchema, expected);
+      await verify(identity, signal);
+      const value = parse(
+        PullRequestSchema,
+        (await get(`${base(identity.repository)}/${String(input.number)}`, signal)).body,
+      );
+      const result = observedPullRequest(identity, input, value);
       await verify(identity, signal);
       return result;
     },

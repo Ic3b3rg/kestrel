@@ -1,18 +1,24 @@
 import {
   FactoryConceptualReviewCheckCatalogSchema,
   FactoryConceptualReviewCheckSchema,
+  FactoryConceptualReviewCurrentSchema,
   FactoryConceptualReviewPreparationSchema,
+  FactoryConceptualReviewStartCommandSchema,
   FactoryConceptualReviewSourceCatalogSchema,
   FactoryConceptualReviewSourceLinesSchema,
+  FactoryConceptualReviewWorkflowReadSchema,
   KestrelIdSchema,
   type FactoryConceptualReviewCheck,
   type FactoryConceptualReviewCheckCatalog,
+  type FactoryConceptualReviewCurrent,
   type FactoryConceptualReviewPreparation,
+  type FactoryConceptualReviewStartCommand,
   type FactoryConceptualReviewSourceCatalog,
   type FactoryConceptualReviewSourceLines,
+  type FactoryConceptualReviewWorkflowRead,
 } from "@kestrel/contracts";
 
-import { requireJson } from "./api.js";
+import { authenticatedMutationHeaders, requireJson } from "./api.js";
 
 function root(projectId: string, featureId: string): string {
   const project = KestrelIdSchema.parse(projectId);
@@ -114,6 +120,78 @@ export function fetchFactoryConceptualReviewCheck(
     `${root(projectId, featureId)}/checks/${encodeURIComponent(KestrelIdSchema.parse(evidenceId))}`,
     FactoryConceptualReviewCheckSchema,
     "Conceptual Review check result",
+    signal,
+  );
+}
+
+export async function startFactoryConceptualReview(
+  projectId: string,
+  featureId: string,
+  command: FactoryConceptualReviewStartCommand,
+  signal?: AbortSignal,
+): Promise<FactoryConceptualReviewWorkflowRead> {
+  const response = await fetch(`${root(projectId, featureId)}/workflows`, {
+    credentials: "same-origin",
+    method: "POST",
+    headers: authenticatedMutationHeaders(),
+    body: JSON.stringify(FactoryConceptualReviewStartCommandSchema.parse(command)),
+    signal: signal ?? null,
+  });
+  return requireJson(
+    response,
+    FactoryConceptualReviewWorkflowReadSchema,
+    "Conceptual Review Workflow",
+  );
+}
+
+export function fetchCurrentFactoryConceptualReview(
+  projectId: string,
+  featureId: string,
+  signal?: AbortSignal,
+): Promise<FactoryConceptualReviewCurrent> {
+  return read(
+    `${root(projectId, featureId)}/workflows/current`,
+    FactoryConceptualReviewCurrentSchema,
+    "current Conceptual Review",
+    signal,
+  );
+}
+
+export function fetchFactoryConceptualReviewWorkflow(
+  projectId: string,
+  featureId: string,
+  workflowId: string,
+  signal?: AbortSignal,
+): Promise<FactoryConceptualReviewWorkflowRead> {
+  return read(
+    `${root(projectId, featureId)}/workflows/${encodeURIComponent(KestrelIdSchema.parse(workflowId))}`,
+    FactoryConceptualReviewWorkflowReadSchema,
+    "Conceptual Review Workflow",
+    signal,
+  );
+}
+
+export function fetchFactoryConceptualReviewWorkflowSourceLines(
+  projectId: string,
+  featureId: string,
+  workflowId: string,
+  side: "base" | "head",
+  path: string,
+  startLine: number,
+  endLine: number,
+  signal?: AbortSignal,
+): Promise<FactoryConceptualReviewSourceLines> {
+  const workflow = KestrelIdSchema.parse(workflowId);
+  const query = new URLSearchParams({
+    side,
+    path,
+    startLine: String(startLine),
+    endLine: String(endLine),
+  });
+  return read(
+    `${root(projectId, featureId)}/workflows/${encodeURIComponent(workflow)}/source/lines?${query.toString()}`,
+    FactoryConceptualReviewSourceLinesSchema,
+    "published Conceptual Review source lines",
     signal,
   );
 }

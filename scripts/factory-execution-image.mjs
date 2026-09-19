@@ -19,16 +19,16 @@ import { fileURLToPath } from "node:url";
 import { environmentForDocker, resolveDocker } from "./host-executables.mjs";
 
 const exec = promisify(execFile);
-const VERSION = "0.153.4";
-// Release asset digests from github.com/openai/codex/releases/tag/rust-v0.153.4.
+const VERSION = "0.155.1";
+// Release asset digests from github.com/openai/codex/releases/tag/rust-v0.155.1.
 const assets = {
   arm64: {
     name: "aarch64",
-    digest: "5cda6182bd94c3a30f2eb63a495489ebf7f691fddb14d70f48c6c1a5071b6cde",
+    digest: "d6c7e62fbd688d52ee04f3929d0613705d32a920a42db7a139e366eaf1f4a2d7",
   },
   x64: {
     name: "x86_64",
-    digest: "f479424eca092484dc40d87ae28c44f4cc40234a60045d6131e493800d814a30",
+    digest: "a0ef8b2debc3bf747e07b1a039354de31300ac0dcc2276498ba281470b5d9115",
   },
 };
 
@@ -102,7 +102,7 @@ export async function prepareFactoryExecutionImage(environment = process.env) {
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  console.log("Preparing the isolated Factory executor (Codex 0.153.4, Node 24, Git)…");
+  console.log("Preparing the isolated Factory executor (Codex 0.155.1, Node 24, Git)…");
   const { imageId } = await prepareFactoryExecutionImage();
   console.log(`Factory executor ready: ${imageId}`);
 }

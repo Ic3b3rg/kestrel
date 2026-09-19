@@ -331,7 +331,7 @@ export async function startReviewWorkflow(
           workflow_state
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb, 'queued')
-        ON CONFLICT (change_proposal_id, input_digest) DO NOTHING
+        ON CONFLICT DO NOTHING
         RETURNING id, requested_at
       `,
       [

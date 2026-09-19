@@ -1,8 +1,19 @@
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
-import { lstat, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import {
+  chmod,
+  copyFile,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { createServer, type Server, type Socket } from "node:net";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, relative, sep } from "node:path";
 
 import {
@@ -85,13 +96,34 @@ export interface CodexExecutionRuntime {
   runTurn(input: CodexExecutionTurnInput): Promise<CodexExecutionTurnResult>;
   runVerification(input: CodexVerificationInput): Promise<CodexVerificationResult>;
 }
-interface Options {
+export interface CodexExecutionRuntimeOptions {
   executable?: string;
   arguments?: readonly string[];
   timeoutMs?: number;
   dockerExecutable?: string;
   containerImage: string;
+  workspaceReadonly?: boolean;
+  allowFileChanges?: boolean;
+  developerInstructions?: string;
+  controlDirectory?: string;
+  containerUser?: string;
+  expectedExecutableDigest?: string;
+  expectedCodexVersion?: string;
+  authenticationFile?: string;
+  isolateHostProfile?: boolean;
+  containerResources?: {
+    pidsLimit: number;
+    memoryBytes: number;
+    nanoCpus: number;
+    tmpfsBytes: number;
+  };
 }
+export const DEFAULT_CODEX_CONTAINER_RESOURCES = {
+  pidsLimit: 128,
+  memoryBytes: 1024 * 1024 * 1024,
+  nanoCpus: 2_000_000_000,
+  tmpfsBytes: 64 * 1024 * 1024,
+} as const;
 const DISABLED = [
   "apps",
   "plugins",
@@ -105,13 +137,23 @@ const DISABLED = [
   "code_mode_only",
   "shell_snapshot",
   "shell_snapshot_v2",
+  "auth_elicitation",
+  "mentions_v2",
+  "remote_plugin",
+  "tool_suggest",
 ];
-const FEATURES = { ...Object.fromEntries(DISABLED.map((name) => [name, false])), shell_tool: true };
+const FEATURES = {
+  ...Object.fromEntries(DISABLED.map((name) => [name, false])),
+  shell_tool: true,
+  skip_host_skill_discovery: true,
+};
 const SAFETY_ARGUMENTS = [
   "--strict-config",
   ...DISABLED.flatMap((name) => ["--disable", name]),
   "--enable",
   "shell_tool",
+  "--enable",
+  "skip_host_skill_discovery",
   "-c",
   'web_search="disabled"',
   "-c",
@@ -122,13 +164,17 @@ const SAFETY_ARGUMENTS = [
   'approval_policy="never"',
   "-c",
   'approvals_reviewer="user"',
+  "-c",
+  "notify=[]",
 ];
+const ISOLATED_PROFILE_ARGUMENTS = ["-c", "project_doc_max_bytes=0"];
+const ISOLATED_PROFILE_CONFIG = "project_doc_max_bytes = 0\n";
 const ENVIRONMENTS = [
   { environmentId: "remote", cwd: "/workspace", runtimeWorkspaceRoots: ["/workspace"] },
 ];
 const OUTPUT_CAP = 64 * 1024;
 const CONTAINER_INSPECT =
-  '{"id":{{json .Id}},"name":{{json .Name}},"running":{{.State.Running}},"status":{{json .State.Status}},"exitCode":{{.State.ExitCode}},"image":{{json .Image}},"network":{{json .HostConfig.NetworkMode}},"readonly":{{.HostConfig.ReadonlyRootfs}},"privileged":{{.HostConfig.Privileged}},"pidMode":{{json .HostConfig.PidMode}},"restart":{{json .HostConfig.RestartPolicy.Name}},"capDrop":{{json .HostConfig.CapDrop}},"securityOpt":{{json .HostConfig.SecurityOpt}},"mounts":{{json .Mounts}},"labels":{{json .Config.Labels}}}';
+  '{"id":{{json .Id}},"name":{{json .Name}},"running":{{.State.Running}},"status":{{json .State.Status}},"exitCode":{{.State.ExitCode}},"image":{{json .Image}},"user":{{json .Config.User}},"network":{{json .HostConfig.NetworkMode}},"logDriver":{{json .HostConfig.LogConfig.Type}},"readonly":{{.HostConfig.ReadonlyRootfs}},"privileged":{{.HostConfig.Privileged}},"pidMode":{{json .HostConfig.PidMode}},"restart":{{json .HostConfig.RestartPolicy.Name}},"pidsLimit":{{.HostConfig.PidsLimit}},"memory":{{.HostConfig.Memory}},"memorySwap":{{.HostConfig.MemorySwap}},"nanoCpus":{{.HostConfig.NanoCpus}},"shmSize":{{.HostConfig.ShmSize}},"tmpfs":{{json .HostConfig.Tmpfs}},"capDrop":{{json .HostConfig.CapDrop}},"securityOpt":{{json .HostConfig.SecurityOpt}},"mounts":{{json .Mounts}},"labels":{{json .Config.Labels}}}';
 const FORWARD =
   "const n=require('node:net');const s=n.connect(8765,'127.0.0.1',()=>{process.stdin.pipe(s);s.pipe(process.stdout)});s.on('error',()=>process.exit(1));process.stdin.on('end',()=>s.end());";
 // This fixed probe waits for the executor socket. It never runs project code.
@@ -149,29 +195,45 @@ function checkAbort(signal: AbortSignal): void {
 }
 
 async function withCancellation<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) void operation.catch(() => undefined);
-  checkAbort(signal);
-  let abort!: () => void;
-  const cancelled = new Promise<never>((_resolve, reject) => {
-    abort = () => {
-      try {
-        checkAbort(signal);
-      } catch (error) {
-        reject(executionError(error));
-      }
-    };
-    signal.addEventListener("abort", abort, { once: true });
-  });
   try {
-    return await Promise.race([operation, cancelled]);
-  } finally {
-    signal.removeEventListener("abort", abort);
+    const value = await operation;
+    checkAbort(signal);
+    return value;
+  } catch (error) {
+    if (signal.aborted) checkAbort(signal);
+    throw error;
   }
 }
 function timeout(value: number): number {
   if (!Number.isSafeInteger(value) || value < 1 || value > 7_200_000)
     throw new CodexExecutionError("invalid_response");
   return value;
+}
+async function verifyHostCodex(options: CodexExecutionRuntimeOptions): Promise<void> {
+  if (options.expectedExecutableDigest === undefined && options.expectedCodexVersion === undefined)
+    return;
+  if (
+    options.executable === undefined ||
+    !isAbsolute(options.executable) ||
+    !/^[a-f0-9]{64}$/u.test(options.expectedExecutableDigest ?? "") ||
+    !/^\d+\.\d+\.[0-9A-Za-z.+-]+$/u.test(options.expectedCodexVersion ?? "")
+  )
+    throw new CodexExecutionError("sandbox_unavailable", undefined, "runtime_profile_mismatch");
+  const canonical = await realpath(options.executable).catch(() => null);
+  if (canonical !== options.executable)
+    throw new CodexExecutionError("sandbox_unavailable", undefined, "runtime_profile_mismatch");
+  const digest = await readFile(canonical)
+    .then((bytes) => createHash("sha256").update(bytes).digest("hex"))
+    .catch(() => null);
+  if (digest !== options.expectedExecutableDigest)
+    throw new CodexExecutionError("sandbox_unavailable", undefined, "runtime_profile_mismatch");
+}
+
+function codexVersion(userAgent: unknown): string {
+  const value = boundedString(userAgent, 512);
+  const match = /^(?:kestrel|codex)\/(\d+\.\d+\.[0-9A-Za-z.+-]+)(?:\s|$)/u.exec(value);
+  if (match?.[1] === undefined) throw new CodexExecutionError("permission_required");
+  return match[1];
 }
 function textPrefix(value: unknown, bytes = 2_048): string {
   if (typeof value !== "string") throw new CodexExecutionError("invalid_response");
@@ -185,6 +247,62 @@ async function existingPath(path: string): Promise<string> {
   });
   if (canonical.includes(",")) throw new CodexExecutionError("invalid_response");
   return canonical;
+}
+
+interface IsolatedCodexProfile {
+  codexHome: string;
+  environment: NodeJS.ProcessEnv;
+}
+
+async function prepareIsolatedCodexProfile(
+  controlDirectory: string,
+  authenticationFile?: string,
+): Promise<IsolatedCodexProfile> {
+  const source = await realpath(
+    authenticationFile ??
+      join(process.env.CODEX_HOME?.trim() || join(homedir(), ".codex"), "auth.json"),
+  ).catch(() => {
+    throw new CodexExecutionError("authentication");
+  });
+  const sourceInfo = await stat(source).catch(() => null);
+  if (
+    sourceInfo === null ||
+    !sourceInfo.isFile() ||
+    sourceInfo.size < 1 ||
+    sourceInfo.size > 1024 * 1024 ||
+    (process.getuid !== undefined && sourceInfo.uid !== process.getuid()) ||
+    (process.platform !== "win32" && (sourceInfo.mode & 0o077) !== 0)
+  )
+    throw new CodexExecutionError("authentication");
+
+  const root = join(controlDirectory, "host-profile");
+  const codexHome = join(root, "codex");
+  const home = join(root, "home");
+  const xdg = join(root, "xdg");
+  await Promise.all([
+    mkdir(codexHome, { recursive: true, mode: 0o700 }),
+    mkdir(home, { recursive: true, mode: 0o700 }),
+    mkdir(xdg, { recursive: true, mode: 0o700 }),
+  ]);
+  const isolatedAuthentication = join(codexHome, "auth.json");
+  await copyFile(source, isolatedAuthentication);
+  await chmod(isolatedAuthentication, 0o600);
+  await writeFile(join(codexHome, "config.toml"), ISOLATED_PROFILE_CONFIG, {
+    mode: 0o600,
+    flag: "wx",
+  });
+  return {
+    codexHome,
+    environment: {
+      LANG: "C",
+      LC_ALL: "C",
+      NO_COLOR: "1",
+      PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin",
+      HOME: home,
+      CODEX_HOME: codexHome,
+      XDG_CONFIG_HOME: xdg,
+    },
+  };
 }
 
 async function processOutput(
@@ -251,11 +369,54 @@ function daemonIdentity(value: string): string {
   return value;
 }
 
-/** Teardown only: recovery cannot create a container or reconnect to an executor. */
+function nameBarrierArguments(name: string, image: string): string[] {
+  if (!/^sha256:[a-f0-9]{64}$/u.test(image)) throw new Error("Invalid recovery image identity");
+  return [
+    "create",
+    "--pull=never",
+    "--name",
+    name,
+    "--label",
+    `kestrel.factory.execution=${name}`,
+    "--read-only",
+    "--network",
+    "none",
+    "--log-driver",
+    "none",
+    "--restart",
+    "no",
+    "--cap-drop",
+    "ALL",
+    "--security-opt",
+    "no-new-privileges:true",
+    "--pids-limit",
+    "1",
+    "--memory",
+    String(64 * 1024 * 1024),
+    "--memory-swap",
+    String(64 * 1024 * 1024),
+    "--shm-size",
+    String(64 * 1024),
+    "--cpus",
+    "0.001",
+    "--user",
+    "65534:65534",
+    "--entrypoint",
+    "/bin/true",
+    image,
+  ];
+}
+
+/** Teardown only: recovery may claim an absent reserved name with an inert, never-started barrier. */
 export function createCodexExecutionContainerRecovery(
   options: { dockerExecutable?: string } = {},
 ): (
-  container: { name: string; id: string | null; daemonId?: string | null },
+  container: {
+    name: string;
+    id: string | null;
+    daemonId?: string | null;
+    image?: string | null;
+  },
   onIdentified: (id: string) => Promise<void>,
   signal: AbortSignal,
 ) => Promise<{ name: string; id: string }> {
@@ -295,10 +456,20 @@ export function createCodexExecutionContainerRecovery(
         if (daemonIdentity(await cli(["info", "--format", "{{.ID}}"])) !== daemonId)
           throw new Error("Docker daemon identity changed");
       };
-      const byName = await find(`name=^/${container.name}$`);
-      const id = container.id ?? byName;
-      // A suspended owner can still complete a create that was reserved before fencing.
-      // Absence without a persisted/discovered ID is not evidence of teardown.
+      let byName = await find(`name=^/${container.name}$`);
+      let id = container.id ?? byName;
+      if (id === null && container.image != null) {
+        const barrier = await cli(nameBarrierArguments(container.name, container.image)).catch(
+          () => "",
+        );
+        if (/^[a-f0-9]{64}$/u.test(barrier)) id = barrier;
+        else {
+          byName = await find(`name=^/${container.name}$`);
+          id = byName;
+        }
+      }
+      // Claiming the unique Docker name is a barrier: any delayed create from the
+      // fenced owner must fail before this inert container is removed.
       if (id === null || (byName !== null && byName !== id))
         throw new Error("Container identity was not confirmed");
       const byId = await find(`id=${id}`);
@@ -308,6 +479,7 @@ export function createCodexExecutionContainerRecovery(
         if (
           state.id !== id ||
           state.name !== `/${container.name}` ||
+          (container.image != null && state.image !== container.image) ||
           record(state.labels)["kestrel.factory.execution"] !== container.name
         )
           throw new Error("Container ownership changed");
@@ -332,7 +504,7 @@ export function createCodexExecutionContainerRecovery(
 class ExecutionContainer {
   readonly name: string;
   readonly #docker: string;
-  readonly #options: Options;
+  readonly #options: CodexExecutionRuntimeOptions;
   readonly #lifecycle: CodexExecutionLifecycle;
   readonly #workspace: string;
   readonly #control: string;
@@ -340,10 +512,11 @@ class ExecutionContainer {
   #id: string | null = null;
   #daemonId: string | null = null;
   #reserved = false;
+  #createMayHaveBeenIssued = false;
   #mounts: { source: string; target: string; readonly: boolean }[] = [];
 
   constructor(
-    options: Options,
+    options: CodexExecutionRuntimeOptions,
     input: CodexExecutionLifecycle,
     workspace: string,
     control: string,
@@ -407,7 +580,11 @@ class ExecutionContainer {
     const protectedMarker = join(this.#control, "git-marker");
     await writeFile(protectedMarker, "gitdir: /kestrel-git\n", { mode: 0o400 });
     this.#mounts = [
-      { source: this.#workspace, target: "/workspace", readonly: false },
+      {
+        source: this.#workspace,
+        target: "/workspace",
+        readonly: this.#options.workspaceReadonly ?? false,
+      },
       { source: protectedMarker, target: "/workspace/.git", readonly: true },
     ];
     if (this.#gitDirectory !== undefined)
@@ -425,6 +602,31 @@ class ExecutionContainer {
       this.#mounts.push({ source, target: `/workspace/${name}`, readonly: true });
     }
     this.#daemonId = daemonIdentity(await this.cli(["info", "--format", "{{.ID}}"], signal));
+    const resources = this.#options.containerResources ?? DEFAULT_CODEX_CONTAINER_RESOURCES;
+    if (
+      !Number.isSafeInteger(resources.pidsLimit) ||
+      resources.pidsLimit < 1 ||
+      !Number.isSafeInteger(resources.memoryBytes) ||
+      resources.memoryBytes < 64 * 1024 * 1024 ||
+      !Number.isSafeInteger(resources.nanoCpus) ||
+      resources.nanoCpus < 1_000_000 ||
+      !Number.isSafeInteger(resources.tmpfsBytes) ||
+      resources.tmpfsBytes < 1024 * 1024
+    )
+      throw new CodexExecutionError("invalid_response");
+    const containerUser =
+      this.#options.containerUser ??
+      `${String(process.getuid?.() ?? 1000)}:${String(process.getgid?.() ?? 1000)}`;
+    if (!/^[1-9]\d{0,9}:[1-9]\d{0,9}$/u.test(containerUser))
+      throw new CodexExecutionError("invalid_response");
+    const shmBytes = Math.max(64 * 1024, Math.floor(resources.tmpfsBytes / 8));
+    const remainingTmpfsBytes = resources.tmpfsBytes - shmBytes;
+    const homeTmpfsBytes = Math.floor(remainingTmpfsBytes / 2);
+    const temporaryTmpfsBytes = remainingTmpfsBytes - homeTmpfsBytes;
+    if (homeTmpfsBytes < 1 || temporaryTmpfsBytes < 1)
+      throw new CodexExecutionError("invalid_response");
+    const temporaryTmpfs = `rw,nosuid,nodev,size=${String(temporaryTmpfsBytes)},mode=1777`;
+    const homeTmpfs = `rw,nosuid,nodev,size=${String(homeTmpfsBytes)},mode=1777`;
     this.#reserved = true;
     await withCancellation(
       this.#lifecycle.beforeContainerCreate(this.name, this.#daemonId),
@@ -432,6 +634,7 @@ class ExecutionContainer {
     );
     checkAbort(signal);
     await this.assertDaemon(signal);
+    this.#createMayHaveBeenIssued = true;
     const id = await this.cli(
       [
         "create",
@@ -443,6 +646,8 @@ class ExecutionContainer {
         "--read-only",
         "--network",
         "none",
+        "--log-driver",
+        "none",
         "--restart",
         "no",
         "--cap-drop",
@@ -450,17 +655,21 @@ class ExecutionContainer {
         "--security-opt",
         "no-new-privileges:true",
         "--pids-limit",
-        "128",
+        String(resources.pidsLimit),
         "--memory",
-        "1g",
+        String(resources.memoryBytes),
+        "--memory-swap",
+        String(resources.memoryBytes),
         "--cpus",
-        "2",
+        String(resources.nanoCpus / 1_000_000_000),
+        "--shm-size",
+        String(shmBytes),
         "--user",
-        `${String(process.getuid?.() ?? 1000)}:${String(process.getgid?.() ?? 1000)}`,
+        containerUser,
         "--tmpfs",
-        "/tmp:rw,nosuid,nodev,size=67108864,mode=1777",
+        `/tmp:${temporaryTmpfs}`,
         "--tmpfs",
-        "/home/codex:rw,nosuid,nodev,size=67108864,mode=1777",
+        `/home/codex:${homeTmpfs}`,
         ...this.#mounts.flatMap((mount) => [
           "--mount",
           `type=bind,source=${mount.source},target=${mount.target}${mount.readonly ? ",readonly" : ""}`,
@@ -484,16 +693,27 @@ class ExecutionContainer {
     await withCancellation(this.#lifecycle.onContainer({ name: this.name, id }), signal);
     const state = await this.inspect();
     const actualMounts = state.mounts;
+    const actualTmpfs = record(state.tmpfs);
     if (
       state.id !== id ||
       state.name !== `/${this.name}` ||
       state.image !== image ||
+      state.user !== containerUser ||
       state.running !== false ||
       state.network !== "none" ||
+      state.logDriver !== "none" ||
       state.readonly !== true ||
       state.privileged !== false ||
       state.pidMode !== "" ||
       state.restart !== "no" ||
+      state.pidsLimit !== resources.pidsLimit ||
+      state.memory !== resources.memoryBytes ||
+      state.memorySwap !== resources.memoryBytes ||
+      state.nanoCpus !== resources.nanoCpus ||
+      state.shmSize !== shmBytes ||
+      Object.keys(actualTmpfs).length !== 2 ||
+      actualTmpfs["/tmp"] !== temporaryTmpfs ||
+      actualTmpfs["/home/codex"] !== homeTmpfs ||
       !Array.isArray(state.capDrop) ||
       !state.capDrop.includes("ALL") ||
       !Array.isArray(state.securityOpt) ||
@@ -543,32 +763,65 @@ class ExecutionContainer {
   async forward(signal: AbortSignal): Promise<{ url: string; close(): Promise<void> }> {
     const sockets = new Set<Socket>();
     const children = new Set<ReturnType<typeof spawn>>();
+    const capability = randomBytes(32).toString("base64url");
+    const requestTarget = `/${capability}`;
     const server = createServer((socket) => {
       if (sockets.size >= 4 || signal.aborted) {
         socket.destroy();
         return;
       }
       sockets.add(socket);
-      const child = spawn(this.#docker, ["exec", "-i", this.id, "node", "-e", FORWARD], {
-        env: safeEnvironment(),
-        shell: false,
-        stdio: ["pipe", "pipe", "pipe"],
-      });
-      children.add(child);
-      socket.pipe(child.stdin);
-      child.stdout.pipe(socket);
-      child.stderr.resume();
-      child.once("error", () => socket.destroy());
-      child.once("close", () => {
-        children.delete(child);
-        socket.destroy();
-      });
-      child.stdin.on("error", () => socket.destroy());
-      socket.on("error", () => child.kill("SIGKILL"));
+      let buffered = Buffer.alloc(0);
+      let child: ReturnType<typeof spawn> | null = null;
+      const authenticate = (chunk: Buffer) => {
+        buffered = Buffer.concat([buffered, chunk]);
+        if (buffered.length > 8 * 1024) {
+          socket.destroy();
+          return;
+        }
+        const headersEnd = buffered.indexOf("\r\n\r\n");
+        if (headersEnd < 0) return;
+        socket.off("data", authenticate);
+        const requestLineEnd = buffered.indexOf("\r\n");
+        const match = /^GET (\/[^ ]*) HTTP\/1\.1$/u.exec(
+          buffered.subarray(0, requestLineEnd).toString("ascii"),
+        );
+        const received = Buffer.from(match?.[1] ?? "");
+        const expected = Buffer.from(requestTarget);
+        if (received.length !== expected.length || !timingSafeEqual(received, expected)) {
+          socket.destroy();
+          return;
+        }
+        const forwardedHandshake = Buffer.concat([
+          Buffer.from("GET / HTTP/1.1\r\n"),
+          buffered.subarray(requestLineEnd + 2),
+        ]);
+        socket.setTimeout(0);
+        const bridge = spawn(this.#docker, ["exec", "-i", this.id, "node", "-e", FORWARD], {
+          env: safeEnvironment(),
+          shell: false,
+          stdio: ["pipe", "pipe", "pipe"],
+        });
+        child = bridge;
+        children.add(bridge);
+        bridge.stdin.write(forwardedHandshake);
+        socket.pipe(bridge.stdin);
+        bridge.stdout.pipe(socket);
+        bridge.stderr.resume();
+        bridge.once("error", () => socket.destroy());
+        bridge.once("close", () => {
+          children.delete(bridge);
+          socket.destroy();
+        });
+        bridge.stdin.on("error", () => socket.destroy());
+      };
+      socket.setTimeout(2_000, () => socket.destroy());
+      socket.on("data", authenticate);
+      socket.on("error", () => child?.kill("SIGKILL"));
       socket.on("close", () => {
         sockets.delete(socket);
-        child.stdin.end();
-        child.kill("SIGKILL");
+        child?.stdin?.end();
+        child?.kill("SIGKILL");
       });
     });
     await new Promise<void>((resolve, reject) => {
@@ -579,15 +832,25 @@ class ExecutionContainer {
     if (address === null || typeof address === "string")
       throw new CodexExecutionError("sandbox_unavailable");
     return {
-      url: `ws://127.0.0.1:${String(address.port)}`,
+      url: `ws://127.0.0.1:${String(address.port)}${requestTarget}`,
       close: () => closeForwarder(server, sockets, children),
     };
   }
   async stop(): Promise<void> {
     if (!this.#reserved) return;
+    let stage = "daemon_identity";
     try {
       await this.assertDaemon();
       if (this.#id === null) {
+        if (!this.#createMayHaveBeenIssued) {
+          stage = "persist_never_created";
+          await withCancellation(
+            this.#lifecycle.onStopped({ name: this.name, id: null }),
+            AbortSignal.timeout(10_000),
+          );
+          return;
+        }
+        stage = "find_reserved_name";
         const id = await this.cli([
           "container",
           "ls",
@@ -601,21 +864,35 @@ class ExecutionContainer {
         if (id !== "") {
           if (!/^[a-f0-9]{64}$/u.test(id)) throw new Error("Ambiguous container");
           this.#id = id;
+        } else {
+          stage = "claim_reserved_name";
+          const barrier = await this.cli(
+            nameBarrierArguments(this.name, this.#options.containerImage),
+          );
+          if (!/^[a-f0-9]{64}$/u.test(barrier)) throw new Error("Name barrier was not confirmed");
+          this.#id = barrier;
+          stage = "persist_claimed_name";
+          await withCancellation(
+            this.#lifecycle.onContainer({ name: this.name, id: barrier }),
+            AbortSignal.timeout(10_000),
+          );
         }
       }
-      if (this.#id !== null) {
-        const state = await this.inspect();
-        if (
-          state.id !== this.#id ||
-          state.name !== `/${this.name}` ||
-          record(state.labels)["kestrel.factory.execution"] !== this.name
-        )
-          throw new Error("Container identity changed");
-        // Removing the exact private PID namespace is the writer-lifetime boundary.
-        // Stopping only Codex, its socket, or a docker-exec client is insufficient.
-        await this.assertDaemon();
-        await this.cli(["rm", "--force", this.#id]);
-      }
+      stage = "inspect_owned_container";
+      const state = await this.inspect();
+      if (
+        state.id !== this.#id ||
+        state.name !== `/${this.name}` ||
+        record(state.labels)["kestrel.factory.execution"] !== this.name
+      )
+        throw new Error("Container identity changed");
+      // Removing the exact private PID namespace is the writer-lifetime boundary.
+      // Stopping only Codex, its socket, or a docker-exec client is insufficient.
+      stage = "daemon_before_remove";
+      await this.assertDaemon();
+      stage = "remove_owned_container";
+      await this.cli(["rm", "--force", this.#id]);
+      stage = "confirm_name_absent";
       const remaining = await this.cli([
         "container",
         "ls",
@@ -627,13 +904,15 @@ class ExecutionContainer {
         "{{.ID}}",
       ]);
       if (remaining !== "") throw new Error("Container still present");
+      stage = "daemon_after_remove";
       await this.assertDaemon();
+      stage = "persist_stopped";
       await withCancellation(
         this.#lifecycle.onStopped({ name: this.name, id: this.#id }),
         AbortSignal.timeout(10_000),
       );
     } catch {
-      throw new CodexExecutionError("stop_unconfirmed");
+      throw new CodexExecutionError("stop_unconfirmed", undefined, `teardown_${stage}_failed`);
     }
   }
 }
@@ -651,6 +930,8 @@ async function closeForwarder(
 class ExecutionTurn {
   readonly transport: CodexFactoryTransport;
   readonly #input: CodexExecutionTurnInput;
+  readonly #options: CodexExecutionRuntimeOptions;
+  readonly #hostProfile: IsolatedCodexProfile | null;
   #threadId: string | undefined;
   #turnId: string | undefined;
   #completed = false;
@@ -666,22 +947,29 @@ class ExecutionTurn {
   });
 
   constructor(
-    options: Options,
+    options: CodexExecutionRuntimeOptions,
     input: CodexExecutionTurnInput,
     hostCwd: string,
     url: string,
     signal: AbortSignal,
     timeoutMs: number,
+    hostProfile: IsolatedCodexProfile | null,
   ) {
     this.#input = input;
+    this.#options = options;
+    this.#hostProfile = hostProfile;
     this.transport = new CodexFactoryTransport({
       executable: options.executable ?? "codex",
       arguments: [
         ...(options.arguments ?? ["app-server", "--listen", "stdio://"]),
         ...SAFETY_ARGUMENTS,
+        ...(hostProfile === null ? [] : ISOLATED_PROFILE_ARGUMENTS),
       ],
       cwd: hostCwd,
-      env: { ...safeEnvironment(), CODEX_EXEC_SERVER_URL: url },
+      env: {
+        ...(hostProfile?.environment ?? safeEnvironment()),
+        CODEX_EXEC_SERVER_URL: url,
+      },
       timeoutMs,
       signal,
       receive: (message) => this.#receive(message),
@@ -792,7 +1080,10 @@ class ExecutionTurn {
     const type = boundedString(item.type);
     const id = boundedString(item.id);
     if (["reasoning", "plan", "userMessage", "contextCompaction"].includes(type)) return;
-    if (!["agentMessage", "commandExecution", "fileChange"].includes(type))
+    if (
+      !["agentMessage", "commandExecution", "fileChange"].includes(type) ||
+      (type === "fileChange" && this.#options.allowFileChanges === false)
+    )
       throw new CodexExecutionError("permission_required");
     if (type === "agentMessage" && completed) {
       const text = boundedString(item.text, 128 * 1024);
@@ -826,7 +1117,14 @@ class ExecutionTurn {
       clientInfo: { name: "kestrel", version: "0.0.0" },
       capabilities: { experimentalApi: true },
     });
-    boundedString(initialized.userAgent, 512);
+    const initializedVersion = codexVersion(initialized.userAgent);
+    if (
+      this.#options.expectedCodexVersion !== undefined &&
+      initializedVersion !== this.#options.expectedCodexVersion
+    )
+      throw new CodexExecutionError("permission_required");
+    if (this.#hostProfile !== null && initialized.codexHome !== this.#hostProfile.codexHome)
+      throw new CodexExecutionError("permission_required");
     this.transport.notify("initialized");
     const local = await this.transport.request("environment/status", { environmentId: "local" });
     if (local.status !== "unknown") throw new CodexExecutionError("permission_required");
@@ -838,15 +1136,33 @@ class ExecutionTurn {
     });
     const config = record(response.config);
     const features = record(config.features);
+    const mcpServers = record(config.mcp_servers ?? {});
+    const modelProviders = record(config.model_providers ?? {});
     if (
       Object.entries(FEATURES).some(([name, value]) => features[name] !== value) ||
+      Object.entries(features).some(
+        ([name, value]) => !(name in FEATURES) && value !== false && value !== null,
+      ) ||
       config.web_search !== "disabled" ||
-      config.allow_login_shell !== false
+      config.allow_login_shell !== false ||
+      (this.#hostProfile !== null &&
+        (config.model !== null ||
+          config.model_provider !== null ||
+          Object.keys(modelProviders).length !== 0 ||
+          config.model_instructions_file !== null ||
+          config.instructions !== null ||
+          config.project_doc_max_bytes !== 0 ||
+          !Array.isArray(config.notify) ||
+          config.notify.length !== 0 ||
+          config.sandbox_mode !== "read-only" ||
+          config.approval_policy !== "never" ||
+          config.approvals_reviewer !== "user" ||
+          Object.keys(mcpServers).length !== 0))
     )
       throw new CodexExecutionError("permission_required");
-    const names = Object.keys(config.mcp_servers === undefined ? {} : record(config.mcp_servers));
+    const names = Object.keys(mcpServers);
     if (names.length > 256) throw new CodexExecutionError("invalid_response");
-    const mcpServers = Object.fromEntries(
+    const disabledMcpServers = Object.fromEntries(
       names.map((name) => [boundedString(name), { enabled: false }]),
     );
     const thread = await this.transport.request("thread/start", {
@@ -862,13 +1178,14 @@ class ExecutionTurn {
         model_provider: "openai",
         web_search: "disabled",
         allow_login_shell: false,
-        mcp_servers: mcpServers,
+        mcp_servers: disabledMcpServers,
         shell_environment_policy: {
           inherit: "none",
           set: { PATH: "/usr/local/bin:/usr/bin:/bin", HOME: "/home/codex", TMPDIR: "/tmp" },
         },
       },
       developerInstructions:
+        this.#options.developerInstructions ??
         "Implement only the approved scope in the selected remote workspace. That environment is contained externally. Do not access host tools, external services, privileges, or Git metadata writes. Ask when requirements or authorization must change.",
     });
     const sandbox = record(thread.sandbox);
@@ -910,7 +1227,7 @@ class ExecutionTurn {
 }
 
 async function isolated<T>(
-  options: Options,
+  options: CodexExecutionRuntimeOptions,
   input: CodexExecutionLifecycle & { signal?: AbortSignal; gitDirectory?: string },
   workspacePath: string,
   requestId: string,
@@ -931,7 +1248,11 @@ async function isolated<T>(
   try {
     const workspace = await existingPath(workspacePath);
     if (!(await lstat(workspace)).isDirectory()) throw new CodexExecutionError("invalid_response");
-    control = await realpath(await mkdtemp(join(tmpdir(), "kestrel-execution-control-")));
+    control =
+      options.controlDirectory === undefined
+        ? await realpath(await mkdtemp(join(tmpdir(), "kestrel-execution-control-")))
+        : await existingPath(options.controlDirectory);
+    if (!(await lstat(control)).isDirectory()) throw new CodexExecutionError("invalid_response");
     container = new ExecutionContainer(
       options,
       input,
@@ -951,10 +1272,13 @@ async function isolated<T>(
   }
 }
 
-export function createCodexExecutionRuntime(options: Options): CodexExecutionRuntime {
+export function createCodexExecutionRuntime(
+  options: CodexExecutionRuntimeOptions,
+): CodexExecutionRuntime {
   return {
     async runTurn(input) {
       try {
+        await verifyHostCodex(options);
         boundedString(input.model, 128);
         boundedString(input.prompt, 256 * 1024);
         if (
@@ -970,6 +1294,9 @@ export function createCodexExecutionRuntime(options: Options): CodexExecutionRun
           input.requestId,
           limit,
           async (container, control, signal) => {
+            const hostProfile = options.isolateHostProfile
+              ? await prepareIsolatedCodexProfile(control, options.authenticationFile)
+              : null;
             await container.create(
               [
                 "/usr/local/bin/codex",
@@ -984,7 +1311,15 @@ export function createCodexExecutionRuntime(options: Options): CodexExecutionRun
             );
             await container.startExecutor(signal);
             const forwarder = await container.forward(signal);
-            const turn = new ExecutionTurn(options, input, control, forwarder.url, signal, limit);
+            const turn = new ExecutionTurn(
+              options,
+              input,
+              control,
+              forwarder.url,
+              signal,
+              limit,
+              hostProfile,
+            );
             try {
               return await turn.run(control);
             } finally {

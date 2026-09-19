@@ -163,6 +163,69 @@ it("creates a PR from the exact retained payload and reads its exact base/head i
   expect(calls.some((call) => call.tokenPresent)).toBe(false);
 });
 
+it("observes a moved PR head without treating the frozen publication payload as current", async () => {
+  const value = await fixture();
+  const movedHead = "c".repeat(40);
+  const current = await value.state();
+  await value.setState({
+    sample: {
+      ...current.sample,
+      head: { ...current.sample.head, sha: movedHead },
+    },
+  });
+
+  await expect(
+    value.adapter.observePullRequest(identity, {
+      ...payload,
+      repository: identity.repository,
+      id: "501",
+      nodeId: "PR_fixture7",
+      repositoryNodeId: "R_fixture41",
+      authorNodeId: "U_fixtureOperator",
+      number: 7,
+      url: "https://github.com/owner/notes/pull/7",
+      state: "open",
+      author: identity.account,
+    }),
+  ).resolves.toEqual({
+    baseCommitId: payload.baseCommitId,
+    headCommitId: movedHead,
+    state: "open",
+  });
+  expect((await value.calls()).every((call) => !call.args.includes("POST"))).toBe(true);
+});
+
+it("observes the same PR after an operator edits its mutable title and body", async () => {
+  const value = await fixture();
+  const current = await value.state();
+  await value.setState({
+    sample: {
+      ...current.sample,
+      title: "Operator clarified the pull request",
+      body: "The operator replaced the generated description.",
+    },
+  });
+
+  await expect(
+    value.adapter.observePullRequest(identity, {
+      ...payload,
+      repository: identity.repository,
+      id: "501",
+      nodeId: "PR_fixture7",
+      repositoryNodeId: "R_fixture41",
+      authorNodeId: "U_fixtureOperator",
+      number: 7,
+      url: "https://github.com/owner/notes/pull/7",
+      state: "open",
+      author: identity.account,
+    }),
+  ).resolves.toMatchObject({
+    baseCommitId: payload.baseCommitId,
+    headCommitId: payload.headCommitId,
+    state: "open",
+  });
+});
+
 it("does not confirm a response with inconsistent canonical repository node IDs", async () => {
   const value = await fixture();
   await value.setState({ mode: "different_repository_node" });
