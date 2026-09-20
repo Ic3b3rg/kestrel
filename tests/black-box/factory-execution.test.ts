@@ -73,6 +73,7 @@ describe("Factory execution authority", () => {
       gate: null,
       revision: null,
       workItems: [],
+      finalVerification: { runs: [], certificate: null, progress: null },
     });
   });
 

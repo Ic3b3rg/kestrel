@@ -211,9 +211,24 @@ head/tree they verified. Questions, missing access, interrupted attempts, and fa
 their evidence and block the Project visibly. Cancelling interrupts execution; a Project stays
 reserved until container teardown is confirmed. The local launcher allows up to 90 seconds for
 bounded teardown and queue draining, including when a browser event stream remains open. Browser
-closure alone does not stop work. Pull request publication and review decisions follow in #216–#218.
-See the [runtime contract](./docs/research/factory-execution-runtime-contract.md) for containment,
-immutable image configuration, and the real-runtime conformance check.
+closure alone does not stop work. See the
+[runtime contract](./docs/research/factory-execution-runtime-contract.md) for containment, immutable
+image configuration, and the real-runtime conformance check.
+
+After cumulative verification passes, Kestrel pushes the exact Feature head and creates one pull
+request through the host Git/GitHub sessions. Open **Review** and choose **Start review** to run an
+independent Conceptual Review against the retained base/head. Its explorable graph connects approved
+outcomes to implemented behavior, exact source and executed-check evidence, and any problems or
+gaps. A partial or failed analysis stays explicit and cannot authorize merge.
+
+Published findings are never repaired automatically. Select a finding under **Request a bounded
+correction**, then choose **Apply correction and review again** to authorize only that correction
+and rerun every approved check. The same PR receives the new head and needs a new exact-revision
+review. When the current review is eligible, **Approve and merge PR** performs the explicit provider
+merge; only confirmed merge reconciliation moves cards to Completed and closes linked issues. See
+[certified Feature publication](./docs/factory-v01/feature-publication.md), the
+[Factory 0.1 acceptance record](./docs/factory-v01/acceptance.md), and the
+[Veduta pilot profile](./docs/factory-v01/veduta-pilot.md).
 
 If the password or every signed-in device is lost, recover the sole Operator from the trusted host:
 
@@ -574,10 +589,11 @@ non-root user with retained source mounted read-only, swap and networking disabl
 disabled, verified shared-memory and tmpfs allocations, and a capability-protected loopback bridge.
 Kestrel durably records the container lifecycle, verifies the materialized source again after
 teardown, validates every graph locator against the authoritative base-to-head change, and publishes
-an immutable source-only Partial review. Model prose is stamped as source-only interpretation;
-executed-check authority remains explicitly unlinked and cannot make the artifact Complete.
-Executed-check linking remains a separate review slice. TLS/Caddy and Repository Provider
-Connections are outside the local-first V1 contract.
+an immutable review artifact with resolved final-verification evidence. Model prose remains
+interpretation; deterministic source and executed-check records retain their distinct provenance.
+Selected correction runs and merge approval are bound to that reviewed head, and a changed PR
+revision makes the older review ineligible. TLS/Caddy and Repository Provider Connections are
+outside the local-first V1 contract.
 
 The development Compose files keep database ownership out of the host-native long-running services.
 The one-shot migration and role-preparation containers use the database owner; host web and worker

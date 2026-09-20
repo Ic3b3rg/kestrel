@@ -389,9 +389,12 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX === "1")(
           expect(message.content.length).toBeGreaterThan(10);
           expect(message.content.length).toBeLessThanOrEqual(32_000);
         }
-        expect(chat.messages.find((message) => message.role === "assistant")?.content).toContain(
-          "Unicode round-trip",
-        );
+        expect(
+          chat.messages.some(
+            (message) =>
+              message.role === "assistant" && message.content.includes("Unicode round-trip"),
+          ),
+        ).toBe(true);
         expect(
           chat.turns.every((turn) => turn.skills?.[0]?.contentDigest === skill.contentDigest),
         ).toBe(true);

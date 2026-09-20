@@ -529,7 +529,7 @@ describe("exact local Review Revision", () => {
         table_name,
         can_select: true,
         can_insert: true,
-        can_update: table_name === "review_revisions",
+        can_update: true,
         can_delete: false,
       })),
     ]);
