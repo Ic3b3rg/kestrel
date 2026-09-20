@@ -254,12 +254,20 @@ _Avoid_: Work Item, pull request, Agent Run
 A versioned statement of one Feature's objective, scope, acceptance outcomes, ordered Work Items and dependencies, verification, and execution limits. The Operator's approval freezes one version and authorizes its eligible work.
 _Avoid_: Chat transcript, mutable issue body, runtime prompt
 
+**Issue Tracker Connection**:
+The Operator-approved, Project-scoped binding to an external task system that is authoritative for Tracker Issue identity and current provider state. Reading or importing its records never supplies a Run Trigger or changes an approved Feature Plan.
+_Avoid_: Repository Provider Connection, repository remote, execution authority
+
+**Tracker Issue**:
+The external task record bound to one approved Work Item, either reused from an explicit import or created once during plan publication. Kestrel retains the immutable plan and execution evidence rather than a second independently editable issue; later tracker edits cannot silently expand authorized work.
+_Avoid_: Work Item, Feature, Planning Session
+
 **Development Lifecycle**:
 The progression of intended software work through planning, agentic implementation, review, and integration inside Kestrel, with deployment and maintenance reserved for later releases.
 _Avoid_: Review First V1, pull-request workflow, coding phase
 
 **Work Item**:
-The provider-neutral unit of an approved Feature Plan, with acceptance criteria and dependencies, that connects intended work to Agent Runs, Human Gates, and the Feature's review. It may be linked to a new or imported GitHub issue.
+The provider-neutral unit of an approved Feature Plan, with acceptance criteria and dependencies, that connects intended work to Agent Runs, Human Gates, and the Feature's review. A draft may be unbound; before execution, every approved Work Item is bound to exactly one new or explicitly imported Tracker Issue.
 _Avoid_: Change Proposal, GitHub Issue, pull request
 
 **Planning Session**:
