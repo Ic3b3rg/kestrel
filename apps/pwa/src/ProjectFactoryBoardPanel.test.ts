@@ -172,7 +172,7 @@ describe("Project Factory board", () => {
   });
 
   it("does not duplicate a linked GitHub issue as a provider card", async () => {
-    await render({ githubIssues });
+    await render({ githubIssuePages: [githubIssues] });
     expect(container.textContent).toContain(firstItem.title);
     expect(container.textContent).not.toContain("Provider copy of the export Work Item");
     expect(
@@ -184,13 +184,15 @@ describe("Project Factory board", () => {
 
   it("keeps Kestrel cards visible when GitHub rate limits the issue catalog", async () => {
     await render({
-      githubIssues: {
-        ...githubIssues,
-        repository: null,
-        state: "unavailable",
-        failure: "rate_limited",
-        issues: [],
-      },
+      githubIssuePages: [
+        {
+          ...githubIssues,
+          repository: null,
+          state: "unavailable",
+          failure: "rate_limited",
+          issues: [],
+        },
+      ],
     });
     expect(container.textContent).toContain(firstItem.title);
     expect(container.textContent).toContain(
@@ -258,18 +260,20 @@ describe("Project Factory board", () => {
     const providerIssue = githubIssues.issues[0];
     if (providerIssue === undefined) throw new Error("Missing GitHub issue fixture");
     await render({
-      githubIssues: {
-        ...githubIssues,
-        issues: [
-          {
-            ...providerIssue,
-            id: "43",
-            number: 43,
-            url: "https://github.com/example/reports/issues/43",
-            title: "Keep provider work visible offline",
-          },
-        ],
-      },
+      githubIssuePages: [
+        {
+          ...githubIssues,
+          issues: [
+            {
+              ...providerIssue,
+              id: "43",
+              number: 43,
+              url: "https://github.com/example/reports/issues/43",
+              title: "Keep provider work visible offline",
+            },
+          ],
+        },
+      ],
       online: false,
       loading: true,
       error: "The board could not be refreshed.",

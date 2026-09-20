@@ -5,6 +5,8 @@ import type { AppRoute } from "./app-route.js";
 import { planningRequestError } from "./FeatureNavigation.js";
 import { ProjectFactoryBoardPanel } from "./ProjectFactoryBoardPanel.js";
 
+const githubIssuePageLimit = 5;
+
 export interface ProjectFactoryWorkspaceProps {
   projectId: string;
   projectName: string;
@@ -22,7 +24,7 @@ export function ProjectFactoryWorkspace({
 }: ProjectFactoryWorkspaceProps) {
   const [features, setFeatures] = useState<Feature[]>([]);
   const [boards, setBoards] = useState<FactoryBoard[]>([]);
-  const [githubIssues, setGitHubIssues] = useState<FactoryGitHubIssues | null>(null);
+  const [githubIssuePages, setGitHubIssuePages] = useState<FactoryGitHubIssues[]>([]);
   const [githubIssuesError, setGitHubIssuesError] = useState<string | null>(null);
   const [githubIssuesLoading, setGitHubIssuesLoading] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -83,10 +85,23 @@ export function ProjectFactoryWorkspace({
     const controller = new AbortController();
     setGitHubIssuesError(null);
     setGitHubIssuesLoading(true);
-    void fetchFactoryGitHubIssues(projectId, 1, controller.signal)
-      .then((result) => {
-        if (!controller.signal.aborted) setGitHubIssues(result);
-      })
+    const read = async () => {
+      const pages: FactoryGitHubIssues[] = [];
+      let page: number | null = 1;
+      while (page !== null && pages.length < githubIssuePageLimit) {
+        const result = await fetchFactoryGitHubIssues(projectId, page, controller.signal);
+        if (controller.signal.aborted) return;
+        const retained =
+          pages.length === githubIssuePageLimit - 1 && result.nextPage !== null
+            ? { ...result, nextPage: null, limited: true }
+            : result;
+        pages.push(retained);
+        setGitHubIssuePages([...pages]);
+        if (retained.state !== "available") return;
+        page = retained.nextPage;
+      }
+    };
+    void read()
       .catch((failure: unknown) => {
         if (!controller.signal.aborted && !onAuthenticationError(failure))
           setGitHubIssuesError(
@@ -108,7 +123,7 @@ export function ProjectFactoryWorkspace({
       projectName={projectName}
       features={features}
       boards={boards}
-      githubIssues={githubIssues?.projectId === projectId ? githubIssues : null}
+      githubIssuePages={githubIssuePages.filter((page) => page.projectId === projectId)}
       githubIssuesError={githubIssuesError}
       githubIssuesLoading={githubIssuesLoading}
       online={online}

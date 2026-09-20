@@ -22,7 +22,7 @@ export interface ProjectFactoryBoardPanelProps {
   projectName: string;
   features: Feature[];
   boards: FactoryBoard[];
-  githubIssues?: FactoryGitHubIssues | null;
+  githubIssuePages?: readonly FactoryGitHubIssues[];
   githubIssuesError?: string | null;
   githubIssuesLoading?: boolean;
   online: boolean;
@@ -128,7 +128,7 @@ export function ProjectFactoryBoardPanel({
   projectName,
   features,
   boards,
-  githubIssues = null,
+  githubIssuePages = [],
   githubIssuesError = null,
   githubIssuesLoading = false,
   online,
@@ -154,10 +154,19 @@ export function ProjectFactoryBoardPanel({
       ),
     ),
   );
-  const availableGitHubIssues =
-    githubIssues?.state === "available"
-      ? githubIssues.issues.filter((issue) => !linkedIssueUrls.has(issue.url))
-      : [];
+  const seenGitHubIssues = new Set<string>();
+  const availableGitHubIssues = githubIssuePages
+    .filter((page) => page.state === "available")
+    .flatMap((page) => page.issues)
+    .filter((issue) => {
+      const key = `${issue.repository.id}:${issue.id}`;
+      if (seenGitHubIssues.has(key) || linkedIssueUrls.has(issue.url)) return false;
+      seenGitHubIssues.add(key);
+      return true;
+    });
+  const githubIssueFailure =
+    githubIssuePages.find((page) => page.failure !== null)?.failure ?? null;
+  const githubIssuesLimited = githubIssuePages.some((page) => page.limited);
   return (
     <section
       className="min-w-0 space-y-6"
@@ -214,9 +223,14 @@ export function ProjectFactoryBoardPanel({
           Updating board…
         </p>
       ) : null}
-      {githubIssues?.failure == null ? null : (
-        <FactoryProviderProblem failure={githubIssues.failure} projectId={projectId} />
+      {githubIssueFailure === null ? null : (
+        <FactoryProviderProblem failure={githubIssueFailure} projectId={projectId} />
       )}
+      {githubIssuesLimited ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          Showing the first five pages. More open GitHub issues may exist.
+        </p>
+      ) : null}
       <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {columns.map((column) => {
           const items = approvedBoards.flatMap((board) =>
