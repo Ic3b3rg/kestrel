@@ -150,6 +150,45 @@ it("shows GitHub issue loading without hiding retained Project work", async () =
   }
 });
 
+it("retries the GitHub issue catalog when the Operator refreshes the board", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.features.mockReset().mockResolvedValue({ schemaVersion: 1, features: [] });
+  api.board.mockReset();
+  api.issues
+    .mockReset()
+    .mockRejectedValueOnce(new Error("provider unavailable"))
+    .mockResolvedValueOnce(githubIssues);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      await Promise.resolve(
+        root.render(
+          createElement(ProjectFactoryWorkspace, {
+            projectId,
+            projectName: "Reports",
+            online: true,
+            onNavigate: vi.fn(),
+            onAuthenticationError: () => false,
+          }),
+        ),
+      );
+    });
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="Refresh board"]')?.click();
+      await Promise.resolve();
+    });
+    expect(container.textContent).toContain("Export saved reports");
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("opens a Project board with direct start, pull-request and settings actions without fetching planned Work Items", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   api.features.mockReset().mockResolvedValue({ schemaVersion: 1, features: [feature] });

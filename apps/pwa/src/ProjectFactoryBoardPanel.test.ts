@@ -255,11 +255,30 @@ describe("Project Factory board", () => {
   });
 
   it("retains known cards during loading, errors, and offline viewing", async () => {
-    await render({ online: false, loading: true, error: "The board could not be refreshed." });
+    const providerIssue = githubIssues.issues[0];
+    if (providerIssue === undefined) throw new Error("Missing GitHub issue fixture");
+    await render({
+      githubIssues: {
+        ...githubIssues,
+        issues: [
+          {
+            ...providerIssue,
+            id: "43",
+            number: 43,
+            url: "https://github.com/example/reports/issues/43",
+            title: "Keep provider work visible offline",
+          },
+        ],
+      },
+      online: false,
+      loading: true,
+      error: "The board could not be refreshed.",
+    });
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
       "could not be refreshed",
     );
     expect(container.textContent).toContain(firstItem.title);
+    expect(container.textContent).toContain("Keep provider work visible offline");
     expect(container.textContent).toContain("Reconnect to refresh");
     expect(button("Refresh board").disabled).toBe(true);
     expect(button("Open planning chat: " + planning.title).disabled).toBe(false);
