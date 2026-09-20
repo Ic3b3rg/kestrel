@@ -11,3 +11,5 @@ test-results/
 *.log
 .DS_Store
 .kestrel/
+__pycache__/
+*.py[cod]
