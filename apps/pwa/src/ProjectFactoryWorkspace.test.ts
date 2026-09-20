@@ -113,6 +113,43 @@ it("keeps the Project board usable when the GitHub issue request fails", async (
   }
 });
 
+it("shows GitHub issue loading without hiding retained Project work", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const pendingIssues = Promise.withResolvers<FactoryGitHubIssues>();
+  api.features.mockReset().mockResolvedValue({ schemaVersion: 1, features: [feature] });
+  api.board.mockReset();
+  api.issues.mockReset().mockReturnValue(pendingIssues.promise);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      await Promise.resolve(
+        root.render(
+          createElement(ProjectFactoryWorkspace, {
+            projectId,
+            projectName: "Reports",
+            online: true,
+            onNavigate: vi.fn(),
+            onAuthenticationError: () => false,
+          }),
+        ),
+      );
+    });
+    expect(container.textContent).toContain(feature.title);
+    expect(container.textContent).toContain("Reading GitHub issues…");
+    await act(async () => {
+      pendingIssues.resolve(githubIssues);
+      await pendingIssues.promise;
+    });
+    expect(container.textContent).not.toContain("Reading GitHub issues…");
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("opens a Project board with direct start, pull-request and settings actions without fetching planned Work Items", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   api.features.mockReset().mockResolvedValue({ schemaVersion: 1, features: [feature] });

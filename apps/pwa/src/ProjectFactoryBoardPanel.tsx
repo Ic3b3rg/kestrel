@@ -24,6 +24,7 @@ export interface ProjectFactoryBoardPanelProps {
   boards: FactoryBoard[];
   githubIssues?: FactoryGitHubIssues | null;
   githubIssuesError?: string | null;
+  githubIssuesLoading?: boolean;
   online: boolean;
   loading: boolean;
   error: string | null;
@@ -129,6 +130,7 @@ export function ProjectFactoryBoardPanel({
   boards,
   githubIssues = null,
   githubIssuesError = null,
+  githubIssuesLoading = false,
   online,
   loading,
   error,
@@ -157,7 +159,11 @@ export function ProjectFactoryBoardPanel({
       ? githubIssues.issues.filter((issue) => !linkedIssueUrls.has(issue.url))
       : [];
   return (
-    <section className="min-w-0 space-y-6" aria-labelledby={titleId} aria-busy={loading}>
+    <section
+      className="min-w-0 space-y-6"
+      aria-labelledby={titleId}
+      aria-busy={loading || githubIssuesLoading}
+    >
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="mb-1 text-sm text-muted-foreground">Project board</p>
@@ -194,6 +200,11 @@ export function ProjectFactoryBoardPanel({
           {githubIssuesError}
         </p>
       )}
+      {githubIssuesLoading ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          Reading GitHub issues…
+        </p>
+      ) : null}
       {!online ? (
         <p role="status" className="text-sm text-muted-foreground">
           Reconnect to refresh this board.
