@@ -33,6 +33,12 @@ Umbrella: https://github.com/Ic3b3rg/kestrel/issues/209
     — depended on #218 — [acceptance evidence](acceptance.md) and
     [Veduta pilot profile](veduta-pilot.md)
 
+The Operator-approved workspace amendments are included in this delivery: Project-first Kanban and
+prompt-created chats through [#226](https://github.com/Ic3b3rg/kestrel/issues/226), installable and
+versioned planning Skills through [#227](https://github.com/Ic3b3rg/kestrel/issues/227), and the
+readable review-only path for existing pull requests through
+[#228](https://github.com/Ic3b3rg/kestrel/issues/228).
+
 Each child is a complete user-visible slice. Work blockers-first on dedicated branches/worktrees,
 merge verified slices, then start the next from current origin/master. The existing Review First
 roadmap remains separate.

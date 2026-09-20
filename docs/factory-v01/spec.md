@@ -87,6 +87,12 @@ powered-off workstation cannot execute work.
     navigation or controls.
 36. I can use the existing Review First source and provider views while the Factory is delivered
     incrementally.
+37. I can open an existing GitHub pull request and first see its repository, branches, revision,
+    purpose, provenance, and missing review prerequisites in ordinary language.
+38. I can retain that pull request's exact local source and explicitly start the same independent
+    Conceptual Review without Kestrel pretending the change came from an approved Factory plan.
+39. Its source-only review remains visibly partial when executed checks are unavailable, preserves
+    immutable history, becomes stale after a new observed head, and performs no provider write.
 
 ## Domain and state
 
@@ -148,6 +154,9 @@ powered-off workstation cannot execute work.
 - Review runs separately against exact base/head source. A review graph is supported by typed
   file/line evidence and executed verification records. Validate output structure and evidence
   resolution before publication; limited analysis is disclosed.
+- A provider-observed pull request may use the same review engine once matching local source is
+  retained. Its stated purpose and provider description are provenance, not approved Factory
+  requirements; absent plan and check evidence stays absent rather than being synthesized.
 - Reuse the existing Conceptual Review vocabulary and trust contract. Factory 0.1 does not promise
   the entire later Certified Review First roadmap, every model route, or every language-specific
   analysis capability.
@@ -177,6 +186,9 @@ powered-off workstation cannot execute work.
 - Review starts with acceptance outcomes and lets the Operator select graph nodes to inspect
   behavioral explanation, evidence, and findings. Corrections and merge remain visible next to the
   reviewed revision.
+- Existing pull requests first show readable provider facts, purpose and provenance, with a clear
+  **Start review** action. Their graph uses purpose → behavior → source evidence → problem and omits
+  empty Factory-only stages.
 - Use real application states and content. Empty, loading, authentication failure, blocked,
   reconnecting, and partial results are designed states. Hide infrastructure jargon from the
   ordinary product flow.

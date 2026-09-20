@@ -85,6 +85,14 @@ changes** reopens previously observed or retained changes. Selecting a change ad
 the Project URL so reload and browser navigation restore its detail without acquiring source or
 starting Review.
 
+Selecting an existing pull request opens a review-first detail instead of inventing a Factory plan.
+Kestrel shows the repository, branches, exact observed revision, concise purpose and its provenance;
+the full GitHub description remains available on demand. After the Operator retains matching local
+source, **Start review** runs an independent Conceptual Review and presents the light overview
+before the intent → behavior → source evidence → problem graph. The review is read-only at the
+provider, stays explicitly partial when executed checks are unavailable, and becomes stale when a
+refresh observes a new head.
+
 Settings remains available from the rail for global host connections, Codex model defaults,
 repository access and Operator controls. **Project settings** has an explicit Project selector for
 its existing Direct API profile, separate from those global defaults; its selected scope survives
@@ -96,8 +104,8 @@ Intent, live GitHub access, Codex account, and saved review model. Each missing 
 to its correction. **Verify connections** refreshes the independent host probes and saved default;
 opening or reloading a Project also reads them afresh. A detached source does not hide a retained
 revision, and a new source head never inherits the old revision's availability. The model is checked
-against the current Codex catalog without choosing a fallback. Review execution arrives in 0.2; this
-summary does not start a review.
+against the current Codex catalog without choosing a fallback. Starting a review is always an
+explicit Operator action.
 
 In **Settings → Connections**, Kestrel runs fresh, bounded host probes for GitHub CLI and Codex CLI.
 The GitHub card shows the validated `github.com` account and selected-Project access only after its
@@ -109,12 +117,14 @@ or persist tokens or auth-config material.
 
 ### Plan a feature in Kestrel
 
-Open an authorized Project and select **Features → New feature** in the sidebar. Enter a **Feature
-name** and choose **Create feature**. Each conversation has a stable
-`/projects/:projectId/features/:featureId` address. Kestrel saves the user message and pending turn
-before replying to the browser, then processes the turn through the host Codex App Server. You can
-close the page while the local Installation keeps running and reopen the saved chat later. Stopping
-the local process or sleeping the computer also stops progress.
+Open an authorized Project and select **+ New** in the board's To do column or **Start plan** in the
+sidebar. Kestrel opens a blank composer immediately. The first accepted prompt creates the Feature,
+and the model supplies its initial name after understanding the request; an Operator rename takes
+precedence. Each conversation has a stable `/projects/:projectId/features/:featureId` address.
+Kestrel saves the user message and pending turn before replying to the browser, then processes the
+turn through the host Codex App Server. You can close the page while the local Installation keeps
+running and reopen the saved chat later. Stopping the local process or sleeping the computer also
+stops progress.
 
 Planning requires the existing ChatGPT-authenticated Codex connection. It uses the saved Codex
 model, or the current catalog default when none has been selected; it does not use a Direct API key.
