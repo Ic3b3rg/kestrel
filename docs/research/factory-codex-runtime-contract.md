@@ -16,8 +16,8 @@ Avviare thread distinti per pianificazione ed esecuzione. Nel secondo, impostare
 è il `cwd` Kestrel. Controllare la risposta **prima** dell'inferenza: `cwd`
 esatto, policy di approvazione, reviewer e `sandbox` normalizzata; rifiutare
 scritture, rete o radici ulteriori non autorizzate.
-[Schema richiesta](/tmp/kestrel-factory-codex-schema/v2/ThreadStartParams.json),
-[risposta](/tmp/kestrel-factory-codex-schema/v2/ThreadStartResponse.json),
+Schema richiesta `v2/ThreadStartParams.json`, risposta
+`v2/ThreadStartResponse.json` (entrambi nello schema generato localmente),
 [config versione installata](https://github.com/openai/codex/blob/rust-v0.153.4/codex-rs/core/config.schema.json).
 
 `turn/start` richiede `threadId` e `input: [{type:"text",text:"..."}]`. Ripetere
@@ -39,7 +39,7 @@ Lo schema stabile locale non espone `access`/`readOnlyAccess`, presenti invece
 nella documentazione live: non inviarli presumendo che siano applicati.
 Read-only non significa letture limitate al repository né invisibilità delle
 credenziali sul filesystem.
-[Schema turno](/tmp/kestrel-factory-codex-schema/v2/TurnStartParams.json),
+Schema turno `v2/TurnStartParams.json` nello schema generato localmente,
 [documentazione live](https://learn.chatgpt.com/docs/app-server#sandbox-read-access-readonlyaccess).
 
 Passare `outputSchema` a ogni turno che deve produrre piano/review. Accettare
@@ -47,7 +47,7 @@ solo un turno `completed`, raccogliere gli `agentMessage` completati e validare
 nuovamente JSON, schema e riferimenti di evidenza. `phase="final_answer"`
 identifica il finale; `phase=null` significa sconosciuta, quindi serve una
 regola esplicita per i modelli legacy. I delta non autorizzano pubblicazione.
-[Schema notifiche](/tmp/kestrel-factory-codex-schema/v2/TurnCompletedNotification.json),
+Schema notifiche `v2/TurnCompletedNotification.json` nello schema generato localmente,
 [output strutturato](https://learn.chatgpt.com/docs/app-server#start-a-turn).
 
 ### Riscontro live dello schema del piano, #212
@@ -132,5 +132,5 @@ accetta `{decision:"cancel"}`; permissions approval restituisce
 `turn/interrupt`; elicitation MCP accetta `{action:"cancel"}`. Non autorizzare
 modifiche persistenti alle policy. Gli ID JSON-RPC valgono per quella connessione:
 dopo restart riprendere dal gate durevole con una nuova operazione controllata.
-[Richieste pubbliche](/tmp/kestrel-factory-codex-schema/ServerRequest.json),
-[risposta permessi](/tmp/kestrel-factory-codex-schema/PermissionsRequestApprovalResponse.json).
+Richieste pubbliche `ServerRequest.json` e risposta permessi
+`PermissionsRequestApprovalResponse.json` nello schema generato localmente.
