@@ -26,9 +26,12 @@ Umbrella: https://github.com/Ic3b3rg/kestrel/issues/209
    [explicit Conceptual Review and graph #238](https://github.com/Ic3b3rg/kestrel/issues/238), and
    [executed-check evidence and immutable history #239](https://github.com/Ic3b3rg/kestrel/issues/239)
 9. [Factory 0.1-09 — Selected corrections and exact-head merge from Kestrel](https://github.com/Ic3b3rg/kestrel/issues/218)
-   — blocked by #217
+   — depended on #217 — implemented through
+   [bounded selected corrections #246](https://github.com/Ic3b3rg/kestrel/issues/246) and
+   [exact-head merge #247](https://github.com/Ic3b3rg/kestrel/issues/247)
 10. [Factory 0.1-10 — Accept the runnable Factory 0.1 on real runtime and pilot context](https://github.com/Ic3b3rg/kestrel/issues/219)
-    — blocked by #218
+    — depended on #218 — [acceptance evidence](acceptance.md) and
+    [Veduta pilot profile](veduta-pilot.md)
 
 Each child is a complete user-visible slice. Work blockers-first on dedicated branches/worktrees,
 merge verified slices, then start the next from current origin/master. The existing Review First

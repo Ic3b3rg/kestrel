@@ -9,16 +9,23 @@ import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 
 import {
+  CodexSubscriptionConnectionSchema,
+  FactoryConceptualReviewPreparationSchema,
+  FactoryConceptualReviewWorkflowReadSchema,
   FactoryBoardSchema,
   FactoryExecutionSchema,
   FactoryExecutionRunSchema,
+  FactoryFeaturePublicationSchema,
+  FeatureChatSchema,
   FeatureSchema,
   LocalRepositoryInventorySchema,
+  PlanningFeatureStartedSchema,
   ProjectUpsertedSchema,
+  type Feature,
   type FeaturePlanDocument,
 } from "@kestrel/contracts";
 import { bootstrapOperator, createPool } from "@kestrel/database";
-import { factoryGitHubFixture } from "./support/factory-github-fixture.js";
+import { createFactoryFeaturePublicationFixture } from "./support/factory-feature-publication-fixture.js";
 import { hashPassword } from "../../apps/web/src/password.js";
 import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME } from "../../apps/web/src/session.js";
 
@@ -66,6 +73,9 @@ describe.runIf(process.env.KESTREL_LIVE_FACTORY_EXECUTION === "1")(
         const secrets = join(directory, "secrets");
         const provider = join(directory, "github-fixture");
         const providerState = join(directory, "github-state.json");
+        const publicationRemote = join(directory, "publication-remote.git");
+        const publicationGit = join(directory, "publication-git");
+        const publicationRemoteUrl = "https://github.com/fixture/factory-disposable.git";
         const databaseContainer = `kestrel-execution-live-${randomUUID()}`;
         const runDocker = (args: string[]) =>
           exec(docker, args, { timeout: 30_000, maxBuffer: 256_000 });
@@ -152,6 +162,15 @@ describe.runIf(process.env.KESTREL_LIVE_FACTORY_EXECUTION === "1")(
             "Create disposable execution contract",
           ]);
           const base = (await runGit(["rev-parse", "HEAD"])).stdout.trim();
+          await exec(git, ["clone", "--bare", "--no-local", repository, publicationRemote], {
+            timeout: 10_000,
+            maxBuffer: 1_000_000,
+          });
+          await writeFile(
+            publicationGit,
+            `#!${process.execPath}\nconst {spawnSync}=require('node:child_process');\nconst args=process.argv.slice(2).map(value=>value===${JSON.stringify(publicationRemoteUrl)}?${JSON.stringify(publicationRemote)}:value==='protocol.file.allow=never'?'protocol.file.allow=always':value);\nconst result=spawnSync(${JSON.stringify(git)},args,{env:process.env,stdio:'inherit'});\nif(result.error)throw result.error;process.exit(result.status??1);\n`,
+            { mode: 0o700 },
+          );
           await writeFile(
             join(repository, "value.mjs"),
             "export const value = 999; // DIRTY_OPERATOR_CANARY\n",
@@ -170,9 +189,10 @@ describe.runIf(process.env.KESTREL_LIVE_FACTORY_EXECUTION === "1")(
             .digest("hex");
           await writeFile(
             provider,
-            factoryGitHubFixture
-              .replace("#!/usr/local/bin/node", `#!${process.execPath}`)
-              .replace('"/tmp/kestrel-factory-github.json"', JSON.stringify(providerState)),
+            createFactoryFeaturePublicationFixture({
+              remotePath: publicationRemote,
+              statePath: providerState,
+            }).replace("#!/usr/local/bin/node", `#!${process.execPath}`),
             { mode: 0o700 },
           );
           await chmod(provider, 0o700);
@@ -238,7 +258,7 @@ describe.runIf(process.env.KESTREL_LIVE_FACTORY_EXECUTION === "1")(
             ARTIFACT_ROOT: artifacts,
             MODEL_PROVIDER_SECRET_ROOT: secrets,
             LOCAL_REPOSITORY_ROOTS: JSON.stringify([repositories]),
-            LOCAL_GIT_EXECUTABLE: git,
+            LOCAL_GIT_EXECUTABLE: publicationGit,
             REVIEW_REVISION_MAX_BYTES: "10000000",
             REVIEW_REVISION_MAX_OBJECTS: "10000",
             SESSION_SIGNING_KEY: randomBytes(32).toString("base64url"),
@@ -306,14 +326,39 @@ describe.runIf(process.env.KESTREL_LIVE_FACTORY_EXECUTION === "1")(
               })
             ).json(),
           ).project;
-          const feature = FeatureSchema.parse(
-            await (
-              await request(`/api/v1/projects/${project.id}/features`, {
-                requestId: randomUUID(),
-                title: "Approved value and dependent label",
-              })
-            ).json(),
-          );
+          let feature: Feature;
+          if (scenario === "complete") {
+            const startedResponse = await request(`/api/v1/projects/${project.id}/planning`, {
+              requestId: randomUUID(),
+              text: "Plan a small change: export value 2, then make label() return Value 2. Ask one concise acceptance question before implementation.",
+              skillDigests: [],
+            });
+            expect(startedResponse.status, await startedResponse.clone().text()).toBe(202);
+            const started = PlanningFeatureStartedSchema.parse(await startedResponse.json());
+            feature = started.feature;
+            await expect
+              .poll(
+                async () => {
+                  const chat = FeatureChatSchema.parse(
+                    await (
+                      await request(`/api/v1/projects/${project.id}/features/${feature.id}`)
+                    ).json(),
+                  );
+                  return chat.turns.find(({ id }) => id === started.turnId)?.state;
+                },
+                { timeout: 60_000, interval: 500 },
+              )
+              .toBe("completed");
+          } else {
+            feature = FeatureSchema.parse(
+              await (
+                await request(`/api/v1/projects/${project.id}/features`, {
+                  requestId: randomUUID(),
+                  title: "Approved value and dependent label",
+                })
+              ).json(),
+            );
+          }
           const path = `/api/v1/projects/${project.id}/features/${feature.id}`;
           const plan: FeaturePlanDocument = {
             objective: "Export value 2, then implement a label derived from that value.",
@@ -557,25 +602,57 @@ describe.runIf(process.env.KESTREL_LIVE_FACTORY_EXECUTION === "1")(
           }
           // No browser, persistent HTTP stream or client heartbeat is required to keep this work alive.
           await delay(4_000);
-          await expect
-            .poll(
-              async () => {
-                const execution = FactoryExecutionSchema.parse(
-                  await (await request(`${path}/execution`)).json(),
+          const executionDeadline = Date.now() + 300_000;
+          let resolvedLiveGate = false;
+          let executionVerified = false;
+          let lastExecutionState = "pending";
+          do {
+            const current = FactoryExecutionSchema.parse(
+              await (await request(`${path}/execution`)).json(),
+            );
+            lastExecutionState = current.state;
+            if (current.state === "verified") {
+              executionVerified = true;
+              break;
+            }
+            if (current.state === "blocked") {
+              const gate = current.gate;
+              if (
+                resolvedLiveGate ||
+                gate === undefined ||
+                gate === null ||
+                gate.reason !== "input_required" ||
+                !gate.canResume
+              )
+                throw new Error(
+                  `Execution blocked: ${current.failure ?? "unknown"}; ${current.question ?? ""}`,
                 );
-                if (["blocked", "stopping", "cancelled"].includes(execution.state))
-                  throw new Error(
-                    `Execution ${execution.state}: ${execution.failure ?? "unknown"}; ${execution.question ?? ""}`,
-                  );
-                return execution.state;
-              },
-              { timeout: 200_000, interval: 1_000 },
-            )
-            .toBe("verified");
+              const resolution = await request(`${path}/execution/gates/${gate.id}/resolve`, {
+                requestId: randomUUID(),
+                expectedPlanVersion: 1,
+                decision: "resume_within_plan",
+                answer:
+                  "Use the authorized remote workspace tools already provided by Kestrel. Read .kestrel/plan.md and .kestrel/spec.md, make only the approved source change, and run the approved verification command.",
+              });
+              expect(resolution.status, await resolution.clone().text()).toBe(200);
+              resolvedLiveGate = true;
+            } else if (["stopping", "cancelled"].includes(current.state)) {
+              throw new Error(
+                `Execution ${current.state}: ${current.failure ?? "unknown"}; ${current.question ?? ""}`,
+              );
+            }
+            await delay(1_000);
+          } while (Date.now() < executionDeadline);
+          if (!executionVerified)
+            throw new Error(`Live execution timed out in ${lastExecutionState}`);
           const execution = FactoryExecutionSchema.parse(
             await (await request(`${path}/execution`)).json(),
           );
-          expect(execution.workItems.map((item) => item.runs.length)).toEqual([1, 1]);
+          expect(
+            execution.workItems.every((item) => item.runs.length >= 1 && item.runs.length <= 2),
+          ).toBe(true);
+          if (resolvedLiveGate)
+            expect(execution.workItems.some((item) => item.runs.length === 2)).toBe(true);
           const final = execution.finalVerification;
           if (final === undefined || final.certificate === null)
             throw new Error("The final cumulative verification record was not retained");
@@ -614,11 +691,13 @@ describe.runIf(process.env.KESTREL_LIVE_FACTORY_EXECUTION === "1")(
           ]);
           expect(final.progress).toEqual({ round: 1, checked: 2, passed: 2, total: 2 });
           const details = await Promise.all(
-            execution.workItems.map(async (item) =>
-              FactoryExecutionRunSchema.parse(
-                await (await request(`${path}/execution/runs/${item.runs[0]?.id ?? ""}`)).json(),
-              ),
-            ),
+            execution.workItems.map(async (item) => {
+              const run = item.runs.at(-1);
+              if (run === undefined) throw new Error(`Work Item ${item.key} has no live run`);
+              return FactoryExecutionRunSchema.parse(
+                await (await request(`${path}/execution/runs/${run.id}`)).json(),
+              );
+            }),
           );
           expect(details.every((run) => run.state === "verified" && run.writerStopped)).toBe(true);
           expect(
@@ -639,6 +718,114 @@ describe.runIf(process.env.KESTREL_LIVE_FACTORY_EXECUTION === "1")(
           const board = FactoryBoardSchema.parse(await (await request(`${path}/board`)).json());
           expect(board.columns.map((column) => column.items.length)).toEqual([0, 0, 2, 0]);
           expect(board.columns[2]?.items.every((item) => item.blocking === null)).toBe(true);
+          const publicationDeadline = Date.now() + 90_000;
+          let publicationReady = false;
+          let lastPublicationState = "pending";
+          do {
+            const response = await request(`${path}/pull-request`);
+            expect(response.status, await response.clone().text()).toBe(200);
+            const current = FactoryFeaturePublicationSchema.parse(await response.json());
+            lastPublicationState = current.state;
+            if (current.state === "published") {
+              publicationReady = true;
+              break;
+            }
+            if (["blocked", "uncertain", "cancelled"].includes(current.state))
+              throw new Error(
+                `Live pull-request publication stopped: ${current.state}/${current.failure ?? "unknown"}`,
+              );
+            await delay(500);
+          } while (Date.now() < publicationDeadline);
+          if (!publicationReady)
+            throw new Error(`Live pull-request publication timed out in ${lastPublicationState}`);
+          const publication = FactoryFeaturePublicationSchema.parse(
+            await (await request(`${path}/pull-request`)).json(),
+          );
+          expect(publication.pullRequest).toMatchObject({
+            baseCommitId: base,
+            headCommitId: execution.revision?.headCommitId,
+            state: "open",
+          });
+          expect(publication.review?.revision.state).toBe("available");
+
+          const connectionResponse = await request("/api/v1/connections/codex");
+          expect(connectionResponse.status, await connectionResponse.clone().text()).toBe(200);
+          const connection = CodexSubscriptionConnectionSchema.parse(
+            await connectionResponse.json(),
+          );
+          const reviewModel =
+            connection.models.find(({ isDefault }) => isDefault)?.id ?? connection.models[0]?.id;
+          if (reviewModel === undefined) throw new Error("Codex has no live review model");
+          const selectedModel = await fetch(`${origin}/api/v1/settings/review-model`, {
+            method: "PUT",
+            headers: {
+              origin,
+              cookie: cookies.join("; "),
+              [CSRF_HEADER_NAME]: csrf,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({ modelId: reviewModel }),
+            signal: AbortSignal.timeout(10_000),
+          });
+          expect(selectedModel.status, await selectedModel.clone().text()).toBe(200);
+          const reviewRoot = `${path}/review`;
+          let preparation = FactoryConceptualReviewPreparationSchema.parse(
+            await (await request(`${reviewRoot}/preparation`)).json(),
+          );
+          await expect
+            .poll(
+              async () => {
+                preparation = FactoryConceptualReviewPreparationSchema.parse(
+                  await (await request(`${reviewRoot}/preparation`)).json(),
+                );
+                return preparation.readiness.state;
+              },
+              { timeout: 20_000, interval: 500 },
+            )
+            .toBe("ready");
+          if (preparation.preparationDigest === null)
+            throw new Error(
+              `Live review preparation is blocked: ${preparation.readiness.blockers.join(", ")}`,
+            );
+          const reviewStartedResponse = await request(`${reviewRoot}/workflows`, {
+            requestId: randomUUID(),
+            preparationDigest: preparation.preparationDigest,
+          });
+          expect(reviewStartedResponse.status, await reviewStartedResponse.clone().text()).toBe(
+            202,
+          );
+          const reviewStarted = FactoryConceptualReviewWorkflowReadSchema.parse(
+            await reviewStartedResponse.json(),
+          );
+          let review = reviewStarted;
+          await expect
+            .poll(
+              async () => {
+                review = FactoryConceptualReviewWorkflowReadSchema.parse(
+                  await (
+                    await request(`${reviewRoot}/workflows/${reviewStarted.workflow.id}`)
+                  ).json(),
+                );
+                if (review.workflow.state === "failed")
+                  throw new Error(
+                    `Live Conceptual Review failed: ${review.workflow.failure ?? "unknown"}`,
+                  );
+                return review.workflow.state;
+              },
+              { timeout: 180_000, interval: 1_000 },
+            )
+            .toBe("published");
+          expect(review.artifact).not.toBeNull();
+          expect(review.artifact).toMatchObject({
+            baseCommitId: base,
+            headCommitId: execution.revision?.headCommitId,
+            evidenceScope: { executedChecks: "linked_final_certificate" },
+          });
+          expect(
+            review.artifact?.graph.outcomes.map(({ outcomeKey }) => outcomeKey).sort(),
+          ).toEqual(["label", "value"]);
+          expect(review.artifact?.graph.behavioralSteps.length).toBeGreaterThan(0);
+          expect(review.artifact?.graph.evidence.length).toBeGreaterThan(0);
           expect((await runGit(["rev-parse", "HEAD"])).stdout.trim()).toBe(base);
           expect((await runGit(["status", "--porcelain=v1", "--untracked-files=all"])).stdout).toBe(
             sourceBefore,
@@ -688,6 +875,10 @@ describe.runIf(process.env.KESTREL_LIVE_FACTORY_EXECUTION === "1")(
           expect(
             FactoryExecutionSchema.parse(await (await request(`${path}/execution`)).json()),
           ).toEqual(execution);
+          const restoredReview = FactoryConceptualReviewWorkflowReadSchema.parse(
+            await (await request(`${path}/review/workflows/${reviewStarted.workflow.id}`)).json(),
+          );
+          expect(restoredReview).toEqual(review);
           const containers = await owner.query("SELECT name FROM factory_execution_containers");
           for (const row of containers.rows as Array<{ name: string }>) {
             expect(
@@ -719,10 +910,11 @@ describe.runIf(process.env.KESTREL_LIVE_FACTORY_EXECUTION === "1")(
             await owner.end();
           }
           await runDocker(["rm", "--force", databaseContainer]).catch(() => undefined);
+          await exec("/bin/chmod", ["-R", "u+rwX", directory]).catch(() => undefined);
           await rm(directory, { recursive: true, force: true });
         }
       },
-      280_000,
+      700_000,
     );
   },
 );
