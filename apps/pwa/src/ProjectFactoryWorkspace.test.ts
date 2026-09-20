@@ -2,16 +2,17 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
-import type { Feature } from "@kestrel/contracts";
+import type { FactoryGitHubIssues, Feature } from "@kestrel/contracts";
 import { ProjectFactoryWorkspace } from "./ProjectFactoryWorkspace.js";
 import type { AppRoute } from "./app-route.js";
 import type * as apiModule from "./api.js";
 
-const api = vi.hoisted(() => ({ features: vi.fn(), board: vi.fn() }));
+const api = vi.hoisted(() => ({ features: vi.fn(), board: vi.fn(), issues: vi.fn() }));
 vi.mock("./api.js", async (original) => ({
   ...(await original<typeof apiModule>()),
   fetchFeatures: api.features,
   fetchFactoryBoard: api.board,
+  fetchFactoryGitHubIssues: api.issues,
 }));
 const projectId = "01991c36-7f90-7000-8000-000000000001";
 const feature: Feature = {
@@ -23,11 +24,67 @@ const feature: Feature = {
   createdAt: "2026-09-08T12:00:00.000Z",
   updatedAt: "2026-09-08T12:00:00.000Z",
 };
+const githubIssues: FactoryGitHubIssues = {
+  schemaVersion: 1,
+  projectId,
+  repository: { id: "901", owner: "example", name: "reports" },
+  state: "available",
+  failure: null,
+  issues: [
+    {
+      repository: { id: "901", owner: "example", name: "reports" },
+      id: "42",
+      number: 42,
+      url: "https://github.com/example/reports/issues/42",
+      title: "Export saved reports",
+      body: "Let operators export a saved report.",
+      state: "open",
+      dependencies: [],
+    },
+  ],
+  page: 1,
+  nextPage: null,
+  limited: false,
+};
+
+it("loads open GitHub issues with the Project and shows them in To do", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.features.mockReset().mockResolvedValue({ schemaVersion: 1, features: [] });
+  api.board.mockReset();
+  api.issues.mockReset().mockResolvedValue(githubIssues);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      await Promise.resolve(
+        root.render(
+          createElement(ProjectFactoryWorkspace, {
+            projectId,
+            projectName: "Reports",
+            online: true,
+            onNavigate: vi.fn(),
+            onAuthenticationError: () => false,
+          }),
+        ),
+      );
+    });
+    const todo = container.querySelector('[aria-label="To do"]');
+    expect(todo?.textContent).toContain("Export saved reports");
+    expect(todo?.textContent).toContain("GitHub issue #42");
+    expect(todo?.querySelector("a")?.href).toBe("https://github.com/example/reports/issues/42");
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
 
 it("opens a Project board with direct start, pull-request and settings actions without fetching planned Work Items", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   api.features.mockReset().mockResolvedValue({ schemaVersion: 1, features: [feature] });
   api.board.mockReset();
+  api.issues.mockReset().mockResolvedValue(githubIssues);
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -80,6 +137,7 @@ it("polls only after the preceding authoritative read completes and stops after 
     .mockReset()
     .mockReturnValueOnce(pending.promise)
     .mockResolvedValue({ schemaVersion: 1, features: [feature] });
+  api.issues.mockReset().mockResolvedValue(githubIssues);
   const container = document.createElement("div");
   const root = createRoot(container);
   try {

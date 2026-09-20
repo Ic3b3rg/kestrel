@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import type { FactoryBoard, Feature } from "@kestrel/contracts";
-import { fetchFactoryBoard, fetchFeatures } from "./api.js";
+import type { FactoryBoard, FactoryGitHubIssues, Feature } from "@kestrel/contracts";
+import { fetchFactoryBoard, fetchFactoryGitHubIssues, fetchFeatures } from "./api.js";
 import type { AppRoute } from "./app-route.js";
 import { planningRequestError } from "./FeatureNavigation.js";
 import { ProjectFactoryBoardPanel } from "./ProjectFactoryBoardPanel.js";
@@ -22,6 +22,7 @@ export function ProjectFactoryWorkspace({
 }: ProjectFactoryWorkspaceProps) {
   const [features, setFeatures] = useState<Feature[]>([]);
   const [boards, setBoards] = useState<FactoryBoard[]>([]);
+  const [githubIssues, setGitHubIssues] = useState<FactoryGitHubIssues | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [generation, setGeneration] = useState(0);
@@ -72,11 +73,25 @@ export function ProjectFactoryWorkspace({
     };
   }, [projectId, online, generation, onAuthenticationError]);
 
+  useEffect(() => {
+    if (!online) return;
+    const controller = new AbortController();
+    void fetchFactoryGitHubIssues(projectId, 1, controller.signal)
+      .then((result) => {
+        if (!controller.signal.aborted) setGitHubIssues(result);
+      })
+      .catch((failure: unknown) => {
+        if (!controller.signal.aborted) onAuthenticationError(failure);
+      });
+    return () => controller.abort();
+  }, [projectId, online, generation, onAuthenticationError]);
+
   return (
     <ProjectFactoryBoardPanel
       projectName={projectName}
       features={features}
       boards={boards}
+      githubIssues={githubIssues?.projectId === projectId ? githubIssues : null}
       online={online}
       loading={loading}
       error={error}
