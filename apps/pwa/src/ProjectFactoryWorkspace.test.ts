@@ -80,6 +80,39 @@ it("loads open GitHub issues with the Project and shows them in To do", async ()
   }
 });
 
+it("keeps the Project board usable when the GitHub issue request fails", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.features.mockReset().mockResolvedValue({ schemaVersion: 1, features: [feature] });
+  api.board.mockReset();
+  api.issues.mockReset().mockRejectedValue(new Error("provider unavailable"));
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      await Promise.resolve(
+        root.render(
+          createElement(ProjectFactoryWorkspace, {
+            projectId,
+            projectName: "Reports",
+            online: true,
+            onNavigate: vi.fn(),
+            onAuthenticationError: () => false,
+          }),
+        ),
+      );
+    });
+    expect(container.textContent).toContain(feature.title);
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "GitHub issues could not be read. Refresh the board to retry.",
+    );
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("opens a Project board with direct start, pull-request and settings actions without fetching planned Work Items", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   api.features.mockReset().mockResolvedValue({ schemaVersion: 1, features: [feature] });

@@ -23,6 +23,7 @@ export interface ProjectFactoryBoardPanelProps {
   features: Feature[];
   boards: FactoryBoard[];
   githubIssues?: FactoryGitHubIssues | null;
+  githubIssuesError?: string | null;
   online: boolean;
   loading: boolean;
   error: string | null;
@@ -127,6 +128,7 @@ export function ProjectFactoryBoardPanel({
   features,
   boards,
   githubIssues = null,
+  githubIssuesError = null,
   online,
   loading,
   error,
@@ -185,6 +187,11 @@ export function ProjectFactoryBoardPanel({
       {error === null ? null : (
         <p role="alert" className="text-sm">
           {error}
+        </p>
+      )}
+      {githubIssuesError === null ? null : (
+        <p role="alert" className="text-sm">
+          {githubIssuesError}
         </p>
       )}
       {!online ? (

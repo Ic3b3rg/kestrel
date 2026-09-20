@@ -23,6 +23,7 @@ export function ProjectFactoryWorkspace({
   const [features, setFeatures] = useState<Feature[]>([]);
   const [boards, setBoards] = useState<FactoryBoard[]>([]);
   const [githubIssues, setGitHubIssues] = useState<FactoryGitHubIssues | null>(null);
+  const [githubIssuesError, setGitHubIssuesError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [generation, setGeneration] = useState(0);
@@ -76,12 +77,19 @@ export function ProjectFactoryWorkspace({
   useEffect(() => {
     if (!online) return;
     const controller = new AbortController();
+    setGitHubIssuesError(null);
     void fetchFactoryGitHubIssues(projectId, 1, controller.signal)
       .then((result) => {
         if (!controller.signal.aborted) setGitHubIssues(result);
       })
       .catch((failure: unknown) => {
-        if (!controller.signal.aborted) onAuthenticationError(failure);
+        if (!controller.signal.aborted && !onAuthenticationError(failure))
+          setGitHubIssuesError(
+            planningRequestError(
+              failure,
+              "GitHub issues could not be read. Refresh the board to retry.",
+            ),
+          );
       });
     return () => controller.abort();
   }, [projectId, online, generation, onAuthenticationError]);
@@ -93,6 +101,7 @@ export function ProjectFactoryWorkspace({
       features={features}
       boards={boards}
       githubIssues={githubIssues?.projectId === projectId ? githubIssues : null}
+      githubIssuesError={githubIssuesError}
       online={online}
       loading={loading}
       error={error}
