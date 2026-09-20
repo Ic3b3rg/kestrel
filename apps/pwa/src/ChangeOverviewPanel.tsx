@@ -205,7 +205,7 @@ function ReadyOverview({ overview }: { overview: Extract<ChangeOverview, { state
           </dd>
         </div>
         <div>
-          <dt>Change Intent v{overview.changeIntent.version}</dt>
+          <dt>Recorded purpose</dt>
           <dd>{overview.changeIntent.text}</dd>
         </div>
         <div>

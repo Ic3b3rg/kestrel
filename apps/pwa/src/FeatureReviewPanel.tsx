@@ -4,7 +4,7 @@ import type {
   FactoryConceptualReviewCheck,
   FactoryConceptualReviewCheckCatalog,
   FactoryConceptualReviewHistory,
-  FactoryConceptualReviewPreparation,
+  FactoryFeatureConceptualReviewPreparation,
   FactoryConceptualReviewSourceCatalog,
   FactoryConceptualReviewSourceLines,
   FactoryConceptualReviewStartCommand,
@@ -38,6 +38,7 @@ const CHECK_PAGE_SIZE = 100;
 
 const blockers: Record<FactoryConceptualReviewBlocker, string> = {
   publication_not_ready: "Publish the cumulative Feature pull request before review.",
+  change_intent_not_available: "The approved Feature purpose is unavailable.",
   approved_plan_mismatch: "The published Feature no longer matches its approved plan.",
   certificate_mismatch: "The final verification evidence does not match the published revision.",
   exact_revision_mismatch: "The retained source does not match the pull request base and head.",
@@ -72,7 +73,7 @@ function shortId(value: string): string {
   return `${value.slice(0, 10)}…${value.slice(-7)}`;
 }
 
-function ExactInputs({ preparation }: { preparation: FactoryConceptualReviewPreparation }) {
+function ExactInputs({ preparation }: { preparation: FactoryFeatureConceptualReviewPreparation }) {
   const publication = preparation.publication;
   if (publication === null) return null;
   return (
@@ -125,7 +126,11 @@ function ExactInputs({ preparation }: { preparation: FactoryConceptualReviewPrep
   );
 }
 
-function PreparationDetails({ preparation }: { preparation: FactoryConceptualReviewPreparation }) {
+function PreparationDetails({
+  preparation,
+}: {
+  preparation: FactoryFeatureConceptualReviewPreparation;
+}) {
   const { configuration, evidence } = preparation;
   return (
     <section className="grid min-w-0 gap-4 rounded-xl border border-border bg-card p-4 lg:grid-cols-2">
@@ -595,7 +600,9 @@ function FeatureReviewPanelContent({
   loadReviewArtifact = fetchFactoryConceptualReviewArtifact,
   startReview = startFactoryConceptualReview,
 }: FeatureReviewPanelProps) {
-  const [preparation, setPreparation] = useState<FactoryConceptualReviewPreparation | null>(null);
+  const [preparation, setPreparation] = useState<FactoryFeatureConceptualReviewPreparation | null>(
+    null,
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [review, setReview] = useState<FactoryConceptualReviewWorkflowRead | null>(null);

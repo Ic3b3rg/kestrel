@@ -182,6 +182,54 @@ it("does not let source alone present an approved outcome as adequately mapped",
   ).rejects.toEqual(new FactoryConceptualReviewValidationError("invalid_output"));
 });
 
+it("lets an external pull request map source-backed behavior while keeping the review partial", async () => {
+  const result = await validateFactoryConceptualReview({
+    preparation: {
+      ...preparation,
+      featureId: null,
+      changeProposalId: "01991c36-7f90-7000-8000-000000000003",
+    } as unknown as FactoryConceptualReviewPreparation,
+    draft: {
+      ...draft,
+      outcomes: [{ ...draft.outcomes[0], coverage: "mapped" }, draft.outcomes[1]],
+    },
+    readSource: vi.fn(() => Promise.resolve(source)),
+    readChange: readChangedRange,
+  });
+
+  expect(result.result).toBe("partial");
+  expect(result.outcomes[0]?.coverage).toBe("mapped");
+  expect(result.evidence.every(({ type }) => type === "source")).toBe(true);
+  expect(result.summary).toContain("requested outcomes");
+  expect(result.summary).not.toContain("approved outcomes");
+});
+
+it("rejects a complete verdict for an external pull request without executed checks", async () => {
+  await expect(
+    validateFactoryConceptualReview({
+      preparation: {
+        ...preparation,
+        featureId: null,
+        changeProposalId: "01991c36-7f90-7000-8000-000000000003",
+      } as unknown as FactoryConceptualReviewPreparation,
+      draft: {
+        ...draft,
+        result: "complete",
+        outcomes: draft.outcomes.map((outcome) => ({
+          ...outcome,
+          coverage: "not_applicable" as const,
+          behavioralStepIds: [],
+        })),
+        behavioralSteps: [],
+        evidence: [],
+        edges: [],
+      },
+      readSource: vi.fn(),
+      readChange: vi.fn(),
+    }),
+  ).rejects.toEqual(new FactoryConceptualReviewValidationError("invalid_output"));
+});
+
 it("replaces a model check ID with its exact server-owned final result provenance", async () => {
   const unresolved = {
     ...draft,

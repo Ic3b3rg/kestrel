@@ -4,7 +4,7 @@ import {
   FactoryConceptualReviewBasisSchema,
   FactoryConceptualReviewCheckCatalogSchema,
   FactoryConceptualReviewCheckSchema,
-  FactoryConceptualReviewPreparationSchema,
+  FactoryFeatureConceptualReviewPreparationSchema,
   FactoryFeaturePullRequestPayloadSchema,
   FactoryFeaturePullRequestSchema,
   FactoryFeaturePublicationTargetSchema,
@@ -15,7 +15,7 @@ import {
   type FactoryConceptualReviewBlocker,
   type FactoryConceptualReviewCheck,
   type FactoryConceptualReviewCheckCatalog,
-  type FactoryConceptualReviewPreparation,
+  type FactoryFeatureConceptualReviewPreparation,
 } from "@kestrel/contracts";
 import type { ConceptualReviewSourceBinding } from "@kestrel/local-source";
 
@@ -41,7 +41,7 @@ export interface FactoryConceptualReviewRuntimeReadiness {
   } | null;
 }
 
-const RUNTIME_POLICY = {
+export const CONCEPTUAL_REVIEW_RUNTIME_POLICY = {
   kind: "retained_source_review" as const,
   version: 1 as const,
   adapter: "codex_app_server" as const,
@@ -51,7 +51,7 @@ const RUNTIME_POLICY = {
   networkAccess: false as const,
   writeAccess: false as const,
 };
-const REVIEW_RESOURCES = {
+export const CONCEPTUAL_REVIEW_RESOURCES = {
   maximumAttempts: 3,
   timeoutSeconds: 900,
   maximumEvidenceItems: 400,
@@ -276,9 +276,9 @@ async function evidenceFor(
 
 interface ExactReviewInputs {
   row: PreparationRow;
-  basis: NonNullable<FactoryConceptualReviewPreparation["basis"]>;
-  publication: NonNullable<FactoryConceptualReviewPreparation["publication"]>;
-  evidence: NonNullable<FactoryConceptualReviewPreparation["evidence"]>;
+  basis: NonNullable<FactoryFeatureConceptualReviewPreparation["basis"]>;
+  publication: NonNullable<FactoryFeatureConceptualReviewPreparation["publication"]>;
+  evidence: NonNullable<FactoryFeatureConceptualReviewPreparation["evidence"]>;
   checks: FactoryConceptualReviewCheck[];
 }
 
@@ -430,7 +430,7 @@ export async function readFactoryConceptualReviewPreparation(
   projectId: string,
   featureId: string,
   readiness: FactoryConceptualReviewRuntimeReadiness,
-): Promise<FactoryConceptualReviewPreparation> {
+): Promise<FactoryFeatureConceptualReviewPreparation> {
   const resolved = await resolveExactReviewInputs(pool, projectId, featureId);
   const blockers: FactoryConceptualReviewBlocker[] = [];
   if (resolved.exact === null) blockers.push(resolved.blocker);
@@ -439,7 +439,7 @@ export async function readFactoryConceptualReviewPreparation(
   const configuration = {
     model: { route: "codex_subscription" as const, modelId: resolved.row.selected_model_id },
     runtimePolicy: {
-      ...RUNTIME_POLICY,
+      ...CONCEPTUAL_REVIEW_RUNTIME_POLICY,
       containerImage: readiness.profile?.containerImage ?? null,
       containerUser: readiness.profile?.containerUser ?? null,
       codexExecutable: readiness.profile?.codexExecutable ?? null,
@@ -447,7 +447,7 @@ export async function readFactoryConceptualReviewPreparation(
       codexVersion: readiness.profile?.codexVersion ?? null,
       status: readiness.profile === null ? ("unavailable" as const) : ("available" as const),
     },
-    resources: REVIEW_RESOURCES,
+    resources: CONCEPTUAL_REVIEW_RESOURCES,
   };
   const exact = resolved.exact;
   const digest =
@@ -463,7 +463,7 @@ export async function readFactoryConceptualReviewPreparation(
           evidence: exact.evidence,
           configuration,
         });
-  return FactoryConceptualReviewPreparationSchema.parse({
+  return FactoryFeatureConceptualReviewPreparationSchema.parse({
     schemaVersion: 1,
     projectId,
     featureId,
@@ -569,7 +569,7 @@ async function readFrozenWorkflowPreparation(
   projectId: string,
   featureId: string,
   workflowId: string,
-): Promise<FactoryConceptualReviewPreparation> {
+): Promise<FactoryFeatureConceptualReviewPreparation> {
   const selected = await pool.query<{ factory_input: unknown }>(
     `SELECT workflow.factory_input
      FROM review_workflows AS workflow
@@ -578,7 +578,7 @@ async function readFrozenWorkflowPreparation(
   );
   const row = selected.rows[0];
   if (row === undefined) throw new FactoryConceptualReviewPersistenceError("not_found");
-  const preparation = FactoryConceptualReviewPreparationSchema.parse(row.factory_input);
+  const preparation = FactoryFeatureConceptualReviewPreparationSchema.parse(row.factory_input);
   const publication = preparation.publication;
   const evidence = preparation.evidence;
   if (
@@ -634,7 +634,7 @@ function frozenCheck(
 
 async function readFrozenWorkflowCheckRange(
   pool: DatabasePool,
-  preparation: FactoryConceptualReviewPreparation,
+  preparation: FactoryFeatureConceptualReviewPreparation,
   offset: number,
   limit: number,
 ): Promise<FactoryConceptualReviewCheck[]> {

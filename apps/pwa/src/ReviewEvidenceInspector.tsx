@@ -27,7 +27,7 @@ export function ReviewEvidenceInspector({
   featureId: string;
   artifactId: string;
   loadSourceLines?: typeof fetchFactoryConceptualReviewArtifactSourceLines;
-  loadCheck?: typeof fetchFactoryConceptualReviewArtifactCheck;
+  loadCheck?: typeof fetchFactoryConceptualReviewArtifactCheck | null;
   onAuthenticationError: (error: unknown) => boolean;
 }) {
   const outcome = graph.outcomes.find(({ id }) => id === selectedId);
@@ -91,9 +91,15 @@ export function ReviewEvidenceInspector({
             evidence.endLine,
             controller.signal,
           ).then((source) => ({ source, check: null }))
-        : loadCheck(projectId, featureId, artifactId, evidence.evidenceId, controller.signal).then(
-            (check) => ({ source: null, check }),
-          );
+        : loadCheck === null
+          ? Promise.reject(new Error("This review has no linked executed checks."))
+          : loadCheck(
+              projectId,
+              featureId,
+              artifactId,
+              evidence.evidenceId,
+              controller.signal,
+            ).then((check) => ({ source: null, check }));
     void pending
       .then((value) => {
         if (!controller.signal.aborted)

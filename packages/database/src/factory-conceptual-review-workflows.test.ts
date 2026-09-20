@@ -1,8 +1,9 @@
 import { expect, it, vi } from "vitest";
 
 import type {
+  ExternalConceptualReviewPreparation,
   FactoryConceptualReviewDraft,
-  FactoryConceptualReviewPreparation,
+  FactoryFeatureConceptualReviewPreparation,
 } from "@kestrel/contracts";
 
 import {
@@ -21,6 +22,7 @@ import {
   reserveFactoryConceptualReviewContainer,
   stopFactoryConceptualReviewContainer,
   startFactoryConceptualReviewWorkflow,
+  startExternalConceptualReviewWorkflow,
 } from "./factory-conceptual-review-workflows.js";
 
 const projectId = "01991c36-7f90-7000-8000-000000000001";
@@ -38,7 +40,7 @@ const at = new Date("2026-09-19T12:00:00.000Z");
 const requestId = "65cc9964-10c2-49d1-86c4-8f13f5019e86";
 const command = { program: "npm", args: ["test"], cwd: ".", timeoutSeconds: 60 };
 
-const preparation: FactoryConceptualReviewPreparation = {
+const preparation: FactoryFeatureConceptualReviewPreparation = {
   schemaVersion: 1,
   projectId,
   featureId,
@@ -158,6 +160,64 @@ const preparation: FactoryConceptualReviewPreparation = {
   readiness: { state: "ready", startAllowed: true, blockers: [] },
 };
 
+if (preparation.publication === null || preparation.evidence === null) {
+  throw new Error("Factory review preparation fixture is incomplete");
+}
+const factoryPublication = preparation.publication;
+const factoryEvidence = preparation.evidence;
+
+const externalPreparation: ExternalConceptualReviewPreparation = {
+  ...preparation,
+  featureId: null,
+  changeProposalId: proposalId,
+  basis: {
+    objective: "Refresh search",
+    scope: { includes: ["The exact pull request change"], excludes: [] },
+    outcomes: [
+      {
+        key: "stated_intent",
+        outcome: "Refresh search",
+        intent: { kind: "pull_request_stated", label: "GitHub title" },
+      },
+    ],
+    provenance: {
+      kind: "change_intent",
+      changeIntentId: revisionId,
+      version: 1,
+      sourceDigest: digest,
+      resolution: "unresolved",
+      sources: [{ kind: "pull_request_stated", label: "GitHub title" }],
+    },
+    limitations: ["No acceptance outcomes were confirmed by the Operator."],
+  },
+  publication: {
+    kind: "external_pull_request",
+    pullRequest: {
+      repository: { id: "42", owner: "example", name: "search" },
+      author: "contributor",
+      number: 9,
+      url: "https://github.com/example/search/pull/9",
+      state: "open",
+      title: "Refresh search",
+      body: null,
+      baseRef: "refs/heads/master",
+      headRef: "refs/heads/contributor/search",
+      baseCommitId,
+      headCommitId,
+    },
+    revision: factoryPublication.revision,
+    retainedManifestDigest: digest,
+    certificate: null,
+  },
+  evidence: {
+    source: {
+      ...factoryEvidence.source,
+      headTreeId: treeId,
+    },
+    checks: null,
+  },
+};
+
 const draft: FactoryConceptualReviewDraft = {
   result: "partial",
   summary: "The approved refresh is implemented.",
@@ -267,6 +327,62 @@ it("atomically accepts and durably queues one explicit review request", async ()
     expect.objectContaining({ id: workflowId }),
   );
   expect(query.mock.calls.map(([sql]) => sql)).toContain("COMMIT");
+});
+
+it("starts the same durable review engine for an existing pull request without a Feature", async () => {
+  const query = vi.fn((sql: string) => {
+    if (["BEGIN", "COMMIT", "ROLLBACK"].includes(sql)) return { rowCount: null, rows: [] };
+    if (sql.includes("set_config('lock_timeout'")) return { rowCount: 1, rows: [{}] };
+    if (sql.includes("FOR UPDATE OF project, proposal")) {
+      return {
+        rowCount: 1,
+        rows: [
+          {
+            project_id: projectId,
+            change_proposal_id: proposalId,
+            change_intent_id: revisionId,
+            review_revision_id: revisionId,
+          },
+        ],
+      };
+    }
+    if (sql.includes("feature_id IS NULL") && sql.includes("request_id = $2")) {
+      return { rowCount: 0, rows: [] };
+    }
+    if (sql.includes("failure_code = 'stop_unconfirmed'")) return { rowCount: 0, rows: [] };
+    if (sql.includes("INSERT INTO review_workflows")) {
+      return { rowCount: 1, rows: [{ id: workflowId, requested_at: at }] };
+    }
+    throw new Error(`Unexpected query: ${sql}`);
+  });
+  const boss = { send: vi.fn(() => Promise.resolve(workflowId)) };
+  const accepted = await startExternalConceptualReviewWorkflow(
+    { connect: vi.fn(() => ({ query, release: vi.fn() })) } as never,
+    boss,
+    {
+      actorId,
+      correlationId: requestId,
+      projectId,
+      changeProposalId: proposalId,
+      command: { requestId, preparationDigest: digest },
+    },
+    vi.fn(() => Promise.resolve(externalPreparation)),
+  );
+
+  expect(accepted).toMatchObject({
+    workflow: {
+      id: workflowId,
+      featureId: null,
+      changeProposalId: proposalId,
+      reviewRevisionId: revisionId,
+      state: "queued",
+    },
+  });
+  expect(boss.send).toHaveBeenCalledWith(
+    "factory-conceptual-review-v1",
+    { workflowId },
+    expect.objectContaining({ id: workflowId }),
+  );
 });
 
 it("replays the same request from frozen inputs even after current inputs move", async () => {
@@ -424,6 +540,62 @@ it("publishes one immutable graph only for the current attempt", async () => {
   expect(query).toHaveBeenCalledWith(expect.stringContaining("set_config('lock_timeout'"), [
     "250ms",
   ]);
+});
+
+it("refuses to publish invented executed-check evidence for an external pull request", async () => {
+  const checkId = "01991c36-7f90-7000-8000-000000000008";
+  const step = draft.behavioralSteps[0];
+  if (step === undefined) throw new Error("Review draft fixture has no behavioral step");
+  const externalDraft: FactoryConceptualReviewDraft = {
+    ...draft,
+    behavioralSteps: [{ ...step, evidenceIds: ["source:refresh", "check:refresh"] }],
+    evidence: [
+      ...draft.evidence,
+      {
+        id: "check:refresh",
+        type: "check",
+        evidenceId: checkId,
+        relation: "supports",
+        proposition: "The refresh verification succeeds.",
+        description: "A claimed executed check.",
+        sufficiency: "Would establish command success if it were linked.",
+        limitations: [],
+        record: {
+          evidenceId: checkId,
+          runId: featureId,
+          manifestPosition: 1,
+          origins: [{ workItemKey: "search", position: 1 }],
+          command,
+          headCommitId,
+          treeId,
+          outcome: "passed",
+          exitCode: 0,
+          stdoutTruncated: false,
+          stderrTruncated: false,
+          durationMs: 10,
+          createdAt: at.toISOString(),
+        },
+      },
+    ],
+    edges: [...draft.edges, { from: "step:refresh", to: "check:refresh", kind: "supported_by" }],
+  };
+  const query = vi.fn((sql: string) => {
+    if (["BEGIN", "ROLLBACK"].includes(sql)) return { rowCount: null, rows: [] };
+    if (sql.includes("set_config('lock_timeout'")) return { rowCount: 1, rows: [{}] };
+    if (sql.includes("SELECT factory_input") && sql.includes("FOR UPDATE"))
+      return { rowCount: 1, rows: [{ factory_input: externalPreparation }] };
+    throw new Error(`Unexpected query: ${sql}`);
+  });
+
+  await expect(
+    publishFactoryConceptualReview(
+      { connect: vi.fn(() => ({ query, release: vi.fn() })) } as never,
+      { workflowId, attemptId: requestId, attemptNumber: 1 },
+      externalDraft,
+    ),
+  ).rejects.toEqual(new FactoryConceptualReviewWorkflowPersistenceError("invalid_state"));
+  expect(query.mock.calls.map(([sql]) => sql)).toContain("ROLLBACK");
+  expect(query.mock.calls.some(([sql]) => sql.includes("SELECT uuidv7()"))).toBe(false);
 });
 
 it("rejects publication by a late attempt owner", async () => {
@@ -723,7 +895,7 @@ it("publishes a terminal visible failure after the attempt budget is exhausted",
   expect(boss.send).not.toHaveBeenCalled();
 });
 
-it("recreates a lost durable delivery while excluding legacy review rows", async () => {
+it("recreates a lost durable delivery for engine reviews while excluding legacy review rows", async () => {
   const nextJobId = "01991c36-7f90-7000-8000-000000000099";
   const rootQuery = vi.fn((sql: string) => {
     if (sql.includes("workflow.workflow_state = 'queued'"))
@@ -764,7 +936,7 @@ it("recreates a lost durable delivery while excluding legacy review rows", async
   expect(
     [...rootQuery.mock.calls, ...transactionQuery.mock.calls]
       .filter(([sql]) => sql.includes("review_workflows"))
-      .every(([sql]) => sql.includes("feature_id IS NOT NULL")),
+      .every(([sql]) => sql.includes("factory_input IS NOT NULL")),
   ).toBe(true);
 });
 

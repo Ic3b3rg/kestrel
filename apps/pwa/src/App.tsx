@@ -885,11 +885,16 @@ export function App() {
         }}
         onHostRefresh={(projectId, number) => void handleHostPullRequestRefresh(projectId, number)}
         onIntentCreated={(result) => {
+          const proposal = selectedProject.changeProposals.find(
+            (candidate) => candidate.id === result.changeProposalId,
+          );
           setProjectInbox((current) => withCreatedIntent(current, result));
           setProjectReloadGeneration((generation) => generation + 1);
           setProjectError(null);
           setAnnouncement(
-            `Change Intent version ${String(result.changeIntent.version)} created as ${result.changeIntent.resolution.state}.`,
+            proposal?.kind === "provider_observed"
+              ? "Review purpose saved and confirmed."
+              : `Change Intent version ${String(result.changeIntent.version)} created as ${result.changeIntent.resolution.state}.`,
           );
         }}
         onLocalAvailable={handleLocalRevisionAvailable}

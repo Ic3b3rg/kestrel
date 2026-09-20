@@ -23,6 +23,7 @@ type ProviderProposal = Extract<
 const proposal: ProviderProposal = {
   author: null,
   base: { objectId: "a".repeat(40), ref: "main" },
+  body: "A long implementation report that is useful as context, not as the review purpose.",
   canonicalUrl: "https://github.com/kestrel/review-source/pull/42",
   changeIntent: null,
   changeIntentCandidates: [],
@@ -53,17 +54,6 @@ function findButton(container: HTMLElement, text: string): HTMLButtonElement {
   );
   if (button === undefined) throw new Error(`Button not found: ${text}`);
   return button;
-}
-
-async function changeValue(control: HTMLTextAreaElement, value: string): Promise<void> {
-  // eslint-disable-next-line @typescript-eslint/unbound-method -- called below with the DOM control as its receiver.
-  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
-  if (setter === undefined) throw new Error("Native value setter is unavailable");
-  await act(async () => {
-    setter.call(control, value);
-    control.dispatchEvent(new Event("input", { bubbles: true }));
-    await Promise.resolve();
-  });
 }
 
 describe("AcquireObservedReviewRevisionForm", () => {
@@ -104,7 +94,7 @@ describe("AcquireObservedReviewRevisionForm", () => {
     });
   }
 
-  it("submits only opaque IDs and the confirmed Change Intent", async () => {
+  it("submits only opaque IDs and the purpose used for review", async () => {
     const retained = deferred<ReviewRevisionAvailable>();
     const retain = vi.fn<
       (
@@ -114,22 +104,21 @@ describe("AcquireObservedReviewRevisionForm", () => {
     >(() => retained.promise);
     const onAvailable = vi.fn();
     await renderForm({ onAvailable, retain });
-    const intent = container.querySelector<HTMLTextAreaElement>("textarea");
     const form = container.querySelector("form");
-    if (intent === null || form === null)
-      throw new Error("Observed acquisition form is unavailable");
-    await changeValue(intent, "Review the exact authorization boundary");
+    if (form === null) throw new Error("Observed acquisition form is unavailable");
+    expect(container.querySelector("textarea")).toBeNull();
+    expect(container.textContent).toContain("GitHub-stated purpose shown above");
 
     await act(async () => {
       form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
       await Promise.resolve();
     });
-    expect(findButton(container, "Acquiring…").disabled).toBe(true);
+    expect(findButton(container, "Retaining…").disabled).toBe(true);
     expect(retain).toHaveBeenCalledWith(
       {
         projectId,
         changeProposalId: proposal.id,
-        changeIntent: "Review the exact authorization boundary",
+        changeIntent: "Acquire exact source",
       },
       expect.any(AbortSignal),
     );
@@ -145,7 +134,40 @@ describe("AcquireObservedReviewRevisionForm", () => {
     expect(onAvailable).toHaveBeenCalledWith(available);
   });
 
-  it("prefills the last confirmed intent and renders an unavailable revision as a retry", async () => {
+  it("does not ask the operator to confirm the same purpose again", async () => {
+    await renderForm({
+      proposal: {
+        ...proposal,
+        changeIntent: {
+          acceptanceOutcomes: ["Repository access stays explicit"],
+          createdAt: "2026-08-24T12:02:00.000Z",
+          id: "018f0f89-9a20-79f9-9990-dda80c9b917d",
+          objective: "Review the retained boundary",
+          resolution: { state: "resolved", issues: [] },
+          scopeBoundaries: ["Repository access"],
+          sourceDigest: "a".repeat(64),
+          sources: [
+            {
+              id: "operator_input",
+              kind: "operator_input",
+              label: "Operator input",
+              provenance: { kind: "operator_input" },
+              text: "Review the retained boundary",
+              version: "1",
+            },
+          ],
+          text: "Review the retained boundary",
+          version: 1,
+        },
+      },
+    });
+
+    expect(container.textContent).toContain("Kestrel will use the purpose shown above");
+    expect(container.textContent).not.toContain("Confirm Change Intent");
+    expect(container.querySelector("textarea")).toBeNull();
+  });
+
+  it("reuses the recorded purpose and renders an unavailable revision as a retry", async () => {
     await renderForm({
       proposal: {
         ...proposal,
@@ -193,9 +215,8 @@ describe("AcquireObservedReviewRevisionForm", () => {
       },
     });
 
-    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe(
-      "Review the retained boundary",
-    );
+    expect(container.querySelector("textarea")).toBeNull();
+    expect(container.textContent).toContain("Kestrel will use the purpose shown above");
     expect(findButton(container, "Retry exact PR #42")).toBeDefined();
   });
 });

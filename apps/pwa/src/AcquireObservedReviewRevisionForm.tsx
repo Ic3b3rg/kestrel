@@ -1,6 +1,4 @@
 import { Button } from "./components/ui/button.js";
-import { Textarea } from "./components/ui/textarea.js";
-import { Label } from "./components/ui/label.js";
 import { useEffect, useId, useRef, useState, type SyntheticEvent } from "react";
 
 import {
@@ -45,7 +43,8 @@ export function AcquireObservedReviewRevisionForm({
   proposal,
   retain = retainReviewRevision,
 }: AcquireObservedReviewRevisionFormProps) {
-  const [changeIntent, setChangeIntent] = useState(proposal.changeIntent?.text ?? "");
+  const recordedPurpose = proposal.changeIntent?.text;
+  const changeIntent = recordedPurpose ?? proposal.title;
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const active = useRef<AbortController | null>(null);
@@ -80,8 +79,8 @@ export function AcquireObservedReviewRevisionForm({
     } catch {
       setError(
         intentTooLarge
-          ? "Change Intent must be 20,000 UTF-8 bytes or fewer."
-          : "Confirm a Change Intent before acquiring this pull request.",
+          ? "The review purpose must be 20,000 UTF-8 bytes or fewer."
+          : "Add the purpose Kestrel should use for this review.",
       );
       return;
     }
@@ -111,32 +110,29 @@ export function AcquireObservedReviewRevisionForm({
 
   return (
     <form className="observed-acquisition-form" onSubmit={(event) => void submit(event)} noValidate>
-      <div className="form-field">
-        <Label htmlFor={fieldId}>Confirm Change Intent for PR #{proposal.number}</Label>
-        <Textarea
-          id={fieldId}
-          rows={3}
-          value={changeIntent}
-          disabled={disabled || pending}
-          aria-describedby={`${helpId}${error !== null ? ` ${errorId}` : ""}`}
-          aria-invalid={intentTooLarge || error !== null ? "true" : undefined}
-          onChange={(event) => {
-            setChangeIntent(event.currentTarget.value);
-            setError(null);
-          }}
-        />
-      </div>
+      <p className="text-sm text-muted-foreground">
+        {recordedPurpose === undefined
+          ? "Kestrel will retain this revision and record the GitHub-stated purpose shown above as your confirmation."
+          : "Kestrel will use the purpose shown above."}{" "}
+        Correct it there before retaining source if it does not describe the change.
+      </p>
       <Button
         type="submit"
         disabled={disabled || pending || normalizedIntent.length === 0 || intentTooLarge}
+        aria-describedby={`${helpId}${error !== null ? ` ${errorId}` : ""}`}
       >
         {pending
-          ? "Acquiring…"
+          ? "Retaining…"
           : currentRevision?.state === "unavailable"
             ? `Retry exact PR #${String(proposal.number)}`
-            : `Acquire exact PR #${String(proposal.number)}`}
+            : recordedPurpose === undefined
+              ? "Retain source and confirm purpose"
+              : `Retain exact PR #${String(proposal.number)}`}
       </Button>
       <p id={helpId} className="form-help">
+        {recordedPurpose === undefined
+          ? "Retaining source also records this purpose as your confirmation. "
+          : ""}
         Kestrel reads the attached repository first. Git may use a host credential helper only to
         fetch missing GitHub objects into temporary Kestrel-owned storage; Kestrel never receives or
         stores the credential. {intentBytes.toLocaleString("en-US")} / 20,000 UTF-8 bytes.

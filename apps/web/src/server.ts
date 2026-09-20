@@ -23,6 +23,7 @@ import {
   FACTORY_FEATURE_MERGE_WORK_OPTIONS,
 } from "./factory-feature-merge-processor.js";
 import { createDatabaseFactoryConceptualReviewService } from "./routes/factory-conceptual-review.js";
+import { createDatabaseExternalConceptualReviewService } from "./routes/external-conceptual-review.js";
 import {
   createLocalRepositoryService,
   inspectLocalSourceAttachments,
@@ -161,6 +162,11 @@ const factoryConceptualReviewService = createDatabaseFactoryConceptualReviewServ
   () => readLocalSourceConfig(),
   { boss, runtimeProfile: factoryConceptualReviewRuntimeProfile },
 );
+const externalConceptualReviewService = createDatabaseExternalConceptualReviewService(
+  pool,
+  () => readLocalSourceConfig(),
+  { boss, runtimeProfile: factoryConceptualReviewRuntimeProfile },
+);
 await withArtifactLifecycleLock(pool, async (lockedPool) => {
   await reconcileAcquiringRevisions(lockedPool);
   const referenced = await readReferencedArtifactLocators(lockedPool);
@@ -174,6 +180,7 @@ const app = await buildApp({
   boss,
   factoryConceptualReviewRuntimeProfile,
   factoryConceptualReviewService,
+  externalConceptualReviewService,
   codexAgentRuntime,
   eventPool,
   eventRetentionLimit: readEventRetentionLimit(),
