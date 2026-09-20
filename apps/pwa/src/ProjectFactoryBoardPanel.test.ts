@@ -2,7 +2,12 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { FactoryBoard, FactoryWorkItem, Feature } from "@kestrel/contracts";
+import type {
+  FactoryBoard,
+  FactoryGitHubIssues,
+  FactoryWorkItem,
+  Feature,
+} from "@kestrel/contracts";
 import {
   ProjectFactoryBoardPanel,
   type ProjectFactoryBoardPanelProps,
@@ -51,6 +56,28 @@ const waitingItem: FactoryWorkItem = {
   column: "todo",
   blocking: { kind: "human_gate", explanation: "Should the export include archived reports?" },
   providerUrl: null,
+};
+const githubIssues: FactoryGitHubIssues = {
+  schemaVersion: 1,
+  projectId: planning.projectId,
+  repository: { id: "901", owner: "example", name: "reports" },
+  state: "available",
+  failure: null,
+  issues: [
+    {
+      repository: { id: "901", owner: "example", name: "reports" },
+      id: "42",
+      number: 42,
+      url: firstItem.providerUrl ?? "",
+      title: "Provider copy of the export Work Item",
+      body: "Save the selected report as CSV.",
+      state: "open",
+      dependencies: [],
+    },
+  ],
+  page: 1,
+  nextPage: null,
+  limited: false,
 };
 
 function board(feature = approved, items = [firstItem, waitingItem]): FactoryBoard {
@@ -141,6 +168,17 @@ describe("Project Factory board", () => {
     expect(container.querySelector('[aria-label="In review"]')?.textContent).toContain(
       firstItem.title,
     );
+  });
+
+  it("does not duplicate a linked GitHub issue as a provider card", async () => {
+    await render({ githubIssues });
+    expect(container.textContent).toContain(firstItem.title);
+    expect(container.textContent).not.toContain("Provider copy of the export Work Item");
+    expect(
+      container.querySelector(
+        '[aria-label="Open GitHub issue #42: Provider copy of the export Work Item"]',
+      ),
+    ).toBeNull();
   });
 
   it("keeps Work Items from different approved Features on the same Project board", async () => {

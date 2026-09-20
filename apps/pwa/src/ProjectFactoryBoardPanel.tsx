@@ -140,7 +140,17 @@ export function ProjectFactoryBoardPanel({
       feature.state === "planning" &&
       !approvedBoards.some((board) => board.feature.id === feature.id),
   );
-  const availableGitHubIssues = githubIssues?.state === "available" ? githubIssues.issues : [];
+  const linkedIssueUrls = new Set(
+    approvedBoards.flatMap((board) =>
+      board.columns.flatMap((column) =>
+        column.items.flatMap((item) => (item.providerUrl === null ? [] : [item.providerUrl])),
+      ),
+    ),
+  );
+  const availableGitHubIssues =
+    githubIssues?.state === "available"
+      ? githubIssues.issues.filter((issue) => !linkedIssueUrls.has(issue.url))
+      : [];
   return (
     <section className="min-w-0 space-y-6" aria-labelledby={titleId} aria-busy={loading}>
       <header className="flex flex-wrap items-start justify-between gap-3">
