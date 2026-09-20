@@ -40,7 +40,7 @@ function assertValidationActive(signal?: AbortSignal): void {
   throw signal.reason instanceof Error ? signal.reason : new Error("Review validation interrupted");
 }
 
-function hostSummary(draft: FactoryConceptualReviewDraft): string {
+function hostSummary(draft: FactoryConceptualReviewDraft, external: boolean): string {
   const mapped = draft.outcomes.filter(({ coverage }) => coverage === "mapped").length;
   const problems = draft.problems.length;
   const checks = draft.evidence.filter(({ type }) => type === "check").length;
@@ -48,7 +48,8 @@ function hostSummary(draft: FactoryConceptualReviewDraft): string {
     checks === 0
       ? "exact retained source"
       : `exact retained source and ${String(checks)} final ${checks === 1 ? "check" : "checks"}`;
-  return `${String(mapped)} of ${String(draft.outcomes.length)} approved outcomes map to ${support}; ${String(problems)} ${problems === 1 ? "problem is" : "problems are"} identified.`;
+  const outcomes = external ? "requested outcomes" : "approved outcomes";
+  return `${String(mapped)} of ${String(draft.outcomes.length)} ${outcomes} map to ${support}; ${String(problems)} ${problems === 1 ? "problem is" : "problems are"} identified.`;
 }
 
 const ModelNodeIdSchema = z.string().min(1).max(96);
@@ -113,14 +114,14 @@ export const FactoryConceptualReviewModelOutputSchema = z.strictObject({
       }),
     )
     .min(1)
-    .max(40),
+    .max(50),
   behavioralSteps: z.array(
     z.strictObject({
       id: ModelNodeIdSchema,
       title: ModelTextSchema,
       description: ModelTextSchema,
       change: z.enum(["added", "modified", "removed", "context"]),
-      outcomeKeys: z.array(z.string().min(1).max(48)).min(1).max(40),
+      outcomeKeys: z.array(z.string().min(1).max(48)).min(1).max(50),
       evidenceIds: z.array(ModelNodeIdSchema).min(1).max(80),
     }),
   ),
@@ -269,7 +270,7 @@ function resolvedCheckRecord(
   check: FactoryConceptualReviewCheck,
 ): FactoryConceptualReviewCheckEvidence["record"] | null {
   const certificate = preparation.publication?.certificate;
-  if (certificate === undefined) return null;
+  if (certificate === undefined || certificate === null) return null;
   const expectedIndex = check.manifestPosition - 1;
   const expected = certificate.manifest[expectedIndex];
   if (
@@ -369,8 +370,12 @@ export async function validateFactoryConceptualReview(
 
   const evidenceById = new Map(draft.evidence.map((item) => [item.id, item]));
   const stepsById = new Map(draft.behavioralSteps.map((step) => [step.id, step]));
+  const requiresFinalChecks = input.preparation.featureId !== null;
+  if (!requiresFinalChecks && draft.result !== "partial") {
+    throw new FactoryConceptualReviewValidationError("invalid_output");
+  }
   for (const outcome of draft.outcomes) {
-    if (outcome.coverage !== "mapped") continue;
+    if (outcome.coverage !== "mapped" || !requiresFinalChecks) continue;
     const inadequatelySupported = outcome.behavioralStepIds.some((stepId) => {
       const step = stepsById.get(stepId);
       if (step === undefined || step.change === "context") return false;
@@ -460,6 +465,6 @@ export async function validateFactoryConceptualReview(
   }
   return {
     ...draft,
-    summary: hostSummary(draft),
+    summary: hostSummary(draft, !requiresFinalChecks),
   };
 }

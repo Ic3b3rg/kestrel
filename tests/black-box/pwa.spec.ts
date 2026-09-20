@@ -2,6 +2,8 @@ import { AxeBuilder } from "@axe-core/playwright";
 import { expect, test, type Page, type Route } from "@playwright/test";
 
 import {
+  ExternalConceptualReviewPreparationSchema,
+  FactoryConceptualReviewWorkflowReadSchema,
   HostGitHubProjectInboxSchema,
   ProjectInboxSchema,
   ReviewRevisionAvailableSchema,
@@ -71,6 +73,92 @@ async function openProjectWorkspace(page: Page, label = "openai/openai-node"): P
     await saved.locator("summary").click();
     await saved.getByRole("button").first().click();
   }
+}
+
+function blockedExternalReviewPreparation(projectId: string, changeProposalId: string) {
+  return ExternalConceptualReviewPreparationSchema.parse({
+    schemaVersion: 1,
+    projectId,
+    featureId: null,
+    changeProposalId,
+    preparationDigest: null,
+    basis: null,
+    publication: null,
+    evidence: null,
+    configuration: {
+      model: { route: "codex_subscription", modelId: null },
+      runtimePolicy: {
+        kind: "retained_source_review",
+        version: 1,
+        adapter: "codex_app_server",
+        adapterVersion: 1,
+        containerImage: null,
+        containerUser: null,
+        codexExecutable: null,
+        codexExecutableDigest: null,
+        codexVersion: null,
+        codexProtocol: "app_server_v2",
+        sourceAccess: "retained_read_only",
+        networkAccess: false,
+        writeAccess: false,
+        status: "unavailable",
+      },
+      resources: {
+        maximumAttempts: 3,
+        timeoutSeconds: 900,
+        maximumEvidenceItems: 400,
+        maximumWorkspaceFiles: 20000,
+        maximumWorkspaceBytes: 268435456,
+        maximumGraphNodes: 800,
+        maximumOutputBytes: 131072,
+        containerPidsLimit: 128,
+        containerMemoryBytes: 1073741824,
+        containerNanoCpus: 2000000000,
+        containerTmpfsBytes: 67108864,
+      },
+    },
+    readiness: {
+      state: "blocked",
+      startAllowed: false,
+      blockers: [
+        "publication_not_ready",
+        "change_intent_not_available",
+        "model_not_selected",
+        "review_runtime_unavailable",
+      ],
+    },
+  });
+}
+
+async function mockBlockedExternalReview(
+  page: Page,
+  projectId: string,
+  changeProposalId: string,
+): Promise<void> {
+  const reviewRoot = `/api/v1/projects/${projectId}/change-proposals/${changeProposalId}/review`;
+  await page.route(
+    (url) => url.pathname.startsWith(reviewRoot),
+    async (route: Route) => {
+      const pathname = new URL(route.request().url()).pathname;
+      if (pathname === `${reviewRoot}/preparation`) {
+        await route.fulfill({
+          json: blockedExternalReviewPreparation(projectId, changeProposalId),
+        });
+        return;
+      }
+      if (pathname === `${reviewRoot}/workflows/current`) {
+        await route.fulfill({ json: { schemaVersion: 1, review: null } });
+        return;
+      }
+      if (pathname === `${reviewRoot}/artifacts`) {
+        await route.fulfill({
+          json: { schemaVersion: 1, reviews: [], offset: 0, total: 0, nextOffset: null },
+        });
+        return;
+      }
+      await route.fulfill({ status: 404 });
+    },
+  );
 }
 
 test.describe("observable Installation PWA", () => {
@@ -539,6 +627,7 @@ test.describe("observable Installation PWA", () => {
         revisionRequestCount += 1;
       }
     });
+    await mockBlockedExternalReview(page, project.id, observedProposal.id);
 
     const browserErrors: string[] = [];
     page.on("console", (message) => {
@@ -638,15 +727,12 @@ test.describe("observable Installation PWA", () => {
     ).toBeVisible();
     expect(inboxReadCount).toBe(inboxReadCountAfterRefresh);
     expect(revisionRequestCount).toBe(0);
-    const description = page
-      .locator(".intent-source-snapshot > span")
-      .filter({ hasText: "Long provider description." });
-    await description.focus();
-    await expect(description).toBeFocused();
-    await page.keyboard.press("End");
-    await expect
-      .poll(() => description.evaluate((element) => element.scrollTop))
-      .toBeGreaterThan(0);
+    const purpose = page.getByRole("region", { name: "What this change is meant to do" });
+    await expect(purpose).toContainText("Review the bounded provider read");
+    await expect(purpose).toContainText("Pull request stated");
+    await expect(purpose.getByText("Correct this explanation", { exact: true })).toBeVisible();
+    await expect(purpose.getByRole("checkbox")).toHaveCount(0);
+    await expect(page.getByText(/proposal version/iu)).toHaveCount(0);
 
     const accessibility = await new AxeBuilder({ page })
       .include(".host-github-panel")
@@ -705,7 +791,11 @@ test.describe("observable Installation PWA", () => {
     const proposal = project?.changeProposals.find(
       (candidate) => candidate.kind === "provider_observed" && candidate.number === 1234,
     );
-    if (project === undefined || proposal?.kind !== "provider_observed") {
+    if (
+      project === undefined ||
+      project.repository === null ||
+      proposal?.kind !== "provider_observed"
+    ) {
       throw new Error("Observed pull-request browser fixture is unavailable");
     }
     if (project.localRepositorySource === null) {
@@ -722,7 +812,7 @@ test.describe("observable Installation PWA", () => {
       },
     };
     const unselectedProject = { ...selectedProject, changeProposals: [] };
-    const changeIntentText = "Review the exact provider-observed pull request revision";
+    const changeIntentText = proposal.title;
     const acquisitionChangeIntent = {
       acceptanceOutcomes: [],
       createdAt: "2026-08-28T12:05:00.000Z",
@@ -999,28 +1089,24 @@ test.describe("observable Installation PWA", () => {
     await expect(proposalDetail).toBeVisible();
     await expect(proposalDetail).toContainText("Revision State");
     await expect(proposalDetail).toContainText("Not acquired");
-    const intent = page.getByLabel("Confirm Change Intent for PR #1234");
-    await expect(intent).toHaveValue("");
-    await expect(page.getByRole("button", { name: "Acquire exact PR #1234" })).toBeDisabled();
+    const purpose = page.getByRole("region", { name: "What this change is meant to do" });
+    await expect(purpose).toContainText(changeIntentText);
+    await expect(purpose).toContainText("Pull request stated");
     await expect(page.getByText(/host credential helper/u)).toBeVisible();
     await expect(page.getByText(/never receives or stores the credential/u)).toBeVisible();
-    await intent.fill(changeIntentText);
-    const acquire = page.getByRole("button", { name: "Acquire exact PR #1234" });
+    const acquire = page.getByRole("button", { name: "Retain source and confirm purpose" });
     await acquire.click();
     await requestObserved;
-    await expect(page.getByRole("button", { name: "Acquiring…" })).toBeDisabled();
-    await expect(intent).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Retaining…" })).toBeDisabled();
     releaseResponse();
     await expect(page.locator(".activity-line")).toContainText(
       "The exact Review Revision is available.",
     );
-    await expect(page.getByRole("button", { name: "Acquire exact PR #1234" })).toHaveCount(0);
     await expect(
-      proposalDetail
-        .locator(".commit-pointer-list")
-        .getByRole("definition")
-        .filter({ hasText: changeIntentText }),
-    ).toBeVisible();
+      page.getByRole("button", { name: "Retain source and confirm purpose" }),
+    ).toHaveCount(0);
+    await expect(purpose).toContainText(changeIntentText);
+    await expect(purpose).toContainText("Operator confirmed");
     await expect(page.getByText("Available", { exact: true })).toHaveCount(2);
     const overview = proposalDetail.getByRole("region", { name: "Change Overview" });
     await expect(overview).toContainText("Base snapshot · 3 files");
@@ -1041,7 +1127,7 @@ test.describe("observable Installation PWA", () => {
     await expect(proposalDetail).toContainText("Not acquired");
     await expect(overview.locator(".change-overview-status")).toHaveText("Awaiting exact source");
     await expect(
-      proposalDetail.getByRole("button", { name: `Acquire exact PR #${String(proposal.number)}` }),
+      proposalDetail.getByRole("button", { name: `Retain exact PR #${String(proposal.number)}` }),
     ).toBeVisible();
     await expect(
       proposalDetail.getByLabel(`Observed head object ID ${movedHeadObjectId}`),
@@ -1053,25 +1139,39 @@ test.describe("observable Installation PWA", () => {
     expect(browserErrors).toEqual([]);
   });
 
-  test("PR readiness keeps exact source, provider and Codex facts independent", async ({
+  test("the Operator starts and explores an independent review of an exact external PR", async ({
     page,
   }) => {
-    if (stack === undefined) throw new Error("Readiness browser stack is unavailable");
-    const inbox = ProjectInboxSchema.parse(await (await stack.fetchApi("/api/v1/projects")).json());
-    const stored = inbox.projects.find(({ repository }) => repository?.name === "openai-node");
-    const proposal = stored?.changeProposals.find((value) => value.kind === "provider_observed");
-    if (stored === undefined || proposal?.kind !== "provider_observed")
-      throw new Error("PR fixture unavailable");
+    if (stack === undefined) throw new Error("External review browser stack is unavailable");
+    const runningStack = stack;
+    const inbox = ProjectInboxSchema.parse(
+      await (await runningStack.fetchApi("/api/v1/projects")).json(),
+    );
+    const project = inbox.projects.find(
+      (candidate) => candidate.repository?.name === "openai-node",
+    );
+    const proposal = project?.changeProposals.find(
+      (candidate) => candidate.kind === "provider_observed" && candidate.number === 1234,
+    );
+    if (
+      project === undefined ||
+      project.repository === null ||
+      proposal?.kind !== "provider_observed"
+    ) {
+      throw new Error("External review browser fixture is unavailable");
+    }
+
+    const at = "2026-09-20T00:00:00.000Z";
     const source = {
       id: "018f0f89-9a1d-7484-b224-866ef9d69990",
       repositoryId: "018f0f89-9a1e-7d64-a5dd-18cc3e317401",
       displayName: "openai-node",
       state: "attached" as const,
       objectFormat: "sha1" as const,
-      createdAt: "2026-09-07T12:00:00.000Z",
-      updatedAt: "2026-09-07T12:00:00.000Z",
+      createdAt: at,
+      updatedAt: at,
     };
-    const retained = {
+    const reviewRevision = {
       id: "018f0f89-9a21-7271-b92d-f1cb0d48bb47",
       state: "available" as const,
       objectFormat: "sha1" as const,
@@ -1080,58 +1180,253 @@ test.describe("observable Installation PWA", () => {
       objectCount: 7,
       retainedBytes: 4096,
       failureReason: null,
-      createdAt: "2026-09-07T12:00:00.000Z",
-      availableAt: "2026-09-07T12:00:01.000Z",
+      createdAt: at,
+      availableAt: at,
     };
-    const parsedProject = ProjectInboxSchema.parse({
+    const changeIntent = {
+      acceptanceOutcomes: ["Repository access remains explicit"],
+      createdAt: at,
+      id: "018f0f89-9a20-79f9-9990-dda80c9b917d",
+      objective: "Keep repository access explicit",
+      resolution: { state: "resolved" as const, issues: [] },
+      scopeBoundaries: ["The exact pull request change"],
+      sourceDigest: "a".repeat(64),
+      sources: [
+        {
+          id: "operator_input",
+          kind: "operator_input" as const,
+          label: "Operator input",
+          provenance: { kind: "operator_input" as const },
+          text: "Keep repository access explicit",
+          version: "1",
+        },
+      ],
+      text: "Keep repository access explicit",
+      version: 1,
+    };
+    const reviewProposal = {
+      ...proposal,
+      body: "Keep repository access explicit.",
+      changeIntent,
+      reviewRevisions: [reviewRevision],
+    };
+    const selectedProject = ProjectInboxSchema.parse({
       schemaVersion: 1,
       projects: [
         {
-          ...stored,
+          ...project,
           localRepositorySource: source,
           sourceAvailability: "available",
-          changeProposals: [{ ...proposal, reviewRevisions: [retained] }],
+          changeProposals: [reviewProposal],
         },
       ],
     }).projects[0];
-    if (parsedProject === undefined) throw new Error("Readiness Project fixture unavailable");
-    let currentProject = parsedProject;
-    const readyCodex: CodexSubscriptionConnection = {
+    if (selectedProject === undefined) throw new Error("External review Project is unavailable");
+
+    const preparationDigest = "d".repeat(64);
+    const retainedManifestDigest = "c".repeat(64);
+    const workflowId = "018f0f89-a45f-79af-8544-650e9f15c211";
+    const artifactId = "018f0f89-a45f-79af-8544-650e9f15c212";
+    const requestId = "65cc9964-10c2-49d1-86c4-8f13f5019e86";
+    const preparation = ExternalConceptualReviewPreparationSchema.parse({
       schemaVersion: 1,
-      state: "ready",
-      reason: null,
-      cli: { version: "0.152.1", supported: true, protocol: "app_server_v2" },
-      account: { authentication: "chatgpt", email: "readiness@example.com", plan: "plus" },
-      models: [{ id: "gpt-5.6-sol", displayName: "GPT-5.6 Sol", isDefault: true }],
-      usage: { availability: "available", primary: null, secondary: null },
-      checkedAt: "2026-09-07T12:00:00.000Z",
-    };
-    let codex = readyCodex;
-    let preference: CodexReviewModelPreference = {
+      projectId: project.id,
+      featureId: null,
+      changeProposalId: proposal.id,
+      preparationDigest,
+      basis: {
+        objective: changeIntent.objective,
+        scope: { includes: changeIntent.scopeBoundaries, excludes: [] },
+        outcomes: [
+          {
+            key: "stated_intent",
+            outcome: changeIntent.acceptanceOutcomes[0],
+            intent: { kind: "operator_confirmed", label: "Operator input" },
+          },
+        ],
+        provenance: {
+          kind: "change_intent",
+          changeIntentId: changeIntent.id,
+          version: changeIntent.version,
+          sourceDigest: changeIntent.sourceDigest,
+          resolution: "resolved",
+          sources: [{ kind: "operator_confirmed", label: "Operator input" }],
+        },
+        limitations: ["No executed test results are linked to this external pull request."],
+      },
+      publication: {
+        kind: "external_pull_request",
+        pullRequest: {
+          repository: {
+            id: project.repository.providerId,
+            owner: project.repository.owner,
+            name: project.repository.name,
+          },
+          author: proposal.author?.login ?? null,
+          number: proposal.number,
+          url: proposal.canonicalUrl,
+          state: proposal.proposalState,
+          title: proposal.title,
+          body: reviewProposal.body,
+          baseRef: proposal.base.ref,
+          headRef: proposal.head.ref,
+          baseCommitId: proposal.base.objectId,
+          headCommitId: proposal.head.objectId,
+        },
+        revision: reviewRevision,
+        retainedManifestDigest,
+        certificate: null,
+      },
+      evidence: {
+        source: {
+          baseCommitId: proposal.base.objectId,
+          headCommitId: proposal.head.objectId,
+          headTreeId: "c".repeat(40),
+          retainedManifestDigest,
+          limits: {
+            catalogPageEntries: 200,
+            fileBytes: 524288,
+            lineRange: 200,
+            responseBytes: 32768,
+          },
+        },
+        checks: null,
+      },
+      configuration: {
+        model: { route: "codex_subscription", modelId: "gpt-6-astra" },
+        runtimePolicy: {
+          kind: "retained_source_review",
+          version: 1,
+          adapter: "codex_app_server",
+          adapterVersion: 1,
+          containerImage: `sha256:${"1".repeat(64)}`,
+          containerUser: "501:20",
+          codexExecutable: "/usr/local/bin/codex",
+          codexExecutableDigest: "e".repeat(64),
+          codexVersion: "0.155.1",
+          codexProtocol: "app_server_v2",
+          sourceAccess: "retained_read_only",
+          networkAccess: false,
+          writeAccess: false,
+          status: "available",
+        },
+        resources: {
+          maximumAttempts: 3,
+          timeoutSeconds: 900,
+          maximumEvidenceItems: 400,
+          maximumWorkspaceFiles: 20000,
+          maximumWorkspaceBytes: 268435456,
+          maximumGraphNodes: 800,
+          maximumOutputBytes: 131072,
+          containerPidsLimit: 128,
+          containerMemoryBytes: 1073741824,
+          containerNanoCpus: 2000000000,
+          containerTmpfsBytes: 67108864,
+        },
+      },
+      readiness: { state: "ready", startAllowed: true, blockers: [] },
+    });
+    const queued = FactoryConceptualReviewWorkflowReadSchema.parse({
       schemaVersion: 1,
-      route: "codex_subscription",
-      selectedModelId: "gpt-5.6-sol",
-      updatedAt: "2026-09-07T12:00:00.000Z",
-    };
-    let githubDenied = false;
-    let codexFails = false;
-    let releaseCodex: () => void = () => {
-      throw new Error("Codex probe was not held");
-    };
-    let codexGate: Promise<void> | null = null;
+      workflow: {
+        id: workflowId,
+        requestId,
+        projectId: project.id,
+        featureId: null,
+        changeProposalId: proposal.id,
+        inputDigest: preparationDigest,
+        reviewRevisionId: reviewRevision.id,
+        state: "queued",
+        attempt: { current: 0, maximum: 3 },
+        failure: null,
+        artifactId: null,
+        requestedAt: at,
+        startedAt: null,
+        finishedAt: null,
+      },
+      artifact: null,
+      currency: "up_to_date",
+    });
+    const published = FactoryConceptualReviewWorkflowReadSchema.parse({
+      schemaVersion: 1,
+      workflow: {
+        ...queued.workflow,
+        state: "published",
+        attempt: { current: 1, maximum: 3 },
+        artifactId,
+        startedAt: at,
+        finishedAt: at,
+      },
+      artifact: {
+        schemaVersion: 1,
+        id: artifactId,
+        workflowId,
+        inputDigest: preparationDigest,
+        reviewRevisionId: reviewRevision.id,
+        baseCommitId: proposal.base.objectId,
+        headCommitId: proposal.head.objectId,
+        status: "partial",
+        evidenceScope: {
+          source: "exact_retained_revision",
+          executedChecks: "not_linked",
+          narrativeAuthority: "source_only_model_interpretation",
+        },
+        graph: {
+          result: "partial",
+          summary: "The pull request keeps repository access explicit.",
+          outcomes: [
+            {
+              id: "outcome-access",
+              outcomeKey: "stated_intent",
+              title: "Repository access remains explicit",
+              coverage: "mapped",
+              behavioralStepIds: ["behavior-access"],
+              reason: "The retained implementation requires an explicit source.",
+            },
+          ],
+          behavioralSteps: [
+            {
+              id: "behavior-access",
+              title: "Require an explicit repository source",
+              description: "The handler rejects work without an authorized source binding.",
+              change: "modified",
+              outcomeKeys: ["stated_intent"],
+              evidenceIds: ["source-access"],
+            },
+          ],
+          evidence: [
+            {
+              id: "source-access",
+              type: "source",
+              side: "head",
+              path: "src/review.ts",
+              startLine: 10,
+              endLine: 12,
+              description: "Explicit source binding",
+              sufficiency: "These retained lines show the authorization branch.",
+              limitations: [],
+            },
+          ],
+          problems: [],
+          edges: [
+            { from: "outcome-access", to: "behavior-access", kind: "implemented_by" },
+            { from: "behavior-access", to: "source-access", kind: "supported_by" },
+          ],
+          limitations: ["No executed test results are linked to this external pull request."],
+        },
+        createdAt: at,
+      },
+      currency: "up_to_date",
+    });
+
     await page.route("**/api/v1/projects", (route) =>
-      route.fulfill({
-        json: { schemaVersion: 1, projects: [currentProject, openedProject.project] },
-      }),
-    );
-    await page.route("**/api/v1/projects/*/model-profiles/direct-api", (route) =>
-      route.fulfill({ json: { schemaVersion: 1, profile: null } }),
+      route.fulfill({ json: { schemaVersion: 1, projects: [selectedProject] } }),
     );
     await page.route("**/api/v1/projects/*/provider/github", (route) =>
       route.fulfill({
-        json: {
+        json: HostGitHubProjectInboxSchema.parse({
           schemaVersion: 1,
-          projectId: currentProject.id,
+          projectId: project.id,
           route: "host_gh",
           limitations: ["Host session, bounded reads, and manual refresh only."],
           status: {
@@ -1147,204 +1442,169 @@ test.describe("observable Installation PWA", () => {
             failureReason: null,
           })),
           pullRequests: [],
-          observedAt: "2026-09-07T12:00:00.000Z",
-        },
+          observedAt: at,
+        }),
       }),
     );
-    await page.route("**/api/v1/connections/github*", (route) => {
-      const projectId = new URL(route.request().url()).searchParams.get("projectId");
-      const checkedProject =
-        projectId === currentProject.id ? currentProject : openedProject.project;
-      return route.fulfill({
-        json: {
-          schemaVersion: 1,
-          state: githubDenied ? "action_required" : "ready",
-          reason: githubDenied ? "project_access_denied" : null,
-          cli: { version: "2.87.0", supported: true },
-          identity: { host: "github.com", account: "operator" },
-          projectAccess: githubDenied
-            ? { state: "not_verified", projectId, repository: null }
-            : {
-                state: "verified",
-                projectId,
-                repository: {
-                  owner: checkedProject.repository?.owner,
-                  name: checkedProject.repository?.name,
-                },
-              },
-          checkedAt: "2026-09-07T12:00:00.000Z",
-        },
-      });
-    });
-    await page.route("**/api/v1/connections/codex", async (route) => {
-      const response = codex;
-      if (codexGate !== null) await codexGate;
-      if (codexFails) await route.abort("failed");
-      else await route.fulfill({ json: response });
-    });
-    await page.route("**/api/v1/settings/review-model", (route) =>
-      route.fulfill({ json: preference }),
-    );
-    let attachedFromCorrection = false;
-    await page.route("**/api/v1/local-repository-sources", (route) =>
-      route.fulfill({
-        json: {
-          schemaVersion: 1,
-          inventoryState: "ready",
-          repositories: [
-            {
-              attachmentState: "unattached",
-              displayName: "openai-node",
-              repositoryId: source.repositoryId,
+
+    let started = false;
+    let workflowReads = 0;
+    const reviewRoot = `/api/v1/projects/${project.id}/change-proposals/${proposal.id}/review`;
+    await page.route(
+      (url) => url.pathname.startsWith(reviewRoot),
+      async (route: Route) => {
+        const request = route.request();
+        const pathname = new URL(request.url()).pathname;
+        if (pathname === `${reviewRoot}/preparation`) {
+          await route.fulfill({ json: preparation });
+          return;
+        }
+        if (pathname === `${reviewRoot}/workflows/current`) {
+          await route.fulfill({
+            json: { schemaVersion: 1, review: started ? published : null },
+          });
+          return;
+        }
+        if (pathname === `${reviewRoot}/workflows` && request.method() === "POST") {
+          expect(request.postDataJSON()).toEqual({ requestId, preparationDigest });
+          expect(request.headers()["x-kestrel-csrf"]).toBeTruthy();
+          started = true;
+          await route.fulfill({ json: queued, status: 202 });
+          return;
+        }
+        if (pathname === `${reviewRoot}/workflows/${workflowId}`) {
+          workflowReads += 1;
+          await route.fulfill({ json: published });
+          return;
+        }
+        if (pathname === `${reviewRoot}/artifacts`) {
+          await route.fulfill({
+            json: {
+              schemaVersion: 1,
+              reviews: started
+                ? [
+                    {
+                      artifactId,
+                      workflowId,
+                      status: "partial",
+                      headCommitId: proposal.head.objectId,
+                      requestedAt: at,
+                      finishedAt: at,
+                      currency: "up_to_date",
+                    },
+                  ]
+                : [],
+              offset: 0,
+              total: started ? 1 : 0,
+              nextOffset: null,
             },
-          ],
-        },
-      }),
+          });
+          return;
+        }
+        if (pathname === `${reviewRoot}/artifacts/${artifactId}/source/lines`) {
+          const url = new URL(request.url());
+          expect(Object.fromEntries(url.searchParams)).toEqual({
+            side: "head",
+            path: "src/review.ts",
+            startLine: "10",
+            endLine: "12",
+          });
+          await route.fulfill({
+            json: {
+              status: "available",
+              side: "head",
+              commitId: proposal.head.objectId,
+              mode: "100644",
+              objectId: "c".repeat(40),
+              path: "src/review.ts",
+              type: "blob",
+              startLine: 10,
+              endLine: 12,
+              totalLines: 40,
+              hasFinalNewline: true,
+              lineEndings: ["lf", "lf", "lf"],
+              text: "if (!source) return denied;\nreturn review(source);\n}",
+            },
+          });
+          return;
+        }
+        await route.fulfill({ status: 404 });
+      },
     );
-    await page.route("**/api/v1/projects/local", async (route) => {
-      expect(route.request().postDataJSON()).toEqual({ repositoryId: source.repositoryId });
-      attachedFromCorrection = true;
-      currentProject = { ...currentProject, localRepositorySource: source };
-      await route.fulfill({ json: { schemaVersion: 1, project: currentProject } });
+
+    const browserErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error" || message.type() === "warning") {
+        const value = message.text();
+        if (
+          value !==
+          "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+        ) {
+          browserErrors.push(value);
+        }
+      }
     });
-    await page.goto(stack.pwaUrl);
+    page.on("pageerror", (error) => browserErrors.push(error.message));
+
+    await page.addInitScript((stableRequestId) => {
+      Object.defineProperty(globalThis.crypto, "randomUUID", {
+        configurable: true,
+        value: () => stableRequestId,
+      });
+    }, requestId);
+    await page.goto(runningStack.pwaUrl);
     await page.getByLabel("Username").fill(TEST_OPERATOR_CREDENTIALS.username);
     await page.getByLabel("Password").fill(TEST_OPERATOR_CREDENTIALS.password);
     await page.getByRole("button", { name: "Sign in" }).click();
     await openProjectWorkspace(page);
-    const readiness = page.getByRole("region", { name: "PR readiness", exact: true });
-    const fact = (label: string) => readiness.getByText(label, { exact: true }).locator("..");
-    await expect(fact("Project / repository")).toContainText("openai/openai-node");
-    await expect(fact("Codex account")).toContainText("readiness@example.com");
-    await expect(fact("Selected model")).toContainText("GPT-5.6 Sol");
-    await expect(fact("GitHub access")).toContainText("Verified for this Project");
-    await expect(fact("Revision State")).toHaveText("Revision StateAvailable");
-    await expect(
-      readiness.getByLabel(`Retained head object ID ${retained.head.objectId}`),
-    ).toBeVisible();
-    await expect(readiness).toContainText("Review execution arrives in 0.2");
-    await expect(page.getByRole("button", { name: "Prepare Review", exact: true })).toHaveCount(0);
-    const resolveIntent = readiness.getByRole("link", { name: "Resolve Change Intent" });
-    await resolveIntent.focus();
-    await page.keyboard.press("Enter");
-    await expect(page.locator(`#intent-${proposal.id}`)).toBeFocused();
-    await page.reload();
-    await expect(fact("Selected model")).toContainText("GPT-5.6 Sol");
 
-    currentProject = { ...currentProject, localRepositorySource: { ...source, state: "detached" } };
-    await page.reload();
-    await expect(fact("Local Repository Source")).toContainText("Detached");
-    await expect(fact("Revision State")).toHaveText("Revision StateAvailable");
-    await fact("Local Repository Source")
-      .getByRole("button", { name: "Attach local repository", exact: true })
-      .click();
-    const attachDialog = page.getByRole("dialog", { name: "Open an authorized repository" });
-    await expect(attachDialog.getByLabel("Base reference")).toHaveCount(0);
-    await expect(attachDialog.getByLabel("Change Intent")).toHaveCount(0);
-    await attachDialog.getByLabel("Repository", { exact: true }).selectOption(source.repositoryId);
-    await attachDialog.getByRole("button", { name: "Open selected Project" }).click();
-    await expect(attachDialog).toHaveCount(0);
-    await expect(fact("Local Repository Source")).toContainText("Attached");
-    expect(attachedFromCorrection).toBe(true);
-    await expect(fact("Revision State")).toHaveText("Revision StateAvailable");
-
-    currentProject = {
-      ...currentProject,
-      localRepositorySource: source,
-      changeProposals: [
-        {
-          ...proposal,
-          head: { ...proposal.head, objectId: "f".repeat(40) },
-          reviewRevisions: [retained],
-        },
-      ],
-    };
-    await page.reload();
-    await expect(fact("Revision State")).toContainText("Not acquired");
-    await expect(readiness.getByLabel(`Observed head object ID ${"f".repeat(40)}`)).toBeVisible();
-    await expect(
-      readiness.getByLabel(`Retained head object ID ${retained.head.objectId}`),
-    ).toHaveCount(0);
-    await readiness.getByRole("link", { name: "Inspect exact revision acquisition" }).click();
-    await expect(page.locator(`#acquire-${proposal.id}`)).toBeFocused();
-
-    codex = {
-      ...readyCodex,
-      state: "action_required",
-      reason: "authentication_required",
-      account: null,
-      models: [],
-      usage: null,
-    };
-    await readiness.getByRole("button", { name: "Verify connections" }).click();
-    await expect(fact("Codex account")).toContainText("Action required");
-    await expect(fact("Codex account")).not.toContainText("readiness@example.com");
-    await expect(fact("GitHub access")).toContainText("Verified for this Project");
-    await expect(fact("Selected model")).toContainText("Live catalog unavailable");
-    await expect(readiness.getByRole("link", { name: "Correct Codex connection" })).toHaveAttribute(
-      "href",
-      `/settings?projectId=${currentProject.id}#codex-connection-title`,
-    );
-    await readiness.getByRole("link", { name: "Correct Codex connection" }).click();
-    await expect(
-      page.getByRole("heading", { name: "Codex subscription", exact: true }),
-    ).toBeInViewport();
-    await expect(page.locator(".codex-connection")).toContainText("codex login");
-    await openProjectWorkspace(page);
-
-    codex = readyCodex;
-    preference = { ...preference, selectedModelId: "gpt-removed" };
-    githubDenied = true;
-    await readiness.getByRole("button", { name: "Verify connections" }).click();
-    await expect(fact("Selected model")).toContainText("saved model is no longer available");
-    await expect(fact("Selected model")).not.toContainText("GPT-5.6 Sol");
-    await expect(fact("Codex account")).toContainText("readiness@example.com");
-    await readiness.getByRole("link", { name: "Correct GitHub connection" }).click();
-    await expect(page.getByLabel("Project access", { exact: true })).toHaveValue(currentProject.id);
-    await expect(page.getByRole("heading", { name: "GitHub CLI", exact: true })).toBeInViewport();
-    await openProjectWorkspace(page);
-    await readiness.getByRole("link", { name: "Choose review model" }).click();
-    await expect(page.getByRole("heading", { name: "Review model", exact: true })).toBeInViewport();
-    await openProjectWorkspace(page);
-    codexFails = true;
-    await readiness.getByRole("button", { name: "Verify connections" }).click();
-    await expect(fact("Codex account")).toContainText("Unavailable");
-    await expect(fact("Codex account")).not.toContainText("readiness@example.com");
-    codexFails = false;
-    codexGate = new Promise<void>((resolve) => {
-      releaseCodex = resolve;
+    const purpose = page.getByRole("region", { name: "What this change is meant to do" });
+    await expect(purpose).toContainText("Operator confirmed");
+    const review = page.getByRole("region", {
+      name: "Did this pull request deliver what it says?",
     });
-    await readiness.getByRole("button", { name: "Verify connections" }).click();
-    await expect(fact("Codex account")).toContainText("Checking Codex");
-    codex = {
-      ...readyCodex,
-      account: { authentication: "chatgpt", email: "second@example.com", plan: "plus" },
-    };
-    await openProjectWorkspace(page, "Ic3b3rg/kestrel");
-    await expect(fact("Project / repository")).toContainText("Ic3b3rg/kestrel");
-    await expect(fact("Revision State")).toContainText("Not acquired");
-    await expect(fact("Codex account")).not.toContainText("readiness@example.com");
-    await expect(fact("Codex account")).toContainText("Checking Codex");
-    releaseCodex();
-    codexGate = null;
-    await expect(fact("Codex account")).toContainText("second@example.com");
-    await expect(fact("Codex account")).not.toContainText("readiness@example.com");
+    await expect(review).toContainText("Retained source is read only");
+    await expect(review).toContainText("No executed test results are linked");
+    await expect(review.getByRole("button", { name: "Start independent review" })).toBeEnabled();
 
-    for (const width of [320, 768, 1024, 1440]) {
-      await page.setViewportSize({ width, height: 900 });
-      await expect(readiness).toBeVisible();
-      expect(
-        await page.evaluate(
-          () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
-        ),
-      ).toBe(true);
-    }
-    expect((await new AxeBuilder({ page }).include(".pr-readiness").analyze()).violations).toEqual(
-      [],
-    );
+    await review.getByRole("button", { name: "Start independent review" }).click();
+    await expect(page.getByRole("heading", { name: "Review queued" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", {
+        name: "The pull request keeps repository access explicit.",
+      }),
+    ).toBeVisible({ timeout: 5_000 });
+    expect(workflowReads).toBeGreaterThanOrEqual(1);
+
+    const graph = page.getByRole("region", { name: "Requirements review graph" });
+    await expect(graph).toContainText("Requested outcomes");
+    await expect(graph).toContainText("Behavioral Steps");
+    await expect(graph).toContainText("Source evidence");
+    await expect(graph).toContainText("Problems");
+    await graph.getByRole("button", { name: /Explicit source binding/u }).click();
+    await expect(page.getByText("if (!source) return denied;", { exact: false })).toBeVisible();
+    await expect(page.getByText(/No executed test results are linked/iu).first()).toBeVisible();
+    await expect(page.getByText(/Partial means/iu)).toBeVisible();
+
+    await page.reload();
+    await expect(
+      page.getByRole("heading", {
+        name: "The pull request keeps repository access explicit.",
+      }),
+    ).toBeVisible();
+    await expect(page.getByRole("region", { name: "Review history" })).toContainText("partial");
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(review).toBeVisible();
     expect(
-      await page.evaluate(() => ({ local: localStorage.length, session: sessionStorage.length })),
-    ).toEqual({ local: 0, session: 0 });
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+    expect(
+      (await new AxeBuilder({ page }).include(".change-proposal").analyze()).violations,
+    ).toEqual([]);
+    expect(browserErrors).toEqual([]);
   });
 
   test("the Operator curates a source-backed Change Intent version", async ({ page }) => {
@@ -1363,12 +1623,36 @@ test.describe("observable Installation PWA", () => {
     if (project === undefined || proposal === undefined || source === undefined) {
       throw new Error("Change Intent browser fixture is unavailable");
     }
+    const initialIntent = {
+      createdAt: "2026-08-28T12:03:00.000Z",
+      id: "018f0f89-9a23-7d63-b6f7-108b7b4bf52f",
+      objective: proposal.title,
+      resolution: {
+        state: "unresolved" as const,
+        issues: [
+          { kind: "missing" as const, field: "scope_boundaries" as const },
+          { kind: "missing" as const, field: "acceptance_outcomes" as const },
+        ],
+      },
+      scopeBoundaries: [],
+      acceptanceOutcomes: [],
+      sourceDigest: "e".repeat(64),
+      sources: [source],
+      text: proposal.title,
+      version: 1,
+    };
+    const initialProject = {
+      ...project,
+      changeProposals: project.changeProposals.map((candidate) =>
+        candidate.id === proposal.id ? { ...candidate, changeIntent: initialIntent } : candidate,
+      ),
+    };
     const objective = "Keep repository access explicit and read-only";
     const command = {
       acceptanceOutcomes: ["The selected source remains attributable"],
       expectedProposalVersion: proposal.version,
       objective,
-      operatorInput: "Prioritize the local authorization boundary",
+      operatorInput: `Operator confirmation: ${objective}`,
       scopeBoundaries: ["Do not add provider write authority"],
       selectedSourceIds: [source.id],
       unresolvedIssues: [],
@@ -1402,8 +1686,8 @@ test.describe("observable Installation PWA", () => {
       },
     };
     const updatedProject = {
-      ...project,
-      changeProposals: project.changeProposals.map((candidate) =>
+      ...initialProject,
+      changeProposals: initialProject.changeProposals.map((candidate) =>
         candidate.id === proposal.id
           ? {
               ...candidate,
@@ -1414,13 +1698,16 @@ test.describe("observable Installation PWA", () => {
       ),
     };
     let saved = false;
-    await page.route("**/api/v1/projects", async (route) => {
-      if (route.request().method() === "GET" && saved) {
-        await route.fulfill({ json: { schemaVersion: 1, projects: [updatedProject] } });
-        return;
-      }
-      await route.continue();
+    let preparationReads = 0;
+    const reviewPreparationPath = `/api/v1/projects/${project.id}/change-proposals/${proposal.id}/review/preparation`;
+    page.on("request", (request) => {
+      if (new URL(request.url()).pathname === reviewPreparationPath) preparationReads += 1;
     });
+    await page.route("**/api/v1/projects", (route) =>
+      route.fulfill({
+        json: { schemaVersion: 1, projects: [saved ? updatedProject : initialProject] },
+      }),
+    );
     await page.route("**/api/v1/projects/*/change-proposals/*/change-intents", async (route) => {
       const request = route.request();
       expect(request.method()).toBe("POST");
@@ -1457,37 +1744,26 @@ test.describe("observable Installation PWA", () => {
     await page.getByLabel("Password").fill(TEST_OPERATOR_CREDENTIALS.password);
     await page.getByRole("button", { name: "Sign in" }).click();
     await openProjectWorkspace(page);
-    await expect(page.getByText("Unresolved draft", { exact: true })).toBeVisible();
-    await page.getByRole("checkbox", { name: /GitHub title/u }).check();
-    await page.getByLabel("Objective", { exact: true }).fill(objective);
-    await page.getByLabel(/Scope boundaries/u).fill("Do not add provider write authority");
-    await page
-      .getByLabel(/Ordered acceptance outcomes/u)
-      .fill("The selected source remains attributable");
-    await page
-      .getByLabel("Operator input", { exact: true })
-      .fill("Prioritize the local authorization boundary");
-    await expect(page.getByText("Ready to resolve", { exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Create Change Intent version" }).click();
+    const purpose = page.getByRole("region", { name: "What this change is meant to do" });
+    await expect(purpose).toContainText("Pull request stated");
+    await expect(purpose).toContainText(proposal.title);
+    await expect(purpose.getByRole("checkbox")).toHaveCount(0);
+    await purpose.getByText("Correct this explanation", { exact: true }).click();
+    await purpose.getByLabel("Purpose", { exact: true }).fill(objective);
+    await purpose.getByLabel(/In scope/u).fill("Do not add provider write authority");
+    await page.getByLabel(/Expected results/u).fill("The selected source remains attributable");
+    await purpose.getByRole("button", { name: "Save confirmed purpose" }).click();
 
-    await expect(page.getByRole("status")).toContainText(
-      "Change Intent version 1 created as resolved.",
-    );
-    await expect(page.getByText("Current v1", { exact: true })).toBeVisible();
-    await expect(page.getByText(`Source digest ${"f".repeat(64)}`, { exact: true })).toBeVisible();
-    await expect(
-      page
-        .getByRole("region", { name: "Current Change Intent version" })
-        .getByText("Resolved", { exact: true }),
-    ).toBeVisible();
-    await expect(
-      page
-        .getByRole("region", { name: "PR readiness", exact: true })
-        .getByText("Resolved", { exact: true }),
-    ).toBeVisible();
+    await expect(page.getByRole("status")).toContainText("Review purpose saved and confirmed.");
+    await expect(purpose).toContainText("Operator confirmed");
+    await expect(purpose).toContainText(objective);
+    await expect(purpose).toContainText("Do not add provider write authority");
+    await expect(purpose).toContainText("The selected source remains attributable");
+    await expect.poll(() => preparationReads).toBeGreaterThanOrEqual(2);
+    await expect(page.getByText(/Source digest/iu)).toHaveCount(0);
     await expect(page.getByText("Work Item", { exact: true })).toHaveCount(0);
     await expect(page.getByText("Planning Session", { exact: true })).toHaveCount(0);
-    const accessibility = await new AxeBuilder({ page }).include(".change-intent-editor").analyze();
+    const accessibility = await new AxeBuilder({ page }).include(".change-proposal").analyze();
     expect(accessibility.violations).toEqual([]);
     expect(browserErrors).toEqual([]);
   });
@@ -1548,6 +1824,11 @@ test.describe("observable Installation PWA", () => {
       expect(request.headers().authorization).toBeUndefined();
       await route.fulfill({ json: openedProject, status: 200 });
     });
+    const openedProposal = openedProject.project.changeProposals[0];
+    if (openedProposal?.kind !== "provider_observed") {
+      throw new Error("Opened pull-request fixture is unavailable");
+    }
+    await mockBlockedExternalReview(page, openedProject.project.id, openedProposal.id);
 
     let connectionProbeCount = 0;
     let connectionActionRequired = false;

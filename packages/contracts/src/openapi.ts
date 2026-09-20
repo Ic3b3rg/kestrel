@@ -21,6 +21,7 @@ import {
   FactoryConceptualReviewCheckCatalogSchema,
   FactoryConceptualReviewCheckSchema,
   FactoryConceptualReviewCurrentSchema,
+  FactoryConceptualReviewHistorySchema,
   FactoryConceptualReviewPreparationSchema,
   FactoryConceptualReviewStartCommandSchema,
   FactoryConceptualReviewSourceCatalogSchema,
@@ -265,6 +266,9 @@ const factoryComponents = {
   FactoryConceptualReviewCurrent: asComponentSchema(
     asJsonSchema(FactoryConceptualReviewCurrentSchema),
   ),
+  FactoryConceptualReviewHistory: asComponentSchema(
+    asJsonSchema(FactoryConceptualReviewHistorySchema),
+  ),
   RetryFactoryFeaturePublicationCommand: asComponentSchema(
     asJsonSchema(RetryFactoryFeaturePublicationCommandSchema),
   ),
@@ -409,6 +413,15 @@ function factoryTurnMutation(
 
 function factoryParameters(withTurn = false): JsonValue[] {
   return ["projectId", "featureId", ...(withTurn ? ["turnId"] : [])].map((name) => ({
+    in: "path",
+    name,
+    required: true,
+    schema: { type: "string", format: "uuid" },
+  }));
+}
+
+function externalReviewParameters(): JsonValue[] {
+  return ["projectId", "changeProposalId"].map((name) => ({
     in: "path",
     name,
     required: true,
@@ -1072,6 +1085,146 @@ export const openApiDocument = sortJson({
         202,
       ),
     },
+    "/api/v1/projects/{projectId}/change-proposals/{changeProposalId}/review/preparation": {
+      parameters: externalReviewParameters(),
+      get: factoryRead(
+        "readExternalConceptualReviewPreparation",
+        "FactoryConceptualReviewPreparation",
+      ),
+    },
+    "/api/v1/projects/{projectId}/change-proposals/{changeProposalId}/review/workflows": {
+      parameters: externalReviewParameters(),
+      post: factoryTurnMutation(
+        "startExternalConceptualReview",
+        "FactoryConceptualReviewStartCommand",
+        "FactoryConceptualReviewWorkflowRead",
+        202,
+      ),
+    },
+    "/api/v1/projects/{projectId}/change-proposals/{changeProposalId}/review/workflows/current": {
+      parameters: externalReviewParameters(),
+      get: factoryRead("readCurrentExternalConceptualReview", "FactoryConceptualReviewCurrent"),
+    },
+    "/api/v1/projects/{projectId}/change-proposals/{changeProposalId}/review/workflows/{workflowId}":
+      {
+        parameters: [
+          ...externalReviewParameters(),
+          {
+            in: "path",
+            name: "workflowId",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        get: factoryRead(
+          "readExternalConceptualReviewWorkflow",
+          "FactoryConceptualReviewWorkflowRead",
+        ),
+      },
+    "/api/v1/projects/{projectId}/change-proposals/{changeProposalId}/review/workflows/{workflowId}/source/lines":
+      {
+        parameters: [
+          ...externalReviewParameters(),
+          {
+            in: "path",
+            name: "workflowId",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+          {
+            in: "query",
+            name: "side",
+            required: true,
+            schema: { type: "string", enum: ["base", "head"] },
+          },
+          { in: "query", name: "path", required: true, schema: { type: "string" } },
+          {
+            in: "query",
+            name: "startLine",
+            required: true,
+            schema: { type: "integer", minimum: 1 },
+          },
+          {
+            in: "query",
+            name: "endLine",
+            required: true,
+            schema: { type: "integer", minimum: 1 },
+          },
+        ],
+        get: factoryRead(
+          "readExternalConceptualReviewWorkflowSourceLines",
+          "FactoryConceptualReviewSourceLines",
+        ),
+      },
+    "/api/v1/projects/{projectId}/change-proposals/{changeProposalId}/review/artifacts": {
+      parameters: [
+        ...externalReviewParameters(),
+        {
+          in: "query",
+          name: "offset",
+          required: false,
+          schema: { type: "integer", minimum: 0, default: 0 },
+        },
+        {
+          in: "query",
+          name: "limit",
+          required: false,
+          schema: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+        },
+      ],
+      get: factoryRead("readExternalConceptualReviewHistory", "FactoryConceptualReviewHistory"),
+    },
+    "/api/v1/projects/{projectId}/change-proposals/{changeProposalId}/review/artifacts/{artifactId}":
+      {
+        parameters: [
+          ...externalReviewParameters(),
+          {
+            in: "path",
+            name: "artifactId",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        get: factoryRead(
+          "readExternalConceptualReviewArtifact",
+          "FactoryConceptualReviewWorkflowRead",
+        ),
+      },
+    "/api/v1/projects/{projectId}/change-proposals/{changeProposalId}/review/artifacts/{artifactId}/source/lines":
+      {
+        parameters: [
+          ...externalReviewParameters(),
+          {
+            in: "path",
+            name: "artifactId",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+          {
+            in: "query",
+            name: "side",
+            required: true,
+            schema: { type: "string", enum: ["base", "head"] },
+          },
+          { in: "query", name: "path", required: true, schema: { type: "string" } },
+          {
+            in: "query",
+            name: "startLine",
+            required: true,
+            schema: { type: "integer", minimum: 1 },
+          },
+          {
+            in: "query",
+            name: "endLine",
+            required: true,
+            schema: { type: "integer", minimum: 1 },
+          },
+        ],
+        get: factoryRead(
+          "readExternalConceptualReviewArtifactSourceLines",
+          "FactoryConceptualReviewSourceLines",
+        ),
+      },
     "/api/v1/projects/{projectId}/features/{featureId}/review/preparation": {
       parameters: factoryParameters(),
       get: factoryRead(

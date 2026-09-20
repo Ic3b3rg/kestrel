@@ -160,6 +160,61 @@ it("accepts an exact inspectable basis while keeping the unavailable review runt
   );
 });
 
+it("accepts an exact external pull request without inventing a Feature plan or executed checks", () => {
+  const preparation = {
+    ...validPreparation,
+    featureId: null,
+    basis: {
+      objective: "Refresh search results",
+      scope: { includes: ["The exact pull request change"], excludes: [] },
+      outcomes: [
+        {
+          key: "stated_intent",
+          outcome: "Refresh search results",
+          intent: { kind: "pull_request_stated", label: "GitHub title" },
+        },
+      ],
+      provenance: {
+        kind: "change_intent",
+        changeIntentId: id,
+        version: 1,
+        sourceDigest: digest,
+        resolution: "unresolved",
+        sources: [{ kind: "pull_request_stated", label: "GitHub title" }],
+      },
+      limitations: ["No acceptance outcomes were confirmed by the Operator."],
+    },
+    publication: {
+      kind: "external_pull_request",
+      pullRequest: {
+        repository: { id: "R_kgDOGx", owner: "example", name: "search" },
+        author: "contributor",
+        number: 9,
+        url: "https://github.com/example/search/pull/9",
+        state: "open",
+        title: "Refresh search results",
+        body: null,
+        baseRef: "master",
+        headRef: "contributor/refresh-search",
+        baseCommitId,
+        headCommitId,
+      },
+      revision: validPreparation.publication.revision,
+      retainedManifestDigest: digest,
+      certificate: null,
+    },
+    evidence: {
+      source: {
+        ...validPreparation.evidence.source,
+        headTreeId: treeId,
+      },
+      checks: null,
+    },
+  };
+
+  expect(FactoryConceptualReviewPreparationSchema.parse(preparation)).toEqual(preparation);
+});
+
 it("rejects a preparation whose retained revision differs from the certified head", () => {
   expect(() =>
     FactoryConceptualReviewPreparationSchema.parse({
@@ -262,6 +317,25 @@ it("keeps a server-resolved check and its model judgment distinct in the review 
     ],
   };
   expect(FactoryConceptualReviewDraftSchema.parse(linked)).toEqual(linked);
+  expect(() =>
+    FactoryConceptualReviewArtifactSchema.parse({
+      schemaVersion: 1,
+      id,
+      workflowId: secondId,
+      inputDigest: digest,
+      reviewRevisionId: id,
+      baseCommitId,
+      headCommitId,
+      status: "partial",
+      evidenceScope: {
+        source: "exact_retained_revision",
+        executedChecks: "not_linked",
+        narrativeAuthority: "source_only_model_interpretation",
+      },
+      graph: { ...linked, result: "partial" },
+      createdAt: at,
+    }),
+  ).toThrow();
   expect(() =>
     FactoryConceptualReviewDraftSchema.parse({
       ...linked,
@@ -556,6 +630,13 @@ it("models explicit idempotent starts and durable pending, failed, partial and o
   });
   expect(read.artifact?.status).toBe("partial");
   expect(read.currency).toBe("outdated");
+
+  expect(
+    FactoryConceptualReviewWorkflowReadSchema.parse({
+      ...read,
+      workflow: { ...read.workflow, featureId: null },
+    }).workflow.featureId,
+  ).toBeNull();
 });
 
 it("models a paged immutable artifact history without embedding replacement graphs", () => {

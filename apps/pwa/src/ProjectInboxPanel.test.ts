@@ -146,15 +146,17 @@ function render(inbox: ProjectInbox | null, loading = false, selectedRevisionId?
   );
 }
 
-it("shows independent PR readiness facts without offering review execution before 0.2", () => {
+it("opens a clear external pull request review flow", () => {
   const html = render(populatedInbox);
-  expect(html).toContain("PR readiness");
-  expect(html).toContain("Project / repository");
-  expect(html).toContain("Codex account");
-  expect(html).toContain("Selected model");
+  expect(html).toContain("The pull request Kestrel will review");
+  expect(html).toContain("What this change is meant to do");
+  expect(html).toContain("Pull request stated");
+  expect(html).toContain("Correct this explanation");
+  expect(html).toContain("Did this pull request deliver what it says?");
+  expect(html).toContain("Start independent review");
   expect(html).toContain("Attach local repository");
-  expect(html).toContain("Review execution arrives in 0.2");
-  expect(html).not.toContain("Prepare Review");
+  expect(html).not.toContain('type="checkbox"');
+  expect(html).not.toContain("CHANGE INTENT · PROPOSAL VERSION");
 });
 
 describe("ProjectInboxPanel", () => {
@@ -382,7 +384,10 @@ describe("ProjectInboxPanel", () => {
     expect(html).toContain("Deterministic facts with optional source-linked model wording");
     expect(html).toContain("Current provider title");
     expect(html).toContain("Current provider description.");
-    expect(html).toContain("Change Intent v1");
+    expect(html).toContain("What this change is meant to do");
+    expect(html).toContain("Operator confirmed");
+    expect(html).toContain("Recorded purpose");
+    expect(html).not.toContain("Change Intent v");
     expect(html).toContain("Base snapshot · 3 files");
     expect(html).toContain("Head snapshot · 4 files");
     expect(html).toContain("1 changed file · 0 added · 1 modified · 0 deleted");
@@ -557,7 +562,8 @@ describe("ProjectInboxPanel", () => {
     expect(html).toContain("Available");
     expect(html).toContain("Observed base");
     expect(html).toContain("Retained base");
-    expect(html).toContain("Change Intent v1");
+    expect(html).toContain("What this change is meant to do");
+    expect(html).toContain("Operator confirmed");
     expect(html).toContain(">cccccccccccc</code>");
     expect(html).toContain(">dddddddddddd</code>");
     expect(html).toContain("c".repeat(40));
@@ -599,7 +605,7 @@ describe("ProjectInboxPanel", () => {
     });
 
     expect(html).toContain("<dt>Revision State</dt><dd>Not acquired</dd>");
-    expect(html).toContain("Acquire exact PR #1234");
+    expect(html).toContain("Retain exact PR #1234");
     expect(html).toContain(movedHeadObjectId);
     expect(html).not.toContain("Retained head");
     expect(html).not.toContain(localProposal.head.objectId);
@@ -643,7 +649,7 @@ describe("ProjectInboxPanel", () => {
     expect(html).toContain("Retained head");
     expect(html).toContain(localProposal.head.objectId);
     expect(html).toContain(movedBaseObjectId);
-    expect(html).not.toContain("Acquire exact PR #1234");
+    expect(html).not.toContain("Retain exact PR #1234");
   });
 
   it("offers exact observed-PR acquisition only when a local source is attached", () => {
@@ -657,10 +663,11 @@ describe("ProjectInboxPanel", () => {
       projects: [{ ...project, localRepositorySource: localSource }],
     });
 
-    expect(html).toContain("Confirm Change Intent for PR #1234");
-    expect(html).toContain("Acquire exact PR #1234");
+    expect(html).toContain("GitHub-stated purpose shown above");
+    expect(html).not.toContain("Confirm Change Intent for PR #1234");
+    expect(html).toContain("Retain source and confirm purpose");
     expect(html).toContain("host credential helper");
-    expect(render(populatedInbox)).not.toContain("Acquire exact PR #1234");
+    expect(render(populatedInbox)).not.toContain("Retain source and confirm purpose");
   });
 
   it("renders an unavailable revision as retryable without claiming an artifact was retained", () => {

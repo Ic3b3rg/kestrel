@@ -2873,7 +2873,7 @@
                                         "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$",
                                         "type": "string"
                                       },
-                                      "maxItems": 40,
+                                      "maxItems": 50,
                                       "minItems": 1,
                                       "type": "array"
                                     },
@@ -3266,7 +3266,7 @@
                                   ],
                                   "type": "object"
                                 },
-                                "maxItems": 40,
+                                "maxItems": 50,
                                 "minItems": 1,
                                 "type": "array"
                               },
@@ -3635,9 +3635,16 @@
                         ]
                       },
                       "featureId": {
-                        "format": "uuid",
-                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-                        "type": "string"
+                        "anyOf": [
+                          {
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       },
                       "finishedAt": {
                         "anyOf": [
@@ -3745,674 +3752,857 @@
         ],
         "type": "object"
       },
-      "FactoryConceptualReviewPreparation": {
+      "FactoryConceptualReviewHistory": {
         "additionalProperties": false,
         "properties": {
-          "basis": {
+          "nextOffset": {
             "anyOf": [
               {
-                "additionalProperties": false,
-                "properties": {
-                  "objective": {
-                    "maxLength": 4000,
-                    "minLength": 1,
-                    "type": "string"
-                  },
-                  "outcomes": {
-                    "items": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "intent": {
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "reviews": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "artifactId": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                },
+                "currency": {
+                  "enum": [
+                    "up_to_date",
+                    "outdated",
+                    "unknown"
+                  ],
+                  "type": "string"
+                },
+                "finishedAt": {
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                  "type": "string"
+                },
+                "headCommitId": {
+                  "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                  "type": "string"
+                },
+                "requestedAt": {
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                  "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "complete",
+                    "partial"
+                  ],
+                  "type": "string"
+                },
+                "workflowId": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "artifactId",
+                "workflowId",
+                "status",
+                "headCommitId",
+                "requestedAt",
+                "finishedAt",
+                "currency"
+              ],
+              "type": "object"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "schemaVersion": {
+            "const": 1,
+            "type": "number"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "reviews",
+          "offset",
+          "total",
+          "nextOffset"
+        ],
+        "type": "object"
+      },
+      "FactoryConceptualReviewPreparation": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "basis": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "objective": {
+                        "maxLength": 4000,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "outcomes": {
+                        "items": {
                           "additionalProperties": false,
                           "properties": {
-                            "kind": {
-                              "enum": [
-                                "approved_feature_plan",
-                                "operator_confirmed",
-                                "pull_request_stated",
-                                "inferred",
-                                "missing"
+                            "intent": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "kind": {
+                                  "enum": [
+                                    "approved_feature_plan",
+                                    "operator_confirmed",
+                                    "pull_request_stated",
+                                    "inferred",
+                                    "missing"
+                                  ],
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "maxLength": 256,
+                                  "minLength": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "label"
                               ],
+                              "type": "object"
+                            },
+                            "key": {
+                              "maxLength": 48,
+                              "minLength": 1,
+                              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$",
                               "type": "string"
                             },
-                            "label": {
-                              "maxLength": 256,
+                            "outcome": {
+                              "maxLength": 2000,
                               "minLength": 1,
                               "type": "string"
                             }
                           },
                           "required": [
-                            "kind",
-                            "label"
+                            "key",
+                            "outcome",
+                            "intent"
                           ],
                           "type": "object"
                         },
-                        "key": {
-                          "maxLength": 48,
-                          "minLength": 1,
-                          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$",
-                          "type": "string"
-                        },
-                        "outcome": {
-                          "maxLength": 2000,
-                          "minLength": 1,
-                          "type": "string"
-                        }
+                        "maxItems": 50,
+                        "minItems": 1,
+                        "type": "array"
                       },
-                      "required": [
-                        "key",
-                        "outcome",
-                        "intent"
-                      ],
-                      "type": "object"
+                      "provenance": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "approvalId": {
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "approvedAt": {
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                            "type": "string"
+                          },
+                          "approvedByOperatorId": {
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "author": {
+                            "enum": [
+                              "operator",
+                              "assistant"
+                            ],
+                            "type": "string"
+                          },
+                          "planDigest": {
+                            "pattern": "^[a-f0-9]{64}$",
+                            "type": "string"
+                          },
+                          "planVersionId": {
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "version": {
+                            "maximum": 200,
+                            "minimum": 1,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "planVersionId",
+                          "version",
+                          "author",
+                          "approvalId",
+                          "approvedByOperatorId",
+                          "approvedAt",
+                          "planDigest"
+                        ],
+                        "type": "object"
+                      },
+                      "scope": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "excludes": {
+                            "items": {
+                              "maxLength": 2000,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "maxItems": 20,
+                            "type": "array"
+                          },
+                          "includes": {
+                            "items": {
+                              "maxLength": 2000,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "maxItems": 20,
+                            "minItems": 1,
+                            "type": "array"
+                          }
+                        },
+                        "required": [
+                          "includes",
+                          "excludes"
+                        ],
+                        "type": "object"
+                      }
                     },
-                    "maxItems": 40,
-                    "minItems": 1,
-                    "type": "array"
+                    "required": [
+                      "objective",
+                      "scope",
+                      "outcomes",
+                      "provenance"
+                    ],
+                    "type": "object"
                   },
-                  "provenance": {
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "changeProposalId": {
+                "anyOf": [
+                  {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "configuration": {
+                "additionalProperties": false,
+                "properties": {
+                  "model": {
                     "additionalProperties": false,
                     "properties": {
-                      "approvalId": {
-                        "format": "uuid",
-                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                      "modelId": {
+                        "anyOf": [
+                          {
+                            "maxLength": 128,
+                            "minLength": 1,
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "route": {
+                        "const": "codex_subscription",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "route",
+                      "modelId"
+                    ],
+                    "type": "object"
+                  },
+                  "resources": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "containerMemoryBytes": {
+                        "const": 1073741824,
+                        "type": "number"
+                      },
+                      "containerNanoCpus": {
+                        "const": 2000000000,
+                        "type": "number"
+                      },
+                      "containerPidsLimit": {
+                        "const": 128,
+                        "type": "number"
+                      },
+                      "containerTmpfsBytes": {
+                        "const": 67108864,
+                        "type": "number"
+                      },
+                      "maximumAttempts": {
+                        "maximum": 10,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "maximumEvidenceItems": {
+                        "maximum": 10000,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "maximumGraphNodes": {
+                        "maximum": 10000,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "maximumOutputBytes": {
+                        "maximum": 16777216,
+                        "minimum": 1024,
+                        "type": "integer"
+                      },
+                      "maximumWorkspaceBytes": {
+                        "maximum": 4294967296,
+                        "minimum": 1024,
+                        "type": "integer"
+                      },
+                      "maximumWorkspaceFiles": {
+                        "maximum": 100000,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "timeoutSeconds": {
+                        "maximum": 7200,
+                        "minimum": 60,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "maximumAttempts",
+                      "timeoutSeconds",
+                      "maximumEvidenceItems",
+                      "maximumWorkspaceFiles",
+                      "maximumWorkspaceBytes",
+                      "maximumGraphNodes",
+                      "maximumOutputBytes",
+                      "containerPidsLimit",
+                      "containerMemoryBytes",
+                      "containerNanoCpus",
+                      "containerTmpfsBytes"
+                    ],
+                    "type": "object"
+                  },
+                  "runtimePolicy": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "adapter": {
+                        "const": "codex_app_server",
                         "type": "string"
                       },
-                      "approvedAt": {
-                        "format": "date-time",
-                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                      "adapterVersion": {
+                        "const": 1,
+                        "type": "number"
+                      },
+                      "codexExecutable": {
+                        "anyOf": [
+                          {
+                            "maxLength": 4096,
+                            "minLength": 1,
+                            "pattern": "^\\/",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "codexExecutableDigest": {
+                        "anyOf": [
+                          {
+                            "pattern": "^[a-f0-9]{64}$",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "codexProtocol": {
+                        "const": "app_server_v2",
                         "type": "string"
                       },
-                      "approvedByOperatorId": {
-                        "format": "uuid",
-                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                      "codexVersion": {
+                        "anyOf": [
+                          {
+                            "maxLength": 128,
+                            "minLength": 1,
+                            "pattern": "^\\d+\\.\\d+\\.[0-9A-Za-z.+-]+$",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "containerImage": {
+                        "anyOf": [
+                          {
+                            "pattern": "^sha256:[a-f0-9]{64}$",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "containerUser": {
+                        "anyOf": [
+                          {
+                            "pattern": "^[1-9]\\d{0,9}:[1-9]\\d{0,9}$",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "kind": {
+                        "const": "retained_source_review",
                         "type": "string"
                       },
-                      "author": {
+                      "networkAccess": {
+                        "const": false,
+                        "type": "boolean"
+                      },
+                      "sourceAccess": {
+                        "const": "retained_read_only",
+                        "type": "string"
+                      },
+                      "status": {
                         "enum": [
-                          "operator",
-                          "assistant"
+                          "available",
+                          "unavailable"
                         ],
-                        "type": "string"
-                      },
-                      "planDigest": {
-                        "pattern": "^[a-f0-9]{64}$",
-                        "type": "string"
-                      },
-                      "planVersionId": {
-                        "format": "uuid",
-                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
                         "type": "string"
                       },
                       "version": {
-                        "maximum": 200,
-                        "minimum": 1,
-                        "type": "integer"
+                        "const": 1,
+                        "type": "number"
+                      },
+                      "writeAccess": {
+                        "const": false,
+                        "type": "boolean"
                       }
                     },
                     "required": [
-                      "planVersionId",
+                      "kind",
                       "version",
-                      "author",
-                      "approvalId",
-                      "approvedByOperatorId",
-                      "approvedAt",
-                      "planDigest"
-                    ],
-                    "type": "object"
-                  },
-                  "scope": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "excludes": {
-                        "items": {
-                          "maxLength": 2000,
-                          "minLength": 1,
-                          "type": "string"
-                        },
-                        "maxItems": 20,
-                        "type": "array"
-                      },
-                      "includes": {
-                        "items": {
-                          "maxLength": 2000,
-                          "minLength": 1,
-                          "type": "string"
-                        },
-                        "maxItems": 20,
-                        "minItems": 1,
-                        "type": "array"
-                      }
-                    },
-                    "required": [
-                      "includes",
-                      "excludes"
+                      "adapter",
+                      "adapterVersion",
+                      "containerImage",
+                      "containerUser",
+                      "codexExecutable",
+                      "codexExecutableDigest",
+                      "codexVersion",
+                      "codexProtocol",
+                      "sourceAccess",
+                      "networkAccess",
+                      "writeAccess",
+                      "status"
                     ],
                     "type": "object"
                   }
                 },
                 "required": [
-                  "objective",
-                  "scope",
-                  "outcomes",
-                  "provenance"
+                  "model",
+                  "runtimePolicy",
+                  "resources"
                 ],
                 "type": "object"
               },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "changeProposalId": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "configuration": {
-            "additionalProperties": false,
-            "properties": {
-              "model": {
-                "additionalProperties": false,
-                "properties": {
-                  "modelId": {
-                    "anyOf": [
-                      {
-                        "maxLength": 128,
-                        "minLength": 1,
-                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "route": {
-                    "const": "codex_subscription",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "route",
-                  "modelId"
-                ],
-                "type": "object"
-              },
-              "resources": {
-                "additionalProperties": false,
-                "properties": {
-                  "containerMemoryBytes": {
-                    "const": 1073741824,
-                    "type": "number"
-                  },
-                  "containerNanoCpus": {
-                    "const": 2000000000,
-                    "type": "number"
-                  },
-                  "containerPidsLimit": {
-                    "const": 128,
-                    "type": "number"
-                  },
-                  "containerTmpfsBytes": {
-                    "const": 67108864,
-                    "type": "number"
-                  },
-                  "maximumAttempts": {
-                    "maximum": 10,
-                    "minimum": 1,
-                    "type": "integer"
-                  },
-                  "maximumEvidenceItems": {
-                    "maximum": 10000,
-                    "minimum": 1,
-                    "type": "integer"
-                  },
-                  "maximumGraphNodes": {
-                    "maximum": 10000,
-                    "minimum": 1,
-                    "type": "integer"
-                  },
-                  "maximumOutputBytes": {
-                    "maximum": 16777216,
-                    "minimum": 1024,
-                    "type": "integer"
-                  },
-                  "maximumWorkspaceBytes": {
-                    "maximum": 4294967296,
-                    "minimum": 1024,
-                    "type": "integer"
-                  },
-                  "maximumWorkspaceFiles": {
-                    "maximum": 100000,
-                    "minimum": 1,
-                    "type": "integer"
-                  },
-                  "timeoutSeconds": {
-                    "maximum": 7200,
-                    "minimum": 60,
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "maximumAttempts",
-                  "timeoutSeconds",
-                  "maximumEvidenceItems",
-                  "maximumWorkspaceFiles",
-                  "maximumWorkspaceBytes",
-                  "maximumGraphNodes",
-                  "maximumOutputBytes",
-                  "containerPidsLimit",
-                  "containerMemoryBytes",
-                  "containerNanoCpus",
-                  "containerTmpfsBytes"
-                ],
-                "type": "object"
-              },
-              "runtimePolicy": {
-                "additionalProperties": false,
-                "properties": {
-                  "adapter": {
-                    "const": "codex_app_server",
-                    "type": "string"
-                  },
-                  "adapterVersion": {
-                    "const": 1,
-                    "type": "number"
-                  },
-                  "codexExecutable": {
-                    "anyOf": [
-                      {
-                        "maxLength": 4096,
-                        "minLength": 1,
-                        "pattern": "^\\/",
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "codexExecutableDigest": {
-                    "anyOf": [
-                      {
-                        "pattern": "^[a-f0-9]{64}$",
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "codexProtocol": {
-                    "const": "app_server_v2",
-                    "type": "string"
-                  },
-                  "codexVersion": {
-                    "anyOf": [
-                      {
-                        "maxLength": 128,
-                        "minLength": 1,
-                        "pattern": "^\\d+\\.\\d+\\.[0-9A-Za-z.+-]+$",
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "containerImage": {
-                    "anyOf": [
-                      {
-                        "pattern": "^sha256:[a-f0-9]{64}$",
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "containerUser": {
-                    "anyOf": [
-                      {
-                        "pattern": "^[1-9]\\d{0,9}:[1-9]\\d{0,9}$",
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "kind": {
-                    "const": "retained_source_review",
-                    "type": "string"
-                  },
-                  "networkAccess": {
-                    "const": false,
-                    "type": "boolean"
-                  },
-                  "sourceAccess": {
-                    "const": "retained_read_only",
-                    "type": "string"
-                  },
-                  "status": {
-                    "enum": [
-                      "available",
-                      "unavailable"
-                    ],
-                    "type": "string"
-                  },
-                  "version": {
-                    "const": 1,
-                    "type": "number"
-                  },
-                  "writeAccess": {
-                    "const": false,
-                    "type": "boolean"
-                  }
-                },
-                "required": [
-                  "kind",
-                  "version",
-                  "adapter",
-                  "adapterVersion",
-                  "containerImage",
-                  "containerUser",
-                  "codexExecutable",
-                  "codexExecutableDigest",
-                  "codexVersion",
-                  "codexProtocol",
-                  "sourceAccess",
-                  "networkAccess",
-                  "writeAccess",
-                  "status"
-                ],
-                "type": "object"
-              }
-            },
-            "required": [
-              "model",
-              "runtimePolicy",
-              "resources"
-            ],
-            "type": "object"
-          },
-          "evidence": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "checks": {
+              "evidence": {
+                "anyOf": [
+                  {
                     "additionalProperties": false,
                     "properties": {
-                      "limits": {
+                      "checks": {
                         "additionalProperties": false,
                         "properties": {
-                          "catalogPageEntries": {
-                            "const": 100,
-                            "type": "number"
+                          "limits": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "catalogPageEntries": {
+                                "const": 100,
+                                "type": "number"
+                              },
+                              "outputBytesPerStream": {
+                                "const": 8192,
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "catalogPageEntries",
+                              "outputBytesPerStream"
+                            ],
+                            "type": "object"
                           },
-                          "outputBytesPerStream": {
-                            "const": 8192,
-                            "type": "number"
+                          "manifestDigest": {
+                            "pattern": "^[a-f0-9]{64}$",
+                            "type": "string"
+                          },
+                          "runId": {
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "total": {
+                            "maximum": 480,
+                            "minimum": 1,
+                            "type": "integer"
                           }
                         },
                         "required": [
-                          "catalogPageEntries",
-                          "outputBytesPerStream"
+                          "runId",
+                          "manifestDigest",
+                          "total",
+                          "limits"
                         ],
                         "type": "object"
                       },
-                      "manifestDigest": {
-                        "pattern": "^[a-f0-9]{64}$",
-                        "type": "string"
-                      },
-                      "runId": {
-                        "format": "uuid",
-                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-                        "type": "string"
-                      },
-                      "total": {
-                        "maximum": 480,
-                        "minimum": 1,
-                        "type": "integer"
-                      }
-                    },
-                    "required": [
-                      "runId",
-                      "manifestDigest",
-                      "total",
-                      "limits"
-                    ],
-                    "type": "object"
-                  },
-                  "source": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "baseCommitId": {
-                        "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
-                        "type": "string"
-                      },
-                      "headCommitId": {
-                        "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
-                        "type": "string"
-                      },
-                      "limits": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "catalogPageEntries": {
-                            "const": 200,
-                            "type": "number"
-                          },
-                          "fileBytes": {
-                            "const": 524288,
-                            "type": "number"
-                          },
-                          "lineRange": {
-                            "const": 200,
-                            "type": "number"
-                          },
-                          "responseBytes": {
-                            "const": 32768,
-                            "type": "number"
-                          }
-                        },
-                        "required": [
-                          "catalogPageEntries",
-                          "fileBytes",
-                          "lineRange",
-                          "responseBytes"
-                        ],
-                        "type": "object"
-                      },
-                      "retainedManifestDigest": {
-                        "pattern": "^[a-f0-9]{64}$",
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "baseCommitId",
-                      "headCommitId",
-                      "retainedManifestDigest",
-                      "limits"
-                    ],
-                    "type": "object"
-                  }
-                },
-                "required": [
-                  "source",
-                  "checks"
-                ],
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "featureId": {
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-            "type": "string"
-          },
-          "preparationDigest": {
-            "anyOf": [
-              {
-                "pattern": "^[a-f0-9]{64}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "projectId": {
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-            "type": "string"
-          },
-          "publication": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "certificate": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "approvedVersion": {
-                        "maximum": 200,
-                        "minimum": 1,
-                        "type": "integer"
-                      },
-                      "createdAt": {
-                        "format": "date-time",
-                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
-                        "type": "string"
-                      },
-                      "evidenceIds": {
-                        "items": {
-                          "format": "uuid",
-                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-                          "type": "string"
-                        },
-                        "maxItems": 480,
-                        "minItems": 1,
-                        "type": "array"
-                      },
-                      "featureId": {
-                        "format": "uuid",
-                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-                        "type": "string"
-                      },
-                      "id": {
-                        "format": "uuid",
-                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-                        "type": "string"
-                      },
-                      "manifest": {
-                        "items": {
-                          "additionalProperties": false,
-                          "properties": {
-                            "command": {
-                              "additionalProperties": false,
-                              "properties": {
-                                "args": {
-                                  "items": {
-                                    "maxLength": 2048,
-                                    "pattern": "^[^\\x00]*$",
-                                    "type": "string"
-                                  },
-                                  "maxItems": 32,
-                                  "type": "array"
-                                },
-                                "cwd": {
-                                  "maxLength": 256,
-                                  "minLength": 1,
-                                  "pattern": "^[^\\x00]*$",
-                                  "type": "string"
-                                },
-                                "program": {
-                                  "maxLength": 128,
-                                  "minLength": 1,
-                                  "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._+-]*$",
-                                  "type": "string"
-                                },
-                                "timeoutSeconds": {
-                                  "maximum": 7200,
-                                  "minimum": 1,
-                                  "type": "integer"
-                                }
-                              },
-                              "required": [
-                                "program",
-                                "args",
-                                "cwd",
-                                "timeoutSeconds"
-                              ],
-                              "type": "object"
-                            },
-                            "origins": {
-                              "items": {
-                                "additionalProperties": false,
-                                "properties": {
-                                  "position": {
-                                    "maximum": 12,
-                                    "minimum": 1,
-                                    "type": "integer"
-                                  },
-                                  "workItemKey": {
-                                    "maxLength": 48,
-                                    "minLength": 1,
-                                    "type": "string"
-                                  }
-                                },
-                                "required": [
-                                  "workItemKey",
-                                  "position"
-                                ],
-                                "type": "object"
-                              },
-                              "maxItems": 480,
-                              "minItems": 1,
-                              "type": "array"
-                            },
-                            "position": {
-                              "maximum": 480,
-                              "minimum": 1,
-                              "type": "integer"
-                            }
-                          },
-                          "required": [
-                            "position",
-                            "command",
-                            "origins"
-                          ],
-                          "type": "object"
-                        },
-                        "maxItems": 480,
-                        "minItems": 1,
-                        "type": "array"
-                      },
-                      "manifestDigest": {
-                        "pattern": "^[a-f0-9]{64}$",
-                        "type": "string"
-                      },
-                      "revision": {
+                      "source": {
                         "additionalProperties": false,
                         "properties": {
                           "baseCommitId": {
                             "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
                             "type": "string"
                           },
-                          "branch": {
-                            "maxLength": 200,
+                          "headCommitId": {
+                            "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                            "type": "string"
+                          },
+                          "limits": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "catalogPageEntries": {
+                                "const": 200,
+                                "type": "number"
+                              },
+                              "fileBytes": {
+                                "const": 524288,
+                                "type": "number"
+                              },
+                              "lineRange": {
+                                "const": 200,
+                                "type": "number"
+                              },
+                              "responseBytes": {
+                                "const": 32768,
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "catalogPageEntries",
+                              "fileBytes",
+                              "lineRange",
+                              "responseBytes"
+                            ],
+                            "type": "object"
+                          },
+                          "retainedManifestDigest": {
+                            "pattern": "^[a-f0-9]{64}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "baseCommitId",
+                          "headCommitId",
+                          "retainedManifestDigest",
+                          "limits"
+                        ],
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "source",
+                      "checks"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "featureId": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                "type": "string"
+              },
+              "preparationDigest": {
+                "anyOf": [
+                  {
+                    "pattern": "^[a-f0-9]{64}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "projectId": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                "type": "string"
+              },
+              "publication": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "certificate": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "approvedVersion": {
+                            "maximum": 200,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "createdAt": {
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                            "type": "string"
+                          },
+                          "evidenceIds": {
+                            "items": {
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                              "type": "string"
+                            },
+                            "maxItems": 480,
+                            "minItems": 1,
+                            "type": "array"
+                          },
+                          "featureId": {
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "id": {
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "manifest": {
+                            "items": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "command": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "args": {
+                                      "items": {
+                                        "maxLength": 2048,
+                                        "pattern": "^[^\\x00]*$",
+                                        "type": "string"
+                                      },
+                                      "maxItems": 32,
+                                      "type": "array"
+                                    },
+                                    "cwd": {
+                                      "maxLength": 256,
+                                      "minLength": 1,
+                                      "pattern": "^[^\\x00]*$",
+                                      "type": "string"
+                                    },
+                                    "program": {
+                                      "maxLength": 128,
+                                      "minLength": 1,
+                                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._+-]*$",
+                                      "type": "string"
+                                    },
+                                    "timeoutSeconds": {
+                                      "maximum": 7200,
+                                      "minimum": 1,
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "program",
+                                    "args",
+                                    "cwd",
+                                    "timeoutSeconds"
+                                  ],
+                                  "type": "object"
+                                },
+                                "origins": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "position": {
+                                        "maximum": 12,
+                                        "minimum": 1,
+                                        "type": "integer"
+                                      },
+                                      "workItemKey": {
+                                        "maxLength": 48,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "workItemKey",
+                                      "position"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "maxItems": 480,
+                                  "minItems": 1,
+                                  "type": "array"
+                                },
+                                "position": {
+                                  "maximum": 480,
+                                  "minimum": 1,
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "position",
+                                "command",
+                                "origins"
+                              ],
+                              "type": "object"
+                            },
+                            "maxItems": 480,
+                            "minItems": 1,
+                            "type": "array"
+                          },
+                          "manifestDigest": {
+                            "pattern": "^[a-f0-9]{64}$",
+                            "type": "string"
+                          },
+                          "revision": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "baseCommitId": {
+                                "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                                "type": "string"
+                              },
+                              "branch": {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "headCommitId": {
+                                "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                                "type": "string"
+                              },
+                              "treeId": {
+                                "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "baseCommitId",
+                              "headCommitId",
+                              "treeId",
+                              "branch"
+                            ],
+                            "type": "object"
+                          },
+                          "runId": {
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "source": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "identity": {
+                                "maxLength": 512,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "repositoryId": {
+                                "maxLength": 128,
+                                "minLength": 1,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "repositoryId",
+                              "identity"
+                            ],
+                            "type": "object"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "featureId",
+                          "approvedVersion",
+                          "runId",
+                          "source",
+                          "revision",
+                          "manifest",
+                          "manifestDigest",
+                          "evidenceIds",
+                          "createdAt"
+                        ],
+                        "type": "object"
+                      },
+                      "pullRequest": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "author": {
+                            "maxLength": 100,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "authorNodeId": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "baseCommitId": {
+                            "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                            "type": "string"
+                          },
+                          "baseRef": {
+                            "maxLength": 244,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "body": {
+                            "maxLength": 65536,
                             "minLength": 1,
                             "type": "string"
                           },
@@ -4420,398 +4610,1173 @@
                             "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
                             "type": "string"
                           },
-                          "treeId": {
+                          "headRef": {
+                            "maxLength": 244,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "id": {
+                            "maxLength": 32,
+                            "pattern": "^[1-9][0-9]*$",
+                            "type": "string"
+                          },
+                          "marker": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "nodeId": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "number": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 2147483647,
+                            "type": "integer"
+                          },
+                          "repository": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "id": {
+                                "maxLength": 32,
+                                "pattern": "^[1-9][0-9]*$",
+                                "type": "string"
+                              },
+                              "name": {
+                                "pattern": "^[a-zA-Z0-9_.-]{1,100}$",
+                                "type": "string"
+                              },
+                              "owner": {
+                                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9-]{0,99}$",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "owner",
+                              "name"
+                            ],
+                            "type": "object"
+                          },
+                          "repositoryNodeId": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "state": {
+                            "enum": [
+                              "open",
+                              "closed"
+                            ],
+                            "type": "string"
+                          },
+                          "title": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "url": {
+                            "format": "uri",
+                            "maxLength": 512,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "title",
+                          "body",
+                          "marker",
+                          "baseRef",
+                          "headRef",
+                          "baseCommitId",
+                          "headCommitId",
+                          "repository",
+                          "id",
+                          "nodeId",
+                          "repositoryNodeId",
+                          "authorNodeId",
+                          "number",
+                          "url",
+                          "state",
+                          "author"
+                        ],
+                        "type": "object"
+                      },
+                      "retainedManifestDigest": {
+                        "pattern": "^[a-f0-9]{64}$",
+                        "type": "string"
+                      },
+                      "revision": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "availableAt": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "base": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "objectId": {
+                                "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                                "type": "string"
+                              },
+                              "ref": {
+                                "maxLength": 255,
+                                "minLength": 1,
+                                "pattern": "^[^\\p{Cc}]+$",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "objectId",
+                              "ref"
+                            ],
+                            "type": "object"
+                          },
+                          "createdAt": {
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                            "type": "string"
+                          },
+                          "failureReason": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "source_not_available",
+                                  "source_containment_violation",
+                                  "reference_not_available",
+                                  "base_revision_unresolvable",
+                                  "head_revision_unresolvable",
+                                  "pull_ref_mismatch",
+                                  "provider_authentication_required",
+                                  "provider_resource_unavailable",
+                                  "revision_limit_exceeded",
+                                  "object_missing",
+                                  "object_verification_failed",
+                                  "artifact_finalization_failed",
+                                  "acquisition_interrupted"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "head": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "objectId": {
+                                "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                                "type": "string"
+                              },
+                              "ref": {
+                                "maxLength": 255,
+                                "minLength": 1,
+                                "pattern": "^[^\\p{Cc}]+$",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "objectId",
+                              "ref"
+                            ],
+                            "type": "object"
+                          },
+                          "id": {
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "objectCount": {
+                            "anyOf": [
+                              {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "objectFormat": {
+                            "enum": [
+                              "sha1",
+                              "sha256"
+                            ],
+                            "type": "string"
+                          },
+                          "retainedBytes": {
+                            "anyOf": [
+                              {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "state": {
+                            "enum": [
+                              "acquiring",
+                              "available",
+                              "unavailable"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "state",
+                          "objectFormat",
+                          "base",
+                          "head",
+                          "objectCount",
+                          "retainedBytes",
+                          "failureReason",
+                          "createdAt",
+                          "availableAt"
+                        ],
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "pullRequest",
+                      "revision",
+                      "retainedManifestDigest",
+                      "certificate"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "readiness": {
+                "additionalProperties": false,
+                "properties": {
+                  "blockers": {
+                    "items": {
+                      "enum": [
+                        "publication_not_ready",
+                        "approved_plan_mismatch",
+                        "certificate_mismatch",
+                        "exact_revision_mismatch",
+                        "change_intent_not_available",
+                        "model_not_selected",
+                        "review_runtime_unavailable"
+                      ],
+                      "type": "string"
+                    },
+                    "maxItems": 6,
+                    "type": "array"
+                  },
+                  "startAllowed": {
+                    "type": "boolean"
+                  },
+                  "state": {
+                    "enum": [
+                      "ready",
+                      "blocked"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "state",
+                  "startAllowed",
+                  "blockers"
+                ],
+                "type": "object"
+              },
+              "schemaVersion": {
+                "const": 1,
+                "type": "number"
+              }
+            },
+            "required": [
+              "schemaVersion",
+              "projectId",
+              "featureId",
+              "changeProposalId",
+              "preparationDigest",
+              "basis",
+              "publication",
+              "evidence",
+              "configuration",
+              "readiness"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "basis": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "limitations": {
+                        "items": {
+                          "maxLength": 4000,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "maxItems": 24,
+                        "type": "array"
+                      },
+                      "objective": {
+                        "maxLength": 4000,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "outcomes": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "intent": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "kind": {
+                                  "enum": [
+                                    "approved_feature_plan",
+                                    "operator_confirmed",
+                                    "pull_request_stated",
+                                    "inferred",
+                                    "missing"
+                                  ],
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "maxLength": 256,
+                                  "minLength": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "label"
+                              ],
+                              "type": "object"
+                            },
+                            "key": {
+                              "maxLength": 48,
+                              "minLength": 1,
+                              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$",
+                              "type": "string"
+                            },
+                            "outcome": {
+                              "maxLength": 2000,
+                              "minLength": 1,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "key",
+                            "outcome",
+                            "intent"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 50,
+                        "minItems": 1,
+                        "type": "array"
+                      },
+                      "provenance": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "changeIntentId": {
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "kind": {
+                            "const": "change_intent",
+                            "type": "string"
+                          },
+                          "resolution": {
+                            "enum": [
+                              "resolved",
+                              "unresolved"
+                            ],
+                            "type": "string"
+                          },
+                          "sourceDigest": {
+                            "pattern": "^[a-f0-9]{64}$",
+                            "type": "string"
+                          },
+                          "sources": {
+                            "items": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "kind": {
+                                  "enum": [
+                                    "operator_confirmed",
+                                    "pull_request_stated",
+                                    "inferred",
+                                    "missing"
+                                  ],
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "maxLength": 256,
+                                  "minLength": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "label"
+                              ],
+                              "type": "object"
+                            },
+                            "maxItems": 20,
+                            "type": "array"
+                          },
+                          "version": {
+                            "maximum": 9007199254740991,
+                            "minimum": 1,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "changeIntentId",
+                          "version",
+                          "sourceDigest",
+                          "resolution",
+                          "sources"
+                        ],
+                        "type": "object"
+                      },
+                      "scope": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "excludes": {
+                            "items": {
+                              "maxLength": 2000,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "maxItems": 20,
+                            "type": "array"
+                          },
+                          "includes": {
+                            "items": {
+                              "maxLength": 2000,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "maxItems": 20,
+                            "minItems": 1,
+                            "type": "array"
+                          }
+                        },
+                        "required": [
+                          "includes",
+                          "excludes"
+                        ],
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "objective",
+                      "scope",
+                      "outcomes",
+                      "provenance",
+                      "limitations"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "changeProposalId": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                "type": "string"
+              },
+              "configuration": {
+                "additionalProperties": false,
+                "properties": {
+                  "model": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "modelId": {
+                        "anyOf": [
+                          {
+                            "maxLength": 128,
+                            "minLength": 1,
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "route": {
+                        "const": "codex_subscription",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "route",
+                      "modelId"
+                    ],
+                    "type": "object"
+                  },
+                  "resources": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "containerMemoryBytes": {
+                        "const": 1073741824,
+                        "type": "number"
+                      },
+                      "containerNanoCpus": {
+                        "const": 2000000000,
+                        "type": "number"
+                      },
+                      "containerPidsLimit": {
+                        "const": 128,
+                        "type": "number"
+                      },
+                      "containerTmpfsBytes": {
+                        "const": 67108864,
+                        "type": "number"
+                      },
+                      "maximumAttempts": {
+                        "maximum": 10,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "maximumEvidenceItems": {
+                        "maximum": 10000,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "maximumGraphNodes": {
+                        "maximum": 10000,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "maximumOutputBytes": {
+                        "maximum": 16777216,
+                        "minimum": 1024,
+                        "type": "integer"
+                      },
+                      "maximumWorkspaceBytes": {
+                        "maximum": 4294967296,
+                        "minimum": 1024,
+                        "type": "integer"
+                      },
+                      "maximumWorkspaceFiles": {
+                        "maximum": 100000,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "timeoutSeconds": {
+                        "maximum": 7200,
+                        "minimum": 60,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "maximumAttempts",
+                      "timeoutSeconds",
+                      "maximumEvidenceItems",
+                      "maximumWorkspaceFiles",
+                      "maximumWorkspaceBytes",
+                      "maximumGraphNodes",
+                      "maximumOutputBytes",
+                      "containerPidsLimit",
+                      "containerMemoryBytes",
+                      "containerNanoCpus",
+                      "containerTmpfsBytes"
+                    ],
+                    "type": "object"
+                  },
+                  "runtimePolicy": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "adapter": {
+                        "const": "codex_app_server",
+                        "type": "string"
+                      },
+                      "adapterVersion": {
+                        "const": 1,
+                        "type": "number"
+                      },
+                      "codexExecutable": {
+                        "anyOf": [
+                          {
+                            "maxLength": 4096,
+                            "minLength": 1,
+                            "pattern": "^\\/",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "codexExecutableDigest": {
+                        "anyOf": [
+                          {
+                            "pattern": "^[a-f0-9]{64}$",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "codexProtocol": {
+                        "const": "app_server_v2",
+                        "type": "string"
+                      },
+                      "codexVersion": {
+                        "anyOf": [
+                          {
+                            "maxLength": 128,
+                            "minLength": 1,
+                            "pattern": "^\\d+\\.\\d+\\.[0-9A-Za-z.+-]+$",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "containerImage": {
+                        "anyOf": [
+                          {
+                            "pattern": "^sha256:[a-f0-9]{64}$",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "containerUser": {
+                        "anyOf": [
+                          {
+                            "pattern": "^[1-9]\\d{0,9}:[1-9]\\d{0,9}$",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "kind": {
+                        "const": "retained_source_review",
+                        "type": "string"
+                      },
+                      "networkAccess": {
+                        "const": false,
+                        "type": "boolean"
+                      },
+                      "sourceAccess": {
+                        "const": "retained_read_only",
+                        "type": "string"
+                      },
+                      "status": {
+                        "enum": [
+                          "available",
+                          "unavailable"
+                        ],
+                        "type": "string"
+                      },
+                      "version": {
+                        "const": 1,
+                        "type": "number"
+                      },
+                      "writeAccess": {
+                        "const": false,
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "version",
+                      "adapter",
+                      "adapterVersion",
+                      "containerImage",
+                      "containerUser",
+                      "codexExecutable",
+                      "codexExecutableDigest",
+                      "codexVersion",
+                      "codexProtocol",
+                      "sourceAccess",
+                      "networkAccess",
+                      "writeAccess",
+                      "status"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "model",
+                  "runtimePolicy",
+                  "resources"
+                ],
+                "type": "object"
+              },
+              "evidence": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "checks": {
+                        "type": "null"
+                      },
+                      "source": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "baseCommitId": {
                             "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                            "type": "string"
+                          },
+                          "headCommitId": {
+                            "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                            "type": "string"
+                          },
+                          "headTreeId": {
+                            "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                            "type": "string"
+                          },
+                          "limits": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "catalogPageEntries": {
+                                "const": 200,
+                                "type": "number"
+                              },
+                              "fileBytes": {
+                                "const": 524288,
+                                "type": "number"
+                              },
+                              "lineRange": {
+                                "const": 200,
+                                "type": "number"
+                              },
+                              "responseBytes": {
+                                "const": 32768,
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "catalogPageEntries",
+                              "fileBytes",
+                              "lineRange",
+                              "responseBytes"
+                            ],
+                            "type": "object"
+                          },
+                          "retainedManifestDigest": {
+                            "pattern": "^[a-f0-9]{64}$",
                             "type": "string"
                           }
                         },
                         "required": [
                           "baseCommitId",
                           "headCommitId",
-                          "treeId",
-                          "branch"
-                        ],
-                        "type": "object"
-                      },
-                      "runId": {
-                        "format": "uuid",
-                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-                        "type": "string"
-                      },
-                      "source": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "identity": {
-                            "maxLength": 512,
-                            "minLength": 1,
-                            "type": "string"
-                          },
-                          "repositoryId": {
-                            "maxLength": 128,
-                            "minLength": 1,
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "repositoryId",
-                          "identity"
+                          "retainedManifestDigest",
+                          "limits",
+                          "headTreeId"
                         ],
                         "type": "object"
                       }
                     },
                     "required": [
-                      "id",
-                      "featureId",
-                      "approvedVersion",
-                      "runId",
                       "source",
-                      "revision",
-                      "manifest",
-                      "manifestDigest",
-                      "evidenceIds",
-                      "createdAt"
+                      "checks"
                     ],
                     "type": "object"
                   },
-                  "pullRequest": {
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "featureId": {
+                "type": "null"
+              },
+              "preparationDigest": {
+                "anyOf": [
+                  {
+                    "pattern": "^[a-f0-9]{64}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "projectId": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                "type": "string"
+              },
+              "publication": {
+                "anyOf": [
+                  {
                     "additionalProperties": false,
                     "properties": {
-                      "author": {
-                        "maxLength": 100,
-                        "minLength": 1,
+                      "certificate": {
+                        "type": "null"
+                      },
+                      "kind": {
+                        "const": "external_pull_request",
                         "type": "string"
                       },
-                      "authorNodeId": {
-                        "maxLength": 256,
-                        "minLength": 1,
-                        "type": "string"
-                      },
-                      "baseCommitId": {
-                        "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
-                        "type": "string"
-                      },
-                      "baseRef": {
-                        "maxLength": 244,
-                        "minLength": 1,
-                        "type": "string"
-                      },
-                      "body": {
-                        "maxLength": 65536,
-                        "minLength": 1,
-                        "type": "string"
-                      },
-                      "headCommitId": {
-                        "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
-                        "type": "string"
-                      },
-                      "headRef": {
-                        "maxLength": 244,
-                        "minLength": 1,
-                        "type": "string"
-                      },
-                      "id": {
-                        "maxLength": 32,
-                        "pattern": "^[1-9][0-9]*$",
-                        "type": "string"
-                      },
-                      "marker": {
-                        "maxLength": 256,
-                        "minLength": 1,
-                        "type": "string"
-                      },
-                      "nodeId": {
-                        "maxLength": 256,
-                        "minLength": 1,
-                        "type": "string"
-                      },
-                      "number": {
-                        "exclusiveMinimum": 0,
-                        "maximum": 2147483647,
-                        "type": "integer"
-                      },
-                      "repository": {
+                      "pullRequest": {
                         "additionalProperties": false,
                         "properties": {
+                          "author": {
+                            "anyOf": [
+                              {
+                                "maxLength": 100,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "baseCommitId": {
+                            "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                            "type": "string"
+                          },
+                          "baseRef": {
+                            "maxLength": 512,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "body": {
+                            "anyOf": [
+                              {
+                                "maxLength": 65536,
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "headCommitId": {
+                            "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                            "type": "string"
+                          },
+                          "headRef": {
+                            "maxLength": 512,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "number": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 2147483647,
+                            "type": "integer"
+                          },
+                          "repository": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "id": {
+                                "maxLength": 256,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "name": {
+                                "maxLength": 100,
+                                "minLength": 1,
+                                "pattern": "^[A-Za-z0-9._-]+$",
+                                "type": "string"
+                              },
+                              "owner": {
+                                "maxLength": 39,
+                                "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "owner",
+                              "name"
+                            ],
+                            "type": "object"
+                          },
+                          "state": {
+                            "enum": [
+                              "open",
+                              "closed",
+                              "merged",
+                              "unknown"
+                            ],
+                            "type": "string"
+                          },
+                          "title": {
+                            "maxLength": 512,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "url": {
+                            "format": "uri",
+                            "maxLength": 512,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "repository",
+                          "author",
+                          "number",
+                          "url",
+                          "state",
+                          "title",
+                          "body",
+                          "baseRef",
+                          "headRef",
+                          "baseCommitId",
+                          "headCommitId"
+                        ],
+                        "type": "object"
+                      },
+                      "retainedManifestDigest": {
+                        "pattern": "^[a-f0-9]{64}$",
+                        "type": "string"
+                      },
+                      "revision": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "availableAt": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "base": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "objectId": {
+                                "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                                "type": "string"
+                              },
+                              "ref": {
+                                "maxLength": 255,
+                                "minLength": 1,
+                                "pattern": "^[^\\p{Cc}]+$",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "objectId",
+                              "ref"
+                            ],
+                            "type": "object"
+                          },
+                          "createdAt": {
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                            "type": "string"
+                          },
+                          "failureReason": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "source_not_available",
+                                  "source_containment_violation",
+                                  "reference_not_available",
+                                  "base_revision_unresolvable",
+                                  "head_revision_unresolvable",
+                                  "pull_ref_mismatch",
+                                  "provider_authentication_required",
+                                  "provider_resource_unavailable",
+                                  "revision_limit_exceeded",
+                                  "object_missing",
+                                  "object_verification_failed",
+                                  "artifact_finalization_failed",
+                                  "acquisition_interrupted"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "head": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "objectId": {
+                                "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+                                "type": "string"
+                              },
+                              "ref": {
+                                "maxLength": 255,
+                                "minLength": 1,
+                                "pattern": "^[^\\p{Cc}]+$",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "objectId",
+                              "ref"
+                            ],
+                            "type": "object"
+                          },
                           "id": {
-                            "maxLength": 32,
-                            "pattern": "^[1-9][0-9]*$",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
                             "type": "string"
                           },
-                          "name": {
-                            "pattern": "^[a-zA-Z0-9_.-]{1,100}$",
+                          "objectCount": {
+                            "anyOf": [
+                              {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "objectFormat": {
+                            "enum": [
+                              "sha1",
+                              "sha256"
+                            ],
                             "type": "string"
                           },
-                          "owner": {
-                            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9-]{0,99}$",
+                          "retainedBytes": {
+                            "anyOf": [
+                              {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "state": {
+                            "enum": [
+                              "acquiring",
+                              "available",
+                              "unavailable"
+                            ],
                             "type": "string"
                           }
                         },
                         "required": [
                           "id",
-                          "owner",
-                          "name"
+                          "state",
+                          "objectFormat",
+                          "base",
+                          "head",
+                          "objectCount",
+                          "retainedBytes",
+                          "failureReason",
+                          "createdAt",
+                          "availableAt"
                         ],
                         "type": "object"
-                      },
-                      "repositoryNodeId": {
-                        "maxLength": 256,
-                        "minLength": 1,
-                        "type": "string"
-                      },
-                      "state": {
-                        "enum": [
-                          "open",
-                          "closed"
-                        ],
-                        "type": "string"
-                      },
-                      "title": {
-                        "maxLength": 256,
-                        "minLength": 1,
-                        "type": "string"
-                      },
-                      "url": {
-                        "format": "uri",
-                        "maxLength": 512,
-                        "type": "string"
                       }
                     },
                     "required": [
-                      "title",
-                      "body",
-                      "marker",
-                      "baseRef",
-                      "headRef",
-                      "baseCommitId",
-                      "headCommitId",
-                      "repository",
-                      "id",
-                      "nodeId",
-                      "repositoryNodeId",
-                      "authorNodeId",
-                      "number",
-                      "url",
-                      "state",
-                      "author"
+                      "kind",
+                      "pullRequest",
+                      "revision",
+                      "retainedManifestDigest",
+                      "certificate"
                     ],
                     "type": "object"
                   },
-                  "retainedManifestDigest": {
-                    "pattern": "^[a-f0-9]{64}$",
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "readiness": {
+                "additionalProperties": false,
+                "properties": {
+                  "blockers": {
+                    "items": {
+                      "enum": [
+                        "publication_not_ready",
+                        "approved_plan_mismatch",
+                        "certificate_mismatch",
+                        "exact_revision_mismatch",
+                        "change_intent_not_available",
+                        "model_not_selected",
+                        "review_runtime_unavailable"
+                      ],
+                      "type": "string"
+                    },
+                    "maxItems": 6,
+                    "type": "array"
+                  },
+                  "startAllowed": {
+                    "type": "boolean"
+                  },
+                  "state": {
+                    "enum": [
+                      "ready",
+                      "blocked"
+                    ],
                     "type": "string"
-                  },
-                  "revision": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "availableAt": {
-                        "anyOf": [
-                          {
-                            "format": "date-time",
-                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
-                            "type": "string"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      },
-                      "base": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "objectId": {
-                            "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
-                            "type": "string"
-                          },
-                          "ref": {
-                            "maxLength": 255,
-                            "minLength": 1,
-                            "pattern": "^[^\\p{Cc}]+$",
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "objectId",
-                          "ref"
-                        ],
-                        "type": "object"
-                      },
-                      "createdAt": {
-                        "format": "date-time",
-                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
-                        "type": "string"
-                      },
-                      "failureReason": {
-                        "anyOf": [
-                          {
-                            "enum": [
-                              "source_not_available",
-                              "source_containment_violation",
-                              "reference_not_available",
-                              "base_revision_unresolvable",
-                              "head_revision_unresolvable",
-                              "pull_ref_mismatch",
-                              "provider_authentication_required",
-                              "provider_resource_unavailable",
-                              "revision_limit_exceeded",
-                              "object_missing",
-                              "object_verification_failed",
-                              "artifact_finalization_failed",
-                              "acquisition_interrupted"
-                            ],
-                            "type": "string"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      },
-                      "head": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "objectId": {
-                            "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
-                            "type": "string"
-                          },
-                          "ref": {
-                            "maxLength": 255,
-                            "minLength": 1,
-                            "pattern": "^[^\\p{Cc}]+$",
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "objectId",
-                          "ref"
-                        ],
-                        "type": "object"
-                      },
-                      "id": {
-                        "format": "uuid",
-                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-                        "type": "string"
-                      },
-                      "objectCount": {
-                        "anyOf": [
-                          {
-                            "maximum": 9007199254740991,
-                            "minimum": 0,
-                            "type": "integer"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      },
-                      "objectFormat": {
-                        "enum": [
-                          "sha1",
-                          "sha256"
-                        ],
-                        "type": "string"
-                      },
-                      "retainedBytes": {
-                        "anyOf": [
-                          {
-                            "maximum": 9007199254740991,
-                            "minimum": 0,
-                            "type": "integer"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      },
-                      "state": {
-                        "enum": [
-                          "acquiring",
-                          "available",
-                          "unavailable"
-                        ],
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "id",
-                      "state",
-                      "objectFormat",
-                      "base",
-                      "head",
-                      "objectCount",
-                      "retainedBytes",
-                      "failureReason",
-                      "createdAt",
-                      "availableAt"
-                    ],
-                    "type": "object"
                   }
                 },
                 "required": [
-                  "pullRequest",
-                  "revision",
-                  "retainedManifestDigest",
-                  "certificate"
+                  "state",
+                  "startAllowed",
+                  "blockers"
                 ],
                 "type": "object"
               },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "readiness": {
-            "additionalProperties": false,
-            "properties": {
-              "blockers": {
-                "items": {
-                  "enum": [
-                    "publication_not_ready",
-                    "approved_plan_mismatch",
-                    "certificate_mismatch",
-                    "exact_revision_mismatch",
-                    "model_not_selected",
-                    "review_runtime_unavailable"
-                  ],
-                  "type": "string"
-                },
-                "maxItems": 6,
-                "type": "array"
-              },
-              "startAllowed": {
-                "type": "boolean"
-              },
-              "state": {
-                "enum": [
-                  "ready",
-                  "blocked"
-                ],
-                "type": "string"
+              "schemaVersion": {
+                "const": 1,
+                "type": "number"
               }
             },
             "required": [
-              "state",
-              "startAllowed",
-              "blockers"
+              "schemaVersion",
+              "projectId",
+              "featureId",
+              "changeProposalId",
+              "preparationDigest",
+              "basis",
+              "publication",
+              "evidence",
+              "configuration",
+              "readiness"
             ],
             "type": "object"
-          },
-          "schemaVersion": {
-            "const": 1,
-            "type": "number"
           }
-        },
-        "required": [
-          "schemaVersion",
-          "projectId",
-          "featureId",
-          "changeProposalId",
-          "preparationDigest",
-          "basis",
-          "publication",
-          "evidence",
-          "configuration",
-          "readiness"
-        ],
-        "type": "object"
+        ]
       },
       "FactoryConceptualReviewSourceCatalog": {
         "additionalProperties": false,
@@ -5209,7 +6174,7 @@
                                 "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$",
                                 "type": "string"
                               },
-                              "maxItems": 40,
+                              "maxItems": 50,
                               "minItems": 1,
                               "type": "array"
                             },
@@ -5602,7 +6567,7 @@
                           ],
                           "type": "object"
                         },
-                        "maxItems": 40,
+                        "maxItems": 50,
                         "minItems": 1,
                         "type": "array"
                       },
@@ -5971,9 +6936,16 @@
                 ]
               },
               "featureId": {
-                "format": "uuid",
-                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "finishedAt": {
                 "anyOf": [
@@ -39399,6 +40371,1185 @@
           }
         }
       }
+    },
+    "/api/v1/projects/{projectId}/change-proposals/{changeProposalId}/review/artifacts": {
+      "get": {
+        "operationId": "readExternalConceptualReviewHistory",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FactoryConceptualReviewHistory"
+                }
+              }
+            },
+            "description": "Current durable Factory state"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          }
+        }
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "changeProposalId",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "schema": {
+            "default": 0,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        {
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "maximum": 50,
+            "minimum": 1,
+            "type": "integer"
+          }
+        }
+      ]
+    },
+    "/api/v1/projects/{projectId}/change-proposals/{changeProposalId}/review/artifacts/{artifactId}": {
+      "get": {
+        "operationId": "readExternalConceptualReviewArtifact",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FactoryConceptualReviewWorkflowRead"
+                }
+              }
+            },
+            "description": "Current durable Factory state"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          }
+        }
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "changeProposalId",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "artifactId",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/api/v1/projects/{projectId}/change-proposals/{changeProposalId}/review/artifacts/{artifactId}/source/lines": {
+      "get": {
+        "operationId": "readExternalConceptualReviewArtifactSourceLines",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FactoryConceptualReviewSourceLines"
+                }
+              }
+            },
+            "description": "Current durable Factory state"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          }
+        }
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "changeProposalId",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "artifactId",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "side",
+          "required": true,
+          "schema": {
+            "enum": [
+              "base",
+              "head"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "startLine",
+          "required": true,
+          "schema": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        {
+          "in": "query",
+          "name": "endLine",
+          "required": true,
+          "schema": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        }
+      ]
+    },
+    "/api/v1/projects/{projectId}/change-proposals/{changeProposalId}/review/preparation": {
+      "get": {
+        "operationId": "readExternalConceptualReviewPreparation",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FactoryConceptualReviewPreparation"
+                }
+              }
+            },
+            "description": "Current durable Factory state"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          }
+        }
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "changeProposalId",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/api/v1/projects/{projectId}/change-proposals/{changeProposalId}/review/workflows": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "changeProposalId",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "startExternalConceptualReview",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Origin",
+            "required": true,
+            "schema": {
+              "format": "uri",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Kestrel-CSRF",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FactoryConceptualReviewStartCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FactoryConceptualReviewWorkflowRead"
+                }
+              }
+            },
+            "description": "Durable Factory result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/change-proposals/{changeProposalId}/review/workflows/current": {
+      "get": {
+        "operationId": "readCurrentExternalConceptualReview",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FactoryConceptualReviewCurrent"
+                }
+              }
+            },
+            "description": "Current durable Factory state"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          }
+        }
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "changeProposalId",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/api/v1/projects/{projectId}/change-proposals/{changeProposalId}/review/workflows/{workflowId}": {
+      "get": {
+        "operationId": "readExternalConceptualReviewWorkflow",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FactoryConceptualReviewWorkflowRead"
+                }
+              }
+            },
+            "description": "Current durable Factory state"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          }
+        }
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "changeProposalId",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "workflowId",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/api/v1/projects/{projectId}/change-proposals/{changeProposalId}/review/workflows/{workflowId}/source/lines": {
+      "get": {
+        "operationId": "readExternalConceptualReviewWorkflowSourceLines",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FactoryConceptualReviewSourceLines"
+                }
+              }
+            },
+            "description": "Current durable Factory state"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          }
+        }
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "changeProposalId",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "workflowId",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "side",
+          "required": true,
+          "schema": {
+            "enum": [
+              "base",
+              "head"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "startLine",
+          "required": true,
+          "schema": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        {
+          "in": "query",
+          "name": "endLine",
+          "required": true,
+          "schema": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        }
+      ]
     },
     "/api/v1/projects/{projectId}/features": {
       "get": {

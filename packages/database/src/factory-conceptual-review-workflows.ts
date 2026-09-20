@@ -15,6 +15,7 @@ import {
   type FactoryConceptualReviewStartCommand,
   type FactoryConceptualReviewWorkflowRead,
   type FactoryFeaturePullRequest,
+  type ExternalConceptualReviewPreparation,
 } from "@kestrel/contracts";
 
 import type { DiagnosticJobSender } from "./diagnostics.js";
@@ -44,6 +45,14 @@ export interface StartFactoryConceptualReviewWorkflowInput {
   correlationId: string;
   projectId: string;
   featureId: string;
+  command: FactoryConceptualReviewStartCommand;
+}
+
+export interface StartExternalConceptualReviewWorkflowInput {
+  actorId: string;
+  correlationId: string;
+  projectId: string;
+  changeProposalId: string;
   command: FactoryConceptualReviewStartCommand;
 }
 
@@ -81,7 +90,7 @@ interface WorkflowRow {
   id: string;
   request_id: string;
   project_id: string;
-  feature_id: string;
+  feature_id: string | null;
   change_proposal_id: string;
   review_revision_id: string;
   input_digest: string;
@@ -105,7 +114,11 @@ const workflowColumns = `
   workflow.maximum_attempts, workflow.failure_code, workflow.artifact_id,
   workflow.requested_at, workflow.started_at, workflow.finished_at,
   artifact.artifact,
-  workflow.observed_head_commit_id AS current_head_commit_id
+  CASE WHEN workflow.feature_id IS NULL THEN (
+    SELECT proposal.head_object_id
+    FROM change_proposals AS proposal
+    WHERE proposal.id = workflow.change_proposal_id
+  ) ELSE workflow.observed_head_commit_id END AS current_head_commit_id
 `;
 
 function mapWorkflow(row: WorkflowRow): FactoryConceptualReviewWorkflowRead {
@@ -228,6 +241,58 @@ export function readFactoryConceptualReviewArtifact(
   return readWorkflow(pool, { projectId, featureId, artifactId });
 }
 
+async function readExternalWorkflow(
+  pool: DatabasePool,
+  input: {
+    projectId: string;
+    changeProposalId: string;
+    workflowId?: string;
+    artifactId?: string;
+  },
+): Promise<FactoryConceptualReviewWorkflowRead | null> {
+  const result = await pool.query<WorkflowRow>(
+    `SELECT ${workflowColumns}
+     FROM review_workflows AS workflow
+     LEFT JOIN factory_conceptual_review_artifacts AS artifact
+       ON artifact.id = workflow.artifact_id AND artifact.workflow_id = workflow.id
+     WHERE workflow.project_id = $1 AND workflow.change_proposal_id = $2
+       AND workflow.feature_id IS NULL AND workflow.factory_input IS NOT NULL
+       AND ($3::uuid IS NULL OR workflow.id = $3)
+       AND ($4::uuid IS NULL OR artifact.id = $4)
+     ORDER BY workflow.requested_at DESC, workflow.id DESC
+     LIMIT 1`,
+    [input.projectId, input.changeProposalId, input.workflowId ?? null, input.artifactId ?? null],
+  );
+  const row = result.rows[0];
+  return row === undefined ? null : mapWorkflow(row);
+}
+
+export function readCurrentExternalConceptualReviewWorkflow(
+  pool: DatabasePool,
+  projectId: string,
+  changeProposalId: string,
+): Promise<FactoryConceptualReviewWorkflowRead | null> {
+  return readExternalWorkflow(pool, { projectId, changeProposalId });
+}
+
+export function readExternalConceptualReviewWorkflow(
+  pool: DatabasePool,
+  projectId: string,
+  changeProposalId: string,
+  workflowId: string,
+): Promise<FactoryConceptualReviewWorkflowRead | null> {
+  return readExternalWorkflow(pool, { projectId, changeProposalId, workflowId });
+}
+
+export function readExternalConceptualReviewArtifact(
+  pool: DatabasePool,
+  projectId: string,
+  changeProposalId: string,
+  artifactId: string,
+): Promise<FactoryConceptualReviewWorkflowRead | null> {
+  return readExternalWorkflow(pool, { projectId, changeProposalId, artifactId });
+}
+
 export async function readFactoryConceptualReviewHistory(
   pool: DatabasePool,
   projectId: string,
@@ -291,6 +356,72 @@ export async function readFactoryConceptualReviewHistory(
   });
 }
 
+export async function readExternalConceptualReviewHistory(
+  pool: DatabasePool,
+  projectId: string,
+  changeProposalId: string,
+  offset = 0,
+  limit = 20,
+): Promise<FactoryConceptualReviewHistory> {
+  if (
+    !Number.isSafeInteger(offset) ||
+    offset < 0 ||
+    !Number.isSafeInteger(limit) ||
+    limit < 1 ||
+    limit > 50
+  ) {
+    throw new FactoryConceptualReviewWorkflowPersistenceError("invalid_state");
+  }
+  const [counted, selected] = await Promise.all([
+    pool.query<{ total: string }>(
+      `SELECT COUNT(*)::text AS total
+       FROM review_workflows AS workflow
+       JOIN factory_conceptual_review_artifacts AS artifact
+         ON artifact.id = workflow.artifact_id AND artifact.workflow_id = workflow.id
+       WHERE workflow.project_id = $1 AND workflow.change_proposal_id = $2
+         AND workflow.feature_id IS NULL AND workflow.factory_input IS NOT NULL
+         AND workflow.workflow_state = 'published'`,
+      [projectId, changeProposalId],
+    ),
+    pool.query<WorkflowRow>(
+      `SELECT ${workflowColumns}
+       FROM review_workflows AS workflow
+       JOIN factory_conceptual_review_artifacts AS artifact
+         ON artifact.id = workflow.artifact_id AND artifact.workflow_id = workflow.id
+       WHERE workflow.project_id = $1 AND workflow.change_proposal_id = $2
+         AND workflow.feature_id IS NULL AND workflow.factory_input IS NOT NULL
+         AND workflow.workflow_state = 'published'
+       ORDER BY workflow.requested_at DESC, workflow.id DESC
+       OFFSET $3 LIMIT $4`,
+      [projectId, changeProposalId, offset, limit],
+    ),
+  ]);
+  const total = Number(counted.rows[0]?.total ?? 0);
+  if (!Number.isSafeInteger(total) || total < 0)
+    throw new FactoryConceptualReviewWorkflowPersistenceError("invalid_state");
+  const reviews = selected.rows.map((row) => {
+    const read = mapWorkflow(row);
+    if (read.artifact === null || read.workflow.finishedAt === null)
+      throw new FactoryConceptualReviewWorkflowPersistenceError("invalid_state");
+    return {
+      artifactId: read.artifact.id,
+      workflowId: read.workflow.id,
+      status: read.artifact.status,
+      headCommitId: read.artifact.headCommitId,
+      requestedAt: read.workflow.requestedAt,
+      finishedAt: read.workflow.finishedAt,
+      currency: read.currency,
+    };
+  });
+  return FactoryConceptualReviewHistorySchema.parse({
+    schemaVersion: 1,
+    reviews,
+    offset,
+    total,
+    nextOffset: offset + reviews.length < total ? offset + reviews.length : null,
+  });
+}
+
 export async function readFactoryConceptualReviewWorkflowSourceBinding(
   pool: DatabasePool,
   workflowId: string,
@@ -299,7 +430,7 @@ export async function readFactoryConceptualReviewWorkflowSourceBinding(
     `SELECT workflow.factory_input, revision.artifact_locator
      FROM review_workflows AS workflow
      JOIN review_revisions AS revision ON revision.id = workflow.review_revision_id
-     WHERE workflow.id = $1 AND workflow.feature_id IS NOT NULL`,
+     WHERE workflow.id = $1 AND workflow.factory_input IS NOT NULL`,
     [workflowId],
   );
   const row = result.rows[0];
@@ -307,12 +438,18 @@ export async function readFactoryConceptualReviewWorkflowSourceBinding(
   const preparation = FactoryConceptualReviewPreparationSchema.parse(row.factory_input);
   if (row.artifact_locator === null || preparation.publication === null)
     throw new FactoryConceptualReviewWorkflowPersistenceError("not_ready");
+  const expectedHeadTreeId =
+    preparation.featureId === null
+      ? preparation.evidence?.source.headTreeId
+      : preparation.publication.certificate.revision.treeId;
+  if (expectedHeadTreeId === undefined)
+    throw new FactoryConceptualReviewWorkflowPersistenceError("not_ready");
   return {
     artifactLocator: row.artifact_locator,
     manifestDigest: preparation.publication.retainedManifestDigest,
     expectedBaseCommitId: preparation.publication.revision.base.objectId,
     expectedHeadCommitId: preparation.publication.revision.head.objectId,
-    expectedHeadTreeId: preparation.publication.certificate.revision.treeId,
+    expectedHeadTreeId,
   };
 }
 
@@ -328,7 +465,7 @@ export async function readFactoryConceptualReviewWorkflowPullRequest(
   const row = result.rows[0];
   if (row === undefined) throw new FactoryConceptualReviewWorkflowPersistenceError("not_found");
   const preparation = FactoryConceptualReviewPreparationSchema.parse(row.factory_input);
-  if (preparation.publication === null)
+  if (preparation.featureId === null || preparation.publication === null)
     throw new FactoryConceptualReviewWorkflowPersistenceError("not_ready");
   return preparation.publication.pullRequest;
 }
@@ -395,7 +532,7 @@ export async function startFactoryConceptualReviewWorkflow(
         AND attempt.attempt_id = workflow.attempt_id
         AND attempt.attempt_number = workflow.attempt_count
        WHERE workflow.change_proposal_id = $1
-         AND workflow.feature_id IS NOT NULL
+         AND workflow.factory_input IS NOT NULL
          AND workflow.workflow_state = 'failed'
          AND workflow.failure_code = 'stop_unconfirmed'
        ORDER BY workflow.requested_at, workflow.id
@@ -408,6 +545,8 @@ export async function startFactoryConceptualReviewWorkflow(
 
     const preparation = await prepare(client as unknown as DatabasePool);
     if (
+      preparation.featureId === null ||
+      preparation.featureId !== input.featureId ||
       preparation.readiness.state !== "ready" ||
       !preparation.readiness.startAllowed ||
       preparation.preparationDigest === null ||
@@ -476,6 +615,178 @@ export async function startFactoryConceptualReviewWorkflow(
   }
 }
 
+export async function startExternalConceptualReviewWorkflow(
+  pool: DatabasePool,
+  boss: DiagnosticJobSender,
+  input: StartExternalConceptualReviewWorkflowInput,
+  prepare: (pool: DatabasePool) => Promise<ExternalConceptualReviewPreparation>,
+  transactionTimeoutMs = 10_000,
+): Promise<FactoryConceptualReviewWorkflowRead> {
+  const command = FactoryConceptualReviewStartCommandSchema.parse(input.command);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await configureDatabaseDeadline(client, transactionTimeoutMs);
+    const locked = await client.query<{
+      project_id: string;
+      change_proposal_id: string;
+      change_intent_id: string | null;
+      review_revision_id: string | null;
+    }>(
+      `SELECT project.id AS project_id, proposal.id AS change_proposal_id,
+         intent.id AS change_intent_id, revision.id AS review_revision_id
+       FROM projects AS requested_project
+       JOIN projects AS project
+         ON project.id = COALESCE(requested_project.canonical_project_id, requested_project.id)
+       JOIN change_proposals AS requested_proposal ON requested_proposal.id = $2
+       JOIN change_proposals AS proposal
+         ON proposal.id = COALESCE(
+           requested_proposal.canonical_change_proposal_id,
+           requested_proposal.id
+         )
+        AND proposal.project_id = project.id
+        AND proposal.proposal_kind = 'provider_observed'
+       LEFT JOIN LATERAL (
+         SELECT current_intent.id
+         FROM change_intents AS current_intent
+         JOIN change_proposals AS intent_proposal
+           ON intent_proposal.id = current_intent.change_proposal_id
+         WHERE COALESCE(intent_proposal.canonical_change_proposal_id, intent_proposal.id) = proposal.id
+         ORDER BY current_intent.version DESC, current_intent.created_at DESC, current_intent.id DESC
+         LIMIT 1
+       ) AS intent ON true
+       LEFT JOIN LATERAL (
+         SELECT retained.id
+         FROM review_revisions AS retained
+         JOIN change_proposals AS retained_proposal
+           ON retained_proposal.id = retained.change_proposal_id
+         WHERE retained.revision_state = 'available'
+           AND retained.base_object_id = proposal.base_object_id
+           AND retained.head_object_id = proposal.head_object_id
+           AND COALESCE(retained_proposal.canonical_change_proposal_id, retained_proposal.id)
+             = proposal.id
+         ORDER BY retained.available_at DESC, retained.id DESC
+         LIMIT 1
+       ) AS revision ON true
+       WHERE requested_project.id = $1
+       FOR UPDATE OF project, proposal`,
+      [input.projectId, input.changeProposalId],
+    );
+    const identity = locked.rows[0];
+    if (locked.rowCount !== 1 || identity === undefined)
+      throw new FactoryConceptualReviewWorkflowPersistenceError("not_found");
+
+    const duplicate = await client.query<WorkflowRow>(
+      `SELECT ${workflowColumns}
+       FROM review_workflows AS workflow
+       LEFT JOIN factory_conceptual_review_artifacts AS artifact
+         ON artifact.id = workflow.artifact_id AND artifact.workflow_id = workflow.id
+       WHERE workflow.change_proposal_id = $1 AND workflow.request_id = $2
+         AND workflow.feature_id IS NULL AND workflow.factory_input IS NOT NULL`,
+      [identity.change_proposal_id, command.requestId],
+    );
+    const retained = duplicate.rows[0];
+    if (retained !== undefined) {
+      await client.query("COMMIT");
+      return mapWorkflow(retained);
+    }
+
+    const unresolvedEnvironment = await client.query<{ present: number }>(
+      `SELECT CASE
+         WHEN attempt.container_name IS NOT NULL AND attempt.container_stopped_at IS NULL THEN 1
+         WHEN attempt.workspace_disposed_at IS NULL THEN 1
+         ELSE 0
+       END AS present
+       FROM review_workflows AS workflow
+       JOIN review_workflow_attempts AS attempt
+         ON attempt.workflow_id = workflow.id
+        AND attempt.attempt_id = workflow.attempt_id
+        AND attempt.attempt_number = workflow.attempt_count
+       WHERE workflow.change_proposal_id = $1
+         AND workflow.factory_input IS NOT NULL
+         AND workflow.workflow_state = 'failed'
+         AND workflow.failure_code = 'stop_unconfirmed'
+       ORDER BY workflow.requested_at, workflow.id
+       LIMIT 1
+       FOR UPDATE OF workflow, attempt`,
+      [identity.change_proposal_id],
+    );
+    if (unresolvedEnvironment.rowCount !== 0)
+      throw new FactoryConceptualReviewWorkflowPersistenceError("active_review");
+
+    const preparation = await prepare(client as unknown as DatabasePool);
+    if (
+      preparation.readiness.state !== "ready" ||
+      !preparation.readiness.startAllowed ||
+      preparation.preparationDigest === null ||
+      preparation.basis === null ||
+      preparation.publication === null ||
+      preparation.changeProposalId !== identity.change_proposal_id ||
+      preparation.projectId !== identity.project_id ||
+      preparation.basis.provenance.changeIntentId !== identity.change_intent_id ||
+      preparation.publication.revision.id !== identity.review_revision_id
+    ) {
+      throw new FactoryConceptualReviewWorkflowPersistenceError("not_ready");
+    }
+    if (preparation.preparationDigest !== command.preparationDigest)
+      throw new FactoryConceptualReviewWorkflowPersistenceError("preparation_conflict");
+
+    const inserted = await client.query<{ id: string; requested_at: Date }>(
+      `WITH identity AS (SELECT uuidv7() AS id)
+       INSERT INTO review_workflows (
+         id, project_id, change_proposal_id, review_revision_id, change_intent_id,
+         requested_by_operator_id, input_digest, analysis_configuration, authority,
+         resource_envelope, workflow_state, feature_id, request_id, factory_input,
+         job_id, maximum_attempts
+       )
+       SELECT identity.id, $1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb,
+         $9::jsonb, 'queued', NULL, $10, $11::jsonb, identity.id, $12
+       FROM identity
+       RETURNING id, requested_at`,
+      [
+        preparation.projectId,
+        preparation.changeProposalId,
+        preparation.publication.revision.id,
+        preparation.basis.provenance.changeIntentId,
+        input.actorId,
+        preparation.preparationDigest,
+        JSON.stringify(preparation.configuration),
+        JSON.stringify({
+          kind: "external_pull_request",
+          actorId: input.actorId,
+          changeIntentId: preparation.basis.provenance.changeIntentId,
+          changeIntentVersion: preparation.basis.provenance.version,
+          resolution: preparation.basis.provenance.resolution,
+        }),
+        JSON.stringify(preparation.configuration.resources),
+        command.requestId,
+        JSON.stringify(preparation),
+        preparation.configuration.resources.maximumAttempts,
+      ],
+    );
+    const row = inserted.rows[0];
+    if (row === undefined) throw new Error("Conceptual Review Workflow was not inserted");
+    const jobId = await boss.send(
+      FACTORY_CONCEPTUAL_REVIEW_QUEUE,
+      { workflowId: row.id },
+      { db: pgBossDatabase(client), id: row.id },
+    );
+    if (jobId !== row.id) throw new Error("Conceptual Review Workflow was not durably queued");
+    const result = accepted(row.id, row.requested_at, preparation, command);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await rollback(client);
+    if (databaseDeadline(error))
+      throw new FactoryConceptualReviewWorkflowPersistenceError("timeout");
+    if (uniqueness(error))
+      throw new FactoryConceptualReviewWorkflowPersistenceError("active_review");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function claimFactoryConceptualReviewWorkflow(
   pool: DatabasePool,
   workflowId: string,
@@ -496,7 +807,7 @@ export async function claimFactoryConceptualReviewWorkflow(
          attempt_id = uuidv7(), started_at = COALESCE(started_at, clock_timestamp()),
          heartbeat_at = clock_timestamp(), failure_code = NULL,
          observed_head_commit_id = NULL, head_observed_at = NULL
-       WHERE id = $1 AND feature_id IS NOT NULL AND workflow_state = 'queued'
+       WHERE id = $1 AND factory_input IS NOT NULL AND workflow_state = 'queued'
          AND attempt_count < maximum_attempts
        RETURNING id, attempt_id, attempt_count, factory_input`,
       [workflowId],
@@ -849,7 +1160,7 @@ export async function observePublishedFactoryConceptualReviewHead(
       pool,
       `UPDATE review_workflows
        SET observed_head_commit_id = $2, head_observed_at = clock_timestamp()
-       WHERE id = $1 AND feature_id IS NOT NULL AND workflow_state = 'published'`,
+       WHERE id = $1 AND factory_input IS NOT NULL AND workflow_state = 'published'`,
       [workflowId, head],
       transactionTimeoutMs,
     ),
@@ -972,13 +1283,17 @@ export async function publishFactoryConceptualReview(
       preparation.publication === null
     )
       throw new FactoryConceptualReviewWorkflowPersistenceError("invalid_state");
+    const hasCheckEvidence = draft.evidence.some(({ type }) => type === "check");
+    const checksAvailable = preparation.featureId !== null && preparation.evidence !== null;
+    if (hasCheckEvidence && !checksAvailable)
+      throw new FactoryConceptualReviewWorkflowPersistenceError("invalid_state");
     const generated = await client.query<{ id: string; created_at: Date }>(
       "SELECT uuidv7() AS id, clock_timestamp() AS created_at",
     );
     assertNotAborted(signal);
     const identity = generated.rows[0];
     if (identity === undefined) throw new Error("Artifact identity unavailable");
-    const checksLinked = draft.evidence.some(({ type }) => type === "check");
+    const checksLinked = hasCheckEvidence && checksAvailable;
     const artifact = FactoryConceptualReviewArtifactSchema.parse({
       schemaVersion: 1,
       id: identity.id,
@@ -1062,7 +1377,7 @@ export async function reconcileFactoryConceptualReviewWorkflows(
     pool,
     `SELECT workflow.id
      FROM review_workflows AS workflow
-     WHERE workflow.feature_id IS NOT NULL AND workflow.workflow_state = 'queued'
+     WHERE workflow.factory_input IS NOT NULL AND workflow.workflow_state = 'queued'
        AND NOT EXISTS (
          SELECT 1 FROM pgboss.job AS job
          WHERE job.name = $1 AND job.id = workflow.job_id
@@ -1081,7 +1396,7 @@ export async function reconcileFactoryConceptualReviewWorkflows(
       const selected = await client.query<{ job_id: string }>(
         `UPDATE review_workflows AS workflow
          SET job_id = uuidv7(), heartbeat_at = NULL
-         WHERE workflow.id = $1 AND workflow.feature_id IS NOT NULL
+         WHERE workflow.id = $1 AND workflow.factory_input IS NOT NULL
            AND workflow.workflow_state = 'queued'
            AND NOT EXISTS (
              SELECT 1 FROM pgboss.job AS job
@@ -1128,7 +1443,7 @@ export async function reconcileFactoryConceptualReviewWorkflows(
     pool,
     `SELECT workflow.id
      FROM review_workflows AS workflow
-     WHERE workflow.feature_id IS NOT NULL
+     WHERE workflow.factory_input IS NOT NULL
        AND workflow.workflow_state = 'running'
        AND workflow.heartbeat_at < clock_timestamp() - interval '30 seconds'
      ORDER BY workflow.requested_at, workflow.id
@@ -1154,7 +1469,7 @@ export async function reconcileFactoryConceptualReviewWorkflows(
            ON attempt.workflow_id = workflow.id
           AND attempt.attempt_id = workflow.attempt_id
           AND attempt.attempt_number = workflow.attempt_count
-         WHERE workflow.id = $1 AND workflow.feature_id IS NOT NULL
+         WHERE workflow.id = $1 AND workflow.factory_input IS NOT NULL
            AND workflow.workflow_state = 'running'
            AND workflow.heartbeat_at < clock_timestamp() - interval '30 seconds'
            AND attempt.attempt_state = 'running'
@@ -1208,7 +1523,7 @@ export async function reconcileFactoryConceptualReviewWorkflows(
        ON attempt.workflow_id = workflow.id
       AND attempt.attempt_id = workflow.attempt_id
       AND attempt.attempt_number = workflow.attempt_count
-     WHERE workflow.feature_id IS NOT NULL
+     WHERE workflow.factory_input IS NOT NULL
        AND workflow.workflow_state = 'failed'
        AND workflow.failure_code = 'stop_unconfirmed'
        AND attempt.heartbeat_at < clock_timestamp() - interval '30 seconds'

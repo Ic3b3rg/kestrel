@@ -20,6 +20,8 @@ export interface ReviewGraphProps {
   graph: FactoryConceptualReviewDraft;
   selectedId: string;
   onSelect: (id: string) => void;
+  outcomeTitle?: string;
+  showChecks?: boolean;
 }
 
 function nodeTitle(node: ReviewNode): string {
@@ -64,7 +66,13 @@ function NodeButton({
   );
 }
 
-export function ReviewGraph({ graph, selectedId, onSelect }: ReviewGraphProps) {
+export function ReviewGraph({
+  graph,
+  selectedId,
+  onSelect,
+  outcomeTitle = "Approved outcomes",
+  showChecks = true,
+}: ReviewGraphProps) {
   const related = new Set(
     graph.edges
       .filter(({ from, to }) => from === selectedId || to === selectedId)
@@ -73,7 +81,7 @@ export function ReviewGraph({ graph, selectedId, onSelect }: ReviewGraphProps) {
   const groups = [
     {
       key: "outcomes",
-      title: "Approved outcomes",
+      title: outcomeTitle,
       icon: CheckCircle2,
       nodes: graph.outcomes,
       detail: (node: FactoryConceptualReviewDraft["outcomes"][number]) =>
@@ -96,16 +104,20 @@ export function ReviewGraph({ graph, selectedId, onSelect }: ReviewGraphProps) {
           ? `${node.side} · ${node.path}:${String(node.startLine)}–${String(node.endLine)}`
           : "",
     },
-    {
-      key: "check-evidence",
-      title: "Final checks",
-      icon: TerminalSquare,
-      nodes: graph.evidence.filter((node) => node.type === "check"),
-      detail: (node: FactoryConceptualReviewDraft["evidence"][number]) =>
-        node.type === "check"
-          ? `${node.relation} · check ${String(node.record.manifestPosition)}`
-          : "",
-    },
+    ...(showChecks
+      ? [
+          {
+            key: "check-evidence",
+            title: "Final checks",
+            icon: TerminalSquare,
+            nodes: graph.evidence.filter((node) => node.type === "check"),
+            detail: (node: FactoryConceptualReviewDraft["evidence"][number]) =>
+              node.type === "check"
+                ? `${node.relation} · check ${String(node.record.manifestPosition)}`
+                : "",
+          },
+        ]
+      : []),
     {
       key: "problems",
       title: "Problems",
@@ -116,12 +128,18 @@ export function ReviewGraph({ graph, selectedId, onSelect }: ReviewGraphProps) {
           ? `${node.type} · ${node.riskLevel} risk`
           : node.type.replaceAll("_", " "),
     },
-  ] as const;
+  ];
 
   return (
     <section className="min-w-0 space-y-3" aria-label="Requirements review graph">
       <div className="overflow-x-auto pb-2">
-        <div className="grid min-w-0 grid-cols-1 gap-2 lg:min-w-[72rem] lg:grid-cols-[minmax(12rem,1fr)_2rem_minmax(12rem,1fr)_2rem_minmax(12rem,1fr)_2rem_minmax(12rem,1fr)_2rem_minmax(12rem,1fr)]">
+        <div
+          className={`grid min-w-0 grid-cols-1 gap-2 ${
+            showChecks
+              ? "lg:min-w-[72rem] lg:grid-cols-[minmax(12rem,1fr)_2rem_minmax(12rem,1fr)_2rem_minmax(12rem,1fr)_2rem_minmax(12rem,1fr)_2rem_minmax(12rem,1fr)]"
+              : "lg:min-w-[58rem] lg:grid-cols-[minmax(12rem,1fr)_2rem_minmax(12rem,1fr)_2rem_minmax(12rem,1fr)_2rem_minmax(12rem,1fr)]"
+          }`}
+        >
           {groups.map((group, index) => {
             const Icon = group.icon;
             return (

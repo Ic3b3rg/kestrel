@@ -37,6 +37,7 @@ export * from "./factory-skills.js";
 export * from "./factory-start.js";
 export * from "./factory-feature-publication.js";
 export * from "./factory-conceptual-review.js";
+export * from "./external-conceptual-review.js";
 export * from "./factory-conceptual-review-workflows.js";
 export * from "./factory-review-corrections.js";
 export * from "./factory-feature-merge.js";

@@ -16,11 +16,12 @@ import { HostGitHubProjectPanel } from "./HostGitHubProjectPanel.js";
 import { AcquireObservedReviewRevisionForm } from "./AcquireObservedReviewRevisionForm.js";
 import { ChangeIntentEditor } from "./ChangeIntentEditor.js";
 import { ChangeOverviewPanel } from "./ChangeOverviewPanel.js";
+import { ExternalChangeIntentPanel } from "./ExternalChangeIntentPanel.js";
+import { ExternalPullRequestReviewPanel } from "./ExternalPullRequestReviewPanel.js";
 import { ShortObjectId } from "./ShortObjectId.js";
 import { ReviewPreparationPanel } from "./ReviewPreparationPanel.js";
 import { currentReviewRevision } from "./current-review-revision.js";
-import { PrReadinessSummary } from "./PrReadinessSummary.js";
-import { useProjectConnections, type ProjectConnections } from "./use-project-connections.js";
+import { useProjectConnections } from "./use-project-connections.js";
 
 interface ProjectInboxPanelProps {
   selectedProposalId?: string;
@@ -256,10 +257,10 @@ function RevisionFacts({
 
 function ChangeProposalRecord({
   canAcquire,
-  connections,
   project,
   changeProposal,
   disabled,
+  online,
   onAuthenticationError,
   onAvailable,
   onIntentCreated,
@@ -269,10 +270,10 @@ function ChangeProposalRecord({
   requiredRevisionId,
 }: {
   canAcquire: boolean;
-  connections: ProjectConnections;
   project: Project;
   changeProposal: ChangeProposal;
   disabled: boolean;
+  online: boolean;
   onAuthenticationError?: (error: unknown) => boolean;
   onAvailable: (result: ReviewRevisionAvailable) => void;
   onIntentCreated: (result: ChangeIntentVersionCreated) => void;
@@ -338,10 +339,15 @@ function ChangeProposalRecord({
   }
 
   return (
-    <section className="change-proposal" aria-labelledby={`proposal-${changeProposal.id}`}>
+    <section
+      className="change-proposal grid min-w-0 gap-4"
+      aria-labelledby={`proposal-${changeProposal.id}`}
+    >
       <div className="proposal-heading">
         <div>
-          <p className="proposal-state">{proposalStateLabels[changeProposal.proposalState]}</p>
+          <p className="proposal-state">
+            GitHub pull request · {proposalStateLabels[changeProposal.proposalState]}
+          </p>
           <h2 id={`proposal-${changeProposal.id}`}>
             <a href={changeProposal.canonicalUrl}>
               #{changeProposal.number} · {changeProposal.title}
@@ -358,82 +364,95 @@ function ChangeProposalRecord({
           Refresh PR #{changeProposal.number}
         </Button>
       </div>
-      <PrReadinessSummary
-        connections={connections}
-        disabled={disabled}
-        project={project}
-        proposal={changeProposal}
-        {...(requiredRevisionId === undefined ? {} : { requiredRevisionId })}
-        sourceCorrection={
-          <OpenProjectForm
-            disabled={disabled}
-            triggerLabel="Attach local repository"
-            onOpened={onProjectOpened}
-            {...(onAuthenticationError === undefined ? {} : { onAuthenticationError })}
-          />
-        }
+
+      <section
+        className="grid min-w-0 gap-4 rounded-xl border border-border bg-card p-4 sm:p-5"
+        aria-label="Pull request facts"
       >
         <div>
-          <dt>Observed base</dt>
-          <dd>
-            <span>{changeProposal.base.ref}</span>
-            <ShortObjectId label="Observed base" value={changeProposal.base.objectId} />
-          </dd>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            GitHub facts
+          </p>
+          <h3 className="mt-1 font-semibold">The pull request Kestrel will review</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            These fields come from GitHub. Refreshing them never starts work or changes the pull
+            request.
+          </p>
         </div>
-        <div>
-          <dt>Observed head</dt>
-          <dd>
-            <span>{changeProposal.head.ref}</span>
-            <ShortObjectId label="Observed head" value={changeProposal.head.objectId} />
-          </dd>
-        </div>
-        <div>
-          <dt>Author</dt>
-          <dd>{changeProposal.author?.login ?? "Unavailable from GitHub"}</dd>
-        </div>
-        <div>
-          <dt>Observed</dt>
-          <dd>
-            <time dateTime={changeProposal.observedAt}>
-              {formatObservedAt(changeProposal.observedAt)}
-            </time>
-          </dd>
-        </div>
-        <div>
-          <dt>
-            Change Intent
-            {changeProposal.changeIntent === null
-              ? null
-              : ` v${String(changeProposal.changeIntent.version)}`}
-          </dt>
-          <dd>
-            <strong>
-              {changeProposal.changeIntent?.resolution.state === "resolved"
-                ? "Resolved"
-                : "Action required"}
-            </strong>
-            <span>{changeProposal.changeIntent?.text ?? "Not confirmed"}</span>
-            <a href={`#intent-${changeProposal.id}`}>
-              {changeProposal.changeIntent?.resolution.state === "resolved"
-                ? "Edit Change Intent"
-                : "Resolve Change Intent"}
-            </a>
-          </dd>
-        </div>
-        <RevisionFacts revision={revision} />
-      </PrReadinessSummary>
+        <dl className="commit-pointer-list readiness-facts">
+          <div>
+            <dt>Repository</dt>
+            <dd>
+              <strong>
+                {project.repository === null
+                  ? projectLabel(project)
+                  : `${project.repository.owner}/${project.repository.name}`}
+              </strong>
+              <a href={changeProposal.canonicalUrl}>Open PR on GitHub</a>
+            </dd>
+          </div>
+          <div>
+            <dt>Branches</dt>
+            <dd>
+              <strong>
+                {changeProposal.base.ref} ← {changeProposal.head.ref}
+              </strong>
+              <span>Target and proposed branch</span>
+            </dd>
+          </div>
+          <div>
+            <dt>Observed base</dt>
+            <dd>
+              <span>{changeProposal.base.ref}</span>
+              <ShortObjectId label="Observed base" value={changeProposal.base.objectId} />
+            </dd>
+          </div>
+          <div>
+            <dt>Observed head</dt>
+            <dd>
+              <span>{changeProposal.head.ref}</span>
+              <ShortObjectId label="Observed head" value={changeProposal.head.objectId} />
+              <span>Observed {formatObservedAt(changeProposal.observedAt)}</span>
+            </dd>
+          </div>
+          <div>
+            <dt>Author</dt>
+            <dd>{changeProposal.author?.login ?? "Unavailable from GitHub"}</dd>
+          </div>
+          <RevisionFacts revision={revision} />
+        </dl>
+      </section>
+
+      <ExternalChangeIntentPanel
+        key={`${changeProposal.id}:${String(changeProposal.version)}`}
+        disabled={disabled}
+        projectId={projectId}
+        proposal={changeProposal}
+        {...(onAuthenticationError === undefined ? {} : { onAuthenticationError })}
+        onCreated={onIntentCreated}
+      />
+
       <ChangeOverviewPanel headingId={changeOverviewHeadingId} overview={changeOverview} />
-      <div id={`intent-${changeProposal.id}`} tabIndex={-1}>
-        <ChangeIntentEditor
-          key={`${changeProposal.id}:${String(changeProposal.version)}`}
-          disabled={disabled}
-          projectId={projectId}
-          proposal={changeProposal}
-          {...(onAuthenticationError === undefined ? {} : { onAuthenticationError })}
-          onCreated={onIntentCreated}
-        />
-      </div>
-      <div id={`acquire-${changeProposal.id}`} tabIndex={-1}>
+
+      <section
+        id={`acquire-${changeProposal.id}`}
+        className="grid gap-3 rounded-xl border border-border bg-card p-4 sm:p-5"
+        aria-labelledby={`source-${changeProposal.id}`}
+        tabIndex={-1}
+      >
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            Exact source
+          </p>
+          <h3 id={`source-${changeProposal.id}`} className="mt-1 font-semibold">
+            {revision?.state === "available"
+              ? "Exact pull request revision retained"
+              : "Retain the exact pull request revision"}
+          </h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            The independent review reads this frozen source. It never reviews a moving branch.
+          </p>
+        </div>
         {canAcquire ? (
           <AcquireObservedReviewRevisionForm
             key={`${changeProposal.id}:${String(changeProposal.changeIntent?.version ?? 0)}:${revision?.id ?? "none"}:${revision?.state ?? "none"}`}
@@ -443,8 +462,29 @@ function ChangeProposalRecord({
             {...(onAuthenticationError === undefined ? {} : { onAuthenticationError })}
             onAvailable={onAvailable}
           />
+        ) : project.localRepositorySource?.state !== "attached" &&
+          revision?.state !== "available" ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="text-sm text-muted-foreground">
+              Attach the local repository so Kestrel can retain the exact commits.
+            </p>
+            <OpenProjectForm
+              disabled={disabled}
+              triggerLabel="Attach local repository"
+              onOpened={onProjectOpened}
+              {...(onAuthenticationError === undefined ? {} : { onAuthenticationError })}
+            />
+          </div>
         ) : null}
-      </div>
+      </section>
+
+      <ExternalPullRequestReviewPanel
+        changeProposalId={changeProposal.id}
+        disabled={disabled}
+        online={online}
+        projectId={projectId}
+        onAuthenticationError={onAuthenticationError ?? (() => false)}
+      />
     </section>
   );
 }
@@ -623,7 +663,6 @@ function ProjectRecord({
 
         {(selectedProposal === undefined ? [] : [selectedProposal]).map((changeProposal) => (
           <ChangeProposalRecord
-            connections={connections}
             project={project}
             canAcquire={
               project.localRepositorySource?.state === "attached" &&
@@ -631,6 +670,7 @@ function ProjectRecord({
             }
             changeProposal={changeProposal}
             disabled={unavailable}
+            online={props.online}
             key={changeProposal.id}
             projectId={project.id}
             {...(props.selectedRevisionId === undefined

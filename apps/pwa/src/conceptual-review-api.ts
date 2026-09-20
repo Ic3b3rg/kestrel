@@ -3,7 +3,8 @@ import {
   FactoryConceptualReviewCheckSchema,
   FactoryConceptualReviewCurrentSchema,
   FactoryConceptualReviewHistorySchema,
-  FactoryConceptualReviewPreparationSchema,
+  FactoryFeatureConceptualReviewPreparationSchema,
+  ExternalConceptualReviewPreparationSchema,
   FactoryConceptualReviewStartCommandSchema,
   FactoryConceptualReviewSourceCatalogSchema,
   FactoryConceptualReviewSourceLinesSchema,
@@ -13,7 +14,8 @@ import {
   type FactoryConceptualReviewCheckCatalog,
   type FactoryConceptualReviewCurrent,
   type FactoryConceptualReviewHistory,
-  type FactoryConceptualReviewPreparation,
+  type FactoryFeatureConceptualReviewPreparation,
+  type ExternalConceptualReviewPreparation,
   type FactoryConceptualReviewStartCommand,
   type FactoryConceptualReviewSourceCatalog,
   type FactoryConceptualReviewSourceLines,
@@ -26,6 +28,12 @@ function root(projectId: string, featureId: string): string {
   const project = KestrelIdSchema.parse(projectId);
   const feature = KestrelIdSchema.parse(featureId);
   return `/api/v1/projects/${encodeURIComponent(project)}/features/${encodeURIComponent(feature)}/review`;
+}
+
+function externalRoot(projectId: string, changeProposalId: string): string {
+  const project = KestrelIdSchema.parse(projectId);
+  const proposal = KestrelIdSchema.parse(changeProposalId);
+  return `/api/v1/projects/${encodeURIComponent(project)}/change-proposals/${encodeURIComponent(proposal)}/review`;
 }
 
 async function read<T>(
@@ -47,10 +55,10 @@ export function fetchFactoryConceptualReviewPreparation(
   projectId: string,
   featureId: string,
   signal?: AbortSignal,
-): Promise<FactoryConceptualReviewPreparation> {
+): Promise<FactoryFeatureConceptualReviewPreparation> {
   return read(
     `${root(projectId, featureId)}/preparation`,
-    FactoryConceptualReviewPreparationSchema,
+    FactoryFeatureConceptualReviewPreparationSchema,
     "Conceptual Review preparation",
     signal,
   );
@@ -263,6 +271,116 @@ export function fetchFactoryConceptualReviewArtifactCheck(
     `${root(projectId, featureId)}/artifacts/${encodeURIComponent(KestrelIdSchema.parse(artifactId))}/checks/${encodeURIComponent(KestrelIdSchema.parse(evidenceId))}`,
     FactoryConceptualReviewCheckSchema,
     "Conceptual Review artifact check result",
+    signal,
+  );
+}
+
+export function fetchExternalConceptualReviewPreparation(
+  projectId: string,
+  changeProposalId: string,
+  signal?: AbortSignal,
+): Promise<ExternalConceptualReviewPreparation> {
+  return read(
+    `${externalRoot(projectId, changeProposalId)}/preparation`,
+    ExternalConceptualReviewPreparationSchema,
+    "pull request review preparation",
+    signal,
+  );
+}
+
+export async function startExternalConceptualReview(
+  projectId: string,
+  changeProposalId: string,
+  command: FactoryConceptualReviewStartCommand,
+  signal?: AbortSignal,
+): Promise<FactoryConceptualReviewWorkflowRead> {
+  const response = await fetch(`${externalRoot(projectId, changeProposalId)}/workflows`, {
+    credentials: "same-origin",
+    method: "POST",
+    headers: authenticatedMutationHeaders(),
+    body: JSON.stringify(FactoryConceptualReviewStartCommandSchema.parse(command)),
+    signal: signal ?? null,
+  });
+  return requireJson(response, FactoryConceptualReviewWorkflowReadSchema, "pull request review");
+}
+
+export function fetchCurrentExternalConceptualReview(
+  projectId: string,
+  changeProposalId: string,
+  signal?: AbortSignal,
+): Promise<FactoryConceptualReviewCurrent> {
+  return read(
+    `${externalRoot(projectId, changeProposalId)}/workflows/current`,
+    FactoryConceptualReviewCurrentSchema,
+    "current pull request review",
+    signal,
+  );
+}
+
+export function fetchExternalConceptualReviewWorkflow(
+  projectId: string,
+  changeProposalId: string,
+  workflowId: string,
+  signal?: AbortSignal,
+): Promise<FactoryConceptualReviewWorkflowRead> {
+  return read(
+    `${externalRoot(projectId, changeProposalId)}/workflows/${encodeURIComponent(KestrelIdSchema.parse(workflowId))}`,
+    FactoryConceptualReviewWorkflowReadSchema,
+    "pull request review",
+    signal,
+  );
+}
+
+export function fetchExternalConceptualReviewHistory(
+  projectId: string,
+  changeProposalId: string,
+  offset = 0,
+  limit = 20,
+  signal?: AbortSignal,
+): Promise<FactoryConceptualReviewHistory> {
+  const query = new URLSearchParams({ offset: String(offset), limit: String(limit) });
+  return read(
+    `${externalRoot(projectId, changeProposalId)}/artifacts?${query.toString()}`,
+    FactoryConceptualReviewHistorySchema,
+    "pull request review history",
+    signal,
+  );
+}
+
+export function fetchExternalConceptualReviewArtifact(
+  projectId: string,
+  changeProposalId: string,
+  artifactId: string,
+  signal?: AbortSignal,
+): Promise<FactoryConceptualReviewWorkflowRead> {
+  return read(
+    `${externalRoot(projectId, changeProposalId)}/artifacts/${encodeURIComponent(KestrelIdSchema.parse(artifactId))}`,
+    FactoryConceptualReviewWorkflowReadSchema,
+    "saved pull request review",
+    signal,
+  );
+}
+
+export function fetchExternalConceptualReviewArtifactSourceLines(
+  projectId: string,
+  changeProposalId: string,
+  artifactId: string,
+  side: "base" | "head",
+  path: string,
+  startLine: number,
+  endLine: number,
+  signal?: AbortSignal,
+): Promise<FactoryConceptualReviewSourceLines> {
+  const query = new URLSearchParams({
+    side,
+    path,
+    startLine: String(startLine),
+    endLine: String(endLine),
+  });
+  return read(
+    `${externalRoot(projectId, changeProposalId)}/artifacts/${encodeURIComponent(KestrelIdSchema.parse(artifactId))}/source/lines?${query.toString()}`,
+    FactoryConceptualReviewSourceLinesSchema,
+    "saved pull request review source lines",
     signal,
   );
 }

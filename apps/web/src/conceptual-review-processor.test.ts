@@ -463,6 +463,65 @@ it("reads source omitted from the prompt, validates it, and publishes once after
   expect(db.fail).not.toHaveBeenCalled();
 });
 
+it("reviews an existing pull request from retained source without inventing checks or provider writes", async () => {
+  const { processor, runTurn, observePullRequest } = arrange();
+  db.claim.mockResolvedValue({
+    workflowId,
+    attemptId,
+    attemptNumber: 1,
+    preparation: {
+      ...preparation,
+      featureId: null,
+      basis: {
+        ...preparation.basis,
+        outcomes: [
+          {
+            key: "search",
+            outcome: "Search updates the results",
+            intent: { kind: "pull_request_stated", label: "GitHub title" },
+          },
+        ],
+        provenance: {
+          kind: "change_intent",
+          changeIntentId: featureId,
+          version: 1,
+          sourceDigest: digest,
+          resolution: "unresolved",
+          sources: [{ kind: "pull_request_stated", label: "GitHub title" }],
+        },
+        limitations: ["No acceptance outcomes were confirmed by the Operator."],
+      },
+      publication: {
+        ...preparation.publication,
+        kind: "external_pull_request",
+        certificate: null,
+      },
+      evidence: {
+        source: {
+          baseCommitId: "a".repeat(40),
+          headCommitId: "b".repeat(40),
+          headTreeId: "c".repeat(40),
+          retainedManifestDigest: digest,
+        },
+        checks: null,
+      },
+    },
+  });
+
+  await processor.process({ workflowId });
+
+  const prompt = runTurn.mock.calls[0]?.[0].prompt ?? "";
+  expect(prompt).toContain("exact retained pull request revision");
+  expect(prompt).toContain("No executed checks are linked");
+  expect(prompt).toContain("No acceptance outcomes were confirmed by the Operator.");
+  expect(db.readChecks).not.toHaveBeenCalled();
+  expect(db.readCheck).not.toHaveBeenCalled();
+  expect(observePullRequest).not.toHaveBeenCalled();
+  expect(db.observeHead).not.toHaveBeenCalled();
+  expect(db.publish).toHaveBeenCalledOnce();
+  expect(db.fail).not.toHaveBeenCalled();
+});
+
 it("publishes only server-resolved final-check provenance and never puts output in the prompt", async () => {
   const checkDraft = {
     ...modelDraft,

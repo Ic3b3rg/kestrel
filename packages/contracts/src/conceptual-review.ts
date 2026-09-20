@@ -7,7 +7,7 @@ import {
 } from "./factory-feature-publication.js";
 import { FeaturePlanDocumentSchema } from "./factory-plan.js";
 import { FactoryFeatureVerificationSchema } from "./factory-verification.js";
-import { GitObjectIdSchema, KestrelIdSchema } from "./v1.js";
+import { GitObjectIdSchema, KestrelIdSchema, RepositorySnapshotSchema } from "./v1.js";
 
 const Sha256DigestSchema = z.string().regex(/^[a-f0-9]{64}$/u);
 const SafeRetainedPathSchema = z
@@ -31,20 +31,22 @@ export const ConceptualReviewIntentKindSchema = z.enum([
 ]);
 export type ConceptualReviewIntentKind = z.infer<typeof ConceptualReviewIntentKindSchema>;
 
+const ConceptualReviewOutcomesSchema = z
+  .array(
+    FeaturePlanDocumentSchema.shape.acceptance.element.extend({
+      intent: z.strictObject({
+        kind: ConceptualReviewIntentKindSchema,
+        label: z.string().min(1).max(256),
+      }),
+    }),
+  )
+  .min(1)
+  .max(50);
+
 export const FactoryConceptualReviewBasisSchema = z.strictObject({
   objective: FeaturePlanDocumentSchema.shape.objective,
   scope: FeaturePlanDocumentSchema.shape.scope,
-  outcomes: z
-    .array(
-      FeaturePlanDocumentSchema.shape.acceptance.element.extend({
-        intent: z.strictObject({
-          kind: ConceptualReviewIntentKindSchema,
-          label: z.string().min(1).max(256),
-        }),
-      }),
-    )
-    .min(1)
-    .max(40),
+  outcomes: ConceptualReviewOutcomesSchema,
   provenance: z.strictObject({
     planVersionId: KestrelIdSchema,
     version: z.int().min(1).max(200),
@@ -56,6 +58,29 @@ export const FactoryConceptualReviewBasisSchema = z.strictObject({
   }),
 });
 export type FactoryConceptualReviewBasis = z.infer<typeof FactoryConceptualReviewBasisSchema>;
+
+export const ExternalConceptualReviewBasisSchema = z.strictObject({
+  objective: FeaturePlanDocumentSchema.shape.objective,
+  scope: FeaturePlanDocumentSchema.shape.scope,
+  outcomes: ConceptualReviewOutcomesSchema,
+  provenance: z.strictObject({
+    kind: z.literal("change_intent"),
+    changeIntentId: KestrelIdSchema,
+    version: z.int().min(1).max(Number.MAX_SAFE_INTEGER),
+    sourceDigest: Sha256DigestSchema,
+    resolution: z.enum(["resolved", "unresolved"]),
+    sources: z
+      .array(
+        z.strictObject({
+          kind: ConceptualReviewIntentKindSchema.exclude(["approved_feature_plan"]),
+          label: z.string().min(1).max(256),
+        }),
+      )
+      .max(20),
+  }),
+  limitations: z.array(z.string().trim().min(1).max(4000)).max(24),
+});
+export type ExternalConceptualReviewBasis = z.infer<typeof ExternalConceptualReviewBasisSchema>;
 
 const FactoryConceptualReviewPublicationSchema = z
   .strictObject({
@@ -79,17 +104,133 @@ const FactoryConceptualReviewPublicationSchema = z
     }
   });
 
+const ExternalConceptualReviewPullRequestSchema = z.strictObject({
+  repository: z.strictObject({
+    id: RepositorySnapshotSchema.shape.providerId,
+    owner: RepositorySnapshotSchema.shape.owner,
+    name: RepositorySnapshotSchema.shape.name,
+  }),
+  author: z.string().min(1).max(100).nullable(),
+  number: z.int().positive().max(2_147_483_647),
+  url: z.url().max(512),
+  state: z.enum(["open", "closed", "merged", "unknown"]),
+  title: z.string().min(1).max(512),
+  body: z.string().max(65_536).nullable(),
+  baseRef: z.string().min(1).max(512),
+  headRef: z.string().min(1).max(512),
+  baseCommitId: GitObjectIdSchema,
+  headCommitId: GitObjectIdSchema,
+});
+
+const ExternalConceptualReviewPublicationSchema = z
+  .strictObject({
+    kind: z.literal("external_pull_request"),
+    pullRequest: ExternalConceptualReviewPullRequestSchema,
+    revision: FactoryFeaturePublicationReviewSchema.shape.revision,
+    retainedManifestDigest: Sha256DigestSchema,
+    certificate: z.null(),
+  })
+  .superRefine((value, context) => {
+    if (
+      value.revision.state !== "available" ||
+      value.pullRequest.baseCommitId !== value.revision.base.objectId ||
+      value.pullRequest.headCommitId !== value.revision.head.objectId
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "External Review publication must identify one exact retained revision",
+      });
+    }
+  });
+
 export const FactoryConceptualReviewBlockerSchema = z.enum([
   "publication_not_ready",
   "approved_plan_mismatch",
   "certificate_mismatch",
   "exact_revision_mismatch",
+  "change_intent_not_available",
   "model_not_selected",
   "review_runtime_unavailable",
 ]);
 export type FactoryConceptualReviewBlocker = z.infer<typeof FactoryConceptualReviewBlockerSchema>;
 
-export const FactoryConceptualReviewPreparationSchema = z
+const ConceptualReviewConfigurationSchema = z.strictObject({
+  model: z.strictObject({
+    route: z.literal("codex_subscription"),
+    modelId: z
+      .string()
+      .min(1)
+      .max(128)
+      .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/u)
+      .nullable(),
+  }),
+  runtimePolicy: z.strictObject({
+    kind: z.literal("retained_source_review"),
+    version: z.literal(1),
+    adapter: z.literal("codex_app_server"),
+    adapterVersion: z.literal(1),
+    containerImage: z
+      .string()
+      .regex(/^sha256:[a-f0-9]{64}$/u)
+      .nullable(),
+    containerUser: z
+      .string()
+      .regex(/^[1-9]\d{0,9}:[1-9]\d{0,9}$/u)
+      .nullable(),
+    codexExecutable: z.string().min(1).max(4096).regex(/^\//u).nullable(),
+    codexExecutableDigest: Sha256DigestSchema.nullable(),
+    codexVersion: z
+      .string()
+      .min(1)
+      .max(128)
+      .regex(/^\d+\.\d+\.[0-9A-Za-z.+-]+$/u)
+      .nullable(),
+    codexProtocol: z.literal("app_server_v2"),
+    sourceAccess: z.literal("retained_read_only"),
+    networkAccess: z.literal(false),
+    writeAccess: z.literal(false),
+    status: z.enum(["available", "unavailable"]),
+  }),
+  resources: z.strictObject({
+    maximumAttempts: z.int().min(1).max(10),
+    timeoutSeconds: z.int().min(60).max(7200),
+    maximumEvidenceItems: z.int().min(1).max(10_000),
+    maximumWorkspaceFiles: z.int().min(1).max(100_000),
+    maximumWorkspaceBytes: z
+      .int()
+      .min(1024)
+      .max(4 * 1024 * 1024 * 1024),
+    maximumGraphNodes: z.int().min(1).max(10_000),
+    maximumOutputBytes: z
+      .int()
+      .min(1024)
+      .max(16 * 1024 * 1024),
+    containerPidsLimit: z.literal(128),
+    containerMemoryBytes: z.literal(1024 * 1024 * 1024),
+    containerNanoCpus: z.literal(2_000_000_000),
+    containerTmpfsBytes: z.literal(64 * 1024 * 1024),
+  }),
+});
+
+const ConceptualReviewReadinessSchema = z.strictObject({
+  state: z.enum(["ready", "blocked"]),
+  startAllowed: z.boolean(),
+  blockers: z.array(FactoryConceptualReviewBlockerSchema).max(6),
+});
+
+const ConceptualReviewSourceEvidenceInputSchema = z.strictObject({
+  baseCommitId: GitObjectIdSchema,
+  headCommitId: GitObjectIdSchema,
+  retainedManifestDigest: Sha256DigestSchema,
+  limits: z.strictObject({
+    catalogPageEntries: z.literal(200),
+    fileBytes: z.literal(512 * 1024),
+    lineRange: z.literal(200),
+    responseBytes: z.literal(32 * 1024),
+  }),
+});
+
+export const FactoryFeatureConceptualReviewPreparationSchema = z
   .strictObject({
     schemaVersion: z.literal(1),
     projectId: KestrelIdSchema,
@@ -100,17 +241,7 @@ export const FactoryConceptualReviewPreparationSchema = z
     publication: FactoryConceptualReviewPublicationSchema.nullable(),
     evidence: z
       .strictObject({
-        source: z.strictObject({
-          baseCommitId: GitObjectIdSchema,
-          headCommitId: GitObjectIdSchema,
-          retainedManifestDigest: Sha256DigestSchema,
-          limits: z.strictObject({
-            catalogPageEntries: z.literal(200),
-            fileBytes: z.literal(512 * 1024),
-            lineRange: z.literal(200),
-            responseBytes: z.literal(32 * 1024),
-          }),
-        }),
+        source: ConceptualReviewSourceEvidenceInputSchema,
         checks: z.strictObject({
           runId: KestrelIdSchema,
           manifestDigest: Sha256DigestSchema,
@@ -122,68 +253,8 @@ export const FactoryConceptualReviewPreparationSchema = z
         }),
       })
       .nullable(),
-    configuration: z.strictObject({
-      model: z.strictObject({
-        route: z.literal("codex_subscription"),
-        modelId: z
-          .string()
-          .min(1)
-          .max(128)
-          .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/u)
-          .nullable(),
-      }),
-      runtimePolicy: z.strictObject({
-        kind: z.literal("retained_source_review"),
-        version: z.literal(1),
-        adapter: z.literal("codex_app_server"),
-        adapterVersion: z.literal(1),
-        containerImage: z
-          .string()
-          .regex(/^sha256:[a-f0-9]{64}$/u)
-          .nullable(),
-        containerUser: z
-          .string()
-          .regex(/^[1-9]\d{0,9}:[1-9]\d{0,9}$/u)
-          .nullable(),
-        codexExecutable: z.string().min(1).max(4096).regex(/^\//u).nullable(),
-        codexExecutableDigest: Sha256DigestSchema.nullable(),
-        codexVersion: z
-          .string()
-          .min(1)
-          .max(128)
-          .regex(/^\d+\.\d+\.[0-9A-Za-z.+-]+$/u)
-          .nullable(),
-        codexProtocol: z.literal("app_server_v2"),
-        sourceAccess: z.literal("retained_read_only"),
-        networkAccess: z.literal(false),
-        writeAccess: z.literal(false),
-        status: z.enum(["available", "unavailable"]),
-      }),
-      resources: z.strictObject({
-        maximumAttempts: z.int().min(1).max(10),
-        timeoutSeconds: z.int().min(60).max(7200),
-        maximumEvidenceItems: z.int().min(1).max(10_000),
-        maximumWorkspaceFiles: z.int().min(1).max(100_000),
-        maximumWorkspaceBytes: z
-          .int()
-          .min(1024)
-          .max(4 * 1024 * 1024 * 1024),
-        maximumGraphNodes: z.int().min(1).max(10_000),
-        maximumOutputBytes: z
-          .int()
-          .min(1024)
-          .max(16 * 1024 * 1024),
-        containerPidsLimit: z.literal(128),
-        containerMemoryBytes: z.literal(1024 * 1024 * 1024),
-        containerNanoCpus: z.literal(2_000_000_000),
-        containerTmpfsBytes: z.literal(64 * 1024 * 1024),
-      }),
-    }),
-    readiness: z.strictObject({
-      state: z.enum(["ready", "blocked"]),
-      startAllowed: z.boolean(),
-      blockers: z.array(FactoryConceptualReviewBlockerSchema).max(6),
-    }),
+    configuration: ConceptualReviewConfigurationSchema,
+    readiness: ConceptualReviewReadinessSchema,
   })
   .superRefine((value, context) => {
     const blockers = new Set(value.readiness.blockers);
@@ -249,6 +320,87 @@ export const FactoryConceptualReviewPreparationSchema = z
       });
     }
   });
+
+export const ExternalConceptualReviewPreparationSchema = z
+  .strictObject({
+    schemaVersion: z.literal(1),
+    projectId: KestrelIdSchema,
+    featureId: z.null(),
+    changeProposalId: KestrelIdSchema,
+    preparationDigest: Sha256DigestSchema.nullable(),
+    basis: ExternalConceptualReviewBasisSchema.nullable(),
+    publication: ExternalConceptualReviewPublicationSchema.nullable(),
+    evidence: z
+      .strictObject({
+        source: ConceptualReviewSourceEvidenceInputSchema.extend({
+          headTreeId: GitObjectIdSchema,
+        }),
+        checks: z.null(),
+      })
+      .nullable(),
+    configuration: ConceptualReviewConfigurationSchema,
+    readiness: ConceptualReviewReadinessSchema,
+  })
+  .superRefine((value, context) => {
+    const blockers = new Set(value.readiness.blockers);
+    if (blockers.size !== value.readiness.blockers.length) {
+      context.addIssue({ code: "custom", message: "Review blockers must be unique" });
+    }
+    const completeInputs =
+      value.basis !== null &&
+      value.publication !== null &&
+      value.evidence !== null &&
+      value.configuration.model.modelId !== null;
+    if (value.preparationDigest !== null && !completeInputs) {
+      context.addIssue({
+        code: "custom",
+        message: "A Review preparation digest requires every immutable input",
+      });
+    }
+    if (
+      value.publication !== null &&
+      value.evidence !== null &&
+      (value.evidence.source.baseCommitId !== value.publication.revision.base.objectId ||
+        value.evidence.source.headCommitId !== value.publication.revision.head.objectId ||
+        value.evidence.source.retainedManifestDigest !== value.publication.retainedManifestDigest)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Review evidence must be bound to the retained pull request revision",
+      });
+    }
+    const ready =
+      completeInputs &&
+      value.preparationDigest !== null &&
+      value.configuration.runtimePolicy.status === "available" &&
+      value.configuration.runtimePolicy.containerImage !== null &&
+      value.configuration.runtimePolicy.containerUser !== null &&
+      value.configuration.runtimePolicy.codexExecutable !== null &&
+      value.configuration.runtimePolicy.codexExecutableDigest !== null &&
+      value.configuration.runtimePolicy.codexVersion !== null &&
+      value.readiness.blockers.length === 0;
+    if (
+      (value.readiness.state === "ready") !== ready ||
+      value.readiness.startAllowed !== ready ||
+      (value.readiness.state === "blocked" && value.readiness.blockers.length === 0)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Review readiness must reflect its exact inputs and runtime",
+      });
+    }
+  });
+
+export const FactoryConceptualReviewPreparationSchema = z.union([
+  FactoryFeatureConceptualReviewPreparationSchema,
+  ExternalConceptualReviewPreparationSchema,
+]);
+export type FactoryFeatureConceptualReviewPreparation = z.infer<
+  typeof FactoryFeatureConceptualReviewPreparationSchema
+>;
+export type ExternalConceptualReviewPreparation = z.infer<
+  typeof ExternalConceptualReviewPreparationSchema
+>;
 export type FactoryConceptualReviewPreparation = z.infer<
   typeof FactoryConceptualReviewPreparationSchema
 >;
@@ -371,7 +523,7 @@ const FactoryConceptualReviewBehavioralStepSchema = z.strictObject({
   title: ReviewTextSchema,
   description: ReviewTextSchema,
   change: z.enum(["added", "modified", "removed", "context"]),
-  outcomeKeys: z.array(FeaturePlanDocumentSchema.shape.acceptance.element.shape.key).min(1).max(40),
+  outcomeKeys: z.array(FeaturePlanDocumentSchema.shape.acceptance.element.shape.key).min(1).max(50),
   evidenceIds: z.array(FactoryConceptualReviewNodeIdSchema).min(1).max(80),
 });
 export const FactoryConceptualReviewSourceEvidenceSchema = z
@@ -480,7 +632,7 @@ export const FactoryConceptualReviewDraftSchema = z
   .strictObject({
     result: z.enum(["complete", "partial"]),
     summary: ReviewTextSchema,
-    outcomes: z.array(FactoryConceptualReviewOutcomeSchema).min(1).max(40),
+    outcomes: z.array(FactoryConceptualReviewOutcomeSchema).min(1).max(50),
     behavioralSteps: z.array(FactoryConceptualReviewBehavioralStepSchema).max(800),
     evidence: z.array(FactoryConceptualReviewEvidenceSchema).max(800),
     problems: z.array(FactoryConceptualReviewProblemSchema).max(800),
@@ -672,6 +824,12 @@ export const FactoryConceptualReviewArtifactSchema = z
   .superRefine((value, context) => {
     if (value.status !== value.graph.result)
       context.addIssue({ code: "custom", message: "Artifact status must match graph coverage" });
+    const hasCheckEvidence = value.graph.evidence.some(({ type }) => type === "check");
+    if ((value.evidenceScope.executedChecks === "linked_final_certificate") !== hasCheckEvidence)
+      context.addIssue({
+        code: "custom",
+        message: "Artifact check evidence must match its declared evidence scope",
+      });
     if (value.evidenceScope.executedChecks === "not_linked" && value.status !== "partial")
       context.addIssue({
         code: "custom",
@@ -720,7 +878,7 @@ export const FactoryConceptualReviewWorkflowSchema = z.strictObject({
   id: KestrelIdSchema,
   requestId: z.uuid(),
   projectId: KestrelIdSchema,
-  featureId: KestrelIdSchema,
+  featureId: KestrelIdSchema.nullable(),
   changeProposalId: KestrelIdSchema,
   inputDigest: Sha256DigestSchema,
   reviewRevisionId: KestrelIdSchema,

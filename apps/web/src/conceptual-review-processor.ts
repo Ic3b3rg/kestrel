@@ -83,11 +83,21 @@ function checkCatalogForPrompt(
   preparation: FactoryConceptualReviewPreparation,
   checks: FactoryConceptualReviewCheckSummary[],
 ) {
+  const expected = preparation.evidence?.checks;
+  if (expected === null || expected === undefined) {
+    return {
+      available: false as const,
+      total: 0,
+      reason: "No final execution certificate is linked to this pull request.",
+      checks: [],
+    };
+  }
   const first = checks[0];
   return {
+    available: true as const,
     total: checks.length,
-    runId: preparation.evidence?.checks.runId,
-    manifestDigest: preparation.evidence?.checks.manifestDigest,
+    runId: expected.runId,
+    manifestDigest: expected.manifestDigest,
     headCommitId: first?.headCommitId,
     treeId: first?.treeId,
     outputIncluded: false,
@@ -131,9 +141,14 @@ function reviewPrompt(
 ): string {
   if (preparation.basis === null || preparation.publication === null)
     throw new FactoryConceptualReviewValidationError("invalid_output");
+  const external = preparation.featureId === null;
   const prompt = [
-    "Review the exact frozen Feature source independently. Source is available only in /workspace/base and /workspace/head and is intentionally absent from this prompt. Inspect it with read-only shell commands before answering.",
-    "Return JSON matching the supplied schema. Account for every approved outcome exactly once and copy its approved outcome text verbatim into outcome.title. Link mapped outcomes to human Behavioral Steps, each step to exact source and relevant final-check evidence, and evidence to any problems.",
+    external
+      ? "Review this exact retained pull request revision independently. Source is available only in /workspace/base and /workspace/head and is intentionally absent from this prompt. Inspect it with read-only shell commands before answering."
+      : "Review the exact frozen Feature source independently. Source is available only in /workspace/base and /workspace/head and is intentionally absent from this prompt. Inspect it with read-only shell commands before answering.",
+    external
+      ? "Return JSON matching the supplied schema. Account for every stated intent outcome exactly once and copy its outcome text verbatim into outcome.title. Link mapped outcomes to human Behavioral Steps, each step to exact source evidence, and evidence to any problems. The intent can be incomplete or inferred; preserve that limitation rather than treating it as an approved Factory plan."
+      : "Return JSON matching the supplied schema. Account for every approved outcome exactly once and copy its approved outcome text verbatim into outcome.title. Link mapped outcomes to human Behavioral Steps, each step to exact source and relevant final-check evidence, and evidence to any problems.",
     'Treat /workspace/base and /workspace/head as side roots. In every evidence object, path is relative to that side root, for example path:"src/file.ts". Never emit /workspace, base/, head/, an absolute path, or .git in path.',
     "Graph consistency is mandatory: mapped outcomes must name at least one Behavioral Step ID and have matching implemented_by edges; every Behavioral Step must name its outcome keys and source evidence IDs and have matching supported_by edges; every problem evidence ID must have a matching reveals edge from that evidence to the problem.",
     "A mapped outcome must reach at least one Added, Modified, or Removed Behavioral Step; Context alone cannot establish delivery. Added and Modified steps require head evidence. Removed steps require base evidence.",
@@ -142,12 +157,22 @@ function reviewPrompt(
     "Every problem object must include every schema field. Use null for fields that do not apply to that problem type.",
     "Every evidence object must include every schema field. For source evidence set evidenceId, relation, and proposition to null. For check evidence set side, path, startLine, and endLine to null.",
     "Use inclusive source ranges of at most 200 lines. Never invent a path or range. Do not execute project code or implement fixes.",
-    "The final-check catalog contains every check with server-resolved metadata; stdout and stderr are intentionally omitted. Commands are bounded JSON previews plus a digest, and command.truncated says when the preview is incomplete. Reference a check only by its exact evidenceId. State one narrow proposition and whether the recorded execution supports or refutes it. A passed command does not by itself prove a product behavior: the semantic link remains your stated judgment and its limitations must be explicit. If a truncated command prevents a sound link, keep the requirement Gap or Unclear.",
-    "Use result:complete only when every outcome is mapped or not applicable, every changed Behavioral Step has exact source and a genuinely relevant supporting final check, no referenced check refutes it, and no Unverified Concern remains. Otherwise use result:partial and keep inadequately supported requirements Gap or Unclear, or disclose an Unverified Concern.",
+    external
+      ? "No executed checks are linked to this review. Do not emit check evidence. You may map an outcome when exact source supports the changed behavior, but always use result:partial and disclose that runtime behavior was not verified."
+      : "The final-check catalog contains every check with server-resolved metadata; stdout and stderr are intentionally omitted. Commands are bounded JSON previews plus a digest, and command.truncated says when the preview is incomplete. Reference a check only by its exact evidenceId. State one narrow proposition and whether the recorded execution supports or refutes it. A passed command does not by itself prove a product behavior: the semantic link remains your stated judgment and its limitations must be explicit. If a truncated command prevents a sound link, keep the requirement Gap or Unclear.",
+    external
+      ? "The review is necessarily partial because it has no linked final execution certificate. Distinguish source-backed findings from unverified concerns and include the supplied intent limitations in your reasoning."
+      : "Use result:complete only when every outcome is mapped or not applicable, every changed Behavioral Step has exact source and a genuinely relevant supporting final check, no referenced check refutes it, and no Unverified Concern remains. Otherwise use result:partial and keep inadequately supported requirements Gap or Unclear, or disclose an Unverified Concern.",
     JSON.stringify({
       objective: preparation.basis.objective,
       scope: preparation.basis.scope,
-      approvedOutcomes: preparation.basis.outcomes.map(({ key, outcome }) => ({ key, outcome })),
+      intentAuthority: external ? preparation.basis.provenance : "approved_feature_plan",
+      intentLimitations: "limitations" in preparation.basis ? preparation.basis.limitations : [],
+      outcomes: preparation.basis.outcomes.map(({ key, outcome, intent }) => ({
+        key,
+        outcome,
+        intent,
+      })),
       revision: {
         baseCommitId: preparation.publication.revision.base.objectId,
         headCommitId: preparation.publication.revision.head.objectId,
@@ -167,7 +192,9 @@ async function readCompleteCheckCatalog(
   workflowId: string,
 ): Promise<FactoryConceptualReviewCheckSummary[]> {
   const expected = preparation.evidence?.checks;
-  if (expected === undefined) throw new FactoryConceptualReviewValidationError("check_unavailable");
+  if (expected === null && preparation.featureId === null) return [];
+  if (expected === undefined || expected === null || preparation.featureId === null)
+    throw new FactoryConceptualReviewValidationError("check_unavailable");
   const checks: FactoryConceptualReviewCheckSummary[] = [];
   let offset = 0;
   do {
@@ -456,6 +483,7 @@ async function runReview(
       string,
       Awaited<ReturnType<typeof readFactoryConceptualReviewWorkflowCheck>>
     >();
+    const reviewFeatureId = claim.preparation.featureId;
     assertReviewActive(signal);
     const draft = await validateFactoryConceptualReview({
       preparation: claim.preparation,
@@ -473,19 +501,23 @@ async function runReview(
         return source;
       },
       readChange: (evidence) => sourceReader.readChange(evidence),
-      readCheck: async (evidenceId) => {
-        const retained = resolvedChecks.get(evidenceId);
-        if (retained !== undefined) return retained;
-        const check = await readFactoryConceptualReviewWorkflowCheck(
-          options.pool,
-          claim.preparation.projectId,
-          claim.preparation.featureId,
-          workflowId,
-          evidenceId,
-        );
-        resolvedChecks.set(evidenceId, check);
-        return check;
-      },
+      ...(reviewFeatureId === null
+        ? {}
+        : {
+            readCheck: async (evidenceId: string) => {
+              const retained = resolvedChecks.get(evidenceId);
+              if (retained !== undefined) return retained;
+              const check = await readFactoryConceptualReviewWorkflowCheck(
+                options.pool,
+                claim.preparation.projectId,
+                reviewFeatureId,
+                workflowId,
+                evidenceId,
+              );
+              resolvedChecks.set(evidenceId, check);
+              return check;
+            },
+          }),
     });
     assertReviewActive(signal);
     await workspace.verify(signal);
@@ -501,27 +533,29 @@ async function runReview(
       claim,
       DATABASE_MUTATION_TIMEOUT_MS,
     );
-    const pullRequest = claim.preparation.publication?.pullRequest;
-    if (pullRequest === undefined)
-      throw new FactoryConceptualReviewValidationError("invalid_output");
-    try {
-      const observation = await (
-        options.github ?? createFactoryFeatureGitHubAdapter()
-      ).observePullRequest(
-        { repository: pullRequest.repository, account: pullRequest.author },
-        pullRequest,
-        signal,
-      );
-      assertReviewActive(signal);
-      await observeFactoryConceptualReviewHead(
-        options.pool,
-        claim,
-        observation.headCommitId,
-        DATABASE_MUTATION_TIMEOUT_MS,
-      );
-    } catch (error) {
-      assertReviewActive(signal);
-      if (!(error instanceof FactoryGitHubError)) throw error;
+    if (claim.preparation.featureId !== null) {
+      const pullRequest = claim.preparation.publication?.pullRequest;
+      if (pullRequest === undefined)
+        throw new FactoryConceptualReviewValidationError("invalid_output");
+      try {
+        const observation = await (
+          options.github ?? createFactoryFeatureGitHubAdapter()
+        ).observePullRequest(
+          { repository: pullRequest.repository, account: pullRequest.author },
+          pullRequest,
+          signal,
+        );
+        assertReviewActive(signal);
+        await observeFactoryConceptualReviewHead(
+          options.pool,
+          claim,
+          observation.headCommitId,
+          DATABASE_MUTATION_TIMEOUT_MS,
+        );
+      } catch (error) {
+        assertReviewActive(signal);
+        if (!(error instanceof FactoryGitHubError)) throw error;
+      }
     }
     assertReviewActive(signal);
     await publishFactoryConceptualReview(

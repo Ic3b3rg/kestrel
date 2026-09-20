@@ -38,10 +38,11 @@ export function ConceptualReviewPanel({
   projectId: string;
   featureId: string;
   loadSourceLines?: typeof fetchFactoryConceptualReviewArtifactSourceLines;
-  loadCheck?: typeof fetchFactoryConceptualReviewArtifactCheck;
+  loadCheck?: typeof fetchFactoryConceptualReviewArtifactCheck | null;
   onAuthenticationError: (error: unknown) => boolean;
 }) {
   const artifact = review.artifact;
+  const external = review.workflow.featureId === null;
   const [selectedId, setSelectedId] = useState(artifact?.graph.outcomes[0]?.id ?? "");
   useEffect(() => {
     setSelectedId(artifact?.graph.outcomes[0]?.id ?? "");
@@ -99,7 +100,9 @@ export function ConceptualReviewPanel({
           <h3 className="mt-1 text-lg font-semibold">{artifact.graph.summary}</h3>
         </div>
         <div className="flex flex-wrap gap-2 text-xs">
-          <span className="rounded-full border border-border px-2 py-1">{artifact.status}</span>
+          <span className="rounded-full border border-border px-2 py-1 capitalize">
+            {artifact.status}
+          </span>
           {review.currency === "outdated" ? (
             <span className="flex items-center gap-1 rounded-full border border-amber-500/50 bg-amber-500/10 px-2 py-1 text-amber-300">
               <GitCompareArrows className="size-3.5" aria-hidden="true" /> Outdated · PR head moved
@@ -111,20 +114,23 @@ export function ConceptualReviewPanel({
             </span>
           ) : (
             <span className="flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-emerald-300">
-              <GitCompareArrows className="size-3.5" aria-hidden="true" /> Up to date · reviewed PR
-              head
+              <GitCompareArrows className="size-3.5" aria-hidden="true" /> Up to date · exact head
+              still current
             </span>
           )}
         </div>
       </div>
       <p className="text-sm text-muted-foreground">
-        Choose an outcome and follow its highlighted path through behavior, source, final checks,
-        and any problem.
+        {external
+          ? "Choose an outcome and follow its highlighted path through behavior, source evidence, and any problem."
+          : "Choose an outcome and follow its highlighted path through behavior, source, final checks, and any problem."}
       </p>
       <p className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-muted-foreground">
         {artifact.evidenceScope.executedChecks === "linked_final_certificate"
           ? "Authority: source and check provenance are resolved by Kestrel against the frozen final certificate. The proposition each check supports or refutes remains model judgment and includes its limitations."
-          : "Authority: this older artifact contains model interpretation of exact retained source. Executed checks were not linked, so it remains Partial."}
+          : external
+            ? "This review maps the stated purpose to exact retained source. No executed test results are linked, so it remains Partial; unsupported claims stay explicitly unverified."
+            : "This saved review contains model interpretation of exact retained source. Executed checks were not linked, so it remains Partial."}
       </p>
       <dl
         className="grid min-w-0 gap-2 rounded-lg border border-border bg-background p-3 text-xs sm:grid-cols-2"
@@ -139,7 +145,12 @@ export function ConceptualReviewPanel({
           <dd className="break-all font-mono">{artifact.headCommitId}</dd>
         </div>
       </dl>
-      <ReviewGraph graph={artifact.graph} selectedId={selectedId} onSelect={setSelectedId} />
+      <ReviewGraph
+        graph={artifact.graph}
+        selectedId={selectedId}
+        onSelect={setSelectedId}
+        {...(external ? { outcomeTitle: "Requested outcomes", showChecks: false } : {})}
+      />
       <ReviewEvidenceInspector
         graph={artifact.graph}
         selectedId={selectedId}

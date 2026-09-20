@@ -74,6 +74,11 @@ import {
   type ReviewRevisionService,
 } from "./routes/review-revisions.js";
 import {
+  createDatabaseExternalConceptualReviewService,
+  registerExternalConceptualReviewRoutes,
+  type ExternalConceptualReviewService,
+} from "./routes/external-conceptual-review.js";
+import {
   createDatabaseReviewWorkflowService,
   registerReviewWorkflowRoutes,
   type ReviewWorkflowService,
@@ -98,6 +103,7 @@ export interface BuildAppOptions {
   codexReviewModelPreferenceService?: CodexReviewModelPreferenceService;
   reviewRevisionService?: ReviewRevisionService;
   reviewWorkflowService?: ReviewWorkflowService;
+  externalConceptualReviewService?: ExternalConceptualReviewService;
   factoryConceptualReviewService?: FactoryConceptualReviewService;
   factoryReviewCorrectionService?: FactoryReviewCorrectionService;
   factoryFeatureMergeService?: FactoryFeatureMergeService;
@@ -207,8 +213,13 @@ export async function buildApp({
   reviewRevisionService = {
     retain: () => Promise.reject(new Error("Review Revision acquisition is not configured")),
   },
-  reviewWorkflowService = createDatabaseReviewWorkflowService(pool),
   factoryConceptualReviewRuntimeProfile = null,
+  reviewWorkflowService = createDatabaseReviewWorkflowService(pool),
+  externalConceptualReviewService = createDatabaseExternalConceptualReviewService(
+    pool,
+    () => readLocalSourceConfig(),
+    { boss, runtimeProfile: factoryConceptualReviewRuntimeProfile },
+  ),
   factoryConceptualReviewService = createDatabaseFactoryConceptualReviewService(
     pool,
     () => readLocalSourceConfig(),
@@ -288,6 +299,7 @@ export async function buildApp({
   registerLocalRepositoryRoutes(app, localRepositoryService);
   registerReviewRevisionRoutes(app, reviewRevisionService);
   registerReviewWorkflowRoutes(app, reviewWorkflowService);
+  registerExternalConceptualReviewRoutes(app, externalConceptualReviewService);
   if (pwaRoot !== undefined) {
     await registerPwaRoutes(app, pwaRoot);
   }
