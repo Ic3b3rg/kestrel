@@ -8,6 +8,7 @@ import type {
   Feature,
 } from "@kestrel/contracts";
 import { Button } from "./components/ui/button.js";
+import { FactoryProviderProblem } from "./FeatureGitHubIssuesPanel.js";
 
 const columns = [
   { id: "todo", label: "To do" },
@@ -17,6 +18,7 @@ const columns = [
 ] as const;
 
 export interface ProjectFactoryBoardPanelProps {
+  projectId: string;
   projectName: string;
   features: Feature[];
   boards: FactoryBoard[];
@@ -120,6 +122,7 @@ function WorkItemCard({
 }
 
 export function ProjectFactoryBoardPanel({
+  projectId,
   projectName,
   features,
   boards,
@@ -193,6 +196,9 @@ export function ProjectFactoryBoardPanel({
           Updating board…
         </p>
       ) : null}
+      {githubIssues?.failure == null ? null : (
+        <FactoryProviderProblem failure={githubIssues.failure} projectId={projectId} />
+      )}
       <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {columns.map((column) => {
           const items = approvedBoards.flatMap((board) =>

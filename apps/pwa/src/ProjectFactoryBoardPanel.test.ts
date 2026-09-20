@@ -115,6 +115,7 @@ describe("Project Factory board", () => {
     await act(async () => {
       root.render(
         createElement(ProjectFactoryBoardPanel, {
+          projectId: planning.projectId,
           projectName: "Reports",
           features: [planning, approved],
           boards: [board()],
@@ -179,6 +180,22 @@ describe("Project Factory board", () => {
         '[aria-label="Open GitHub issue #42: Provider copy of the export Work Item"]',
       ),
     ).toBeNull();
+  });
+
+  it("keeps Kestrel cards visible when GitHub rate limits the issue catalog", async () => {
+    await render({
+      githubIssues: {
+        ...githubIssues,
+        repository: null,
+        state: "unavailable",
+        failure: "rate_limited",
+        issues: [],
+      },
+    });
+    expect(container.textContent).toContain(firstItem.title);
+    expect(container.textContent).toContain(
+      "GitHub has limited requests. Wait for the limit to reset before retrying.",
+    );
   });
 
   it("keeps Work Items from different approved Features on the same Project board", async () => {

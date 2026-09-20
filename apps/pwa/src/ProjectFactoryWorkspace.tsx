@@ -88,6 +88,7 @@ export function ProjectFactoryWorkspace({
 
   return (
     <ProjectFactoryBoardPanel
+      projectId={projectId}
       projectName={projectName}
       features={features}
       boards={boards}
