@@ -19,6 +19,11 @@ Acceptance target: [Factory 0.1-10](https://github.com/Ic3b3rg/kestrel/issues/21
 7. Explicitly approve merge for the reviewed head. Only a confirmed provider merge moves every Work
    Item to Completed and closes Kestrel-owned issue work.
 
+An existing pull request follows a shorter review-only path. Select it from the Project inbox,
+inspect its provider facts and stated purpose, retain matching exact local source, then choose
+**Start review**. Kestrel discloses the missing Factory plan and executed-check evidence, keeps a
+source-only result Partial, and never writes to or merges the provider from this review path.
+
 The workstation must remain awake and the local Installation must remain running while background
 work proceeds. Closing or reloading the browser does not cancel accepted work.
 
@@ -30,6 +35,7 @@ work proceeds. Closing or reloading the browser does not cancel accepted work.
 | Live Codex connection          | The installed, ChatGPT-authenticated Codex App Server starts and exposes its current catalog                                                                                               | `KESTREL_LIVE_CODEX=1 npx vitest run apps/web/src/codex-app-server.live.test.ts`                                                                                |
 | Live planning                  | Real model turns, Skill-guided questioning, Unicode-safe chat, structured plan generation, approval, and durable recovery                                                                  | `KESTREL_LIVE_CODEX=1 npx vitest run apps/web/src/codex-planning-runtime.live.test.ts apps/web/src/factory-planning.live.test.ts`                               |
 | Live implementation and review | Real Codex planning; two dependent Work Items in isolated, network-disabled containers; cumulative checks; exact-head PR publication; real independent Conceptual Review; restart recovery | `KESTREL_LIVE_FACTORY_EXECUTION=1 KESTREL_FACTORY_EXECUTION_IMAGE=<prepared-image-id> npm run test:black-box -- tests/black-box/factory-execution.live.test.ts` |
+| Existing PR review             | Readable GitHub facts and purpose, explicit exact-source acquisition, durable independent source-only review, graph exploration, stale/retry states, and no provider mutation              | Playwright production-boundary flow plus a read-only smoke against `Ic3b3rg/poppy` PR #7                                                                        |
 | GitHub writes                  | Issue, branch, PR, correction, merge, required-check, and issue-close behavior including uncertain responses and exact-head conflicts                                                      | Local bare Git remote plus bounded `gh` provider fixture; no real repository was mutated                                                                        |
 | Browser workflow               | Project selection, persistent chat, plan approval, ordered board, Human Gate, PR, review graph, correction selection, and explicit merge                                                   | Playwright black-box suite against the production PWA/API boundary                                                                                              |
 | Scheduling and recovery        | Two Projects progress independently; a gate reserves only its Project; reconnect and controlled process interruption recover durable work without duplicate writes                         | Factory scheduling, gate, publication, correction, merge, and live shutdown/recovery scenarios                                                                  |
@@ -38,6 +44,27 @@ work proceeds. Closing or reloading the browser does not cancel accepted work.
 The destructive provider branches use controlled fixtures by design. Model planning, implementation,
 repair, final verification, and Conceptual Review use the production Codex adapters. Container
 execution uses the immutable image produced by `npm run factory:prepare`.
+
+## Final integrated rerun
+
+After the existing-PR review path merged through
+[#251](https://github.com/Ic3b3rg/kestrel/pull/251), the final acceptance was repeated against
+`master` commit `28500b3` (tree `877ccad`):
+
+- real Factory execution: 4/4 scenarios passed in 386.29 s, covering completion, shutdown, restart
+  recovery, and recovery after a missing container;
+- complete black-box suite: 22 files and 112 tests passed, with the four separately executed live
+  scenarios and their file excluded from the ordinary run;
+- complete Playwright suite: 26/26 scenarios passed in 7.0 minutes, including desktop/narrow
+  layouts, keyboard and Axe checks, planning, Kanban, Human Gate, exact-head review, bounded
+  correction, merge, and existing-PR review;
+- contracts, formatting, lint, type checking, 1,281 unit/integration tests, production build, and a
+  fresh six-scenario installation migration had already passed on the identical integrated tree.
+
+The read-only Poppy smoke selected PR #7 through its normal Project inbox, showed its concise stated
+purpose and progressive GitHub description, exposed exact-source and review blockers, and had no
+browser errors or horizontal overflow at the narrow viewport. It did not retain source, start an
+agent, mutate the repository, or merge the pull request.
 
 ## Browser captures
 
