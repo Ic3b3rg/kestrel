@@ -211,6 +211,7 @@ describe("Login form feedback", () => {
     expect(container.querySelector('[role="status"]')?.textContent).toContain(
       "Credentials changed",
     );
+    expect(document.activeElement).toBe(field("username"));
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 });

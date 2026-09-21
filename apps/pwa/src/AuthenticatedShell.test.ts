@@ -51,6 +51,7 @@ function render(overrides: Partial<Parameters<typeof AuthenticatedShell>[0]> = {
         error: null,
         inbox: { schemaVersion: 1, projects: [localProject, providerProject] },
         loading: false,
+        logoutDisabled: false,
         logoutError: null,
         logoutPending: false,
         online: true,
@@ -90,6 +91,16 @@ describe("AuthenticatedShell", () => {
     expect(footer?.textContent).not.toContain("operator");
     expect(footer?.textContent).not.toContain("Connected");
     expect(footer?.querySelectorAll('button[type="button"]')).toHaveLength(1);
+  });
+
+  it("keeps Sign out unavailable while another security command is pending", () => {
+    const securityCommandPending = { logoutDisabled: true };
+    const document = new DOMParser().parseFromString(render(securityCommandPending), "text/html");
+    const signOut = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent === "Sign out",
+    );
+
+    expect(signOut?.disabled).toBe(true);
   });
 
   it("shows honest loading, empty, and error rail states", () => {
@@ -146,6 +157,7 @@ describe("AuthenticatedShell", () => {
           error: null,
           inbox: { schemaVersion: 1, projects: [localProject] },
           loading: false,
+          logoutDisabled: false,
           logoutError,
           logoutPending,
           online: true,
@@ -230,6 +242,7 @@ describe("AuthenticatedShell", () => {
               error: null,
               inbox: { schemaVersion: 1, projects: [localProject] },
               loading: false,
+              logoutDisabled: false,
               logoutError: null,
               logoutPending: false,
               online: true,

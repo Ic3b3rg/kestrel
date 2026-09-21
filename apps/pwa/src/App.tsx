@@ -787,9 +787,9 @@ export function App() {
   };
 
   const handleLogout = async (): Promise<void> => {
+    if (securityController.current !== null) return;
     const controller = new AbortController();
     projectCommandController.current?.abort();
-    securityController.current?.abort();
     securityController.current = controller;
     setProjectPending(false);
     setSecurityPending("logout");
@@ -802,6 +802,7 @@ export function App() {
           ? null
           : `This browser is signed out. ${outcome.auditError.message} Reference: ${outcome.auditError.correlationId}`,
       );
+      setLoginSuccess(outcome.auditError === null ? "Signed out from this browser." : null);
       setSession(null);
       setSnapshot(null);
       resetProjectState();
@@ -1111,6 +1112,7 @@ export function App() {
             error={projectError}
             inbox={projectInbox}
             loading={projectLoading}
+            logoutDisabled={securityPending !== null}
             logoutError={securityError?.action === "logout" ? securityError.message : null}
             logoutPending={securityPending === "logout"}
             online={online}

@@ -2084,18 +2084,23 @@ test.describe("observable Installation PWA", () => {
     await expect(mobileFooter.getByRole("button", { name: "Sign out", exact: true })).toBeVisible();
     await expect(mobileFooter).not.toContainText("Signed in as");
     await expect(mobileFooter).not.toContainText("Connected");
-    await page.getByRole("button", { name: "Close navigation" }).click();
-    await page.setViewportSize({ height: 800, width: 1_024 });
+    const drawerAccessibility = await new AxeBuilder({ page })
+      .include('[data-mobile="true"]')
+      .analyze();
+    expect(drawerAccessibility.violations).toEqual([]);
 
-    const signOut = accountFooter.getByRole("button", { name: "Sign out", exact: true });
-    await signOut.focus();
-    await signOut.press("Enter");
+    const mobileSignOut = mobileFooter.getByRole("button", { name: "Sign out", exact: true });
+    await mobileSignOut.focus();
+    await mobileSignOut.press("Enter");
     await page.keyboard.press("Enter");
     await expect.poll(() => logoutRequestCount).toBe(1);
-    await expect(accountFooter.getByRole("button", { name: "Signing out…" })).toBeDisabled();
-    await expect(accountFooter.getByRole("status")).toContainText("Signing out");
+    await expect(mobileFooter.getByRole("button", { name: "Signing out…" })).toBeDisabled();
+    await expect(mobileFooter.getByRole("status")).toContainText("Signing out");
     releaseFirstLogout();
     await expect(page.getByRole("heading", { name: "Sign in to Kestrel" })).toBeVisible();
+    await expect(page.getByRole("status")).toContainText("Signed out from this browser.");
+    await expect(page.getByLabel("Username")).toBeFocused();
+    await page.setViewportSize({ height: 800, width: 1_024 });
     await page.getByLabel("Username").fill(TEST_OPERATOR_CREDENTIALS.username);
     await page.getByLabel("Password").fill(TEST_OPERATOR_CREDENTIALS.password);
     await page.getByLabel("Password").press("Enter");
@@ -2362,6 +2367,12 @@ test.describe("observable Installation PWA", () => {
     await passwordConfirmation.press("Enter");
     await expect.poll(() => stepUpRequestCount).toBe(2);
     await expect(page.getByRole("button", { name: "Changing credentials…" })).toBeDisabled();
+    const signOutDuringCredentialChange = page
+      .locator('[data-sidebar="footer"]')
+      .getByRole("button", { name: "Sign out", exact: true });
+    await expect(signOutDuringCredentialChange).toBeDisabled();
+    await signOutDuringCredentialChange.evaluate((button: HTMLButtonElement) => button.click());
+    expect(logoutRequestCount).toBe(1);
     await expect(page.locator('.operator-security [role="status"]')).toContainText(
       "Changing credentials",
     );

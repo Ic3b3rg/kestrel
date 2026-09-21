@@ -31,6 +31,7 @@ export interface AuthenticatedShellProps {
   error: string | null;
   inbox: ProjectInbox | null;
   loading: boolean;
+  logoutDisabled: boolean;
   logoutError: string | null;
   logoutPending: boolean;
   online: boolean;
@@ -88,7 +89,8 @@ function WorkspaceShell(props: AuthenticatedShellProps) {
     props.onNavigate(route);
   };
   const handleLogout = async () => {
-    if (logoutSubmission.current || props.logoutPending || !props.online) return;
+    if (logoutSubmission.current || props.logoutDisabled || props.logoutPending || !props.online)
+      return;
     props.onClearLogoutError?.();
     logoutSubmission.current = true;
     try {
@@ -228,7 +230,7 @@ function WorkspaceShell(props: AuthenticatedShellProps) {
               <SidebarMenuItem>
                 <SidebarMenuButton
                   className="h-10"
-                  disabled={!props.online || props.logoutPending}
+                  disabled={!props.online || props.logoutDisabled || props.logoutPending}
                   type="button"
                   onClick={() => void handleLogout()}
                 >
