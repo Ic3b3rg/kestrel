@@ -76,7 +76,6 @@ describe("Operator security form feedback", () => {
           error: null,
           online: true,
           onChangeCredentials,
-          onLogout: vi.fn(),
           pending: null,
           session,
         }),
@@ -113,7 +112,6 @@ describe("Operator security form feedback", () => {
           error: null,
           online: true,
           onChangeCredentials: vi.fn(),
-          onLogout: vi.fn(),
           pending: null,
           session,
         }),
@@ -133,7 +131,7 @@ describe("Operator security form feedback", () => {
     expect(newPassword.value).toBe("");
   });
 
-  it("renders a sign-out failure beside the command that caused it", () => {
+  it("does not expose a duplicate Sign out action in Settings", () => {
     act(() => {
       root.render(
         createElement(OperatorSecurityPanel, {
@@ -143,20 +141,17 @@ describe("Operator security form feedback", () => {
           },
           online: true,
           onChangeCredentials: vi.fn(),
-          onLogout: vi.fn(),
           pending: null,
           session,
         }),
       );
     });
 
-    const sessionSurface = container.querySelector(".security-session");
-    const credentialsSurface = container.querySelector(".security-form");
-    const alert = sessionSurface?.querySelector<HTMLElement>('[role="alert"]');
-    expect(alert?.textContent).toContain("Kestrel could not sign out this browser.");
-    expect(document.activeElement).toBe(alert);
-    expect(credentialsSurface?.querySelector('[role="alert"]')).toBeNull();
-    expect(container.querySelectorAll('[role="alert"]')).toHaveLength(1);
+    expect(
+      [...container.querySelectorAll("button")].map((button) => button.textContent),
+    ).not.toContain("Sign out");
+    expect(container.textContent).not.toContain("Clears only this browser");
+    expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
   it("announces one pending credential command, blocks duplicates, and restores the form", async () => {
@@ -179,7 +174,6 @@ describe("Operator security form feedback", () => {
           setError({ action: "credentials", message: "The request was rejected." });
           setPending(null);
         },
-        onLogout: vi.fn(),
         pending,
         session,
       });
@@ -228,69 +222,13 @@ describe("Operator security form feedback", () => {
     expect(submit?.disabled).toBe(false);
   });
 
-  it("announces one pending sign-out command, blocks duplicates, and restores its action", async () => {
-    const submission = Promise.withResolvers<undefined>();
-    const onLogout = vi.fn(async () => {
-      await submission.promise;
-    });
-
-    function Harness() {
-      const [pending, setPending] = useState<"credentials" | "logout" | null>(null);
-      const [error, setError] = useState<OperatorSecurityError | null>(null);
-      return createElement(OperatorSecurityPanel, {
-        error,
-        online: true,
-        onChangeCredentials: vi.fn(),
-        onLogout: async () => {
-          setPending("logout");
-          setError(null);
-          await onLogout();
-          setError({ action: "logout", message: "Kestrel could not sign out this browser." });
-          setPending(null);
-        },
-        pending,
-        session,
-      });
-    }
-
-    act(() => root.render(createElement(Harness)));
-    const signOut = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent === "Sign out",
-    );
-    if (signOut === undefined) throw new Error("Missing sign-out button");
-
-    await act(async () => {
-      signOut.click();
-      signOut.click();
-      await Promise.resolve();
-    });
-
-    expect(onLogout).toHaveBeenCalledOnce();
-    expect(signOut.disabled).toBe(true);
-    expect(signOut.textContent).toContain("Signing out");
-    expect(container.querySelectorAll('[role="status"]')).toHaveLength(1);
-
-    await act(async () => {
-      submission.resolve(undefined);
-      await submission.promise;
-      await Promise.resolve();
-    });
-
-    const alert = container.querySelector<HTMLElement>('.security-session [role="alert"]');
-    expect(alert?.textContent).toContain("Kestrel could not sign out this browser.");
-    expect(document.activeElement).toBe(alert);
-    expect(container.querySelectorAll('[role="status"]')).toHaveLength(0);
-    expect(signOut.disabled).toBe(false);
-  });
-
-  it("keeps both security commands unavailable while offline", () => {
+  it("keeps the credential command unavailable while offline", () => {
     act(() => {
       root.render(
         createElement(OperatorSecurityPanel, {
           error: null,
           online: false,
           onChangeCredentials: vi.fn(),
-          onLogout: vi.fn(),
           pending: null,
           session,
         }),

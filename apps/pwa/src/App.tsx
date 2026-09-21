@@ -229,8 +229,12 @@ export function App() {
     saveFeatureNavigation(projectFeatureIds);
   }, [projectFeatureIds]);
   useEffect(() => {
-    if (route.kind !== "settings" && securityError !== null) setSecurityError(null);
-  }, [route.kind, securityError]);
+    setSecurityError((current) => {
+      if (current?.action === "logout") return null;
+      if (route.kind !== "settings" && current?.action === "credentials") return null;
+      return current;
+    });
+  }, [route]);
   useEffect(() => {
     if (session === null)
       setProjectFeatureIds((current) => (Object.keys(current).length === 0 ? current : {}));
@@ -783,9 +787,9 @@ export function App() {
   };
 
   const handleLogout = async (): Promise<void> => {
+    if (securityController.current !== null) return;
     const controller = new AbortController();
     projectCommandController.current?.abort();
-    securityController.current?.abort();
     securityController.current = controller;
     setProjectPending(false);
     setSecurityPending("logout");
@@ -798,6 +802,7 @@ export function App() {
           ? null
           : `This browser is signed out. ${outcome.auditError.message} Reference: ${outcome.auditError.correlationId}`,
       );
+      setLoginSuccess(outcome.auditError === null ? "Signed out from this browser." : null);
       setSession(null);
       setSnapshot(null);
       resetProjectState();
@@ -975,7 +980,6 @@ export function App() {
                 session={session}
                 onChangeCredentials={handleCredentialChange}
                 onClearError={() => setSecurityError(null)}
-                onLogout={handleLogout}
               />
             }
             repositoryControls={
@@ -1105,10 +1109,12 @@ export function App() {
           <AuthenticatedShell
             key={`${session.operator.id}/${session.credentialVersion}/${session.issuedAt}`}
             announcement={announcement}
-            connection={connection}
             error={projectError}
             inbox={projectInbox}
             loading={projectLoading}
+            logoutDisabled={securityPending !== null}
+            logoutError={securityError?.action === "logout" ? securityError.message : null}
+            logoutPending={securityPending === "logout"}
             online={online}
             openProjectControl={
               <OpenProjectForm
@@ -1117,7 +1123,6 @@ export function App() {
                 onOpened={handleProjectOpened}
               />
             }
-            operatorUsername={session.operator.username}
             route={route}
             projectFeatureIds={projectFeatureIds}
             projectNavigation={
@@ -1132,6 +1137,8 @@ export function App() {
                 />
               )
             }
+            onClearLogoutError={() => setSecurityError(null)}
+            onLogout={handleLogout}
             onNavigate={navigate}
             onRetry={() => setProjectReloadGeneration((generation) => generation + 1)}
           >

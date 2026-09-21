@@ -2968,31 +2968,6 @@
     color: var(--danger);
     border-radius: 0.5rem;
   }
-  .rail-account {
-    display: grid;
-    gap: 0.375rem;
-    padding: 0 0.5rem;
-    color: var(--muted-foreground);
-    font-size: 0.75rem;
-  }
-  .connection {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-  }
-  .connection-dot {
-    width: 0.4rem;
-    height: 0.4rem;
-    border-radius: 50%;
-    background: var(--muted-foreground);
-  }
-  .connection-connected .connection-dot {
-    background: var(--success);
-  }
-  .connection-offline .connection-dot,
-  .connection-disconnected .connection-dot {
-    background: var(--danger);
-  }
   .open-project-entry > button {
     width: 100%;
   }

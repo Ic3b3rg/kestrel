@@ -151,6 +151,7 @@ export function LoginView(props: LoginViewProps) {
                   }
                   aria-invalid={validationErrors.username !== undefined}
                   autoComplete="username"
+                  autoFocus={Boolean(props.success)}
                   disabled={props.pending}
                   id="username"
                   maxLength={64}

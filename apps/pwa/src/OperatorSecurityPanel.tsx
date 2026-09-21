@@ -41,7 +41,6 @@ interface OperatorSecurityPanelProps {
   online: boolean;
   onChangeCredentials(value: OperatorCredentialFormValue): Promise<void>;
   onClearError?(): void;
-  onLogout(): Promise<void>;
   pending: "credentials" | "logout" | null;
   session: Session;
 }
@@ -58,7 +57,6 @@ function clearPasswordFields(form: HTMLFormElement): void {
 export function OperatorSecurityPanel(props: OperatorSecurityPanelProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const credentialSubmission = useRef(false);
-  const logoutSubmission = useRef(false);
   const [validationErrors, setValidationErrors] = useState<
     Partial<Record<CredentialField, string>>
   >({});
@@ -68,7 +66,6 @@ export function OperatorSecurityPanel(props: OperatorSecurityPanelProps) {
     (name) => validationErrors[name] !== undefined,
   );
   const credentialError = props.error?.action === "credentials" ? props.error.message : null;
-  const logoutError = props.error?.action === "logout" ? props.error.message : null;
 
   useEffect(() => {
     if (validationFocusRequest === null) return;
@@ -149,17 +146,6 @@ export function OperatorSecurityPanel(props: OperatorSecurityPanelProps) {
     }
   };
 
-  const handleLogout = async () => {
-    if (logoutSubmission.current || props.pending !== null || !props.online) return;
-    props.onClearError?.();
-    logoutSubmission.current = true;
-    try {
-      await props.onLogout();
-    } finally {
-      logoutSubmission.current = false;
-    }
-  };
-
   const controlsDisabled = !props.online || props.pending !== null;
   return (
     <section className="operator-security" aria-labelledby="operator-security-title">
@@ -187,25 +173,6 @@ export function OperatorSecurityPanel(props: OperatorSecurityPanelProps) {
               </dd>
             </div>
           </dl>
-          <Button
-            variant="outline"
-            className="secondary-action"
-            type="button"
-            disabled={controlsDisabled}
-            onClick={() => void handleLogout()}
-          >
-            {props.pending === "logout" ? "Signing out…" : "Sign out"}
-          </Button>
-          {props.pending === "logout" ? (
-            <FormFeedback kind="pending" visuallyHidden>
-              Signing out…
-            </FormFeedback>
-          ) : logoutError === null ? null : (
-            <FormFeedback focus kind="error" title="Sign-out failed">
-              {logoutError}
-            </FormFeedback>
-          )}
-          <p className="form-help">Clears only this browser’s authentication cookies.</p>
         </div>
 
         <form

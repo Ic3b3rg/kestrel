@@ -1,5 +1,5 @@
 import { useEffect, useRef, type MouseEvent, type ReactNode } from "react";
-import { FolderGit2, Layers3, PanelLeft, Settings2, X } from "lucide-react";
+import { FolderGit2, Layers3, LogOut, PanelLeft, Settings2, X } from "lucide-react";
 
 import type { ProjectInbox } from "@kestrel/contracts";
 
@@ -19,8 +19,8 @@ import {
   useSidebar,
 } from "./components/ui/sidebar.js";
 import { TooltipProvider } from "./components/ui/tooltip.js";
+import { FormFeedback } from "./components/FormFeedback.js";
 import { appPath, type AppRoute } from "./app-route.js";
-import type { PwaConnectionState } from "./InstallationView.js";
 
 type NavigableRoute = Exclude<AppRoute, { kind: "not_found" }>;
 type Project = ProjectInbox["projects"][number];
@@ -28,29 +28,23 @@ type Project = ProjectInbox["projects"][number];
 export interface AuthenticatedShellProps {
   announcement: string;
   children?: ReactNode;
-  connection: PwaConnectionState;
   error: string | null;
   inbox: ProjectInbox | null;
   loading: boolean;
+  logoutDisabled: boolean;
+  logoutError: string | null;
+  logoutPending: boolean;
   online: boolean;
   openProjectControl: ReactNode;
-  operatorUsername: string;
   route: AppRoute;
+  onClearLogoutError?: () => void;
+  onLogout: () => Promise<void>;
   onNavigate: (route: NavigableRoute) => void;
   onRetry: () => void;
   /** Project-scoped navigation, such as Planning Sessions, supplied by its owning feature. */
   projectNavigation?: ReactNode;
   projectFeatureIds?: Readonly<Record<string, string>>;
 }
-
-const connectionLabels: Record<PwaConnectionState, string> = {
-  connected: "Connected",
-  connecting: "Connecting",
-  "cursor-expired": "Refreshing history",
-  disconnected: "Disconnected",
-  offline: "Offline",
-  reconnecting: "Reconnecting",
-};
 
 export function projectLabel(project: Project): string {
   if (project.repository !== null) {
@@ -75,6 +69,7 @@ function WorkspaceShell(props: AuthenticatedShellProps) {
   const navigationTrigger = useRef<HTMLButtonElement>(null);
   const workspace = useRef<HTMLElement>(null);
   const routeWhenOpened = useRef(props.route);
+  const logoutSubmission = useRef(false);
   useEffect(() => setOpenMobile(false), [props.route, setOpenMobile]);
   const currentProjectId =
     props.route.kind === "project" ||
@@ -92,6 +87,17 @@ function WorkspaceShell(props: AuthenticatedShellProps) {
     event.preventDefault();
     setOpenMobile(false);
     props.onNavigate(route);
+  };
+  const handleLogout = async () => {
+    if (logoutSubmission.current || props.logoutDisabled || props.logoutPending || !props.online)
+      return;
+    props.onClearLogoutError?.();
+    logoutSubmission.current = true;
+    try {
+      await props.onLogout();
+    } finally {
+      logoutSubmission.current = false;
+    }
   };
 
   return (
@@ -203,7 +209,7 @@ function WorkspaceShell(props: AuthenticatedShellProps) {
           </SidebarGroup>
           {currentProjectId === undefined ? null : props.projectNavigation}
         </SidebarContent>
-        <SidebarFooter className="gap-4 border-t border-sidebar-border p-4">
+        <SidebarFooter className="gap-2 border-t border-sidebar-border p-4">
           <nav aria-label="Installation">
             <SidebarMenu>
               <SidebarMenuItem>
@@ -221,18 +227,28 @@ function WorkspaceShell(props: AuthenticatedShellProps) {
                   </a>
                 </SidebarMenuButton>
               </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  className="h-10"
+                  disabled={!props.online || props.logoutDisabled || props.logoutPending}
+                  type="button"
+                  onClick={() => void handleLogout()}
+                >
+                  <LogOut aria-hidden="true" />
+                  {props.logoutPending ? "Signing out…" : "Sign out"}
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </nav>
-          <div className="rail-account">
-            <span className="truncate">Signed in as {props.operatorUsername}</span>
-            <div
-              className={`connection connection-${props.connection}`}
-              aria-label={`Connection: ${connectionLabels[props.connection]}`}
-            >
-              <span className="connection-dot" aria-hidden="true" />
-              <span>{connectionLabels[props.connection]}</span>
-            </div>
-          </div>
+          {props.logoutPending ? (
+            <FormFeedback kind="pending" visuallyHidden>
+              Signing out…
+            </FormFeedback>
+          ) : props.logoutError === null ? null : (
+            <FormFeedback focus kind="error" title="Sign-out failed">
+              {props.logoutError}
+            </FormFeedback>
+          )}
         </SidebarFooter>
       </Sidebar>
       <div className="workspace-frame">
