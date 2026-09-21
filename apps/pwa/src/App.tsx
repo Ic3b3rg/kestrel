@@ -1,4 +1,5 @@
 import { Button } from "./components/ui/button.js";
+import { FormFeedback } from "./components/FormFeedback.js";
 import { WorkspaceSuspendedContext } from "./components/ui/workspace-suspension.js";
 import { FeatureNavigation } from "./FeatureNavigation.js";
 import { FeatureChatPanel } from "./FeatureChatPanel.js";
@@ -226,6 +227,15 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    if (route.kind !== "project_settings" || window.location.pathname !== "/settings") return;
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${appPath(route)}${window.location.hash}`,
+    );
+  }, [route]);
+
+  useEffect(() => {
     saveFeatureNavigation(projectFeatureIds);
   }, [projectFeatureIds]);
   useEffect(() => {
@@ -354,7 +364,7 @@ export function App() {
   }, [planDirty]);
 
   useEffect(() => {
-    if (route.kind !== "settings" || session == null) return;
+    if ((route.kind !== "settings" && route.kind !== "project_settings") || session == null) return;
     const target = document.getElementById(window.location.hash.slice(1));
     if (target === null) return;
     target.focus();
@@ -365,7 +375,7 @@ export function App() {
     // Connection facts arrive asynchronously above the linked section. Keep the requested
     // heading visible until the Operator takes over navigation.
     const observer = new ResizeObserver(revealTarget);
-    observer.observe(target.closest(".settings-view") ?? target);
+    observer.observe(target.closest(".settings-view, .project-settings-view") ?? target);
     const stopFollowing = () => observer.disconnect();
     const navigationEvents = ["wheel", "touchstart", "pointerdown", "keydown"] as const;
     for (const event of navigationEvents) {
@@ -627,7 +637,7 @@ export function App() {
     handleAuthenticationBoundaryError,
     online,
     projectReloadGeneration,
-    route.kind === "project" ? route.projectId : undefined,
+    route.kind === "project" || route.kind === "project_settings" ? route.projectId : undefined,
     route.kind === "project" ? route.revisionId : undefined,
     session,
   ]);
@@ -876,7 +886,7 @@ export function App() {
   }
 
   const selectedProject =
-    route.kind === "project" || route.kind === "feature"
+    route.kind === "project" || route.kind === "feature" || route.kind === "project_settings"
       ? (projectInbox?.projects.find((project) => project.id === route.projectId) ?? null)
       : null;
   const navigationProjectId = "projectId" in route ? route.projectId : undefined;
@@ -945,28 +955,12 @@ export function App() {
             connectionControls={
               <>
                 <HostGitHubConnectionPanel
-                  initialProjectId={route.projectId ?? ""}
                   online={online}
-                  projects={projectInbox?.projects ?? []}
                   onAuthenticationError={handleAuthenticationBoundaryError}
                 />
                 <CodexSubscriptionConnectionPanel
                   online={online}
                   onAuthenticationError={handleAuthenticationBoundaryError}
-                />
-                <ProjectSettingsPanel
-                  projects={projectInbox?.projects ?? []}
-                  projectId={route.projectId ?? ""}
-                  onSelectProject={(projectId) =>
-                    navigate({ kind: "settings", ...(projectId === "" ? {} : { projectId }) })
-                  }
-                  online={online}
-                  onAuthenticationError={handleAuthenticationBoundaryError}
-                  onChanged={(projectId, profile) => {
-                    setProjectInbox((current) => withDirectApiProfile(current, projectId, profile));
-                    setProjectReloadGeneration((generation) => generation + 1);
-                    setAnnouncement(`Direct API profile ${profile.availability}.`);
-                  }}
                 />
               </>
             }
@@ -994,6 +988,67 @@ export function App() {
             onRetry={() => setReloadGeneration((generation) => generation + 1)}
             onRunDiagnostic={() => void handleRunDiagnostic()}
           />
+        );
+      case "project_settings":
+        if (selectedProject !== null) {
+          return (
+            <ProjectSettingsPanel
+              key={selectedProject.id}
+              project={selectedProject}
+              online={online}
+              onAuthenticationError={handleAuthenticationBoundaryError}
+              onChanged={(projectId, profile) => {
+                setProjectInbox((current) => withDirectApiProfile(current, projectId, profile));
+                setProjectReloadGeneration((generation) => generation + 1);
+                setAnnouncement(`Direct API profile ${profile.availability}.`);
+              }}
+            />
+          );
+        }
+        if (!online) {
+          return (
+            <section className="workspace-state space-y-4">
+              <h1>Project settings</h1>
+              <FormFeedback kind="error" title="Project settings are offline">
+                Reconnect this workstation to read the selected Project.
+              </FormFeedback>
+            </section>
+          );
+        }
+        if (projectInbox === null && projectLoading) {
+          return (
+            <section className="workspace-state space-y-4" aria-busy="true">
+              <h1>Reading Project settings</h1>
+              <FormFeedback kind="pending">Loading the selected Project…</FormFeedback>
+            </section>
+          );
+        }
+        if (projectInbox === null) {
+          return (
+            <section className="workspace-state space-y-4">
+              <h1>Project settings unavailable</h1>
+              <FormFeedback focus kind="error" title="The Project could not be read">
+                {projectError ?? "Retry the authoritative Project inventory."}
+              </FormFeedback>
+              <Button
+                type="button"
+                onClick={() => setProjectReloadGeneration((value) => value + 1)}
+              >
+                Retry Project
+              </Button>
+            </section>
+          );
+        }
+        return (
+          <section className="workspace-state space-y-4">
+            <h1>Project not found</h1>
+            <FormFeedback kind="error" title="This Project is no longer available">
+              Choose another Project from the sidebar.
+            </FormFeedback>
+            <Button type="button" onClick={() => navigate({ kind: "projects" })}>
+              Back to Projects
+            </Button>
+          </section>
         );
       case "project":
         if (selectedProject !== null) {

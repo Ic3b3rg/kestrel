@@ -8,7 +8,9 @@ import type { HostGitHubConnection, ProjectInbox } from "@kestrel/contracts";
 
 import {
   HostGitHubConnectionPanel,
+  ProjectGitHubAccessPanel,
   type HostGitHubConnectionPanelProps,
+  type ProjectGitHubAccessPanelProps,
 } from "./HostGitHubConnectionPanel.js";
 
 const projectId = "018f0f89-949a-75a8-8f61-6df78a843b1e";
@@ -27,22 +29,31 @@ const project: ProjectInbox["projects"][number] = {
   },
   modelAccess: "not_configured",
   providerObservation: null,
-  repository: null,
+  repository: {
+    canonicalUrl: "https://github.com/Ic3b3rg/kestrel",
+    name: "kestrel",
+    owner: "Ic3b3rg",
+    providerId: "R_kestrel",
+  },
   sourceAvailability: "not_acquired",
   updatedAt: "2026-09-02T12:00:00.000Z",
 };
-const ready: HostGitHubConnection = {
+const globalReady: HostGitHubConnection = {
   schemaVersion: 1,
   state: "ready",
   reason: null,
   cli: { version: "2.87.0", supported: true },
   identity: { host: "github.com", account: "operator" },
+  projectAccess: null,
+  checkedAt: "2026-09-02T12:00:00.000Z",
+};
+const projectReady: HostGitHubConnection = {
+  ...globalReady,
   projectAccess: {
     state: "verified",
     projectId,
     repository: { owner: "Ic3b3rg", name: "kestrel" },
   },
-  checkedAt: "2026-09-02T12:00:00.000Z",
 };
 const authenticationRequired: HostGitHubConnection = {
   schemaVersion: 1,
@@ -62,7 +73,7 @@ function findButton(container: HTMLElement, text: string): HTMLButtonElement {
   return button;
 }
 
-describe("host GitHub Connection Settings", () => {
+describe("GitHub connection Settings", () => {
   let container: HTMLDivElement;
   let root: Root;
 
@@ -83,72 +94,72 @@ describe("host GitHub Connection Settings", () => {
     container.remove();
   });
 
-  async function renderPanel(overrides: Partial<HostGitHubConnectionPanelProps>): Promise<void> {
+  async function renderGlobal(overrides: Partial<HostGitHubConnectionPanelProps>): Promise<void> {
     await act(async () => {
-      root.render(
-        createElement(HostGitHubConnectionPanel, {
-          online: true,
-          projects: [project],
-          ...overrides,
-        }),
-      );
+      root.render(createElement(HostGitHubConnectionPanel, { online: true, ...overrides }));
       await Promise.resolve();
     });
   }
 
-  it("shows Checking, validated identity and exact unauthenticated remediation on retry", async () => {
-    let release: (value: HostGitHubConnection) => void = () => undefined;
-    const pending = new Promise<HostGitHubConnection>((resolve) => {
-      release = resolve;
-    });
-    const loadConnection = vi
-      .fn<NonNullable<HostGitHubConnectionPanelProps["loadConnection"]>>()
-      .mockReturnValueOnce(pending)
-      .mockResolvedValueOnce(authenticationRequired);
-    await renderPanel({ loadConnection });
-
-    expect(container.textContent).toContain("Checking");
-    expect(loadConnection).toHaveBeenCalledWith(projectId, expect.any(AbortSignal));
-
+  async function renderProject(overrides: Partial<ProjectGitHubAccessPanelProps>): Promise<void> {
     await act(async () => {
-      release(ready);
-      await pending;
+      root.render(createElement(ProjectGitHubAccessPanel, { online: true, project, ...overrides }));
+      await Promise.resolve();
     });
-    expect(container.textContent).toContain("Ready");
+  }
+
+  it("keeps CLI and account facts in global Source control without a Project selector", async () => {
+    const loadConnection = vi.fn().mockResolvedValue(globalReady);
+    await renderGlobal({ loadConnection });
+
+    expect(loadConnection).toHaveBeenCalledWith(undefined, expect.any(AbortSignal));
+    expect(container.textContent).toContain("Source control");
+    expect(container.textContent).toContain("2.87.0");
     expect(container.textContent).toContain("github.com");
     expect(container.textContent).toContain("operator");
-    expect(container.textContent).toContain("Ic3b3rg/kestrel");
+    expect(container.querySelector("select")).toBeNull();
+    expect(container.textContent).not.toContain("Ic3b3rg/kestrel");
+  });
 
+  it("shows an honest global Unavailable state while offline without probing", async () => {
+    const loadConnection = vi.fn<NonNullable<HostGitHubConnectionPanelProps["loadConnection"]>>();
+    await renderGlobal({ loadConnection, online: false });
+
+    expect(container.textContent).toContain("Unavailable");
+    expect(container.textContent).toContain("Reconnect this workstation");
+    expect(container.textContent).toContain("Not checked while offline");
+    expect(findButton(container, "Verify again").disabled).toBe(true);
+    expect(loadConnection).not.toHaveBeenCalled();
+  });
+
+  it("shows only repository-specific access facts in Project settings", async () => {
+    const loadConnection = vi.fn().mockResolvedValue(projectReady);
+    await renderProject({ loadConnection });
+
+    expect(loadConnection).toHaveBeenCalledWith(projectId, expect.any(AbortSignal));
+    expect(container.textContent).toContain("GitHub repository access");
+    expect(container.textContent).toContain("Verified");
+    expect(container.textContent).toContain("Ic3b3rg/kestrel");
+    expect(container.textContent).not.toContain("2.87.0");
+    expect(container.textContent).not.toContain("operator");
+    expect(container.querySelector("select")).toBeNull();
+  });
+
+  it("keeps Project access failures local and actionable", async () => {
+    const loadConnection = vi
+      .fn<NonNullable<ProjectGitHubAccessPanelProps["loadConnection"]>>()
+      .mockResolvedValueOnce(projectReady)
+      .mockResolvedValueOnce(authenticationRequired);
+    await renderProject({ loadConnection });
     await act(async () => {
       findButton(container, "Verify again").click();
       await Promise.resolve();
       await Promise.resolve();
     });
+
     expect(container.textContent).toContain("Action required");
     expect(container.textContent).toContain("gh auth login --hostname github.com");
+    expect(container.textContent).toContain("Open global Source control settings");
     expect(container.textContent).not.toContain("operator");
-    expect(loadConnection).toHaveBeenCalledTimes(2);
-  });
-
-  it("shows an honest Unavailable state while offline without probing", async () => {
-    const loadConnection = vi.fn<NonNullable<HostGitHubConnectionPanelProps["loadConnection"]>>();
-    await renderPanel({ loadConnection, online: false });
-
-    expect(container.textContent).toContain("Unavailable");
-    expect(container.textContent).toContain("Reconnect this workstation");
-    expect(container.textContent).toContain("Not checked while offline");
-    expect(container.textContent).not.toContain("GitHub CLIChecking");
-    expect(findButton(container, "Verify again").disabled).toBe(true);
-    expect(loadConnection).not.toHaveBeenCalled();
-  });
-
-  it("keeps the corrective link's Project selected while the Project inventory loads", async () => {
-    const second = { ...project, id: "018f0f89-949a-75a8-8f61-6df78a843b1f" };
-    const loadConnection = vi.fn().mockResolvedValue(ready);
-    await renderPanel({ initialProjectId: second.id, loadConnection, projects: [] });
-    await renderPanel({ initialProjectId: second.id, loadConnection, projects: [project, second] });
-    expect(container.querySelector<HTMLSelectElement>("#github-connection-project")?.value).toBe(
-      second.id,
-    );
   });
 });

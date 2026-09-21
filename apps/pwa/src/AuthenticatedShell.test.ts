@@ -76,7 +76,8 @@ describe("AuthenticatedShell", () => {
     expect(html).toContain(`href="/projects/${localProject.id}"`);
     expect(html).toContain(`href="/projects/${providerProject.id}"`);
     expect(html).toContain('aria-current="page"');
-    expect(html).toContain(`href="/settings?projectId=${localProject.id}"`);
+    expect(html).toContain('href="/settings"');
+    expect(html).not.toContain("/settings?projectId=");
     expect(html).toContain("Settings");
     expect(html).toContain('href="#workspace"');
   });
@@ -116,17 +117,17 @@ describe("AuthenticatedShell", () => {
     expect(html).toContain('href="/settings" aria-current="page"');
   });
 
-  it("keeps the selected Project identifiable while Settings is the current page", () => {
+  it("keeps the selected Project identifiable while its Settings page is current", () => {
     const document = new DOMParser().parseFromString(
-      render({ route: { kind: "settings", projectId: localProject.id } }),
+      render({ route: { kind: "project_settings", projectId: localProject.id } }),
       "text/html",
     );
     const projectLink = document.querySelector(`a[href="/projects/${localProject.id}"]`);
-    const settingsLink = document.querySelector(`a[href="/settings?projectId=${localProject.id}"]`);
+    const settingsLink = document.querySelector('a[href="/settings"]');
 
     expect(projectLink?.textContent).toContain("Selected Project");
     expect(projectLink?.getAttribute("aria-current")).toBeNull();
-    expect(settingsLink?.getAttribute("aria-current")).toBe("page");
+    expect(settingsLink?.getAttribute("aria-current")).toBeNull();
   });
 
   it("announces one pending Sign out command and focuses a local failure", async () => {

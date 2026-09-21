@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useId, type MouseEvent } from "react";
 import { ArrowUpRight, GitPullRequest, Plus, RefreshCw, Settings } from "lucide-react";
 import type {
   FactoryBoard,
@@ -33,6 +33,21 @@ export interface ProjectFactoryBoardPanelProps {
   onRefresh: () => void;
   onOpenPullRequests: () => void;
   onOpenSettings: () => void;
+  settingsHref: string;
+}
+
+function openSettings(event: MouseEvent<HTMLAnchorElement>, onOpenSettings: () => void): void {
+  if (
+    event.button !== 0 ||
+    event.altKey ||
+    event.ctrlKey ||
+    event.metaKey ||
+    event.shiftKey ||
+    event.currentTarget.target === "_blank"
+  )
+    return;
+  event.preventDefault();
+  onOpenSettings();
 }
 
 function GitHubIssueCard({ issue }: { issue: FactoryGitHubIssue }) {
@@ -139,6 +154,7 @@ export function ProjectFactoryBoardPanel({
   onRefresh,
   onOpenPullRequests,
   onOpenSettings,
+  settingsHref,
 }: ProjectFactoryBoardPanelProps) {
   const titleId = useId();
   const approvedBoards = boards.filter((board) => board.approvedVersion !== null);
@@ -184,8 +200,10 @@ export function ProjectFactoryBoardPanel({
           <Button type="button" variant="ghost" onClick={onOpenPullRequests}>
             <GitPullRequest aria-hidden="true" /> Pull requests
           </Button>
-          <Button type="button" variant="ghost" onClick={onOpenSettings}>
-            <Settings aria-hidden="true" /> Settings
+          <Button asChild variant="ghost">
+            <a href={settingsHref} onClick={(event) => openSettings(event, onOpenSettings)}>
+              <Settings aria-hidden="true" /> Project settings
+            </a>
           </Button>
           <Button
             type="button"

@@ -586,7 +586,11 @@ export function FeatureChatPanel({
                           turn.failure === "unavailable" ||
                           turn.failure === "source_unavailable" ? (
                             <a
-                              href={`/settings?projectId=${projectId}#${turn.failure === "source_unavailable" ? "repository-settings-title" : "codex-connection-title"}`}
+                              href={
+                                turn.failure === "source_unavailable"
+                                  ? `/projects/${encodeURIComponent(projectId)}/settings#repository-settings-title`
+                                  : "/settings#codex-connection-title"
+                              }
                             >
                               {turn.failure === "source_unavailable"
                                 ? "Check Project source"

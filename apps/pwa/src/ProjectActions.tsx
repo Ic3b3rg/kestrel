@@ -102,7 +102,7 @@ export function ProjectActions({
             </p>
           )}
         </form>
-        <a href={`/settings?projectId=${project.id}`}>Project settings</a>
+        <a href={`/projects/${encodeURIComponent(project.id)}/settings`}>Project settings</a>
       </div>
     </details>
   );

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { FactoryBoard, FactoryGitHubIssues, Feature } from "@kestrel/contracts";
 import { fetchFactoryBoard, fetchFactoryGitHubIssues, fetchFeatures } from "./api.js";
-import type { AppRoute } from "./app-route.js";
+import { appPath, type AppRoute } from "./app-route.js";
 import { planningRequestError } from "./FeatureNavigation.js";
 import { ProjectFactoryBoardPanel } from "./ProjectFactoryBoardPanel.js";
 
@@ -142,7 +142,8 @@ export function ProjectFactoryWorkspace({
       }
       onRefresh={() => setGeneration((current) => current + 1)}
       onOpenPullRequests={() => onNavigate({ kind: "project", projectId, view: "pull_requests" })}
-      onOpenSettings={() => onNavigate({ kind: "settings", projectId })}
+      settingsHref={appPath({ kind: "project_settings", projectId })}
+      onOpenSettings={() => onNavigate({ kind: "project_settings", projectId })}
     />
   );
 }

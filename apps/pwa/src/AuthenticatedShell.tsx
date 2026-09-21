@@ -75,13 +75,10 @@ function WorkspaceShell(props: AuthenticatedShellProps) {
     props.route.kind === "project" ||
     props.route.kind === "feature" ||
     props.route.kind === "planning" ||
-    props.route.kind === "settings"
+    props.route.kind === "project_settings"
       ? props.route.projectId
       : undefined;
-  const settingsRoute = {
-    kind: "settings" as const,
-    ...(currentProjectId === undefined ? {} : { projectId: currentProjectId }),
-  };
+  const settingsRoute = { kind: "settings" as const };
   const navigate = (route: NavigableRoute) => (event: MouseEvent<HTMLAnchorElement>) => {
     if (!shouldHandleNavigation(event)) return;
     event.preventDefault();

@@ -308,7 +308,7 @@ export function DirectApiProfilePanel({
     <section className="direct-api-profile" aria-labelledby={`direct-api-profile-${projectId}`}>
       <div className="direct-api-profile-heading">
         <div>
-          <h4 id={`direct-api-profile-${projectId}`}>Direct API profile</h4>
+          <h2 id={`direct-api-profile-${projectId}`}>Direct API profile</h2>
         </div>
         <div className="direct-api-profile-actions">
           {profile === null ? null : (

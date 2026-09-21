@@ -82,9 +82,10 @@ describe("authenticated app routing", () => {
     });
   });
 
-  it("keeps Project-owned Settings aligned with the URL", () => {
-    const route = { kind: "settings" as const, projectId };
-    expect(appPath(route)).toBe(`/settings?projectId=${projectId}`);
+  it("keeps Project-owned Settings in a route-owned canonical URL", () => {
+    const route = { kind: "project_settings" as const, projectId };
+    expect(appPath(route)).toBe(`/projects/${projectId}/settings`);
+    expect(readAppRoute(`/projects/${projectId}/settings`)).toEqual(route);
     expect(readAppRoute("/settings", `?projectId=${projectId}`)).toEqual(route);
   });
 

@@ -1,64 +1,58 @@
-import { Button } from "./components/ui/button.js";
-import { NativeSelect } from "./components/ui/native-select.js";
-import { Label } from "./components/ui/label.js";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { HostGitHubConnection, ProjectInbox } from "@kestrel/contracts";
 
 import { fetchHostGitHubConnection } from "./api.js";
-import { projectLabel } from "./AuthenticatedShell.js";
+import { Button } from "./components/ui/button.js";
 
 type ConnectionReason = NonNullable<HostGitHubConnection["reason"]>;
 type Project = ProjectInbox["projects"][number];
+type LoadConnection = typeof fetchHostGitHubConnection;
 
-const remediation: Record<ConnectionReason, string> = {
+const globalRemediation: Record<ConnectionReason, string> = {
   account_drift:
     "Run gh auth switch --hostname github.com, confirm the intended account, then verify again.",
   authentication_required:
     "Run gh auth login --hostname github.com on this workstation, then verify again.",
   cli_not_installed: "Install GitHub CLI with brew install gh, then verify again.",
   cli_version_unsupported: "Upgrade GitHub CLI with brew upgrade gh; Kestrel requires gh 2.40+.",
-  project_access_denied:
-    "Restore repository access, including organization SSO, for the active account, then verify again.",
-  project_not_supported:
-    "Attach a local repository with a github.com remote to this Project, then verify again.",
+  project_access_denied: "Verify the active GitHub account, then retry from Project settings.",
+  project_not_supported: "Attach a supported GitHub repository from Project settings.",
   rate_limited: "Wait for the GitHub API rate limit to reset, then verify again.",
   timed_out: "Confirm this workstation can reach github.com, then verify again.",
   unexpected_response:
     "Run gh auth status --hostname github.com on this workstation, correct the reported problem, then verify again.",
 };
 
-export interface HostGitHubConnectionPanelProps {
-  initialProjectId?: string;
-  loadConnection?: (projectId?: string, signal?: AbortSignal) => Promise<HostGitHubConnection>;
+const projectRemediation: Record<ConnectionReason, string> = {
+  ...globalRemediation,
+  account_drift: "Confirm the intended host account in global Source control settings.",
+  authentication_required: "Run gh auth login --hostname github.com on this workstation.",
+  cli_not_installed: "Install GitHub CLI from global Source control settings, then verify again.",
+  cli_version_unsupported:
+    "Upgrade GitHub CLI from global Source control settings, then verify again.",
+  project_access_denied:
+    "Restore repository access, including organization SSO, for the host account, then verify again.",
+  project_not_supported:
+    "Attach a local repository with a github.com remote to this Project, then verify again.",
+};
+
+interface ConnectionProbeProps {
+  loadConnection?: LoadConnection;
   onAuthenticationError?: (error: unknown) => boolean;
   online: boolean;
-  projects: Project[];
 }
 
-export function HostGitHubConnectionPanel({
-  initialProjectId,
+function useConnectionProbe({
   loadConnection = fetchHostGitHubConnection,
   onAuthenticationError,
   online,
-  projects,
-}: HostGitHubConnectionPanelProps) {
-  const [selectedProjectId, setSelectedProjectId] = useState(
-    initialProjectId ?? projects[0]?.id ?? "",
-  );
+  projectId,
+}: ConnectionProbeProps & { projectId?: string }) {
   const [connection, setConnection] = useState<HostGitHubConnection | null>(null);
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
   const active = useRef<AbortController | null>(null);
-
-  useEffect(() => {
-    if (projects.length === 0) return;
-    if (selectedProjectId !== "" && !projects.some(({ id }) => id === selectedProjectId)) {
-      setSelectedProjectId(projects[0]?.id ?? "");
-    } else if (selectedProjectId === "" && projects[0] !== undefined) {
-      setSelectedProjectId(projects[0].id);
-    }
-  }, [projects, selectedProjectId]);
 
   const verify = useCallback(async () => {
     if (!online) return;
@@ -69,7 +63,7 @@ export function HostGitHubConnectionPanel({
     setFailed(false);
     setLoading(true);
     try {
-      const result = await loadConnection(selectedProjectId || undefined, controller.signal);
+      const result = await loadConnection(projectId, controller.signal);
       if (active.current === controller && !controller.signal.aborted) setConnection(result);
     } catch (error) {
       if (
@@ -85,7 +79,7 @@ export function HostGitHubConnectionPanel({
         setLoading(false);
       }
     }
-  }, [loadConnection, onAuthenticationError, online, selectedProjectId]);
+  }, [loadConnection, onAuthenticationError, online, projectId]);
 
   useEffect(() => {
     if (online) {
@@ -100,7 +94,65 @@ export function HostGitHubConnectionPanel({
     return () => active.current?.abort();
   }, [online, verify]);
 
-  const visibleState = !online || failed ? "unavailable" : loading ? "checking" : connection?.state;
+  return { connection, failed, loading, verify };
+}
+
+function ConnectionSection({
+  children,
+  heading,
+  headingId,
+  loading,
+  state,
+  stateLabel,
+  verify,
+  verifyDisabled,
+}: {
+  children: ReactNode;
+  heading: string;
+  headingId: string;
+  loading: boolean;
+  state: string;
+  stateLabel: string;
+  verify: () => Promise<void>;
+  verifyDisabled: boolean;
+}) {
+  return (
+    <section
+      className="record-section github-connection"
+      aria-busy={loading}
+      aria-labelledby={headingId}
+    >
+      <div className="section-heading">
+        <div>
+          <h2 id={headingId} tabIndex={-1}>
+            {heading}
+          </h2>
+        </div>
+        <p className={`state-marker connection-${state}`} role="status">
+          <span aria-hidden="true" />
+          {stateLabel}
+        </p>
+      </div>
+      {children}
+      <Button
+        variant="outline"
+        className="secondary-action"
+        type="button"
+        disabled={verifyDisabled}
+        onClick={() => void verify()}
+      >
+        Verify again
+      </Button>
+    </section>
+  );
+}
+
+export type HostGitHubConnectionPanelProps = ConnectionProbeProps;
+
+export function HostGitHubConnectionPanel(props: HostGitHubConnectionPanelProps) {
+  const { connection, failed, loading, verify } = useConnectionProbe(props);
+  const visibleState =
+    !props.online || failed ? "unavailable" : loading ? "checking" : connection?.state;
   const stateLabel =
     visibleState === "ready"
       ? "Ready"
@@ -109,81 +161,33 @@ export function HostGitHubConnectionPanel({
         : visibleState === "unavailable"
           ? "Unavailable"
           : "Checking";
-  const selectedProject = projects.find(({ id }) => id === selectedProjectId);
-  const projectAccess = connection?.projectAccess;
-  const projectAccessLabel =
-    selectedProjectId === ""
-      ? "No Project selected"
-      : projectAccess?.state === "verified"
-        ? `${projectAccess.repository.owner}/${projectAccess.repository.name}`
-        : loading
-          ? "Checking selected Project"
-          : "Not verified";
-  const cliLabel = !online
+  const cliLabel = !props.online
     ? "Not checked while offline"
     : failed
       ? "Probe unavailable"
       : connection?.cli === null
         ? "Not detected"
-        : connection?.cli.version === undefined
+        : connection?.cli === undefined
           ? "Checking"
           : `Installed · ${connection.cli.version}`;
-  const recovery = !online
+  const recovery = !props.online
     ? "Reconnect this workstation, then verify the host connection again."
     : failed
       ? "Kestrel could not complete the bounded host probe. Verify again."
       : connection?.reason === null || connection?.reason === undefined
         ? null
-        : remediation[connection.reason];
+        : globalRemediation[connection.reason];
 
   return (
-    <section
-      className="record-section github-connection"
-      aria-busy={loading}
-      aria-labelledby="github-connection-title"
+    <ConnectionSection
+      heading="Source control"
+      headingId="github-connection-title"
+      loading={loading}
+      state={visibleState ?? "checking"}
+      stateLabel={stateLabel}
+      verify={verify}
+      verifyDisabled={!props.online || loading}
     >
-      <div className="section-heading">
-        <div>
-          <h2 id="github-connection-title" tabIndex={-1}>
-            GitHub CLI
-          </h2>
-        </div>
-        <p className={`state-marker connection-${visibleState ?? "checking"}`} role="status">
-          <span aria-hidden="true" />
-          {stateLabel}
-        </p>
-      </div>
-
-      <div className="connection-controls">
-        <div className="form-field">
-          <Label htmlFor="github-connection-project">Project access</Label>
-          <NativeSelect
-            id="github-connection-project"
-            value={selectedProjectId}
-            disabled={!online || loading}
-            onChange={(event) => setSelectedProjectId(event.currentTarget.value)}
-          >
-            <option value="" disabled={projects.length > 0}>
-              {projects.length === 0 ? "No Projects available" : "Select a Project"}
-            </option>
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {projectLabel(project)}
-              </option>
-            ))}
-          </NativeSelect>
-        </div>
-        <Button
-          variant="outline"
-          className="secondary-action"
-          type="button"
-          disabled={!online || loading}
-          onClick={() => void verify()}
-        >
-          Verify again
-        </Button>
-      </div>
-
       <dl className="fact-list connection-facts">
         <div>
           <dt>GitHub CLI</dt>
@@ -201,10 +205,6 @@ export function HostGitHubConnectionPanel({
             </div>
           </>
         )}
-        <div className="fact-wide">
-          <dt>{selectedProject === undefined ? "Project" : projectLabel(selectedProject)}</dt>
-          <dd>{projectAccessLabel}</dd>
-        </div>
         {connection === null ? null : (
           <div className="fact-wide">
             <dt>Last verified</dt>
@@ -216,7 +216,6 @@ export function HostGitHubConnectionPanel({
           </div>
         )}
       </dl>
-
       {recovery === null ? (
         <p className="connection-note">
           Read-only host verification. Credentials remain in GitHub CLI custody.
@@ -224,6 +223,92 @@ export function HostGitHubConnectionPanel({
       ) : (
         <p className="connection-remediation">{recovery}</p>
       )}
-    </section>
+    </ConnectionSection>
+  );
+}
+
+export interface ProjectGitHubAccessPanelProps extends ConnectionProbeProps {
+  project: Project;
+}
+
+export function ProjectGitHubAccessPanel({ project, ...props }: ProjectGitHubAccessPanelProps) {
+  const { connection, failed, loading, verify } = useConnectionProbe({
+    ...props,
+    projectId: project.id,
+  });
+  const verified = connection?.projectAccess?.state === "verified";
+  const visibleState =
+    !props.online || failed
+      ? "unavailable"
+      : loading
+        ? "checking"
+        : verified
+          ? "ready"
+          : connection?.state === "action_required"
+            ? "action_required"
+            : "unavailable";
+  const stateLabel =
+    visibleState === "ready"
+      ? "Verified"
+      : visibleState === "action_required"
+        ? "Action required"
+        : visibleState === "unavailable"
+          ? "Unavailable"
+          : "Checking";
+  const repository =
+    connection?.projectAccess?.state === "verified"
+      ? `${connection.projectAccess.repository.owner}/${connection.projectAccess.repository.name}`
+      : project.repository === null
+        ? "Repository identity unavailable"
+        : `${project.repository.owner}/${project.repository.name}`;
+  const recovery = !props.online
+    ? "Reconnect this workstation, then verify repository access again."
+    : failed
+      ? "Kestrel could not complete the repository access probe. Verify again."
+      : connection?.reason === null || connection?.reason === undefined
+        ? null
+        : projectRemediation[connection.reason];
+
+  return (
+    <ConnectionSection
+      heading="GitHub repository access"
+      headingId="github-project-access-title"
+      loading={loading}
+      state={visibleState}
+      stateLabel={stateLabel}
+      verify={verify}
+      verifyDisabled={!props.online || loading}
+    >
+      <dl className="fact-list connection-facts">
+        <div className="fact-wide">
+          <dt>Repository</dt>
+          <dd>{repository}</dd>
+        </div>
+        <div>
+          <dt>Access</dt>
+          <dd>{verified ? "Read access verified" : loading ? "Checking" : "Not verified"}</dd>
+        </div>
+        {connection === null ? null : (
+          <div>
+            <dt>Last verified</dt>
+            <dd>
+              <time dateTime={connection.checkedAt}>
+                {new Date(connection.checkedAt).toLocaleString()}
+              </time>
+            </dd>
+          </div>
+        )}
+      </dl>
+      {recovery === null ? (
+        <p className="connection-note">
+          This verifies only the current repository. Credentials remain in host custody.
+        </p>
+      ) : (
+        <p className="connection-remediation">
+          {recovery}{" "}
+          <a href="/settings#github-connection-title">Open global Source control settings</a>.
+        </p>
+      )}
+    </ConnectionSection>
   );
 }

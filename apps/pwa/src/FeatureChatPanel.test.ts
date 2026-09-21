@@ -363,7 +363,7 @@ describe("persistent planning conversation", () => {
       (link) => link.textContent === "Check Project source",
     );
     expect(sourceLink?.getAttribute("href")).toBe(
-      `/settings?projectId=${projectId}#repository-settings-title`,
+      `/projects/${projectId}/settings#repository-settings-title`,
     );
   });
 

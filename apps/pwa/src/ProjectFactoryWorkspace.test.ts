@@ -273,7 +273,7 @@ it("opens a Project board with direct start, pull-request and settings actions w
     });
     expect(container.textContent).toContain(feature.title);
     expect(api.board).not.toHaveBeenCalled();
-    for (const name of ["New", "Pull requests", "Settings"]) {
+    for (const name of ["New", "Pull requests"]) {
       await act(async () => {
         await Promise.resolve(
           [...container.querySelectorAll("button")]
@@ -282,10 +282,18 @@ it("opens a Project board with direct start, pull-request and settings actions w
         );
       });
     }
+    const settings = [...container.querySelectorAll("a")].find(
+      (link) => link.textContent.trim() === "Project settings",
+    );
+    expect(settings?.getAttribute("href")).toBe(`/projects/${projectId}/settings`);
+    await act(async () => {
+      settings?.click();
+      await Promise.resolve();
+    });
     expect(navigate.mock.calls.map(([route]) => route)).toMatchObject([
       { kind: "planning", projectId },
       { kind: "project", projectId, view: "pull_requests" },
-      { kind: "settings", projectId },
+      { kind: "project_settings", projectId },
     ]);
     const route = navigate.mock.calls[0]?.[0];
     if (route?.kind !== "planning") throw new Error("Missing planning route");
