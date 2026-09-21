@@ -54,9 +54,23 @@ describe("Operator security form feedback", () => {
     form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
   }
 
-  it("keeps the username, clears secrets, and focuses one associated confirmation error", async () => {
+  async function typeAtFocusedField(value: string): Promise<void> {
+    for (const character of value) {
+      await act(async () => {
+        const input = document.activeElement;
+        if (!(input instanceof HTMLInputElement)) {
+          throw new Error("The focused element is not an input");
+        }
+        input.value += character;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        await Promise.resolve();
+      });
+    }
+  }
+
+  it("keeps the username, clears secrets, and focuses one associated confirmation error", () => {
     const onChangeCredentials = vi.fn();
-    await act(async () => {
+    act(() => {
       root.render(
         createElement(OperatorSecurityPanel, {
           error: null,
@@ -77,7 +91,7 @@ describe("Operator security form feedback", () => {
     newPassword.value = "a newly selected correct horse battery staple";
     confirmation.value = "a different new password";
 
-    await act(async () => submitCredentials());
+    act(() => submitCredentials());
 
     expect(onChangeCredentials).not.toHaveBeenCalled();
     expect(document.activeElement).toBe(confirmation);
@@ -92,8 +106,35 @@ describe("Operator security form feedback", () => {
     expect(container.querySelectorAll('[role="alert"]')).toHaveLength(1);
   });
 
-  it("renders a sign-out failure beside the command that caused it", async () => {
-    await act(async () => {
+  it("does not move focus to another invalid field while the Operator corrects the first", async () => {
+    act(() => {
+      root.render(
+        createElement(OperatorSecurityPanel, {
+          error: null,
+          online: true,
+          onChangeCredentials: vi.fn(),
+          onLogout: vi.fn(),
+          pending: null,
+          session,
+        }),
+      );
+    });
+
+    act(() => submitCredentials());
+
+    const currentPassword = field("currentPassword");
+    const newPassword = field("newPassword");
+    expect(document.activeElement).toBe(currentPassword);
+
+    await typeAtFocusedField("current password");
+
+    expect(document.activeElement).toBe(currentPassword);
+    expect(currentPassword.value).toBe("current password");
+    expect(newPassword.value).toBe("");
+  });
+
+  it("renders a sign-out failure beside the command that caused it", () => {
+    act(() => {
       root.render(
         createElement(OperatorSecurityPanel, {
           error: {
@@ -119,9 +160,10 @@ describe("Operator security form feedback", () => {
   });
 
   it("announces one pending credential command, blocks duplicates, and restores the form", async () => {
-    const submission = Promise.withResolvers<void>();
-    const onChangeCredentials = vi.fn(async (_value: OperatorCredentialFormValue) => {
-      await submission.promise;
+    const submission = Promise.withResolvers<undefined>();
+    const onChangeCredentials = vi.fn((value: OperatorCredentialFormValue) => {
+      void value.username;
+      return submission.promise;
     });
 
     function Harness() {
@@ -143,7 +185,7 @@ describe("Operator security form feedback", () => {
       });
     }
 
-    await act(async () => root.render(createElement(Harness)));
+    act(() => root.render(createElement(Harness)));
     const currentPassword = field("currentPassword");
     const username = field("username");
     const newPassword = field("newPassword");
@@ -167,9 +209,10 @@ describe("Operator security form feedback", () => {
     expect(container.querySelector('[role="status"]')?.textContent).toContain(
       "Changing credentials",
     );
+    expect(container.querySelector('[role="status"]')?.closest('[aria-busy="true"]')).toBeNull();
 
     await act(async () => {
-      submission.resolve();
+      submission.resolve(undefined);
       await submission.promise;
       await Promise.resolve();
     });
@@ -186,7 +229,7 @@ describe("Operator security form feedback", () => {
   });
 
   it("announces one pending sign-out command, blocks duplicates, and restores its action", async () => {
-    const submission = Promise.withResolvers<void>();
+    const submission = Promise.withResolvers<undefined>();
     const onLogout = vi.fn(async () => {
       await submission.promise;
     });
@@ -210,7 +253,7 @@ describe("Operator security form feedback", () => {
       });
     }
 
-    await act(async () => root.render(createElement(Harness)));
+    act(() => root.render(createElement(Harness)));
     const signOut = [...container.querySelectorAll("button")].find(
       (button) => button.textContent === "Sign out",
     );
@@ -228,7 +271,7 @@ describe("Operator security form feedback", () => {
     expect(container.querySelectorAll('[role="status"]')).toHaveLength(1);
 
     await act(async () => {
-      submission.resolve();
+      submission.resolve(undefined);
       await submission.promise;
       await Promise.resolve();
     });
@@ -240,8 +283,8 @@ describe("Operator security form feedback", () => {
     expect(signOut.disabled).toBe(false);
   });
 
-  it("keeps both security commands unavailable while offline", async () => {
-    await act(async () => {
+  it("keeps both security commands unavailable while offline", () => {
+    act(() => {
       root.render(
         createElement(OperatorSecurityPanel, {
           error: null,

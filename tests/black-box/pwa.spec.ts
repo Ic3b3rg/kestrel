@@ -2010,10 +2010,25 @@ test.describe("observable Installation PWA", () => {
     await page.setViewportSize({ height: 800, width: 1_024 });
     const usernameInput = page.getByLabel("Username");
     const signIn = page.getByRole("button", { name: "Sign in" });
+    await context.setOffline(true);
+    await expect(page.getByRole("heading", { name: "Sign in to Kestrel" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Checking Operator session" })).toHaveCount(0);
+    await expect(signIn).toBeDisabled();
+    await expect(page.getByText("Reconnect before signing in.", { exact: true })).toBeVisible();
+    expectedUnauthorizedResponses += 1;
+    await context.setOffline(false);
+    await expect(signIn).toBeEnabled();
+    await usernameInput.focus();
+    await page.keyboard.press("Enter");
+    await expect(usernameInput).toBeFocused();
+    await usernameInput.pressSequentially("operator");
+    await expect(usernameInput).toBeFocused();
+    await expect(usernameInput).toHaveValue("operator");
     await usernameInput.fill("operator name");
     const passwordInput = page.getByLabel("Password");
+    await expect(passwordInput).toHaveValue("");
     await passwordInput.fill("not sent");
-    await signIn.click();
+    await passwordInput.press("Enter");
     const usernameError = page.locator("#username-error");
     await expect(usernameError).toContainText("Start with a letter or number");
     await expect(usernameInput).toHaveAttribute("aria-describedby", "username-error");
@@ -2023,7 +2038,7 @@ test.describe("observable Installation PWA", () => {
     expect(loginRequestCount).toBe(0);
     await usernameInput.fill(TEST_OPERATOR_CREDENTIALS.username);
     await passwordInput.fill("not the Operator password");
-    await signIn.click();
+    await passwordInput.press("Enter");
     await expect.poll(() => loginRequestCount).toBe(1);
     const signingIn = page.getByRole("button", { name: "Signing in…" });
     await expect(signingIn).toBeDisabled();
@@ -2035,7 +2050,7 @@ test.describe("observable Installation PWA", () => {
     await expect(usernameInput).toHaveValue(TEST_OPERATOR_CREDENTIALS.username);
     await expect(passwordInput).toHaveValue("");
     await passwordInput.fill(TEST_OPERATOR_CREDENTIALS.password);
-    await page.getByRole("button", { name: "Sign in" }).click();
+    await passwordInput.press("Enter");
     await expect(
       page.getByRole("heading", { level: 1, name: "Projects", exact: true }),
     ).toBeVisible();
@@ -2255,14 +2270,18 @@ test.describe("observable Installation PWA", () => {
     const operatorUsername = page.getByLabel("Operator username");
     const newPassword = page.getByLabel("New password", { exact: true });
     const passwordConfirmation = page.getByLabel("Confirm new password");
-    const changeCredentials = page.getByRole("button", {
-      name: "Change credentials and sign out",
-    });
+    await currentPassword.focus();
+    await page.keyboard.press("Enter");
+    await expect(currentPassword).toBeFocused();
+    await currentPassword.pressSequentially("current password");
+    await expect(currentPassword).toBeFocused();
+    await expect(currentPassword).toHaveValue("current password");
+    await expect(newPassword).toHaveValue("");
     await currentPassword.fill(TEST_OPERATOR_CREDENTIALS.password);
     await operatorUsername.fill(updatedCredentials.username);
     await newPassword.fill(updatedCredentials.password);
     await passwordConfirmation.fill("a different new password");
-    await changeCredentials.click();
+    await passwordConfirmation.press("Enter");
     const confirmationError = page.locator("#operator-new-password-confirmation-error");
     await expect(confirmationError).toContainText("does not match");
     await expect(passwordConfirmation).toHaveAttribute(
@@ -2280,7 +2299,7 @@ test.describe("observable Installation PWA", () => {
     await currentPassword.fill("not the current Operator password");
     await newPassword.fill(updatedCredentials.password);
     await passwordConfirmation.fill(updatedCredentials.password);
-    await changeCredentials.click();
+    await passwordConfirmation.press("Enter");
     const credentialError = page.locator('.security-form [role="alert"]');
     await expect(credentialError).toContainText("The request was rejected");
     await expect(credentialError).toBeFocused();
@@ -2293,10 +2312,10 @@ test.describe("observable Installation PWA", () => {
     await currentPassword.fill(TEST_OPERATOR_CREDENTIALS.password);
     await newPassword.fill(updatedCredentials.password);
     await passwordConfirmation.fill(updatedCredentials.password);
-    await changeCredentials.click();
+    await passwordConfirmation.press("Enter");
     await expect.poll(() => stepUpRequestCount).toBe(2);
     await expect(page.getByRole("button", { name: "Changing credentials…" })).toBeDisabled();
-    await expect(page.locator('.security-form [role="status"]')).toContainText(
+    await expect(page.locator('.operator-security [role="status"]')).toContainText(
       "Changing credentials",
     );
     releaseSuccessfulStepUp();
@@ -2305,7 +2324,7 @@ test.describe("observable Installation PWA", () => {
 
     await page.getByLabel("Username").fill(updatedCredentials.username);
     await page.getByLabel("Password").fill(updatedCredentials.password);
-    await page.getByRole("button", { name: "Sign in" }).click();
+    await page.getByLabel("Password").press("Enter");
     await expect(
       page.getByRole("heading", { level: 1, name: "Settings", exact: true }),
     ).toBeVisible();

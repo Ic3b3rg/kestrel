@@ -22,6 +22,20 @@ export interface OperatorSecurityError {
   message: string;
 }
 
+type CredentialField = "currentPassword" | "newPassword" | "newPasswordConfirmation" | "username";
+
+interface ValidationFocusRequest {
+  field: CredentialField;
+  message: string;
+}
+
+const credentialFieldOrder = [
+  "currentPassword",
+  "username",
+  "newPassword",
+  "newPasswordConfirmation",
+] as const;
+
 interface OperatorSecurityPanelProps {
   error: OperatorSecurityError | null;
   online: boolean;
@@ -46,31 +60,28 @@ export function OperatorSecurityPanel(props: OperatorSecurityPanelProps) {
   const credentialSubmission = useRef(false);
   const logoutSubmission = useRef(false);
   const [validationErrors, setValidationErrors] = useState<
-    Partial<
-      Record<"currentPassword" | "newPassword" | "newPasswordConfirmation" | "username", string>
-    >
+    Partial<Record<CredentialField, string>>
   >({});
-  const fieldOrder = [
-    "currentPassword",
-    "username",
-    "newPassword",
-    "newPasswordConfirmation",
-  ] as const;
-  const firstInvalidField = fieldOrder.find((name) => validationErrors[name] !== undefined);
+  const [validationFocusRequest, setValidationFocusRequest] =
+    useState<ValidationFocusRequest | null>(null);
+  const firstInvalidField = credentialFieldOrder.find(
+    (name) => validationErrors[name] !== undefined,
+  );
   const credentialError = props.error?.action === "credentials" ? props.error.message : null;
   const logoutError = props.error?.action === "logout" ? props.error.message : null;
 
   useEffect(() => {
-    if (firstInvalidField === undefined) return;
-    const input = formRef.current?.elements.namedItem(firstInvalidField);
+    if (validationFocusRequest === null) return;
+    const input = formRef.current?.elements.namedItem(validationFocusRequest.field);
     if (input instanceof HTMLInputElement) input.focus();
-  }, [firstInvalidField, validationErrors]);
+  }, [validationFocusRequest]);
 
-  const clearValidationError = (name: (typeof fieldOrder)[number]) => {
+  const clearValidationError = (name: CredentialField) => {
+    setValidationFocusRequest(null);
     setValidationErrors((current) => {
       if (current[name] === undefined) return current;
-      const next = { ...current };
-      delete next[name];
+      const { [name]: removed, ...next } = current;
+      void removed;
       return next;
     });
   };
@@ -114,12 +125,17 @@ export function OperatorSecurityPanel(props: OperatorSecurityPanelProps) {
       errors.newPasswordConfirmation = "The new password confirmation does not match.";
     }
     if (Object.keys(errors).length > 0) {
+      const focusField = credentialFieldOrder.find((name) => errors[name] !== undefined);
       setValidationErrors(errors);
+      if (focusField !== undefined) {
+        setValidationFocusRequest({ field: focusField, message: errors[focusField] ?? "" });
+      }
       clearPasswordFields(form);
       return;
     }
 
     setValidationErrors({});
+    setValidationFocusRequest(null);
     credentialSubmission.current = true;
     try {
       await props.onChangeCredentials({
@@ -301,16 +317,14 @@ export function OperatorSecurityPanel(props: OperatorSecurityPanelProps) {
               </FormFieldError>
             )}
           </div>
-          {firstInvalidField === undefined ? null : (
+          {validationFocusRequest === null ? null : (
             <FormFeedback kind="error" visuallyHidden>
-              {validationErrors[firstInvalidField]}
+              {validationFocusRequest.message}
             </FormFeedback>
           )}
-          {props.pending === "credentials" ? (
-            <FormFeedback kind="pending" visuallyHidden>
-              Changing credentials…
-            </FormFeedback>
-          ) : firstInvalidField === undefined && credentialError !== null ? (
+          {props.pending !== "credentials" &&
+          firstInvalidField === undefined &&
+          credentialError !== null ? (
             <FormFeedback focus kind="error" title="Credential change failed">
               {credentialError}
             </FormFeedback>
@@ -324,6 +338,11 @@ export function OperatorSecurityPanel(props: OperatorSecurityPanelProps) {
             Verifies the current password, then invalidates every signed-in device.
           </p>
         </form>
+        {props.pending === "credentials" ? (
+          <FormFeedback kind="pending" visuallyHidden>
+            Changing credentials…
+          </FormFeedback>
+        ) : null}
       </div>
     </section>
   );

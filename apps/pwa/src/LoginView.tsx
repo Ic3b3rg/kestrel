@@ -16,6 +16,15 @@ interface LoginViewProps {
   onSubmit(command: LoginCommand): Promise<void>;
 }
 
+type LoginField = "password" | "username";
+
+interface ValidationFocusRequest {
+  field: LoginField;
+  message: string;
+}
+
+const loginFieldOrder = ["username", "password"] as const;
+
 export function LoginView(props: LoginViewProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const submitting = useRef(false);
@@ -23,21 +32,22 @@ export function LoginView(props: LoginViewProps) {
     password?: string;
     username?: string;
   }>({});
-  const firstInvalidField = (["username", "password"] as const).find(
-    (name) => validationErrors[name] !== undefined,
-  );
+  const [validationFocusRequest, setValidationFocusRequest] =
+    useState<ValidationFocusRequest | null>(null);
+  const firstInvalidField = loginFieldOrder.find((name) => validationErrors[name] !== undefined);
 
   useEffect(() => {
-    if (firstInvalidField === undefined) return;
-    const input = formRef.current?.elements.namedItem(firstInvalidField);
+    if (validationFocusRequest === null) return;
+    const input = formRef.current?.elements.namedItem(validationFocusRequest.field);
     if (input instanceof HTMLInputElement) input.focus();
-  }, [firstInvalidField, validationErrors]);
+  }, [validationFocusRequest]);
 
-  const clearValidationError = (name: "password" | "username") => {
+  const clearValidationError = (name: LoginField) => {
+    setValidationFocusRequest(null);
     setValidationErrors((current) => {
       if (current[name] === undefined) return current;
-      const next = { ...current };
-      delete next[name];
+      const { [name]: removed, ...next } = current;
+      void removed;
       return next;
     });
   };
@@ -68,12 +78,17 @@ export function LoginView(props: LoginViewProps) {
       errors.password = "Use no more than 128 characters.";
     }
     if (Object.keys(errors).length > 0) {
+      const focusField = loginFieldOrder.find((name) => errors[name] !== undefined);
       setValidationErrors(errors);
+      if (focusField !== undefined) {
+        setValidationFocusRequest({ field: focusField, message: errors[focusField] ?? "" });
+      }
       if (passwordInput instanceof HTMLInputElement) passwordInput.value = "";
       return;
     }
 
     setValidationErrors({});
+    setValidationFocusRequest(null);
     submitting.current = true;
     try {
       await props.onSubmit({
@@ -101,7 +116,7 @@ export function LoginView(props: LoginViewProps) {
       </header>
 
       <main id="login-main" className="login-main" tabIndex={-1}>
-        {props.checking ? (
+        {props.checking && props.online ? (
           <section className="system-state" aria-busy="true" aria-label="Checking Operator session">
             <h1>Checking Operator session</h1>
             <p>Kestrel is verifying the host-scoped session with the local Installation.</p>
@@ -169,16 +184,12 @@ export function LoginView(props: LoginViewProps) {
                   <FormFieldError id="password-error">{validationErrors.password}</FormFieldError>
                 )}
               </div>
-              {firstInvalidField === undefined ? null : (
+              {validationFocusRequest === null ? null : (
                 <FormFeedback kind="error" visuallyHidden>
-                  {validationErrors[firstInvalidField]}
+                  {validationFocusRequest.message}
                 </FormFeedback>
               )}
-              {props.pending ? (
-                <FormFeedback kind="pending" visuallyHidden>
-                  Signing in…
-                </FormFeedback>
-              ) : firstInvalidField !== undefined ? null : props.error ? (
+              {props.pending || firstInvalidField !== undefined ? null : props.error ? (
                 <FormFeedback focus kind="error" title="Sign-in failed">
                   {props.error}
                 </FormFeedback>
@@ -194,6 +205,11 @@ export function LoginView(props: LoginViewProps) {
                   : "Reconnect before signing in."}
               </p>
             </form>
+            {props.pending ? (
+              <FormFeedback kind="pending" visuallyHidden>
+                Signing in…
+              </FormFeedback>
+            ) : null}
           </section>
         )}
       </main>

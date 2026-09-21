@@ -39,9 +39,23 @@ describe("Login form feedback", () => {
     form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
   }
 
-  it("keeps safe input and focuses the first field with one associated validation message", async () => {
+  async function typeAtFocusedField(value: string): Promise<void> {
+    for (const character of value) {
+      await act(async () => {
+        const input = document.activeElement;
+        if (!(input instanceof HTMLInputElement)) {
+          throw new Error("The focused element is not an input");
+        }
+        input.value += character;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        await Promise.resolve();
+      });
+    }
+  }
+
+  it("keeps safe input and focuses the first field with one associated validation message", () => {
     const onSubmit = vi.fn();
-    await act(async () => {
+    act(() => {
       root.render(
         createElement(LoginView, {
           checking: false,
@@ -57,7 +71,7 @@ describe("Login form feedback", () => {
     username.value = "operator name";
     password.value = "not sent";
 
-    await act(async () => submit());
+    act(() => submit());
 
     expect(onSubmit).not.toHaveBeenCalled();
     expect(document.activeElement).toBe(username);
@@ -72,10 +86,37 @@ describe("Login form feedback", () => {
     expect(container.querySelectorAll('[role="alert"]')).toHaveLength(1);
   });
 
+  it("does not move focus to another invalid field while the Operator corrects the first", async () => {
+    act(() => {
+      root.render(
+        createElement(LoginView, {
+          checking: false,
+          error: null,
+          online: true,
+          pending: false,
+          onSubmit: vi.fn(),
+        }),
+      );
+    });
+
+    act(() => submit());
+
+    const username = field("username");
+    const password = field("password");
+    expect(document.activeElement).toBe(username);
+
+    await typeAtFocusedField("operator");
+
+    expect(document.activeElement).toBe(username);
+    expect(username.value).toBe("operator");
+    expect(password.value).toBe("");
+  });
+
   it("announces pending once, blocks duplicate submits, and focuses a retained local failure", async () => {
-    const submission = Promise.withResolvers<void>();
-    const onSubmit = vi.fn(async (_command: LoginCommand) => {
-      await submission.promise;
+    const submission = Promise.withResolvers<undefined>();
+    const onSubmit = vi.fn((command: LoginCommand) => {
+      void command.username;
+      return submission.promise;
     });
 
     function Harness() {
@@ -96,7 +137,7 @@ describe("Login form feedback", () => {
       });
     }
 
-    await act(async () => root.render(createElement(Harness)));
+    act(() => root.render(createElement(Harness)));
     const username = field("username");
     const password = field("password");
     username.value = "operator";
@@ -115,9 +156,10 @@ describe("Login form feedback", () => {
     const pendingStatuses = container.querySelectorAll('[role="status"]');
     expect(pendingStatuses).toHaveLength(1);
     expect(pendingStatuses[0]?.textContent).toContain("Signing in");
+    expect(pendingStatuses[0]?.closest('[aria-busy="true"]')).toBeNull();
 
     await act(async () => {
-      submission.resolve();
+      submission.resolve(undefined);
       await submission.promise;
       await Promise.resolve();
     });
@@ -132,11 +174,11 @@ describe("Login form feedback", () => {
     expect(button?.disabled).toBe(false);
   });
 
-  it("keeps the action unavailable while offline", async () => {
-    await act(async () => {
+  it("keeps the action unavailable while offline", () => {
+    act(() => {
       root.render(
         createElement(LoginView, {
-          checking: false,
+          checking: true,
           error: null,
           online: false,
           pending: false,
@@ -151,8 +193,8 @@ describe("Login form feedback", () => {
     expect(container.textContent).toContain("Reconnect before signing in.");
   });
 
-  it("announces a related success locally without also exposing an alert", async () => {
-    await act(async () => {
+  it("announces a related success locally without also exposing an alert", () => {
+    act(() => {
       root.render(
         createElement(LoginView, {
           checking: false,
