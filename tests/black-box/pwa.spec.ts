@@ -1773,6 +1773,7 @@ test.describe("observable Installation PWA", () => {
     const runningStack = stack as RunningStack;
     const browserErrors: string[] = [];
     let expectedUnauthorizedResponses = 2;
+    let expectedForbiddenResponses = 0;
     let expectedServiceUnavailableResponses = 0;
     page.on("console", (message) => {
       if (message.type() === "error" || message.type() === "warning") {
@@ -1783,6 +1784,11 @@ test.describe("observable Installation PWA", () => {
             "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
         ) {
           expectedUnauthorizedResponses -= 1;
+        } else if (
+          expectedForbiddenResponses > 0 &&
+          text === "Failed to load resource: the server responded with a status of 403 (Forbidden)"
+        ) {
+          expectedForbiddenResponses -= 1;
         } else if (
           expectedServiceUnavailableResponses > 0 &&
           text ===
@@ -1795,6 +1801,26 @@ test.describe("observable Installation PWA", () => {
       }
     });
     page.on("pageerror", (error) => browserErrors.push(error.message));
+    let loginRequestCount = 0;
+    let releaseFirstLogin: () => void = () => undefined;
+    const firstLoginGate = new Promise<void>((resolve) => {
+      releaseFirstLogin = resolve;
+    });
+    await page.route("**/auth/login", async (route) => {
+      loginRequestCount += 1;
+      if (loginRequestCount === 1) await firstLoginGate;
+      await route.continue();
+    });
+    let stepUpRequestCount = 0;
+    let releaseSuccessfulStepUp: () => void = () => undefined;
+    const successfulStepUpGate = new Promise<void>((resolve) => {
+      releaseSuccessfulStepUp = resolve;
+    });
+    await page.route("**/auth/step-up", async (route) => {
+      stepUpRequestCount += 1;
+      if (stepUpRequestCount === 2) await successfulStepUpGate;
+      await route.continue();
+    });
     let projectPostCount = 0;
     // This Project exists only in the provider-response fixture below.
     await page.route(`**/api/v1/projects/${openedProject.project.id}/features`, async (route) => {
@@ -1973,21 +1999,49 @@ test.describe("observable Installation PWA", () => {
     await expect(page.getByRole("heading", { name: "Sign in to Kestrel" })).toBeVisible();
     await page.keyboard.press("Tab");
     await expect(page.getByRole("link", { name: "Skip to sign in" })).toBeFocused();
+    await page.setViewportSize({ height: 800, width: 320 });
     const loginAccessibility = await new AxeBuilder({ page }).analyze();
     expect(loginAccessibility.violations).toEqual([]);
-    await page.getByLabel("Username").fill(TEST_OPERATOR_CREDENTIALS.username);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+    await page.setViewportSize({ height: 800, width: 1_024 });
+    const usernameInput = page.getByLabel("Username");
+    const signIn = page.getByRole("button", { name: "Sign in" });
+    await usernameInput.fill("operator name");
     const passwordInput = page.getByLabel("Password");
+    await passwordInput.fill("not sent");
+    await signIn.click();
+    const usernameError = page.locator("#username-error");
+    await expect(usernameError).toContainText("Start with a letter or number");
+    await expect(usernameInput).toHaveAttribute("aria-describedby", "username-error");
+    await expect(usernameInput).toBeFocused();
+    await expect(usernameInput).toHaveValue("operator name");
+    await expect(passwordInput).toHaveValue("");
+    expect(loginRequestCount).toBe(0);
+    await usernameInput.fill(TEST_OPERATOR_CREDENTIALS.username);
     await passwordInput.fill("not the Operator password");
-    await page.getByRole("button", { name: "Sign in" }).click();
+    await signIn.click();
+    await expect.poll(() => loginRequestCount).toBe(1);
+    const signingIn = page.getByRole("button", { name: "Signing in…" });
+    await expect(signingIn).toBeDisabled();
+    await expect(page.getByRole("status", { name: "" })).toContainText("Signing in");
+    releaseFirstLogin();
     const loginError = page.getByRole("alert");
     await expect(loginError).toContainText("The Operator credentials are invalid");
     await expect(loginError).toBeFocused();
+    await expect(usernameInput).toHaveValue(TEST_OPERATOR_CREDENTIALS.username);
     await expect(passwordInput).toHaveValue("");
     await passwordInput.fill(TEST_OPERATOR_CREDENTIALS.password);
     await page.getByRole("button", { name: "Sign in" }).click();
     await expect(
       page.getByRole("heading", { level: 1, name: "Projects", exact: true }),
     ).toBeVisible();
+    await expect(
+      page.getByText("Operator authenticated. Reading the Kestrel Installation.", { exact: true }),
+    ).toHaveCount(0);
     expectedUnauthorizedResponses = 0;
     await openProjectWorkspace(page);
     await expect(page.getByText("Not acquired", { exact: true })).toHaveCount(2);
@@ -2136,6 +2190,10 @@ test.describe("observable Installation PWA", () => {
       page.getByRole("heading", { name: "Reconnect to view product data" }),
     ).toBeVisible();
     await expect(page.getByRole("button", { name: "Run diagnostic" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Sign out", exact: true })).toBeDisabled();
+    await expect(
+      page.getByRole("button", { name: "Change credentials and sign out" }),
+    ).toBeDisabled();
     await expect(connectionPanel.getByRole("status")).toContainText("Unavailable");
     await expect(codexPanel.getByRole("status")).toContainText("Unavailable");
     await expect(
@@ -2193,12 +2251,57 @@ test.describe("observable Installation PWA", () => {
       username: "operator-renamed",
       password: "a newly selected correct horse battery staple",
     };
-    await page.getByLabel("Current password").fill(TEST_OPERATOR_CREDENTIALS.password);
-    await page.getByLabel("Operator username").fill(updatedCredentials.username);
-    await page.getByLabel("New password", { exact: true }).fill(updatedCredentials.password);
-    await page.getByLabel("Confirm new password").fill(updatedCredentials.password);
-    await page.getByRole("button", { name: "Change credentials and sign out" }).click();
+    const currentPassword = page.getByLabel("Current password");
+    const operatorUsername = page.getByLabel("Operator username");
+    const newPassword = page.getByLabel("New password", { exact: true });
+    const passwordConfirmation = page.getByLabel("Confirm new password");
+    const changeCredentials = page.getByRole("button", {
+      name: "Change credentials and sign out",
+    });
+    await currentPassword.fill(TEST_OPERATOR_CREDENTIALS.password);
+    await operatorUsername.fill(updatedCredentials.username);
+    await newPassword.fill(updatedCredentials.password);
+    await passwordConfirmation.fill("a different new password");
+    await changeCredentials.click();
+    const confirmationError = page.locator("#operator-new-password-confirmation-error");
+    await expect(confirmationError).toContainText("does not match");
+    await expect(passwordConfirmation).toHaveAttribute(
+      "aria-describedby",
+      "operator-new-password-confirmation-error",
+    );
+    await expect(passwordConfirmation).toBeFocused();
+    await expect(operatorUsername).toHaveValue(updatedCredentials.username);
+    await expect(currentPassword).toHaveValue("");
+    await expect(newPassword).toHaveValue("");
+    await expect(passwordConfirmation).toHaveValue("");
+    expect(stepUpRequestCount).toBe(0);
+
+    expectedForbiddenResponses = 1;
+    await currentPassword.fill("not the current Operator password");
+    await newPassword.fill(updatedCredentials.password);
+    await passwordConfirmation.fill(updatedCredentials.password);
+    await changeCredentials.click();
+    const credentialError = page.locator('.security-form [role="alert"]');
+    await expect(credentialError).toContainText("The request was rejected");
+    await expect(credentialError).toBeFocused();
+    await expect(operatorUsername).toHaveValue(updatedCredentials.username);
+    await expect(currentPassword).toHaveValue("");
+    await expect(newPassword).toHaveValue("");
+    await expect(passwordConfirmation).toHaveValue("");
+    expect(stepUpRequestCount).toBe(1);
+
+    await currentPassword.fill(TEST_OPERATOR_CREDENTIALS.password);
+    await newPassword.fill(updatedCredentials.password);
+    await passwordConfirmation.fill(updatedCredentials.password);
+    await changeCredentials.click();
+    await expect.poll(() => stepUpRequestCount).toBe(2);
+    await expect(page.getByRole("button", { name: "Changing credentials…" })).toBeDisabled();
+    await expect(page.locator('.security-form [role="status"]')).toContainText(
+      "Changing credentials",
+    );
+    releaseSuccessfulStepUp();
     await expect(page.getByRole("heading", { name: "Sign in to Kestrel" })).toBeVisible();
+    await expect(page.getByRole("status")).toContainText("Credentials changed");
 
     await page.getByLabel("Username").fill(updatedCredentials.username);
     await page.getByLabel("Password").fill(updatedCredentials.password);
@@ -2206,6 +2309,7 @@ test.describe("observable Installation PWA", () => {
     await expect(
       page.getByRole("heading", { level: 1, name: "Settings", exact: true }),
     ).toBeVisible();
+    await expect(page.getByText("Credentials changed", { exact: false })).toHaveCount(0);
     await expect(
       page.getByText(`Signed in as ${updatedCredentials.username}`, { exact: true }),
     ).toBeVisible();
@@ -2237,6 +2341,7 @@ test.describe("observable Installation PWA", () => {
     expect(remainingCookieNames).not.toContain("__Host-kestrel-csrf");
 
     expect(expectedServiceUnavailableResponses).toBe(0);
+    expect(expectedForbiddenResponses).toBe(0);
     expect(browserErrors).toEqual([]);
   });
 });
