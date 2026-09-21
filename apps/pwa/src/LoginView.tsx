@@ -11,6 +11,8 @@ interface LoginViewProps {
   error: string | null;
   online: boolean;
   pending: boolean;
+  success?: string | null;
+  onClearFeedback?(): void;
   onSubmit(command: LoginCommand): Promise<void>;
 }
 
@@ -43,6 +45,7 @@ export function LoginView(props: LoginViewProps) {
   const handleSubmit = async (event: SyntheticEvent<HTMLFormElement, SubmitEvent>) => {
     event.preventDefault();
     if (submitting.current || props.pending || !props.online) return;
+    props.onClearFeedback?.();
     const form = event.currentTarget;
     const data = new FormData(form);
     const username = data.get("username");
@@ -175,10 +178,12 @@ export function LoginView(props: LoginViewProps) {
                 <FormFeedback kind="pending" visuallyHidden>
                   Signing in…
                 </FormFeedback>
-              ) : props.error ? (
+              ) : firstInvalidField !== undefined ? null : props.error ? (
                 <FormFeedback focus kind="error" title="Sign-in failed">
                   {props.error}
                 </FormFeedback>
+              ) : props.success ? (
+                <FormFeedback kind="success">{props.success}</FormFeedback>
               ) : null}
               <Button type="submit" disabled={!props.online || props.pending}>
                 {props.pending ? "Signing in…" : "Sign in"}

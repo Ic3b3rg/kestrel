@@ -150,4 +150,25 @@ describe("Login form feedback", () => {
     );
     expect(container.textContent).toContain("Reconnect before signing in.");
   });
+
+  it("announces a related success locally without also exposing an alert", async () => {
+    await act(async () => {
+      root.render(
+        createElement(LoginView, {
+          checking: false,
+          error: null,
+          online: true,
+          pending: false,
+          success: "Credentials changed. Sign in with your updated Operator account.",
+          onSubmit: vi.fn(),
+        }),
+      );
+    });
+
+    expect(container.querySelectorAll('[role="status"]')).toHaveLength(1);
+    expect(container.querySelector('[role="status"]')?.textContent).toContain(
+      "Credentials changed",
+    );
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
 });
