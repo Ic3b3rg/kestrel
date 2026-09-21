@@ -231,12 +231,21 @@ export function HostGitHubProjectPanel({
         <p className="host-github-session-error" role="alert">
           <strong>Authentication required.</strong> Run{" "}
           <code>gh auth login --hostname github.com</code>, then refresh.{" "}
-          <a href={`/settings?projectId=${projectId}`}>Open Connections</a>
+          <a
+            href={`/projects/${encodeURIComponent(projectId)}/settings#github-project-access-title`}
+          >
+            Open Project settings
+          </a>
         </p>
       ) : inbox?.status.authentication === "access_denied" ? (
         <p className="host-github-session-error" role="alert">
           <strong>Project access required.</strong> Restore access for the selected repository, then
-          refresh. <a href={`/settings?projectId=${projectId}`}>Open Connections</a>
+          refresh.{" "}
+          <a
+            href={`/projects/${encodeURIComponent(projectId)}/settings#github-project-access-title`}
+          >
+            Open Project settings
+          </a>
         </p>
       ) : null}
       {!online ? (

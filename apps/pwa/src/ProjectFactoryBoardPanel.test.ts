@@ -127,6 +127,7 @@ describe("Project Factory board", () => {
           onRefresh: vi.fn(),
           onOpenPullRequests: vi.fn(),
           onOpenSettings: vi.fn(),
+          settingsHref: `/projects/${planning.projectId}/settings`,
           ...overrides,
         }),
       );
@@ -158,8 +159,10 @@ describe("Project Factory board", () => {
       firstItem.title,
     );
     expect(container.querySelectorAll("h2")).toHaveLength(4);
-    expect(container.querySelectorAll("a")).toHaveLength(1);
-    expect(container.querySelector("a")?.href).toBe(firstItem.providerUrl);
+    expect(container.querySelectorAll("a")).toHaveLength(2);
+    expect(container.querySelector<HTMLAnchorElement>('a[target="_blank"]')?.href).toBe(
+      firstItem.providerUrl,
+    );
     expect(container.querySelectorAll('button[aria-label^="Open planning chat:"]')).toHaveLength(1);
   });
 
@@ -245,7 +248,9 @@ describe("Project Factory board", () => {
       button("Open Work Item: " + firstItem.title + " · " + approved.title).click();
       button("Refresh board").click();
       button("Pull requests").click();
-      button("Settings").click();
+      container
+        .querySelector<HTMLAnchorElement>(`a[href="/projects/${planning.projectId}/settings"]`)
+        ?.click();
       await Promise.resolve();
     });
     expect(onStartPlan).toHaveBeenCalledOnce();

@@ -4,6 +4,7 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 import {
   ExternalConceptualReviewPreparationSchema,
   FactoryConceptualReviewWorkflowReadSchema,
+  FactoryGitHubIssuesSchema,
   HostGitHubProjectInboxSchema,
   ProjectInboxSchema,
   ReviewRevisionAvailableSchema,
@@ -58,14 +59,20 @@ const openedProject: ProjectUpserted = {
     updatedAt: "2026-08-25T12:01:00.000Z",
   },
 };
+const openedRepository = openedProject.project.repository;
+if (openedRepository === null) throw new Error("Opened Project repository fixture is unavailable");
 
-async function openProjectWorkspace(page: Page, label = "openai/openai-node"): Promise<void> {
+async function openProjectBoard(page: Page, label = "openai/openai-node"): Promise<void> {
   const link = page
     .getByRole("navigation", { name: "Projects" })
     .getByRole("link", { name: new RegExp(label.replace("/", "\\/"), "u") });
   await expect(link).toBeVisible();
   await link.click();
   await expect(page.getByRole("heading", { level: 1, name: label, exact: true })).toBeVisible();
+}
+
+async function openProjectWorkspace(page: Page, label = "openai/openai-node"): Promise<void> {
+  await openProjectBoard(page, label);
   await page.getByRole("button", { name: "Pull requests", exact: true }).click();
   await page.getByText("Repository details", { exact: true }).click();
   const saved = page.locator(".saved-changes");
@@ -303,10 +310,17 @@ test.describe("observable Installation PWA", () => {
       await page.getByLabel("Username").fill(TEST_OPERATOR_CREDENTIALS.username);
       await page.getByLabel("Password").fill(TEST_OPERATOR_CREDENTIALS.password);
       await page.getByRole("button", { name: "Sign in" }).click();
-      await openProjectWorkspace(page);
+      await openProjectBoard(page);
 
-      await page.getByRole("link", { name: "Settings", exact: true }).click();
-      await expect(page.getByLabel("Project to configure")).not.toHaveValue("");
+      const projectSettings = page.getByRole("link", { name: "Project settings", exact: true });
+      await expect(projectSettings).toHaveAttribute("href", /\/projects\/[^/]+\/settings$/u);
+      await projectSettings.focus();
+      await page.keyboard.press("Enter");
+      await expect(page).toHaveURL(/\/projects\/[^/]+\/settings$/u);
+      await expect(page.getByRole("heading", { level: 1, name: "Project settings" })).toBeVisible();
+      await expect(page.getByLabel("Project to configure")).toHaveCount(0);
+      await expect(page.getByRole("heading", { name: "GitHub repository access" })).toBeVisible();
+      await expect(page.getByText("GitHub CLI", { exact: true })).toHaveCount(0);
       const panel = page.locator(".direct-api-profile");
       await expect(panel.getByRole("heading", { name: "Direct API profile" })).toBeVisible();
       await expect(panel.getByRole("status")).toContainText("Available");
@@ -1838,6 +1852,30 @@ test.describe("observable Installation PWA", () => {
       await route.fulfill({ json: { schemaVersion: 1, features: [] }, status: 200 });
     });
     await page.route(
+      `**/api/v1/projects/${openedProject.project.id}/github-issues?page=1`,
+      async (route) => {
+        expect(route.request().method()).toBe("GET");
+        await route.fulfill({
+          json: FactoryGitHubIssuesSchema.parse({
+            schemaVersion: 1,
+            projectId: openedProject.project.id,
+            repository: {
+              id: "901",
+              name: openedRepository.name,
+              owner: openedRepository.owner,
+            },
+            state: "available",
+            failure: null,
+            issues: [],
+            page: 1,
+            nextPage: null,
+            limited: false,
+          }),
+          status: 200,
+        });
+      },
+    );
+    await page.route(
       `**/api/v1/projects/${openedProject.project.id}/model-profiles/direct-api`,
       async (route) => {
         await route.fulfill({ json: { profile: null, schemaVersion: 1 }, status: 200 });
@@ -2145,17 +2183,20 @@ test.describe("observable Installation PWA", () => {
     );
     expect(projectPostCount).toBe(1);
     await page.getByRole("link", { name: "Settings", exact: true }).click();
-    const connectionPanel = page.locator(".github-connection");
+    const sourceControlPanel = page.getByRole("region", { name: "Source control" });
     const codexPanel = page.locator(".codex-connection");
     const reviewModelPanel = page.locator(".review-model-settings");
-    await expect(connectionPanel.getByRole("status")).toContainText("Checking");
+    await expect(sourceControlPanel.getByRole("status")).toContainText("Checking");
     await expect(codexPanel.getByRole("status")).toContainText("Checking");
     await expect(reviewModelPanel.locator(".state-marker")).toContainText("Checking");
     connectionProbeBlocked = false;
     releaseFirstConnectionProbe();
     codexProbeBlocked = false;
     releaseFirstCodexProbe();
-    await expect(connectionPanel.getByRole("status")).toContainText("Ready");
+    await expect(sourceControlPanel.getByRole("status")).toContainText("Ready");
+    await expect(sourceControlPanel).toContainText("operator");
+    await expect(sourceControlPanel.getByLabel("Project access")).toHaveCount(0);
+    await expect(sourceControlPanel).not.toContainText("Ic3b3rg/kestrel");
     await expect(codexPanel.getByRole("status")).toContainText("Ready");
     await expect(codexPanel).toContainText("operator@example.com");
     await expect(codexPanel).toContainText("Plus");
@@ -2186,18 +2227,85 @@ test.describe("observable Installation PWA", () => {
     await reviewModelPanel.getByLabel("Default for future reviews").selectOption("gpt-5.6-terra");
     await reviewModelPanel.getByRole("button", { name: "Save default" }).click();
     await expect(reviewModelPanel.locator(".state-marker")).toContainText("Ready");
-    await connectionPanel.getByLabel("Project access").selectOption(openedProject.project.id);
-    await expect(connectionPanel).toContainText("Ic3b3rg/kestrel");
-    await expect(connectionPanel).toContainText("operator");
+
+    await openProjectBoard(page, "Ic3b3rg/kestrel");
+    const firstProjectSettings = page.getByRole("link", {
+      name: "Project settings",
+      exact: true,
+    });
+    const firstProjectSettingsPath = `/projects/${openedProject.project.id}/settings`;
+    await expect(firstProjectSettings).toHaveAttribute("href", firstProjectSettingsPath);
+    const modifierPagePromise = page.context().waitForEvent("page", { timeout: 5_000 });
+    await firstProjectSettings.click({
+      modifiers: [process.platform === "darwin" ? "Meta" : "Control"],
+    });
+    const modifierPage = await modifierPagePromise;
+    await expect(modifierPage).toHaveURL(new RegExp(`${firstProjectSettingsPath}$`, "u"));
+    await modifierPage.close();
+    await firstProjectSettings.focus();
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(new RegExp(`${firstProjectSettingsPath}$`, "u"));
+    await expect(page.getByRole("heading", { level: 1, name: "Project settings" })).toBeVisible();
+    const projectSettingsView = page.locator(".project-settings-view");
+    await expect(
+      projectSettingsView.getByText("Ic3b3rg/kestrel", { exact: true }).first(),
+    ).toBeVisible();
+    await expect(page.getByLabel("Project to configure")).toHaveCount(0);
+    const projectAccessPanel = page.getByRole("region", { name: "GitHub repository access" });
+    await expect(projectAccessPanel.getByRole("status")).toContainText("Verified");
+    await expect(projectAccessPanel).toContainText("Ic3b3rg/kestrel");
+    await expect(projectAccessPanel.getByText("GitHub CLI", { exact: true })).toHaveCount(0);
+    await expect(projectAccessPanel.getByText("Account", { exact: true })).toHaveCount(0);
     connectionActionRequired = true;
-    await connectionPanel.getByRole("button", { name: "Verify again" }).click();
-    await expect(connectionPanel.getByRole("status")).toContainText("Action required");
-    await expect(connectionPanel).toContainText("gh auth login --hostname github.com");
-    await expect(connectionPanel.getByText("Account", { exact: true })).toHaveCount(0);
+    await projectAccessPanel.getByRole("button", { name: "Verify again" }).click();
+    await expect(projectAccessPanel.getByRole("status")).toContainText("Action required");
+    await expect(projectAccessPanel).toContainText("gh auth login --hostname github.com");
     connectionActionRequired = false;
-    await connectionPanel.getByRole("button", { name: "Verify again" }).click();
-    await expect(connectionPanel.getByRole("status")).toContainText("Ready");
+    await projectAccessPanel.getByRole("button", { name: "Verify again" }).click();
+    await expect(projectAccessPanel.getByRole("status")).toContainText("Verified");
     expect(connectionProbeCount).toBeGreaterThanOrEqual(4);
+    await page.setViewportSize({ height: 800, width: 320 });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+    expect(
+      (await new AxeBuilder({ page }).include(".project-settings-view").analyze()).violations,
+    ).toEqual([]);
+    await page.setViewportSize({ height: 800, width: 1_024 });
+
+    await openProjectBoard(page, "openai/openai-node");
+    await page.getByRole("link", { name: "Project settings", exact: true }).click();
+    await expect(page).toHaveURL(/\/projects\/[^/]+\/settings$/u);
+    await expect(
+      page
+        .locator(".project-settings-view")
+        .getByText("openai/openai-node", { exact: true })
+        .first(),
+    ).toBeVisible();
+    await expect(page.locator(".project-settings-view")).not.toContainText("Ic3b3rg/kestrel");
+    await page.reload();
+    await expect(page.getByText("openai/openai-node", { exact: true }).first()).toBeVisible();
+    await page.goBack();
+    await expect(
+      page.getByRole("heading", { level: 1, name: "openai/openai-node", exact: true }),
+    ).toBeVisible();
+    await page.goBack();
+    await expect(page).toHaveURL(new RegExp(`${firstProjectSettingsPath}$`, "u"));
+    await expect(
+      page.locator(".project-settings-view").getByText("Ic3b3rg/kestrel", { exact: true }).first(),
+    ).toBeVisible();
+
+    const legacyProjectSettings = new URL(
+      `/settings?projectId=${openedProject.project.id}`,
+      runningStack.pwaUrl,
+    );
+    await page.goto(legacyProjectSettings.toString());
+    await expect(page).toHaveURL(new RegExp(`${firstProjectSettingsPath}$`, "u"));
+    await expect(page.getByRole("heading", { level: 1, name: "Project settings" })).toBeVisible();
+
+    await page.getByRole("link", { name: "Settings", exact: true }).click();
     codexAuthenticationRequired = true;
     await codexPanel.getByRole("button", { name: "Verify again" }).click();
     await expect(codexPanel.getByRole("status")).toContainText("Action required");
@@ -2261,7 +2369,7 @@ test.describe("observable Installation PWA", () => {
     await expect(
       page.getByRole("button", { name: "Change credentials and sign out" }),
     ).toBeDisabled();
-    await expect(connectionPanel.getByRole("status")).toContainText("Unavailable");
+    await expect(sourceControlPanel.getByRole("status")).toContainText("Unavailable");
     await expect(codexPanel.getByRole("status")).toContainText("Unavailable");
     await expect(
       page.getByText(installationId ?? "missing Installation ID", { exact: true }),

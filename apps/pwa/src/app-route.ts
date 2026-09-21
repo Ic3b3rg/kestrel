@@ -17,14 +17,30 @@ export type AppRoute =
       revisionId?: string;
       view?: "pull_requests";
     }
+  | { kind: "project_settings"; projectId: string }
   | { kind: "projects" }
-  | { kind: "settings"; projectId?: string };
+  | { kind: "settings" };
 
 export function readAppRoute(pathname: string, search = ""): AppRoute {
   if (pathname === "/") return { kind: "projects" };
   if (pathname === "/settings") {
     const projectId = KestrelIdSchema.safeParse(new URLSearchParams(search).get("projectId"));
-    return { kind: "settings", ...(projectId.success ? { projectId: projectId.data } : {}) };
+    return projectId.success
+      ? { kind: "project_settings", projectId: projectId.data }
+      : { kind: "settings" };
+  }
+  const projectSettingsMatch = /^\/projects\/([^/]+)\/settings$/u.exec(pathname);
+  if (projectSettingsMatch !== null) {
+    try {
+      const projectId = KestrelIdSchema.safeParse(
+        decodeURIComponent(projectSettingsMatch[1] ?? ""),
+      );
+      return projectId.success
+        ? { kind: "project_settings", projectId: projectId.data }
+        : { kind: "not_found" };
+    } catch {
+      return { kind: "not_found" };
+    }
   }
   const match = /^\/projects\/([^/]+)(?:\/(features|planning)\/([^/]+))?$/u.exec(pathname);
   if (match === null) return { kind: "not_found" };
@@ -87,7 +103,9 @@ export function appPath(route: Exclude<AppRoute, { kind: "not_found" }>): string
     case "projects":
       return "/";
     case "settings":
-      return `/settings${route.projectId === undefined ? "" : `?projectId=${encodeURIComponent(route.projectId)}`}`;
+      return "/settings";
+    case "project_settings":
+      return `/projects/${encodeURIComponent(route.projectId)}/settings`;
     case "project":
       return `/projects/${encodeURIComponent(route.projectId)}${route.proposalId === undefined ? (route.view === "pull_requests" ? "?view=pull_requests" : "") : `?proposalId=${encodeURIComponent(route.proposalId)}${route.revisionId === undefined ? "" : `&revisionId=${encodeURIComponent(route.revisionId)}`}`}`;
   }

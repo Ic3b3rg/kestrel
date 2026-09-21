@@ -1,61 +1,101 @@
-import { NativeSelect } from "./components/ui/native-select.js";
-import { Label } from "./components/ui/label.js";
 import type { DirectApiProfile, ProjectInbox } from "@kestrel/contracts";
-import { DirectApiProfilePanel } from "./DirectApiProfilePanel.js";
+
 import { projectLabel } from "./AuthenticatedShell.js";
+import { DirectApiProfilePanel } from "./DirectApiProfilePanel.js";
+import { ProjectGitHubAccessPanel } from "./HostGitHubConnectionPanel.js";
+
+type Project = ProjectInbox["projects"][number];
+
+const sourceAvailabilityLabels: Record<Project["sourceAvailability"], string> = {
+  available: "Available",
+  not_acquired: "Not acquired",
+  unavailable: "Unavailable",
+};
+
+const localSourceStateLabels = {
+  attached: "Attached",
+  detached: "Detached",
+} as const;
 
 export function ProjectSettingsPanel({
-  projects,
-  projectId,
-  onSelectProject,
+  project,
   online,
   onAuthenticationError,
   onChanged,
 }: {
-  projects: ProjectInbox["projects"];
-  projectId: string;
-  onSelectProject: (projectId: string) => void;
+  project: Project;
   online: boolean;
   onAuthenticationError?: (error: unknown) => boolean;
   onChanged: (projectId: string, profile: DirectApiProfile) => void;
 }) {
-  const project = projects.find((candidate) => candidate.id === projectId);
+  const repository = project.repository;
+  const localSource = project.localRepositorySource;
+
   return (
-    <section className="project-settings" aria-labelledby="project-settings-title">
-      <h2 id="project-settings-title">Project settings</h2>
-      <p>
-        Direct API configuration belongs to the selected Project. Global host connections and Codex
-        model defaults are managed separately above.
-      </p>
-      <Label htmlFor="settings-project">Project to configure</Label>
-      <NativeSelect
-        id="settings-project"
-        value={project?.id ?? ""}
-        disabled={!online}
-        onChange={(event) => onSelectProject(event.currentTarget.value)}
+    <div className="project-settings-view space-y-6">
+      <header className="project-workspace-header">
+        <div>
+          <p className="mb-1 text-sm text-muted-foreground">{projectLabel(project)}</p>
+          <h1 id="page-title">Project settings</h1>
+          <p className="lede">Repository access and model configuration for this Project only.</p>
+        </div>
+        <a href={`/projects/${encodeURIComponent(project.id)}`}>Back to Project</a>
+      </header>
+
+      <section
+        className="record-section"
+        aria-labelledby="repository-settings-title"
+        id="repository-settings"
       >
-        <option value="">Choose a Project</option>
-        {projects.map((candidate) => (
-          <option value={candidate.id} key={candidate.id}>
-            {projectLabel(candidate)}
-          </option>
-        ))}
-      </NativeSelect>
-      {project === undefined ? (
-        <p>Select a Project to inspect its existing Direct API profile.</p>
-      ) : (
-        <>
-          <h3>{projectLabel(project)}</h3>
-          <a href={`/projects/${project.id}`}>Back to Project</a>
-          <DirectApiProfilePanel
-            key={project.id}
-            projectId={project.id}
-            disabled={!online}
-            onChanged={(profile) => onChanged(project.id, profile)}
-            {...(onAuthenticationError === undefined ? {} : { onAuthenticationError })}
-          />
-        </>
-      )}
-    </section>
+        <div className="section-heading">
+          <div>
+            <h2 id="repository-settings-title" tabIndex={-1}>
+              Project information
+            </h2>
+          </div>
+        </div>
+        <dl className="fact-list">
+          <div className="fact-wide">
+            <dt>Repository</dt>
+            <dd>
+              {repository === null ? (
+                "Not yet identified"
+              ) : (
+                <a href={repository.canonicalUrl} target="_blank" rel="noreferrer">
+                  {repository.owner}/{repository.name}
+                </a>
+              )}
+            </dd>
+          </div>
+          <div>
+            <dt>Local source</dt>
+            <dd>
+              <strong>
+                {localSource === null ? "Not attached" : localSourceStateLabels[localSource.state]}
+              </strong>
+              {localSource === null ? null : <span>{localSource.displayName}</span>}
+            </dd>
+          </div>
+          <div>
+            <dt>Retained review source</dt>
+            <dd>{sourceAvailabilityLabels[project.sourceAvailability]}</dd>
+          </div>
+        </dl>
+      </section>
+
+      <ProjectGitHubAccessPanel
+        project={project}
+        online={online}
+        {...(onAuthenticationError === undefined ? {} : { onAuthenticationError })}
+      />
+
+      <DirectApiProfilePanel
+        key={project.id}
+        projectId={project.id}
+        disabled={!online}
+        onChanged={(profile) => onChanged(project.id, profile)}
+        {...(onAuthenticationError === undefined ? {} : { onAuthenticationError })}
+      />
+    </div>
   );
 }

@@ -59,7 +59,7 @@ export function FactoryProviderProblem({
       failure === "unavailable" ||
       failure === "project_not_supported" ||
       failure === "repository_changed" ? (
-        <a href={`/settings?projectId=${projectId}#github-connection-title`}>
+        <a href={`/projects/${encodeURIComponent(projectId)}/settings#github-project-access-title`}>
           Check GitHub connection
         </a>
       ) : null}

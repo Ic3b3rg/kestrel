@@ -157,7 +157,7 @@ export function PrReadinessSummary({
             </span>
             {githubVerified ? null : (
               <a
-                href={`/settings?projectId=${encodeURIComponent(project.id)}#github-connection-title`}
+                href={`/projects/${encodeURIComponent(project.id)}/settings#github-project-access-title`}
               >
                 Correct GitHub connection
               </a>
@@ -188,11 +188,7 @@ export function PrReadinessSummary({
               </span>
             ) : null}
             {codex.state === "checked" && codex.value.state === "ready" ? null : (
-              <a
-                href={`/settings?projectId=${encodeURIComponent(project.id)}#codex-connection-title`}
-              >
-                Correct Codex connection
-              </a>
+              <a href="/settings#codex-connection-title">Correct Codex connection</a>
             )}
           </dd>
         </div>
@@ -206,7 +202,7 @@ export function PrReadinessSummary({
               </span>
             )}
             <span>Codex subscription · default for future reviews.</span>
-            <a href={`/settings?projectId=${encodeURIComponent(project.id)}#review-model-title`}>
+            <a href="/settings#review-model-title">
               {selectedModel === undefined ? "Choose review model" : "Change review model"}
             </a>
           </dd>
