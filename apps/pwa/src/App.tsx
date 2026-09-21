@@ -46,6 +46,7 @@ import { OpenProjectForm } from "./OpenProjectForm.js";
 import {
   OperatorSecurityPanel,
   type OperatorCredentialFormValue,
+  type OperatorSecurityError,
 } from "./OperatorSecurityPanel.js";
 import { ProjectInboxPanel } from "./ProjectInboxPanel.js";
 import { RepositoryAccessPanel } from "./RepositoryAccessPanel.js";
@@ -194,6 +195,7 @@ export function App() {
   const [sessionCheckGeneration, setSessionCheckGeneration] = useState(0);
   const online = networkOnline && !sessionChecking && sessionCheckError === null;
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [loginSuccess, setLoginSuccess] = useState<string | null>(null);
   const [loginPending, setLoginPending] = useState(false);
   const [synchronized, setSynchronized] = useState(false);
   const [snapshot, setSnapshot] = useState<InstallationSnapshot | null>(null);
@@ -204,7 +206,7 @@ export function App() {
   const [announcement, setAnnouncement] = useState("Reading the Kestrel Installation.");
   const [commandPending, setCommandPending] = useState(false);
   const [securityPending, setSecurityPending] = useState<"credentials" | "logout" | null>(null);
-  const [securityError, setSecurityError] = useState<string | null>(null);
+  const [securityError, setSecurityError] = useState<OperatorSecurityError | null>(null);
   const [reloadGeneration, setReloadGeneration] = useState(0);
   const [projectInbox, setProjectInbox] = useState<ProjectInbox | null>(null);
   const [projectLoading, setProjectLoading] = useState(false);
@@ -226,6 +228,9 @@ export function App() {
   useEffect(() => {
     saveFeatureNavigation(projectFeatureIds);
   }, [projectFeatureIds]);
+  useEffect(() => {
+    if (route.kind !== "settings" && securityError !== null) setSecurityError(null);
+  }, [route.kind, securityError]);
   useEffect(() => {
     if (session === null)
       setProjectFeatureIds((current) => (Object.keys(current).length === 0 ? current : {}));
@@ -390,6 +395,7 @@ export function App() {
       setSynchronized(false);
       setConnection("disconnected");
       setLoginError(message);
+      setLoginSuccess(null);
       setSecurityError(null);
     },
     [resetProjectState],
@@ -647,12 +653,12 @@ export function App() {
     loginController.current = controller;
     setLoginPending(true);
     setLoginError(null);
+    setLoginSuccess(null);
     try {
       const created = await loginOperator(command, controller.signal);
       setSession(created);
       setSessionChecking(false);
       setSessionCheckError(null);
-      setAnnouncement("Operator authenticated. Reading the Kestrel Installation.");
     } catch (error) {
       if (!controller.signal.aborted) {
         setLoginError(errorMessage(error, SESSION_ERROR_MESSAGE));
@@ -784,6 +790,7 @@ export function App() {
     setProjectPending(false);
     setSecurityPending("logout");
     setSecurityError(null);
+    setLoginSuccess(null);
     try {
       const outcome = await logoutOperator(controller.signal);
       setLoginError(
@@ -798,7 +805,10 @@ export function App() {
       setConnection("disconnected");
     } catch (error) {
       if (!controller.signal.aborted && !handleAuthenticationBoundaryError(error)) {
-        setSecurityError(errorMessage(error, "Kestrel could not sign out this browser."));
+        setSecurityError({
+          action: "logout",
+          message: errorMessage(error, "Kestrel could not sign out this browser."),
+        });
       }
     } finally {
       if (securityController.current === controller) {
@@ -822,6 +832,7 @@ export function App() {
     try {
       await updateOperatorCredentials({ ...value, session }, controller.signal);
       setLoginError(null);
+      setLoginSuccess("Credentials changed. Sign in with your updated Operator account.");
       setSession(null);
       setSnapshot(null);
       resetProjectState();
@@ -829,7 +840,10 @@ export function App() {
       setConnection("disconnected");
     } catch (error) {
       if (!controller.signal.aborted && !handleAuthenticationBoundaryError(error)) {
-        setSecurityError(errorMessage(error, "Kestrel could not change the Operator credentials."));
+        setSecurityError({
+          action: "credentials",
+          message: errorMessage(error, "Kestrel could not change the Operator credentials."),
+        });
       }
     } finally {
       if (securityController.current === controller) {
@@ -846,6 +860,11 @@ export function App() {
         error={loginError ?? sessionCheckError}
         online={networkOnline}
         pending={loginPending}
+        success={loginSuccess}
+        onClearFeedback={() => {
+          setLoginError(null);
+          setLoginSuccess(null);
+        }}
         onSubmit={handleLogin}
       />
     );
@@ -955,6 +974,7 @@ export function App() {
                 pending={securityPending}
                 session={session}
                 onChangeCredentials={handleCredentialChange}
+                onClearError={() => setSecurityError(null)}
                 onLogout={handleLogout}
               />
             }

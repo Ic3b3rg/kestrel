@@ -1,7 +1,8 @@
 import { Button } from "./components/ui/button.js";
 import { Input } from "./components/ui/input.js";
 import { Label } from "./components/ui/label.js";
-import { useEffect, useRef, type SyntheticEvent } from "react";
+import { FormFeedback, FormFieldError } from "./components/FormFeedback.js";
+import { useEffect, useRef, useState, type SyntheticEvent } from "react";
 
 import type { LoginCommand } from "@kestrel/contracts";
 
@@ -10,31 +11,92 @@ interface LoginViewProps {
   error: string | null;
   online: boolean;
   pending: boolean;
+  success?: string | null;
+  onClearFeedback?(): void;
   onSubmit(command: LoginCommand): Promise<void>;
 }
 
+type LoginField = "password" | "username";
+
+interface ValidationFocusRequest {
+  field: LoginField;
+  message: string;
+}
+
+const loginFieldOrder = ["username", "password"] as const;
+
 export function LoginView(props: LoginViewProps) {
-  const errorRef = useRef<HTMLDivElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const submitting = useRef(false);
+  const [validationErrors, setValidationErrors] = useState<{
+    password?: string;
+    username?: string;
+  }>({});
+  const [validationFocusRequest, setValidationFocusRequest] =
+    useState<ValidationFocusRequest | null>(null);
+  const firstInvalidField = loginFieldOrder.find((name) => validationErrors[name] !== undefined);
 
   useEffect(() => {
-    if (props.error) {
-      errorRef.current?.focus();
-    }
-  }, [props.error]);
+    if (validationFocusRequest === null) return;
+    const input = formRef.current?.elements.namedItem(validationFocusRequest.field);
+    if (input instanceof HTMLInputElement) input.focus();
+  }, [validationFocusRequest]);
+
+  const clearValidationError = (name: LoginField) => {
+    setValidationFocusRequest(null);
+    setValidationErrors((current) => {
+      if (current[name] === undefined) return current;
+      const { [name]: removed, ...next } = current;
+      void removed;
+      return next;
+    });
+  };
 
   const handleSubmit = async (event: SyntheticEvent<HTMLFormElement, SubmitEvent>) => {
     event.preventDefault();
+    if (submitting.current || props.pending || !props.online) return;
+    props.onClearFeedback?.();
     const form = event.currentTarget;
     const data = new FormData(form);
     const username = data.get("username");
     const password = data.get("password");
     const passwordInput = form.elements.namedItem("password");
+    const usernameValue = typeof username === "string" ? username : "";
+    const passwordValue = typeof password === "string" ? password : "";
+    const errors: { password?: string; username?: string } = {};
+    if (usernameValue.length === 0) {
+      errors.username = "Enter your Operator username.";
+    } else if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(usernameValue)) {
+      errors.username =
+        "Start with a letter or number, then use only letters, numbers, dots, underscores, or hyphens.";
+    } else if (usernameValue.length > 64) {
+      errors.username = "Use no more than 64 characters.";
+    }
+    if (passwordValue.length === 0) {
+      errors.password = "Enter your password.";
+    } else if (passwordValue.length > 128) {
+      errors.password = "Use no more than 128 characters.";
+    }
+    if (Object.keys(errors).length > 0) {
+      const focusField = loginFieldOrder.find((name) => errors[name] !== undefined);
+      setValidationErrors(errors);
+      if (focusField !== undefined) {
+        setValidationFocusRequest({ field: focusField, message: errors[focusField] ?? "" });
+      }
+      if (passwordInput instanceof HTMLInputElement) passwordInput.value = "";
+      return;
+    }
+
+    setValidationErrors({});
+    setValidationFocusRequest(null);
+    submitting.current = true;
     try {
       await props.onSubmit({
-        username: typeof username === "string" ? username : "",
-        password: typeof password === "string" ? password : "",
+        username: usernameValue,
+        password: passwordValue,
       });
     } finally {
+      submitting.current = false;
       if (passwordInput instanceof HTMLInputElement) {
         passwordInput.value = "";
       }
@@ -54,7 +116,7 @@ export function LoginView(props: LoginViewProps) {
       </header>
 
       <main id="login-main" className="login-main" tabIndex={-1}>
-        {props.checking ? (
+        {props.checking && props.online ? (
           <section className="system-state" aria-busy="true" aria-label="Checking Operator session">
             <h1>Checking Operator session</h1>
             <p>Kestrel is verifying the host-scoped session with the local Installation.</p>
@@ -74,35 +136,65 @@ export function LoginView(props: LoginViewProps) {
               </p>
             </div>
 
-            <form className="login-form" onSubmit={(event) => void handleSubmit(event)}>
+            <form
+              aria-busy={props.pending}
+              className="login-form"
+              noValidate
+              onSubmit={(event) => void handleSubmit(event)}
+              ref={formRef}
+            >
               <div className="form-field">
                 <Label htmlFor="username">Username</Label>
                 <Input
+                  aria-describedby={
+                    validationErrors.username === undefined ? undefined : "username-error"
+                  }
+                  aria-invalid={validationErrors.username !== undefined}
                   autoComplete="username"
+                  disabled={props.pending}
                   id="username"
                   maxLength={64}
                   name="username"
+                  onInput={() => clearValidationError("username")}
                   pattern="[A-Za-z0-9][A-Za-z0-9._\-]*"
                   required
                   type="text"
                 />
+                {validationErrors.username === undefined ? null : (
+                  <FormFieldError id="username-error">{validationErrors.username}</FormFieldError>
+                )}
               </div>
               <div className="form-field">
                 <Label htmlFor="password">Password</Label>
                 <Input
+                  aria-describedby={
+                    validationErrors.password === undefined ? undefined : "password-error"
+                  }
+                  aria-invalid={validationErrors.password !== undefined}
                   autoComplete="current-password"
+                  disabled={props.pending}
                   id="password"
                   maxLength={128}
                   name="password"
+                  onInput={() => clearValidationError("password")}
                   required
                   type="password"
                 />
+                {validationErrors.password === undefined ? null : (
+                  <FormFieldError id="password-error">{validationErrors.password}</FormFieldError>
+                )}
               </div>
-              {props.error ? (
-                <div className="login-error" ref={errorRef} role="alert" tabIndex={-1}>
-                  <strong>Sign-in failed</strong>
-                  <span>{props.error}</span>
-                </div>
+              {validationFocusRequest === null ? null : (
+                <FormFeedback kind="error" visuallyHidden>
+                  {validationFocusRequest.message}
+                </FormFeedback>
+              )}
+              {props.pending || firstInvalidField !== undefined ? null : props.error ? (
+                <FormFeedback focus kind="error" title="Sign-in failed">
+                  {props.error}
+                </FormFeedback>
+              ) : props.success ? (
+                <FormFeedback kind="success">{props.success}</FormFeedback>
               ) : null}
               <Button type="submit" disabled={!props.online || props.pending}>
                 {props.pending ? "Signing in…" : "Sign in"}
@@ -113,6 +205,11 @@ export function LoginView(props: LoginViewProps) {
                   : "Reconnect before signing in."}
               </p>
             </form>
+            {props.pending ? (
+              <FormFeedback kind="pending" visuallyHidden>
+                Signing in…
+              </FormFeedback>
+            ) : null}
           </section>
         )}
       </main>
