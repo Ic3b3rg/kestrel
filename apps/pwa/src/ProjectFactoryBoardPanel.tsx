@@ -218,10 +218,6 @@ export function ProjectFactoryBoardPanel({
         <p role="status" className="text-sm text-muted-foreground">
           Reconnect to refresh this board.
         </p>
-      ) : loading ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          Updating board…
-        </p>
       ) : null}
       {githubIssueFailure === null ? null : (
         <FactoryProviderProblem failure={githubIssueFailure} projectId={projectId} />

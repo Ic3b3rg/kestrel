@@ -288,6 +288,15 @@ describe("Project Factory board", () => {
     expect(button("Open planning chat: " + planning.title).disabled).toBe(false);
   });
 
+  it("refreshes retained board content without recurring visual status copy", async () => {
+    await render({ loading: true });
+
+    const boardPanel = container.querySelector<HTMLElement>("section[aria-busy]");
+    expect(boardPanel?.getAttribute("aria-busy")).toBe("true");
+    expect(container.textContent).toContain(firstItem.title);
+    expect(container.textContent).not.toContain("Updating board…");
+  });
+
   it("shows an empty four-column board with New in To do", async () => {
     await render({ features: [], boards: [] });
     expect(container.querySelectorAll("h2")).toHaveLength(4);
