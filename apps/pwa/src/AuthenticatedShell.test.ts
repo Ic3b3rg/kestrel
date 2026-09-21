@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 
-import { createElement } from "react";
+import { act, createElement, useState } from "react";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
@@ -47,14 +48,15 @@ function render(overrides: Partial<Parameters<typeof AuthenticatedShell>[0]> = {
       AuthenticatedShell,
       {
         announcement: "Projects synchronized.",
-        connection: "connected",
         error: null,
         inbox: { schemaVersion: 1, projects: [localProject, providerProject] },
         loading: false,
+        logoutError: null,
+        logoutPending: false,
         online: true,
         openProjectControl: createElement("button", null, "Open Project"),
-        operatorUsername: "operator",
         route: { kind: "project", projectId: localProject.id },
+        onLogout: vi.fn(),
         onNavigate: vi.fn(),
         onRetry: vi.fn(),
         ...overrides,
@@ -76,6 +78,18 @@ describe("AuthenticatedShell", () => {
     expect(html).toContain(`href="/settings?projectId=${localProject.id}"`);
     expect(html).toContain("Settings");
     expect(html).toContain('href="#workspace"');
+  });
+
+  it("keeps the account footer limited to Settings and Sign out", () => {
+    const document = new DOMParser().parseFromString(render(), "text/html");
+    const footer = document.querySelector('[data-sidebar="footer"]');
+
+    expect(footer?.textContent).toContain("Settings");
+    expect(footer?.textContent).toContain("Sign out");
+    expect(footer?.textContent).not.toContain("Signed in as");
+    expect(footer?.textContent).not.toContain("operator");
+    expect(footer?.textContent).not.toContain("Connected");
+    expect(footer?.querySelectorAll('button[type="button"]')).toHaveLength(1);
   });
 
   it("shows honest loading, empty, and error rail states", () => {
@@ -102,5 +116,154 @@ describe("AuthenticatedShell", () => {
     expect(projectLink?.textContent).toContain("Selected Project");
     expect(projectLink?.getAttribute("aria-current")).toBeNull();
     expect(settingsLink?.getAttribute("aria-current")).toBe("page");
+  });
+
+  it("announces one pending Sign out command and focuses a local failure", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => ({
+        addEventListener: vi.fn(),
+        matches: false,
+        media: "(max-width: 767px)",
+        onchange: null,
+        removeEventListener: vi.fn(),
+      })),
+    );
+    const submission = Promise.withResolvers<undefined>();
+    const onLogout = vi.fn(() => submission.promise);
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    function Harness() {
+      const [logoutError, setLogoutError] = useState<string | null>(null);
+      const [logoutPending, setLogoutPending] = useState(false);
+      return createElement(
+        AuthenticatedShell,
+        {
+          announcement: "Projects synchronized.",
+          error: null,
+          inbox: { schemaVersion: 1, projects: [localProject] },
+          loading: false,
+          logoutError,
+          logoutPending,
+          online: true,
+          openProjectControl: createElement("button", null, "Open Project"),
+          route: { kind: "project", projectId: localProject.id },
+          onClearLogoutError: () => setLogoutError(null),
+          onLogout: async () => {
+            setLogoutPending(true);
+            await onLogout();
+            setLogoutError("Kestrel could not sign out this browser.");
+            setLogoutPending(false);
+          },
+          onNavigate: vi.fn(),
+          onRetry: vi.fn(),
+        },
+        createElement("h1", null, "Workspace"),
+      );
+    }
+
+    try {
+      act(() => root.render(createElement(Harness)));
+      const signOut = [...container.querySelectorAll("button")].find(
+        (button) => button.textContent === "Sign out",
+      );
+      if (signOut === undefined) throw new Error("Missing Sign out action");
+
+      await act(async () => {
+        signOut.click();
+        signOut.click();
+        await Promise.resolve();
+      });
+
+      expect(onLogout).toHaveBeenCalledOnce();
+      expect(signOut.disabled).toBe(true);
+      expect(signOut.textContent).toContain("Signing out");
+      const status = container.querySelector('[data-sidebar="footer"] [role="status"]');
+      expect(status?.textContent).toContain("Signing out");
+      expect(status?.closest('[aria-busy="true"]')).toBeNull();
+
+      await act(async () => {
+        submission.resolve(undefined);
+        await submission.promise;
+        await Promise.resolve();
+      });
+
+      const alert = container.querySelector<HTMLElement>('[data-sidebar="footer"] [role="alert"]');
+      expect(alert?.textContent).toContain("Kestrel could not sign out this browser.");
+      expect(document.activeElement).toBe(alert);
+      expect(signOut.disabled).toBe(false);
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("exposes the same minimal footer in the narrow navigation drawer", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => ({
+        addEventListener: vi.fn(),
+        matches: true,
+        media: "(max-width: 767px)",
+        onchange: null,
+        removeEventListener: vi.fn(),
+      })),
+    );
+    const originalWidth = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 320 });
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    try {
+      await act(async () => {
+        root.render(
+          createElement(
+            AuthenticatedShell,
+            {
+              announcement: "Projects synchronized.",
+              error: null,
+              inbox: { schemaVersion: 1, projects: [localProject] },
+              loading: false,
+              logoutError: null,
+              logoutPending: false,
+              online: true,
+              openProjectControl: createElement("button", null, "Open Project"),
+              route: { kind: "project", projectId: localProject.id },
+              onLogout: vi.fn(),
+              onNavigate: vi.fn(),
+              onRetry: vi.fn(),
+            },
+            createElement("h1", null, "Workspace"),
+          ),
+        );
+        await Promise.resolve();
+      });
+      const openNavigation = [...container.querySelectorAll("button")].find(
+        (button) => button.getAttribute("aria-label") === "Open navigation",
+      );
+      if (openNavigation === undefined) throw new Error("Missing navigation trigger");
+
+      await act(async () => {
+        openNavigation.click();
+        await Promise.resolve();
+      });
+
+      const drawerFooter = document.querySelector('[data-mobile="true"] [data-sidebar="footer"]');
+      expect(drawerFooter?.textContent).toContain("Settings");
+      expect(drawerFooter?.textContent).toContain("Sign out");
+      expect(drawerFooter?.textContent).not.toContain("Signed in as");
+      expect(drawerFooter?.textContent).not.toContain("Connected");
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: originalWidth });
+      vi.unstubAllGlobals();
+    }
   });
 });

@@ -1811,6 +1811,16 @@ test.describe("observable Installation PWA", () => {
       if (loginRequestCount === 1) await firstLoginGate;
       await route.continue();
     });
+    let logoutRequestCount = 0;
+    let releaseFirstLogout: () => void = () => undefined;
+    const firstLogoutGate = new Promise<void>((resolve) => {
+      releaseFirstLogout = resolve;
+    });
+    await page.route("**/auth/logout", async (route) => {
+      logoutRequestCount += 1;
+      if (logoutRequestCount === 1) await firstLogoutGate;
+      await route.continue();
+    });
     let stepUpRequestCount = 0;
     let releaseSuccessfulStepUp: () => void = () => undefined;
     const successfulStepUpGate = new Promise<void>((resolve) => {
@@ -2058,6 +2068,41 @@ test.describe("observable Installation PWA", () => {
       page.getByText("Operator authenticated. Reading the Kestrel Installation.", { exact: true }),
     ).toHaveCount(0);
     expectedUnauthorizedResponses = 0;
+    const accountFooter = page.locator('[data-sidebar="footer"]');
+    await expect(accountFooter.getByRole("link", { name: "Settings", exact: true })).toBeVisible();
+    await expect(
+      accountFooter.getByRole("button", { name: "Sign out", exact: true }),
+    ).toBeVisible();
+    await expect(accountFooter).not.toContainText("Signed in as");
+    await expect(accountFooter).not.toContainText(TEST_OPERATOR_CREDENTIALS.username);
+    await expect(accountFooter).not.toContainText("Connected");
+
+    await page.setViewportSize({ height: 800, width: 320 });
+    await page.getByRole("button", { name: "Open navigation" }).click();
+    const mobileFooter = page.locator('[data-mobile="true"] [data-sidebar="footer"]');
+    await expect(mobileFooter.getByRole("link", { name: "Settings", exact: true })).toBeVisible();
+    await expect(mobileFooter.getByRole("button", { name: "Sign out", exact: true })).toBeVisible();
+    await expect(mobileFooter).not.toContainText("Signed in as");
+    await expect(mobileFooter).not.toContainText("Connected");
+    await page.getByRole("button", { name: "Close navigation" }).click();
+    await page.setViewportSize({ height: 800, width: 1_024 });
+
+    const signOut = accountFooter.getByRole("button", { name: "Sign out", exact: true });
+    await signOut.focus();
+    await signOut.press("Enter");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => logoutRequestCount).toBe(1);
+    await expect(accountFooter.getByRole("button", { name: "Signing out…" })).toBeDisabled();
+    await expect(accountFooter.getByRole("status")).toContainText("Signing out");
+    releaseFirstLogout();
+    await expect(page.getByRole("heading", { name: "Sign in to Kestrel" })).toBeVisible();
+    await page.getByLabel("Username").fill(TEST_OPERATOR_CREDENTIALS.username);
+    await page.getByLabel("Password").fill(TEST_OPERATOR_CREDENTIALS.password);
+    await page.getByLabel("Password").press("Enter");
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Projects", exact: true }),
+    ).toBeVisible();
+
     await openProjectWorkspace(page);
     await expect(page.getByText("Not acquired", { exact: true })).toHaveCount(2);
     await expect(page.getByText("Public GitHub pull request", { exact: true })).toBeVisible();
@@ -2160,10 +2205,12 @@ test.describe("observable Installation PWA", () => {
     await expect(codexPanel.getByRole("status")).toContainText("Ready");
     expect(codexProbeCount).toBeGreaterThanOrEqual(3);
 
-    await expect(
-      page.getByText(`Signed in as ${TEST_OPERATOR_CREDENTIALS.username}`, { exact: true }),
-    ).toBeVisible();
+    await expect(page.locator('[data-sidebar="footer"]')).not.toContainText("Signed in as");
+    await expect(page.locator('[data-sidebar="footer"]')).not.toContainText("Connected");
     await expect(page.getByRole("heading", { name: "Operator security" })).toBeVisible();
+    await expect(
+      page.locator(".operator-security").getByRole("button", { name: "Sign out", exact: true }),
+    ).toHaveCount(0);
     const reviewModelSelector = page.getByLabel("Default for future reviews");
     await reviewModelSelector.focus();
     await expect(reviewModelSelector).toBeFocused();
@@ -2218,10 +2265,10 @@ test.describe("observable Installation PWA", () => {
     await expect(page.getByRole("link", { name: /Ic3b3rg\/kestrel/u })).toHaveCount(0);
 
     await context.setOffline(false);
-    await expect(page.getByText("Connected", { exact: true })).toBeVisible();
     await expect(
       page.getByText(installationId ?? "missing Installation ID", { exact: true }),
     ).toBeVisible();
+    await expect(page.locator('[data-sidebar="footer"]')).not.toContainText("Connected");
 
     await page.emulateMedia({ reducedMotion: "reduce" });
     expect(await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(
@@ -2329,9 +2376,10 @@ test.describe("observable Installation PWA", () => {
       page.getByRole("heading", { level: 1, name: "Settings", exact: true }),
     ).toBeVisible();
     await expect(page.getByText("Credentials changed", { exact: false })).toHaveCount(0);
-    await expect(
-      page.getByText(`Signed in as ${updatedCredentials.username}`, { exact: true }),
-    ).toBeVisible();
+    await expect(page.locator('[data-sidebar="footer"]')).not.toContainText("Signed in as");
+    await expect(page.locator('[data-sidebar="footer"]')).not.toContainText(
+      updatedCredentials.username,
+    );
     await runningStack.executeSql(`
       CREATE FUNCTION public.kestrel_test_reject_audit_insert()
       RETURNS trigger
@@ -2350,11 +2398,18 @@ test.describe("observable Installation PWA", () => {
       EXECUTE FUNCTION public.kestrel_test_reject_audit_insert();
     `);
     expectedServiceUnavailableResponses = 1;
-    await page.getByRole("button", { name: "Sign out", exact: true }).click();
+    const finalSignOut = page
+      .locator('[data-sidebar="footer"]')
+      .getByRole("button", { name: "Sign out", exact: true });
+    await finalSignOut.focus();
+    await finalSignOut.press("Enter");
+    await expect.poll(() => logoutRequestCount).toBe(2);
     await expect(page.getByRole("heading", { name: "Sign in to Kestrel" })).toBeVisible();
-    await expect(page.getByRole("alert")).toContainText(
+    const logoutWarning = page.getByRole("alert");
+    await expect(logoutWarning).toContainText(
       "This browser is signed out. Operator logout audit is unavailable",
     );
+    await expect(logoutWarning).toBeFocused();
     const remainingCookieNames = (await context.cookies()).map((cookie) => cookie.name);
     expect(remainingCookieNames).not.toContain("__Host-kestrel-session");
     expect(remainingCookieNames).not.toContain("__Host-kestrel-csrf");
