@@ -198,6 +198,9 @@ describe("Project Factory board", () => {
     expect(container.textContent).toContain(
       "GitHub has limited requests. Wait for the limit to reset before retrying.",
     );
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "GitHub has limited requests.",
+    );
   });
 
   it("keeps Work Items from different approved Features on the same Project board", async () => {

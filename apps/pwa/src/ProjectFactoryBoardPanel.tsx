@@ -220,7 +220,9 @@ export function ProjectFactoryBoardPanel({
         </p>
       ) : null}
       {githubIssueFailure === null ? null : (
-        <FactoryProviderProblem failure={githubIssueFailure} projectId={projectId} />
+        <div role="alert">
+          <FactoryProviderProblem failure={githubIssueFailure} projectId={projectId} />
+        </div>
       )}
       {githubIssuesLimited ? (
         <p role="status" className="text-sm text-muted-foreground">

@@ -633,5 +633,5 @@ describe("fixed read-only Git inspection", () => {
       base: { ref: "refs/heads/review-000" },
       head: { ref: "refs/heads/main" },
     });
-  }, 6_000);
+  });
 });
