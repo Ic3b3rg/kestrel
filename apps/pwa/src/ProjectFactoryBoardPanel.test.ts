@@ -2,7 +2,12 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { FactoryBoard, FactoryWorkItem, Feature } from "@kestrel/contracts";
+import type {
+  FactoryBoard,
+  FactoryGitHubIssues,
+  FactoryWorkItem,
+  Feature,
+} from "@kestrel/contracts";
 import {
   ProjectFactoryBoardPanel,
   type ProjectFactoryBoardPanelProps,
@@ -52,6 +57,28 @@ const waitingItem: FactoryWorkItem = {
   blocking: { kind: "human_gate", explanation: "Should the export include archived reports?" },
   providerUrl: null,
 };
+const githubIssues: FactoryGitHubIssues = {
+  schemaVersion: 1,
+  projectId: planning.projectId,
+  repository: { id: "901", owner: "example", name: "reports" },
+  state: "available",
+  failure: null,
+  issues: [
+    {
+      repository: { id: "901", owner: "example", name: "reports" },
+      id: "42",
+      number: 42,
+      url: firstItem.providerUrl ?? "",
+      title: "Provider copy of the export Work Item",
+      body: "Save the selected report as CSV.",
+      state: "open",
+      dependencies: [],
+    },
+  ],
+  page: 1,
+  nextPage: null,
+  limited: false,
+};
 
 function board(feature = approved, items = [firstItem, waitingItem]): FactoryBoard {
   return {
@@ -88,6 +115,7 @@ describe("Project Factory board", () => {
     await act(async () => {
       root.render(
         createElement(ProjectFactoryBoardPanel, {
+          projectId: planning.projectId,
           projectName: "Reports",
           features: [planning, approved],
           boards: [board()],
@@ -140,6 +168,38 @@ describe("Project Factory board", () => {
     expect(container.querySelectorAll('button[aria-label^="Open planning chat:"]')).toHaveLength(0);
     expect(container.querySelector('[aria-label="In review"]')?.textContent).toContain(
       firstItem.title,
+    );
+  });
+
+  it("does not duplicate a linked GitHub issue as a provider card", async () => {
+    await render({ githubIssuePages: [githubIssues] });
+    expect(container.textContent).toContain(firstItem.title);
+    expect(container.textContent).not.toContain("Provider copy of the export Work Item");
+    expect(
+      container.querySelector(
+        '[aria-label="Open GitHub issue #42: Provider copy of the export Work Item"]',
+      ),
+    ).toBeNull();
+  });
+
+  it("keeps Kestrel cards visible when GitHub rate limits the issue catalog", async () => {
+    await render({
+      githubIssuePages: [
+        {
+          ...githubIssues,
+          repository: null,
+          state: "unavailable",
+          failure: "rate_limited",
+          issues: [],
+        },
+      ],
+    });
+    expect(container.textContent).toContain(firstItem.title);
+    expect(container.textContent).toContain(
+      "GitHub has limited requests. Wait for the limit to reset before retrying.",
+    );
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "GitHub has limited requests.",
     );
   });
 
@@ -200,14 +260,44 @@ describe("Project Factory board", () => {
   });
 
   it("retains known cards during loading, errors, and offline viewing", async () => {
-    await render({ online: false, loading: true, error: "The board could not be refreshed." });
+    const providerIssue = githubIssues.issues[0];
+    if (providerIssue === undefined) throw new Error("Missing GitHub issue fixture");
+    await render({
+      githubIssuePages: [
+        {
+          ...githubIssues,
+          issues: [
+            {
+              ...providerIssue,
+              id: "43",
+              number: 43,
+              url: "https://github.com/example/reports/issues/43",
+              title: "Keep provider work visible offline",
+            },
+          ],
+        },
+      ],
+      online: false,
+      loading: true,
+      error: "The board could not be refreshed.",
+    });
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
       "could not be refreshed",
     );
     expect(container.textContent).toContain(firstItem.title);
+    expect(container.textContent).toContain("Keep provider work visible offline");
     expect(container.textContent).toContain("Reconnect to refresh");
     expect(button("Refresh board").disabled).toBe(true);
     expect(button("Open planning chat: " + planning.title).disabled).toBe(false);
+  });
+
+  it("refreshes retained board content without recurring visual status copy", async () => {
+    await render({ loading: true });
+
+    const boardPanel = container.querySelector<HTMLElement>("section[aria-busy]");
+    expect(boardPanel?.getAttribute("aria-busy")).toBe("true");
+    expect(container.textContent).toContain(firstItem.title);
+    expect(container.textContent).not.toContain("Updating board…");
   });
 
   it("shows an empty four-column board with New in To do", async () => {

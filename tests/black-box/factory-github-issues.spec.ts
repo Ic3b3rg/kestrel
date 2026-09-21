@@ -43,7 +43,7 @@ const plan: FeaturePlanDocument = {
   limits: { maxConcurrentProjects: 2, maxActiveFeaturesPerProject: 1, attemptTimeoutSeconds: 1800 },
 };
 
-async function createFeature(page: Page, url: string): Promise<string> {
+async function openProjectBoard(page: Page, url: string): Promise<string> {
   await page.goto(url);
   await page.getByLabel("Username").fill(TEST_OPERATOR_CREDENTIALS.username);
   await page.getByLabel("Password", { exact: true }).fill(TEST_OPERATOR_CREDENTIALS.password);
@@ -59,6 +59,13 @@ async function createFeature(page: Page, url: string): Promise<string> {
   await repository.getByLabel("Repository", { exact: true }).selectOption(repositoryId);
   await repository.getByRole("button", { name: "Open selected Project" }).click();
   await expect(repository).toHaveCount(0);
+  const projectId = new URL(page.url()).pathname.split("/")[2];
+  if (projectId === undefined) throw new Error("The opened Project has no identity");
+  return projectId;
+}
+
+async function createFeature(page: Page, url: string): Promise<string> {
+  await openProjectBoard(page, url);
   const title = "Deliver report search from existing issues";
   await page.getByRole("button", { name: "New plan", exact: true }).click();
   await page.getByLabel("Describe the change", { exact: true }).fill(title);
@@ -119,6 +126,20 @@ test.describe("Factory GitHub issues", () => {
   test.afterAll(async () => {
     await stack?.close();
     await fixture?.close();
+  });
+
+  test("shows existing GitHub issues on the Project board before a Feature exists", async ({
+    page,
+  }) => {
+    if (stack === undefined) throw new Error("The GitHub issue stack is unavailable");
+    await openProjectBoard(page, stack.pwaUrl);
+    const todo = page.getByRole("region", { name: "To do", exact: true });
+    const issue = todo.getByRole("link", {
+      name: "Open GitHub issue #16: Existing issue 16",
+      exact: true,
+    });
+    await expect(issue).toBeVisible();
+    await expect(issue).toContainText("Ic3b3rg/kestrel");
   });
 
   test("imports a snapshot, binds it through normal plan fields, and resumes partial publication without duplicates", async ({

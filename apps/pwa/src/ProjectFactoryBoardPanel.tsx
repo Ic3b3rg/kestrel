@@ -1,7 +1,14 @@
 import { useId } from "react";
 import { ArrowUpRight, GitPullRequest, Plus, RefreshCw, Settings } from "lucide-react";
-import type { FactoryBoard, FactoryWorkItem, Feature } from "@kestrel/contracts";
+import type {
+  FactoryBoard,
+  FactoryGitHubIssue,
+  FactoryGitHubIssues,
+  FactoryWorkItem,
+  Feature,
+} from "@kestrel/contracts";
 import { Button } from "./components/ui/button.js";
+import { FactoryProviderProblem } from "./FeatureGitHubIssuesPanel.js";
 
 const columns = [
   { id: "todo", label: "To do" },
@@ -11,9 +18,13 @@ const columns = [
 ] as const;
 
 export interface ProjectFactoryBoardPanelProps {
+  projectId: string;
   projectName: string;
   features: Feature[];
   boards: FactoryBoard[];
+  githubIssuePages?: readonly FactoryGitHubIssues[];
+  githubIssuesError?: string | null;
+  githubIssuesLoading?: boolean;
   online: boolean;
   loading: boolean;
   error: string | null;
@@ -22,6 +33,33 @@ export interface ProjectFactoryBoardPanelProps {
   onRefresh: () => void;
   onOpenPullRequests: () => void;
   onOpenSettings: () => void;
+}
+
+function GitHubIssueCard({ issue }: { issue: FactoryGitHubIssue }) {
+  return (
+    <li className="min-w-0">
+      <Button
+        asChild
+        variant="outline"
+        className="h-auto w-full min-w-0 flex-col items-start gap-2 p-3 text-left"
+      >
+        <a
+          href={issue.url}
+          target="_blank"
+          rel="noreferrer"
+          aria-label={`Open GitHub issue #${String(issue.number)}: ${issue.title}`}
+        >
+          <span className="text-xs font-normal text-muted-foreground">
+            GitHub issue #{issue.number}
+          </span>
+          <strong className="max-w-full break-words font-medium">{issue.title}</strong>
+          <span className="max-w-full break-words text-xs font-normal text-muted-foreground">
+            {issue.repository.owner}/{issue.repository.name}
+          </span>
+        </a>
+      </Button>
+    </li>
+  );
 }
 
 function WorkItemCard({
@@ -86,9 +124,13 @@ function WorkItemCard({
 }
 
 export function ProjectFactoryBoardPanel({
+  projectId,
   projectName,
   features,
   boards,
+  githubIssuePages = [],
+  githubIssuesError = null,
+  githubIssuesLoading = false,
   online,
   loading,
   error,
@@ -105,8 +147,32 @@ export function ProjectFactoryBoardPanel({
       feature.state === "planning" &&
       !approvedBoards.some((board) => board.feature.id === feature.id),
   );
+  const linkedIssueUrls = new Set(
+    approvedBoards.flatMap((board) =>
+      board.columns.flatMap((column) =>
+        column.items.flatMap((item) => (item.providerUrl === null ? [] : [item.providerUrl])),
+      ),
+    ),
+  );
+  const seenGitHubIssues = new Set<string>();
+  const availableGitHubIssues = githubIssuePages
+    .filter((page) => page.state === "available")
+    .flatMap((page) => page.issues)
+    .filter((issue) => {
+      const key = `${issue.repository.id}:${issue.id}`;
+      if (seenGitHubIssues.has(key) || linkedIssueUrls.has(issue.url)) return false;
+      seenGitHubIssues.add(key);
+      return true;
+    });
+  const githubIssueFailure =
+    githubIssuePages.find((page) => page.failure !== null)?.failure ?? null;
+  const githubIssuesLimited = githubIssuePages.some((page) => page.limited);
   return (
-    <section className="min-w-0 space-y-6" aria-labelledby={titleId} aria-busy={loading}>
+    <section
+      className="min-w-0 space-y-6"
+      aria-labelledby={titleId}
+      aria-busy={loading || githubIssuesLoading}
+    >
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="mb-1 text-sm text-muted-foreground">Project board</p>
@@ -138,13 +204,29 @@ export function ProjectFactoryBoardPanel({
           {error}
         </p>
       )}
+      {githubIssuesError === null ? null : (
+        <p role="alert" className="text-sm">
+          {githubIssuesError}
+        </p>
+      )}
+      {githubIssuesLoading ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          Reading GitHub issues…
+        </p>
+      ) : null}
       {!online ? (
         <p role="status" className="text-sm text-muted-foreground">
           Reconnect to refresh this board.
         </p>
-      ) : loading ? (
+      ) : null}
+      {githubIssueFailure === null ? null : (
+        <div role="alert">
+          <FactoryProviderProblem failure={githubIssueFailure} projectId={projectId} />
+        </div>
+      )}
+      {githubIssuesLimited ? (
         <p role="status" className="text-sm text-muted-foreground">
-          Updating board…
+          Showing the first five pages. More open GitHub issues may exist.
         </p>
       ) : null}
       <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -155,7 +237,8 @@ export function ProjectFactoryBoardPanel({
               .flatMap((entry) => entry.items.map((item) => ({ item, feature: board.feature }))),
           );
           const drafts = column.id === "todo" ? planningFeatures : [];
-          const count = items.length + drafts.length;
+          const providerIssues = column.id === "todo" ? availableGitHubIssues : [];
+          const count = items.length + drafts.length + providerIssues.length;
           return (
             <section
               key={column.id}
@@ -206,6 +289,9 @@ export function ProjectFactoryBoardPanel({
                         </span>
                       </Button>
                     </li>
+                  ))}
+                  {providerIssues.map((issue) => (
+                    <GitHubIssueCard key={issue.id} issue={issue} />
                   ))}
                   {items.map(({ feature, item }) => (
                     <WorkItemCard

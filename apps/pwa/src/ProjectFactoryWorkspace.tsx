@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
-import type { FactoryBoard, Feature } from "@kestrel/contracts";
-import { fetchFactoryBoard, fetchFeatures } from "./api.js";
+import type { FactoryBoard, FactoryGitHubIssues, Feature } from "@kestrel/contracts";
+import { fetchFactoryBoard, fetchFactoryGitHubIssues, fetchFeatures } from "./api.js";
 import type { AppRoute } from "./app-route.js";
 import { planningRequestError } from "./FeatureNavigation.js";
 import { ProjectFactoryBoardPanel } from "./ProjectFactoryBoardPanel.js";
+
+const githubIssuePageLimit = 5;
 
 export interface ProjectFactoryWorkspaceProps {
   projectId: string;
@@ -22,6 +24,9 @@ export function ProjectFactoryWorkspace({
 }: ProjectFactoryWorkspaceProps) {
   const [features, setFeatures] = useState<Feature[]>([]);
   const [boards, setBoards] = useState<FactoryBoard[]>([]);
+  const [githubIssuePages, setGitHubIssuePages] = useState<FactoryGitHubIssues[]>([]);
+  const [githubIssuesError, setGitHubIssuesError] = useState<string | null>(null);
+  const [githubIssuesLoading, setGitHubIssuesLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [generation, setGeneration] = useState(0);
@@ -72,11 +77,55 @@ export function ProjectFactoryWorkspace({
     };
   }, [projectId, online, generation, onAuthenticationError]);
 
+  useEffect(() => {
+    if (!online) {
+      setGitHubIssuesLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setGitHubIssuesError(null);
+    setGitHubIssuesLoading(true);
+    const read = async () => {
+      const pages: FactoryGitHubIssues[] = [];
+      let page: number | null = 1;
+      while (page !== null && pages.length < githubIssuePageLimit) {
+        const result = await fetchFactoryGitHubIssues(projectId, page, controller.signal);
+        if (controller.signal.aborted) return;
+        const retained =
+          pages.length === githubIssuePageLimit - 1 && result.nextPage !== null
+            ? { ...result, nextPage: null, limited: true }
+            : result;
+        pages.push(retained);
+        setGitHubIssuePages([...pages]);
+        if (retained.state !== "available") return;
+        page = retained.nextPage;
+      }
+    };
+    void read()
+      .catch((failure: unknown) => {
+        if (!controller.signal.aborted && !onAuthenticationError(failure))
+          setGitHubIssuesError(
+            planningRequestError(
+              failure,
+              "GitHub issues could not be read. Refresh the board to retry.",
+            ),
+          );
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setGitHubIssuesLoading(false);
+      });
+    return () => controller.abort();
+  }, [projectId, online, generation, onAuthenticationError]);
+
   return (
     <ProjectFactoryBoardPanel
+      projectId={projectId}
       projectName={projectName}
       features={features}
       boards={boards}
+      githubIssuePages={githubIssuePages.filter((page) => page.projectId === projectId)}
+      githubIssuesError={githubIssuesError}
+      githubIssuesLoading={githubIssuesLoading}
       online={online}
       loading={loading}
       error={error}
