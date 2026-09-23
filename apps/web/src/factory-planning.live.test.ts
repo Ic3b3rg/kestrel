@@ -281,7 +281,7 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX === "1")(
               ...(body === undefined ? {} : { "content-type": "application/json" }),
             },
             ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-            signal: AbortSignal.timeout(path.endsWith("/github/preview") ? 120_000 : 5_000),
+            signal: AbortSignal.timeout(path.endsWith("/github/preview") ? 120_000 : 15_000),
           });
         const inventory = LocalRepositoryInventorySchema.parse(
           await (await request("/api/v1/local-repository-sources")).json(),
@@ -363,7 +363,14 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX === "1")(
               ),
             ).toBe(true);
             if (turn !== undefined && turn.state !== "queued" && turn.state !== "running") {
-              expect({ state: turn.state, failure: turn.failure }).toEqual({
+              expect(
+                { state: turn.state, failure: turn.failure },
+                JSON.stringify({
+                  question: turn.question,
+                  lifecycleProfile: turn.lifecycleProfile,
+                  runtimeProfile: turn.runtimeProfile,
+                }),
+              ).toEqual({
                 state: "completed",
                 failure: null,
               });

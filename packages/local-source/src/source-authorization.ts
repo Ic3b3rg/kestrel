@@ -1,4 +1,5 @@
-import { lstat, open, opendir, unlink } from "node:fs/promises";
+import { lstat, opendir } from "node:fs/promises";
+import { acquireSourceLock } from "./source-lock.js";
 import { join } from "node:path";
 import { readLocalSourceConfig, type LocalSourceConfig } from "./config.js";
 import { discoverResolvedRepositories } from "./discovery.js";
@@ -130,7 +131,7 @@ export async function confirmSourceAuthorization(
 ): Promise<void> {
   const path = configurationFile(env);
   const lockPath = `${path}.lock`;
-  const lock = await open(lockPath, "wx", 0o600).catch(() => {
+  const release = await acquireSourceLock(lockPath).catch(() => {
     throw new SourceAuthorizationError(
       "Source authorization is busy. Retry after the other authorization finishes.",
     );
@@ -158,7 +159,6 @@ export async function confirmSourceAuthorization(
       config.repositoryRoots.map((root) => root.path),
     );
   } finally {
-    await lock.close();
-    await unlink(lockPath);
+    await release();
   }
 }

@@ -1,3 +1,4 @@
+import { FormFeedback } from "./components/FormFeedback.js";
 import { Button } from "./components/ui/button.js";
 import { Input } from "./components/ui/input.js";
 import { Textarea } from "./components/ui/textarea.js";
@@ -120,6 +121,7 @@ export function ChangeIntentEditor({
           .map(({ id }) => id),
       ),
   );
+  const [saved, setSaved] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const controller = useRef<AbortController | null>(null);
@@ -162,18 +164,23 @@ export function ChangeIntentEditor({
 
   const submit = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (disabled || controller.current !== null) return;
     const parsed = CreateChangeIntentVersionCommandSchema.safeParse(command);
     if (!parsed.success) {
       setError("Add at least one source or Operator input and keep every field within its limit.");
       return;
     }
     const active = new AbortController();
-    controller.current?.abort();
     controller.current = active;
+    setSaved(false);
     setPending(true);
     setError(null);
     try {
-      onCreated(await createVersion(projectId, proposal.id, parsed.data, active.signal));
+      const result = await createVersion(projectId, proposal.id, parsed.data, active.signal);
+      if (controller.current === active && !active.signal.aborted) {
+        setSaved(true);
+        onCreated(result);
+      }
     } catch (caught) {
       if (!active.signal.aborted && onAuthenticationError?.(caught) !== true) {
         setError(
@@ -307,10 +314,16 @@ export function ChangeIntentEditor({
           ? "This version can resolve when saved."
           : `This version will remain unresolved: ${draftProblems.join(", ")}.`}
       </p>
+      {saved ? (
+        <FormFeedback kind="success">This Change Intent version was saved.</FormFeedback>
+      ) : null}
+      {pending ? (
+        <FormFeedback kind="pending">Saving this Change Intent version…</FormFeedback>
+      ) : null}
       {error === null ? null : (
-        <p className="project-form-error" role="alert">
+        <FormFeedback className="project-form-error" kind="error" focus>
           {error}
-        </p>
+        </FormFeedback>
       )}
       <Button type="submit" disabled={disabled || pending}>
         {pending ? "Creating version…" : "Create Change Intent version"}

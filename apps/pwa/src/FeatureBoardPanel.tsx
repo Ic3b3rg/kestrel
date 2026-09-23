@@ -1,3 +1,4 @@
+import { FormFeedback } from "./components/FormFeedback.js";
 import { useEffect, useRef, useState } from "react";
 import type {
   FactoryBoard,
@@ -379,24 +380,25 @@ export function FeatureBoardPanel({
         </div>
       </header>
       {error === null ? null : (
-        <p role="alert" className="planning-error">
+        <FormFeedback kind="error" focus className="planning-error">
           {error}
-        </p>
+        </FormFeedback>
       )}
       {!online ? (
         <p>Reconnect to refresh the board. Previously confirmed issue links are retained.</p>
       ) : board === null && loading ? (
         <p role="status">Loading the board…</p>
       ) : null}
+      {busy ? <FormFeedback kind="pending">Queuing the publication retry…</FormFeedback> : null}
       {commandError === null ? null : (
-        <div role="alert" className="planning-command-error">
+        <FormFeedback kind="error" focus className="planning-command-error">
           <p>{commandError}</p>
           {uncertain ? (
             <Button variant="outline" disabled={!online || busy} onClick={() => void retry()}>
               Retry request
             </Button>
           ) : null}
-        </div>
+        </FormFeedback>
       )}
       {publication === null ? null : (
         <PublicationSummary

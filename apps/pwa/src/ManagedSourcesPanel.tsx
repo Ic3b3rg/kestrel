@@ -30,8 +30,13 @@ export function ManagedSourcesPanel({
       .then((result) => {
         if (!controller.signal.aborted) setSources(result);
       })
-      .catch(() => {
-        /* The clone command reports actionable configuration failures locally. */
+      .catch((failure: unknown) => {
+        if (!controller.signal.aborted)
+          setError(
+            failure instanceof ApiClientError
+              ? failure.details.message
+              : "The managed repositories could not be loaded. Close and reopen this section to retry.",
+          );
       });
     return () => controller.abort();
   }, [open, disabled]);

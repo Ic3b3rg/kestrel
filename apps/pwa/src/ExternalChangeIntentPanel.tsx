@@ -1,3 +1,4 @@
+import { FormFeedback } from "./components/FormFeedback.js";
 import { useEffect, useId, useMemo, useRef, useState, type SyntheticEvent } from "react";
 import {
   CreateChangeIntentVersionCommandSchema,
@@ -127,6 +128,7 @@ export function ExternalChangeIntentPanel({
 
   const submit = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (disabled || request.current !== null) return;
     const normalizedObjective = objective.trim();
     const normalizedScope = nonEmptyLines(scope);
     const normalizedOutcomes = nonEmptyLines(outcomes);
@@ -148,7 +150,6 @@ export function ExternalChangeIntentPanel({
       return;
     }
     const controller = new AbortController();
-    request.current?.abort();
     request.current = controller;
     setPending(true);
     setError(null);
@@ -278,10 +279,13 @@ export function ExternalChangeIntentPanel({
               />
             </div>
           </div>
+          {pending ? (
+            <FormFeedback kind="pending">Saving the corrected purpose…</FormFeedback>
+          ) : null}
           {error === null ? null : (
-            <p role="alert" className="text-sm text-destructive">
+            <FormFeedback kind="error" focus className="text-sm text-destructive">
               {error}
-            </p>
+            </FormFeedback>
           )}
           <Button type="submit" className="w-fit" disabled={disabled || pending}>
             {pending ? "Saving confirmation…" : "Save confirmed purpose"}

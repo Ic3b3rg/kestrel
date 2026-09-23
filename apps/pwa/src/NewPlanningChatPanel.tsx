@@ -1,3 +1,4 @@
+import { FormFeedback } from "./components/FormFeedback.js";
 import { useEffect, useId, useRef, useState, type SyntheticEvent } from "react";
 import { ArrowLeft, ArrowUp } from "lucide-react";
 import { Button } from "./components/ui/button.js";
@@ -7,6 +8,7 @@ import { PlanningSkillComposer } from "./PlanningSkillComposer.js";
 export interface NewPlanningChatPanelProps {
   projectName: string;
   online: boolean;
+  readyToSubmit?: boolean;
   pending: boolean;
   error: string | null;
   locked?: boolean;
@@ -20,6 +22,7 @@ export interface NewPlanningChatPanelProps {
 export function NewPlanningChatPanel({
   projectName,
   online,
+  readyToSubmit = true,
   pending,
   error,
   locked = false,
@@ -41,7 +44,7 @@ export function NewPlanningChatPanel({
   const submit = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
     const text = draft.trim();
-    if (!online || pending || text === "") return;
+    if (!online || !readyToSubmit || pending || text === "") return;
     onSubmit(text);
   };
   return (
@@ -99,28 +102,35 @@ export function NewPlanningChatPanel({
               <div className="flex flex-wrap items-center gap-3">
                 <p className="text-xs text-muted-foreground">Ctrl or ⌘ + Enter to send</p>
               </div>
-              <Button type="submit" disabled={!online || pending || draft.trim() === ""}>
+              <Button
+                type="submit"
+                disabled={!online || !readyToSubmit || pending || draft.trim() === ""}
+              >
                 {pending ? "Starting…" : error === null ? "Start plan" : "Retry"}
                 <ArrowUp aria-hidden="true" />
               </Button>
             </div>
           </div>
-          <p id={helpId} role="status" className="text-sm text-muted-foreground">
-            {!online
-              ? "Reconnect to start this plan. Your draft stays here."
-              : pending
-                ? pendingMessage
+          {pending ? (
+            <FormFeedback id={helpId} kind="pending">
+              {pendingMessage}
+            </FormFeedback>
+          ) : (
+            <p id={helpId} className="text-sm text-muted-foreground">
+              {!online
+                ? "Reconnect to start this plan. Your draft stays here."
                 : "You will review and approve the plan before implementation starts."}
-          </p>
+            </p>
+          )}
           {error === null ? null : (
-            <div role="alert" className="grid justify-items-start gap-1 text-sm">
+            <FormFeedback kind="error" focus className="grid justify-items-start gap-1 text-sm">
               <p>{error}</p>
               {error.includes("is not installed") ? (
                 <a href="/settings/skills" className="underline">
                   Open Settings → Skills
                 </a>
               ) : null}
-            </div>
+            </FormFeedback>
           )}
         </form>
       </div>

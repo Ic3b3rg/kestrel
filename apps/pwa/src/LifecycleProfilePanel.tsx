@@ -92,28 +92,34 @@ export function LifecycleProfileSummary({
   phase,
   projectId,
   online,
+  onReady,
 }: {
   phase: LifecyclePhase;
   projectId: string;
   online: boolean;
+  onReady?: (ready: boolean) => void;
 }) {
   const [view, setView] = useState<LifecycleProfileView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
   useEffect(() => {
+    onReady?.(false);
     if (!online) return;
     const controller = new AbortController();
     setView(null);
     setError(null);
     void fetchLifecycleProfile(phase, projectId, controller.signal)
       .then((view) => {
-        if (!controller.signal.aborted) setView(view);
+        if (!controller.signal.aborted) {
+          setView(view);
+          onReady?.(view.resolved !== null);
+        }
       })
       .catch((failure: unknown) => {
         if (!controller.signal.aborted) setError(errorMessage(failure));
       });
     return () => controller.abort();
-  }, [phase, projectId, online, reload]);
+  }, [phase, projectId, online, reload, onReady]);
   return (
     <section
       className="grid gap-2 border-t py-3"
@@ -422,9 +428,21 @@ function ProfileEditor({
         {effective.skillDigests
           .filter((digest) => !skills.some((skill) => skill.contentDigest === digest))
           .map((digest) => (
-            <p key={digest}>
-              Unavailable Skill {digest.slice(0, 12)}. Select installed Skills again.
-            </p>
+            <label key={digest} className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked
+                disabled={pending || (projectId !== undefined && draft.skillDigests === undefined)}
+                onChange={() =>
+                  update(
+                    "skillDigests",
+                    effective.skillDigests.filter((value) => value !== digest),
+                  )
+                }
+              />
+              Selected version {digest.slice(0, 12)} is no longer installed. Clear it to choose a
+              current Skill.
+            </label>
           ))}
       </fieldset>
       <div className="flex flex-wrap gap-2">

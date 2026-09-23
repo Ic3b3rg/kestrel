@@ -1,8 +1,9 @@
+import { FormFeedback } from "./components/FormFeedback.js";
 import { Button } from "./components/ui/button.js";
 import { Input } from "./components/ui/input.js";
 import { NativeSelect } from "./components/ui/native-select.js";
 import { Label } from "./components/ui/label.js";
-import { useEffect, useState, type ReactNode, type SyntheticEvent } from "react";
+import { useEffect, useRef, useState, type ReactNode, type SyntheticEvent } from "react";
 
 import { ConfigureDirectApiProfileCommandSchema, type DirectApiProfile } from "@kestrel/contracts";
 
@@ -182,9 +183,15 @@ export function DirectApiProfilePanel({
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const activeCommand = useRef<AbortController | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    activeCommand.current?.abort();
+    activeCommand.current = null;
+    setSuccess(null);
+    setPending(false);
     const controller = new AbortController();
     let active = true;
     setLoading(true);
@@ -211,11 +218,13 @@ export function DirectApiProfilePanel({
     return () => {
       active = false;
       controller.abort();
+      activeCommand.current?.abort();
     };
   }, [onAuthenticationError, projectId]);
 
   const handleConfigure = async (event: SyntheticEvent<HTMLFormElement, SubmitEvent>) => {
     event.preventDefault();
+    if (disabled || activeCommand.current !== null) return;
     const form = event.currentTarget;
     const data = new FormData(form);
     const model = textValue(data, "model");
@@ -261,17 +270,27 @@ export function DirectApiProfilePanel({
       return;
     }
 
+    const controller = new AbortController();
+    activeCommand.current = controller;
     setPending(true);
     setError(null);
+    setSuccess(null);
     try {
-      const response = await configureDirectApiProfile(projectId, parsed.data, password);
+      const response = await configureDirectApiProfile(
+        projectId,
+        parsed.data,
+        password,
+        controller.signal,
+      );
+      if (controller.signal.aborted || activeCommand.current !== controller) return;
       if (response.profile === null) throw new Error("Configured profile was absent");
       form.reset();
       setProfile(response.profile);
       setShowForm(false);
+      setSuccess(`Profile ${response.profile.availability}. Review the result below.`);
       onChanged?.(response.profile);
     } catch (caught) {
-      if (!onAuthenticationError?.(caught)) {
+      if (!controller.signal.aborted && !onAuthenticationError?.(caught)) {
         setError(
           caught instanceof ApiClientError
             ? `${caught.details.message} Reference: ${caught.details.correlationId}`
@@ -279,20 +298,29 @@ export function DirectApiProfilePanel({
         );
       }
     } finally {
-      setPending(false);
+      if (activeCommand.current === controller) {
+        activeCommand.current = null;
+        setPending(false);
+      }
     }
   };
 
   const handleTest = async () => {
+    if (disabled || activeCommand.current !== null) return;
+    const controller = new AbortController();
+    activeCommand.current = controller;
     setPending(true);
     setError(null);
+    setSuccess(null);
     try {
-      const response = await testDirectApiProfile(projectId);
+      const response = await testDirectApiProfile(projectId, controller.signal);
+      if (controller.signal.aborted || activeCommand.current !== controller) return;
       if (response.profile === null) throw new Error("Tested profile was absent");
       setProfile(response.profile);
+      setSuccess(`Profile ${response.profile.availability}. Review the result below.`);
       onChanged?.(response.profile);
     } catch (caught) {
-      if (!onAuthenticationError?.(caught)) {
+      if (!controller.signal.aborted && !onAuthenticationError?.(caught)) {
         setError(
           caught instanceof ApiClientError
             ? `${caught.details.message} Reference: ${caught.details.correlationId}`
@@ -300,7 +328,10 @@ export function DirectApiProfilePanel({
         );
       }
     } finally {
-      setPending(false);
+      if (activeCommand.current === controller) {
+        activeCommand.current = null;
+        setPending(false);
+      }
     }
   };
 
@@ -340,10 +371,14 @@ export function DirectApiProfilePanel({
         </p>
       ) : null}
       {profile === null ? null : <DirectApiProfileView profile={profile} />}
+      {success === null ? null : <FormFeedback kind="success">{success}</FormFeedback>}
+      {pending ? (
+        <FormFeedback kind="pending">Checking this Direct API profile…</FormFeedback>
+      ) : null}
       {error === null ? null : (
-        <p className="project-form-error" role="alert">
+        <FormFeedback className="project-form-error" kind="error" focus>
           {error}
-        </p>
+        </FormFeedback>
       )}
       {showForm ? (
         <form className="direct-api-profile-form" onSubmit={(event) => void handleConfigure(event)}>

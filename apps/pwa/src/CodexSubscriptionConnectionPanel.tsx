@@ -1,3 +1,4 @@
+import { FormFeedback } from "./components/FormFeedback.js";
 import { Button } from "./components/ui/button.js";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
@@ -7,7 +8,6 @@ import type {
 } from "@kestrel/contracts";
 
 import { fetchCodexSubscriptionConnection } from "./api.js";
-import { CodexReviewModelPanel } from "./CodexReviewModelPanel.js";
 
 const remediation: Record<CodexSubscriptionConnectionReason, ReactNode> = {
   authentication_required: (
@@ -183,17 +183,14 @@ export function CodexSubscriptionConnectionPanel({
               Codex subscription
             </h2>
           </div>
-          <p className={`state-marker connection-${visibleState ?? "checking"}`} role="status">
+          <FormFeedback kind={loading ? "pending" : visibleState === "ready" ? "success" : "error"}>
             <span aria-hidden="true" />
             {stateLabel}
-          </p>
+          </FormFeedback>
         </div>
 
         <div className="connection-controls connection-controls-single">
-          <p>
-            Starts a fresh local App Server probe. No review, thread, tool, or provider fallback is
-            started.
-          </p>
+          <p>Check your Codex connection and available models.</p>
           <Button
             variant="outline"
             className="secondary-action"
@@ -270,13 +267,6 @@ export function CodexSubscriptionConnectionPanel({
           <p className="connection-remediation">{recovery}</p>
         )}
       </section>
-      <CodexReviewModelPanel
-        connection={connection}
-        connectionLoading={loading}
-        online={online}
-        onVerify={() => void verify()}
-        {...(onAuthenticationError === undefined ? {} : { onAuthenticationError })}
-      />
     </>
   );
 }

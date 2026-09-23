@@ -4,6 +4,90 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { defaultLifecycleSettings } from "@kestrel/contracts";
 import { LifecycleProfilePanel } from "./LifecycleProfilePanel.js";
+import { lifecycleProfileFixture } from "./lifecycle-profile.test-support.js";
+
+it("replaces a no-longer-installed Skill version with the installed upgrade", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const oldDigest = "a".repeat(64),
+    newDigest = "b".repeat(64);
+  const writes: unknown[] = [];
+  vi.spyOn(document, "cookie", "get").mockReturnValue(
+    "__Host-kestrel-csrf=" + "a".repeat(43) + "." + "b".repeat(43),
+  );
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((url: string, options?: RequestInit) => {
+      if (options?.method === "PUT" && typeof options.body === "string")
+        writes.push(JSON.parse(options.body));
+      return Promise.resolve(
+        Response.json(
+          url.includes("lifecycle-profiles")
+            ? {
+                ...lifecycleProfileFixture(),
+                overrides: { skillDigests: [oldDigest] },
+                resolved: null,
+                blocked: "Choose an installed Skill version.",
+              }
+            : {
+                schemaVersion: 1,
+                skills: [
+                  {
+                    name: "review-guide",
+                    description: "Current review guide",
+                    contentDigest: newDigest,
+                    source: { kind: "host", label: "Fixture", candidateId: newDigest },
+                  },
+                ],
+              },
+        ),
+      );
+    }),
+  );
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      root.render(
+        createElement(LifecycleProfilePanel, {
+          projectId: "01991c36-7f90-7000-8000-000000000002",
+          online: true,
+        }),
+      );
+      await Promise.resolve();
+    });
+    const stale = [...container.querySelectorAll("label")]
+      .find((label) => label.textContent.includes("no longer installed"))
+      ?.querySelector("input");
+    const current = [...container.querySelectorAll("label")]
+      .find((label) => label.textContent.includes("review-guide"))
+      ?.querySelector("input");
+    if (stale === null || stale === undefined || current === null || current === undefined)
+      throw new Error("Missing Skill choices");
+    await act(async () => {
+      stale.click();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      current.click();
+      await Promise.resolve();
+    });
+    const save = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Save profile",
+    );
+    if (save === undefined) throw new Error("Missing Save profile");
+    await act(async () => {
+      save.click();
+      await Promise.resolve();
+    });
+    expect(writes).toEqual([{ expectedVersion: 0, settings: { skillDigests: [newDigest] } }]);
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  }
+});
 
 it("retains a Project override after a failed save and retries against the observed version", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });

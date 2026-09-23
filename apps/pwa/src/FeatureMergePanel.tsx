@@ -1,3 +1,4 @@
+import { FormFeedback } from "./components/FormFeedback.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   FactoryConceptualReviewWorkflowRead,
@@ -77,6 +78,15 @@ export function FeatureMergePanel({
 }: FeatureMergePanelProps) {
   const [merge, setMerge] = useState<FactoryFeatureMerge | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
+  const submitting = useRef(false);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+  const [readError, setReadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const approvalRequestId = useRef<string | null>(null);
@@ -87,11 +97,12 @@ export function FeatureMergePanel({
     if (!online) return;
     try {
       const current = await loadCurrent(projectId, featureId);
+      if (!alive.current) return;
       setMerge(current.merge);
-      setError(null);
+      setReadError(null);
     } catch (failure) {
-      if (!onAuthenticationError(failure))
-        setError(planningRequestError(failure, "The merge status is unavailable."));
+      if (alive.current && !onAuthenticationError(failure))
+        setReadError(planningRequestError(failure, "The merge status is unavailable."));
     }
   }, [featureId, loadCurrent, onAuthenticationError, online, projectId]);
 
@@ -120,8 +131,17 @@ export function FeatureMergePanel({
     review.artifact.baseCommitId === publication.pullRequest.baseCommitId;
 
   const approve = async () => {
-    if (!online || busy || !acknowledged || !completeReview || !exact || review.artifact === null)
+    if (
+      !online ||
+      submitting.current ||
+      busy ||
+      !acknowledged ||
+      !completeReview ||
+      !exact ||
+      review.artifact === null
+    )
       return;
+    submitting.current = true;
     setBusy(true);
     setError(null);
     const requestId = approvalRequestId.current ?? crypto.randomUUID();
@@ -137,18 +157,21 @@ export function FeatureMergePanel({
           headCommitId: review.artifact.headCommitId,
         },
       });
+      if (!alive.current) return;
       setMerge(result);
       approvalRequestId.current = null;
     } catch (failure) {
-      if (!onAuthenticationError(failure))
+      if (alive.current && !onAuthenticationError(failure))
         setError(planningRequestError(failure, "The exact-head merge was not approved."));
     } finally {
-      setBusy(false);
+      submitting.current = false;
+      if (alive.current) setBusy(false);
     }
   };
 
   const retry = async () => {
-    if (!online || busy || merge === null || !merge.canRetry) return;
+    if (!online || submitting.current || busy || merge === null || !merge.canRetry) return;
+    submitting.current = true;
     setBusy(true);
     setError(null);
     const requestId = retryRequestId.current ?? crypto.randomUUID();
@@ -161,10 +184,11 @@ export function FeatureMergePanel({
       );
       retryRequestId.current = null;
     } catch (failure) {
-      if (!onAuthenticationError(failure))
+      if (alive.current && !onAuthenticationError(failure))
         setError(planningRequestError(failure, "The remaining merge work was not queued."));
     } finally {
-      setBusy(false);
+      submitting.current = false;
+      if (alive.current) setBusy(false);
     }
   };
 
@@ -224,9 +248,9 @@ export function FeatureMergePanel({
       {merge === null ? (
         <div className="grid gap-3">
           {!exact ? (
-            <p role="alert" className="text-sm text-amber-300">
+            <FormFeedback kind="error" className="text-sm text-amber-300">
               This review does not identify the currently published pull request head.
-            </p>
+            </FormFeedback>
           ) : null}
           <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-background p-3 text-sm">
             <Checkbox
@@ -321,10 +345,14 @@ export function FeatureMergePanel({
         </div>
       )}
 
+      {busy ? (
+        <FormFeedback kind="pending">Submitting the exact-head merge command…</FormFeedback>
+      ) : null}
+      {readError === null ? null : <FormFeedback kind="error">{readError}</FormFeedback>}
       {error === null ? null : (
-        <p role="alert" className="text-sm text-destructive">
+        <FormFeedback kind="error" focus className="text-sm text-destructive">
           {error}
-        </p>
+        </FormFeedback>
       )}
     </section>
   );

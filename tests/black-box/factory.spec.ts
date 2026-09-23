@@ -62,7 +62,7 @@ test.describe("Factory planning chat", () => {
       "-m",
       "Document the planning fixture",
     ]);
-    stack = await startStack({ repositoryRoot: fixture.rootPath });
+    stack = await startStack({ connectedCodexFixture: true, repositoryRoot: fixture.rootPath });
     await stack.bootstrapOperator(TEST_OPERATOR_CREDENTIALS);
   });
 

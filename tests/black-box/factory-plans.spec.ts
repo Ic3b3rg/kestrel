@@ -133,7 +133,7 @@ test.describe("Feature plan approval", () => {
   let fixture: GitFixture | undefined;
   test.beforeAll(async () => {
     fixture = await createGitFixture();
-    stack = await startStack({ repositoryRoot: fixture.rootPath });
+    stack = await startStack({ connectedCodexFixture: true, repositoryRoot: fixture.rootPath });
     await stack.bootstrapOperator(TEST_OPERATOR_CREDENTIALS);
   });
   test.afterAll(async () => {

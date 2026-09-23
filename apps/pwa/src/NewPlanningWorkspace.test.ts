@@ -1,4 +1,8 @@
 // @vitest-environment happy-dom
+import {
+  lifecycleProfileFixture,
+  mockLifecycleProfileRequests,
+} from "./lifecycle-profile.test-support.js";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -31,6 +35,7 @@ let root: Root;
 let container: HTMLDivElement;
 let props: NewPlanningWorkspaceProps;
 beforeEach(() => {
+  mockLifecycleProfileRequests();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   api.lookup.mockReset().mockResolvedValue({ schemaVersion: 1, feature: null });
   api.start.mockReset();
@@ -77,6 +82,26 @@ const submit = async () =>
         ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
     );
   });
+
+it("retains authored input while waiting for the effective profile before authorization", async () => {
+  const profile = Promise.withResolvers<Response>();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => profile.promise),
+  );
+  api.start.mockResolvedValue(started);
+  await render();
+  await type("Preserve the approved behavior");
+  await submit();
+  expect(api.start).not.toHaveBeenCalled();
+  expect(container.querySelector("textarea")?.value).toBe("Preserve the approved behavior");
+  await act(async () => {
+    profile.resolve(Response.json(lifecycleProfileFixture()));
+    await Promise.resolve();
+  });
+  await submit();
+  expect(api.start).toHaveBeenCalledOnce();
+});
 
 it("looks up an accepted draft URL on reload without creating another Feature", async () => {
   api.lookup.mockResolvedValue({ schemaVersion: 1, feature: started.feature });

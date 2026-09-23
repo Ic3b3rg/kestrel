@@ -145,6 +145,7 @@ describe("Factory Human Gates over HTTP and PostgreSQL", () => {
     await fixture.createSibling("falcon");
     await fixture.createSibling("owl");
     stack = await startStack({
+      connectedCodexFixture: true,
       repositoryRoot: fixture.rootPath,
       githubFixture: factoryGitHubFixture.replaceAll(
         "424242",

@@ -1,8 +1,3 @@
-import { assertLifecycleProfileAvailable } from "@kestrel/contracts";
-import {
-  createCodexAppServerAgentRuntime,
-  type CodexAgentRuntimePort,
-} from "./codex-app-server.js";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 
@@ -74,7 +69,6 @@ export interface FactoryConceptualReviewProcessorOptions {
   boss: DiagnosticJobSender;
   readSourceConfig: () => Promise<LocalSourceConfig>;
   runtime?: CodexReviewRuntime;
-  connection?: Pick<CodexAgentRuntimePort, "readConnection">;
   containerImage?: string;
   containerUser?: string;
   codexExecutable?: string;
@@ -392,23 +386,6 @@ async function runReview(
     assertReviewActive(signal);
     const profile = claim.preparation.configuration.lifecycleProfile;
     if (profile == null) throw new CodexExecutionError("unavailable");
-    const connection = await (
-      options.connection ?? createCodexAppServerAgentRuntime()
-    ).readConnection(signal);
-    if (connection.state !== "ready")
-      throw new CodexExecutionError(
-        connection.reason === "authentication_required"
-          ? "authentication"
-          : connection.reason === "usage_limit_reached" ||
-              connection.reason === "waiting_for_usage_reset"
-            ? "usage_limit"
-            : "unavailable",
-      );
-    try {
-      assertLifecycleProfileAvailable(profile, connection.models);
-    } catch {
-      throw new CodexExecutionError("unavailable");
-    }
     const model = profile.model;
     const [config, binding] = await Promise.all([
       options.readSourceConfig(),

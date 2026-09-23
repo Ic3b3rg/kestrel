@@ -46,7 +46,7 @@ export function FormFeedback({
       tabIndex={focus ? -1 : undefined}
     >
       {title === undefined ? null : <strong>{title}</strong>}
-      <span>{children}</span>
+      <div>{children}</div>
     </div>
   );
 }

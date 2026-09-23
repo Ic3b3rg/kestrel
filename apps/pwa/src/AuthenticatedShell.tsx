@@ -26,7 +26,6 @@ type NavigableRoute = Exclude<AppRoute, { kind: "not_found" }>;
 type Project = ProjectInbox["projects"][number];
 
 export interface AuthenticatedShellProps {
-  announcement: string;
   children?: ReactNode;
   error: string | null;
   inbox: ProjectInbox | null;
@@ -135,12 +134,12 @@ function WorkspaceShell(props: AuthenticatedShellProps) {
             <SidebarGroupLabel>Projects</SidebarGroupLabel>
             <SidebarGroupContent>
               {props.error === null ? null : (
-                <div className="project-rail-state project-rail-error" role="alert">
+                <FormFeedback className="project-rail-state project-rail-error" kind="error" focus>
                   <p>{props.error}</p>
                   <Button variant="outline" disabled={!props.online} onClick={props.onRetry}>
                     Retry Projects
                   </Button>
-                </div>
+                </FormFeedback>
               )}
               {!props.online ? (
                 <div className="project-rail-state">
@@ -268,9 +267,6 @@ function WorkspaceShell(props: AuthenticatedShellProps) {
         </header>
         <main ref={workspace} className="shell-workspace" id="workspace" tabIndex={-1}>
           {props.children}
-          <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
-            {props.announcement}
-          </p>
         </main>
       </div>
     </>

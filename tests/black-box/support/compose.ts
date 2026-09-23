@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { promisify } from "node:util";
 
+import { codexConnectionFixture } from "./codex-connection-fixture.js";
+
 const execFileAsync = promisify(execFile);
 const MAC_DOCKER = "/Applications/Docker.app/Contents/Resources/bin/docker";
 
@@ -37,6 +39,7 @@ export const TEST_OPERATOR_CREDENTIALS: OperatorTestCredentials = {
 };
 
 export interface StartStackOptions {
+  connectedCodexFixture?: boolean;
   githubFixture?: string;
   gitHubRemoteMappings?: Readonly<Record<string, string>>;
   repositoryRoot?: string;
@@ -161,6 +164,8 @@ export async function startStack(options: StartStackOptions = {}): Promise<Runni
   const generatedGitToolsRoot = await mkdtemp(join(tmpdir(), "kestrel-black-box-git-tools-"));
   const gitRecorder = join(generatedGitToolsRoot, "git-recorder");
   const githubFixture = join(generatedGitToolsRoot, "factory-gh");
+  const codexFixture = join(generatedGitToolsRoot, "factory-codex");
+  await writeFile(codexFixture, codexConnectionFixture, { mode: 0o755 });
   await writeFile(
     githubFixture,
     options.githubFixture ?? "#!/usr/local/bin/node\nprocess.exit(127);\n",
@@ -213,6 +218,10 @@ process.exit(result.status ?? 1);
         : `/fixtures/repositories/${relative(repositoryRoot, planningSkillRoot).split(sep).join("/")}`,
     KESTREL_TEST_GIT_RECORDER: gitRecorder,
     KESTREL_TEST_GH_FIXTURE: githubFixture,
+    KESTREL_TEST_CODEX_FIXTURE: codexFixture,
+    KESTREL_TEST_CODEX_EXECUTABLE: options.connectedCodexFixture
+      ? "/fixtures/git-tools/factory-codex"
+      : "",
     KESTREL_TEST_GH_EXECUTABLE:
       options.githubFixture === undefined ? "gh" : "/fixtures/git-tools/factory-gh",
     KESTREL_TEST_REVIEW_MAX_BYTES: String(options.reviewRevisionMaxBytes ?? 10 * 1024 * 1024),

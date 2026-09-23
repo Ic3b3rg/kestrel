@@ -383,20 +383,6 @@ function arrange(
   const processor = createFactoryConceptualReviewProcessor({
     pool: {} as never,
     boss: { send: vi.fn() },
-    connection: {
-      readConnection: vi.fn().mockResolvedValue({
-        state: "ready",
-        models: [
-          {
-            id: "gpt-6-astra",
-            displayName: "Fixture",
-            isDefault: true,
-            defaultReasoningEffort: "high",
-            serviceTiers: [],
-          },
-        ],
-      }),
-    },
     readSourceConfig: vi.fn(() => Promise.resolve({} as never)),
     ...runtimeOption,
     materialize: vi.fn(() => Promise.resolve(workspace)),

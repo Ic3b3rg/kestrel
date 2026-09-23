@@ -1,5 +1,7 @@
+import { FormFeedback } from "./components/FormFeedback.js";
+import { ApiClientError } from "./api.js";
 import { Button } from "./components/ui/button.js";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   type ChangeIntentVersionCreated,
@@ -36,9 +38,9 @@ interface ProjectInboxPanelProps {
   onLocalAvailable?: (result: ReviewRevisionAvailable) => void;
   onProjectOpened?: (result: ProjectUpserted) => void;
   onIntentCreated?: (result: ChangeIntentVersionCreated) => void;
-  onOpen: (url: PublicGitHubPullRequestUrl) => void;
+  onOpen: (url: PublicGitHubPullRequestUrl) => void | Promise<void>;
   onHostObserved?: (project: Project) => void;
-  onHostRefresh?: (projectId: string, number: number) => void;
+  onHostRefresh?: (projectId: string, number: number) => void | Promise<void>;
   onRetry: () => void;
 }
 
@@ -278,10 +280,33 @@ function ChangeProposalRecord({
   onAvailable: (result: ReviewRevisionAvailable) => void;
   onIntentCreated: (result: ChangeIntentVersionCreated) => void;
   onProjectOpened: (result: ProjectUpserted) => void;
-  onRefresh: () => void;
+  onRefresh: () => void | Promise<void>;
   projectId: string;
   requiredRevisionId?: string;
 }) {
+  const refreshing = useRef(false);
+  const [refreshState, setRefreshState] = useState<"pending" | "success" | "error" | null>(null);
+  const [refreshError, setRefreshError] = useState("");
+  const refresh = async () => {
+    if (disabled || refreshing.current) return;
+    refreshing.current = true;
+    setRefreshState("pending");
+    try {
+      await onRefresh();
+      setRefreshState("success");
+    } catch (failure) {
+      if (!onAuthenticationError?.(failure)) {
+        setRefreshError(
+          failure instanceof ApiClientError
+            ? failure.details.message
+            : "This pull request could not be refreshed. Reconnect and retry.",
+        );
+        setRefreshState("error");
+      }
+    } finally {
+      refreshing.current = false;
+    }
+  };
   const revision = currentReviewRevision(changeProposal, requiredRevisionId);
   const changeOverview = changeProposal.changeOverview ?? {
     exactHeadObjectId: changeProposal.head.objectId,
@@ -359,11 +384,21 @@ function ChangeProposalRecord({
           className="secondary-action proposal-refresh"
           type="button"
           disabled={disabled}
-          onClick={onRefresh}
+          onClick={() => void refresh()}
+          aria-busy={refreshState === "pending"}
         >
           Refresh PR #{changeProposal.number}
         </Button>
       </div>
+      {refreshState === null ? null : (
+        <FormFeedback kind={refreshState} focus={refreshState === "error"}>
+          {refreshState === "pending"
+            ? "Refreshing this pull request…"
+            : refreshState === "success"
+              ? "This pull request is up to date."
+              : refreshError}
+        </FormFeedback>
+      )}
 
       <section
         className="grid min-w-0 gap-4 rounded-xl border border-border bg-card p-4 sm:p-5"
@@ -494,7 +529,7 @@ export function ProjectInboxPanel(props: ProjectInboxPanelProps) {
   return (
     <section className="projects-section" aria-label="Selected Project">
       {props.error ? (
-        <div className="project-error" role="alert">
+        <FormFeedback className="project-error" kind="error" focus>
           <p>{props.error}</p>
           <Button
             variant="outline"
@@ -505,7 +540,7 @@ export function ProjectInboxPanel(props: ProjectInboxPanelProps) {
           >
             Retry Project inbox
           </Button>
-        </div>
+        </FormFeedback>
       ) : null}
 
       {!props.online ? (
@@ -687,11 +722,10 @@ function ProjectRecord({
                 project.providerObservation?.kind === "host_gh" &&
                 isProviderChangeProposal(changeProposal)
               ) {
-                props.onHostRefresh?.(project.id, changeProposal.number);
-                return;
+                return props.onHostRefresh?.(project.id, changeProposal.number);
               }
               if (isProviderChangeProposal(changeProposal)) {
-                props.onOpen(changeProposal.canonicalUrl);
+                return props.onOpen(changeProposal.canonicalUrl);
               }
             }}
           />

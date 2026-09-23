@@ -1,3 +1,4 @@
+import { FormFeedback } from "./components/FormFeedback.js";
 import { useContext, useEffect, useRef, useState } from "react";
 import type {
   FactoryFeaturePublication,
@@ -205,6 +206,7 @@ function PublicationPanel({
   const [publication, setPublication] = useState<FactoryFeaturePublication | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [readError, setReadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [generation, setGeneration] = useState(0);
   const pending = useRef<RetryFactoryFeaturePublicationCommand | null>(null);
@@ -231,7 +233,7 @@ function PublicationPanel({
     const refresh = async () => {
       if (cancelled() || submitting.current) return;
       setLoading(true);
-      setError(null);
+      setReadError(null);
       try {
         const result = await fetchFactoryFeaturePublication(
           projectId,
@@ -246,7 +248,7 @@ function PublicationPanel({
           }, 2_000);
       } catch (failure) {
         if (!cancelled() && !onAuthenticationError(failure))
-          setError(
+          setReadError(
             planningRequestError(
               failure,
               "Publication status is unavailable. Refresh to check its saved outcome.",
@@ -328,10 +330,14 @@ function PublicationPanel({
           onOpenRevision={onOpenRevision}
         />
       )}
+      {busy ? (
+        <FormFeedback kind="pending">Queuing publication of this Feature…</FormFeedback>
+      ) : null}
+      {readError === null ? null : <FormFeedback kind="error">{readError}</FormFeedback>}
       {error === null ? null : (
-        <p role="alert" className="text-sm">
+        <FormFeedback kind="error" focus className="text-sm">
           {error}
-        </p>
+        </FormFeedback>
       )}
       {!active && publication !== null ? (
         <p className="text-sm text-muted-foreground">

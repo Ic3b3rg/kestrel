@@ -3654,6 +3654,426 @@
                   ],
                   "type": "string"
                 },
+                "lifecycleProfile": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "effort": {
+                          "anyOf": [
+                            {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "inherited": {
+                          "items": {
+                            "enum": [
+                              "runtimeId",
+                              "model",
+                              "effort",
+                              "speed",
+                              "skillDigests"
+                            ],
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "model": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "modelId": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "phase": {
+                          "enum": [
+                            "planning",
+                            "implementation",
+                            "review",
+                            "corrections"
+                          ],
+                          "type": "string"
+                        },
+                        "requested": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "effort": {
+                              "oneOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "runtime_default",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "explicit",
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "maxLength": 128,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "value"
+                                  ],
+                                  "type": "object"
+                                }
+                              ]
+                            },
+                            "model": {
+                              "oneOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "runtime_default",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "explicit",
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "maxLength": 128,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "value"
+                                  ],
+                                  "type": "object"
+                                }
+                              ]
+                            },
+                            "runtimeId": {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "skillDigests": {
+                              "items": {
+                                "pattern": "^[a-f0-9]{64}$",
+                                "type": "string"
+                              },
+                              "maxItems": 8,
+                              "type": "array"
+                            },
+                            "speed": {
+                              "anyOf": [
+                                {
+                                  "oneOf": [
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "kind": {
+                                          "const": "runtime_default",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "kind"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "kind": {
+                                          "const": "explicit",
+                                          "type": "string"
+                                        },
+                                        "value": {
+                                          "maxLength": 128,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "value"
+                                      ],
+                                      "type": "object"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "standard",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ],
+                                  "type": "object"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "runtimeId",
+                            "model",
+                            "effort",
+                            "speed",
+                            "skillDigests"
+                          ],
+                          "type": "object"
+                        },
+                        "runtimeId": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "serviceTier": {
+                          "anyOf": [
+                            {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "skills": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "contentDigest": {
+                                "pattern": "^[a-f0-9]{64}$",
+                                "type": "string"
+                              },
+                              "description": {
+                                "maxLength": 2000,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "name": {
+                                "maxLength": 64,
+                                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                                "type": "string"
+                              },
+                              "source": {
+                                "oneOf": [
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "candidateId": {
+                                        "pattern": "^[a-f0-9]{64}$",
+                                        "type": "string"
+                                      },
+                                      "kind": {
+                                        "const": "host",
+                                        "type": "string"
+                                      },
+                                      "label": {
+                                        "maxLength": 255,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "label",
+                                      "candidateId"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "candidateId": {
+                                        "pattern": "^[a-f0-9]{64}$",
+                                        "type": "string"
+                                      },
+                                      "commitId": {
+                                        "pattern": "^[a-f0-9]{40}$",
+                                        "type": "string"
+                                      },
+                                      "kind": {
+                                        "const": "github",
+                                        "type": "string"
+                                      },
+                                      "label": {
+                                        "maxLength": 255,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "owner": {
+                                        "pattern": "^[a-z0-9][a-z0-9-]{0,38}$",
+                                        "type": "string"
+                                      },
+                                      "path": {
+                                        "maxLength": 512,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "repository": {
+                                        "pattern": "^[a-z0-9_.-]{1,100}$",
+                                        "type": "string"
+                                      },
+                                      "requestedRef": {
+                                        "maxLength": 255,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "label",
+                                      "candidateId",
+                                      "owner",
+                                      "repository",
+                                      "path",
+                                      "requestedRef",
+                                      "commitId"
+                                    ],
+                                    "type": "object"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "description",
+                              "contentDigest",
+                              "source"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 20,
+                          "type": "array"
+                        },
+                        "versions": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "installation": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "project": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "installation",
+                            "project"
+                          ],
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "runtimeId",
+                        "modelId",
+                        "model",
+                        "effort",
+                        "serviceTier",
+                        "requested",
+                        "inherited",
+                        "phase",
+                        "versions",
+                        "skills"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "runtimeProfileResult": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "effort": {
+                          "anyOf": [
+                            {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "model": {
+                          "anyOf": [
+                            {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "serviceTier": {
+                          "anyOf": [
+                            {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "model",
+                        "effort",
+                        "serviceTier"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "schemaVersion": {
                   "const": 1,
                   "type": "number"
@@ -4112,6 +4532,397 @@
             "configuration": {
               "additionalProperties": false,
               "properties": {
+                "lifecycleProfile": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "effort": {
+                          "anyOf": [
+                            {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "inherited": {
+                          "items": {
+                            "enum": [
+                              "runtimeId",
+                              "model",
+                              "effort",
+                              "speed",
+                              "skillDigests"
+                            ],
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "model": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "modelId": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "phase": {
+                          "enum": [
+                            "planning",
+                            "implementation",
+                            "review",
+                            "corrections"
+                          ],
+                          "type": "string"
+                        },
+                        "requested": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "effort": {
+                              "oneOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "runtime_default",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "explicit",
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "maxLength": 128,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "value"
+                                  ],
+                                  "type": "object"
+                                }
+                              ]
+                            },
+                            "model": {
+                              "oneOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "runtime_default",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "explicit",
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "maxLength": 128,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "value"
+                                  ],
+                                  "type": "object"
+                                }
+                              ]
+                            },
+                            "runtimeId": {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "skillDigests": {
+                              "items": {
+                                "pattern": "^[a-f0-9]{64}$",
+                                "type": "string"
+                              },
+                              "maxItems": 8,
+                              "type": "array"
+                            },
+                            "speed": {
+                              "anyOf": [
+                                {
+                                  "oneOf": [
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "kind": {
+                                          "const": "runtime_default",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "kind"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "kind": {
+                                          "const": "explicit",
+                                          "type": "string"
+                                        },
+                                        "value": {
+                                          "maxLength": 128,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "value"
+                                      ],
+                                      "type": "object"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "standard",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ],
+                                  "type": "object"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "runtimeId",
+                            "model",
+                            "effort",
+                            "speed",
+                            "skillDigests"
+                          ],
+                          "type": "object"
+                        },
+                        "runtimeId": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "serviceTier": {
+                          "anyOf": [
+                            {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "skills": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "contentDigest": {
+                                "pattern": "^[a-f0-9]{64}$",
+                                "type": "string"
+                              },
+                              "description": {
+                                "maxLength": 2000,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "files": {
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "content": {
+                                      "maxLength": 131072,
+                                      "type": "string"
+                                    },
+                                    "path": {
+                                      "maxLength": 512,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "path",
+                                    "content"
+                                  ],
+                                  "type": "object"
+                                },
+                                "maxItems": 32,
+                                "minItems": 1,
+                                "type": "array"
+                              },
+                              "name": {
+                                "maxLength": 64,
+                                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                                "type": "string"
+                              },
+                              "source": {
+                                "oneOf": [
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "candidateId": {
+                                        "pattern": "^[a-f0-9]{64}$",
+                                        "type": "string"
+                                      },
+                                      "kind": {
+                                        "const": "host",
+                                        "type": "string"
+                                      },
+                                      "label": {
+                                        "maxLength": 255,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "label",
+                                      "candidateId"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "candidateId": {
+                                        "pattern": "^[a-f0-9]{64}$",
+                                        "type": "string"
+                                      },
+                                      "commitId": {
+                                        "pattern": "^[a-f0-9]{40}$",
+                                        "type": "string"
+                                      },
+                                      "kind": {
+                                        "const": "github",
+                                        "type": "string"
+                                      },
+                                      "label": {
+                                        "maxLength": 255,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "owner": {
+                                        "pattern": "^[a-z0-9][a-z0-9-]{0,38}$",
+                                        "type": "string"
+                                      },
+                                      "path": {
+                                        "maxLength": 512,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "repository": {
+                                        "pattern": "^[a-z0-9_.-]{1,100}$",
+                                        "type": "string"
+                                      },
+                                      "requestedRef": {
+                                        "maxLength": 255,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "label",
+                                      "candidateId",
+                                      "owner",
+                                      "repository",
+                                      "path",
+                                      "requestedRef",
+                                      "commitId"
+                                    ],
+                                    "type": "object"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "description",
+                              "contentDigest",
+                              "source",
+                              "files"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 20,
+                          "type": "array"
+                        },
+                        "versions": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "installation": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "project": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "installation",
+                            "project"
+                          ],
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "runtimeId",
+                        "modelId",
+                        "model",
+                        "effort",
+                        "serviceTier",
+                        "requested",
+                        "inherited",
+                        "phase",
+                        "versions",
+                        "skills"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "model": {
                   "additionalProperties": false,
                   "properties": {
@@ -4138,6 +4949,17 @@
                     "modelId"
                   ],
                   "type": "object"
+                },
+                "profileBlocker": {
+                  "anyOf": [
+                    {
+                      "maxLength": 1024,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "resources": {
                   "additionalProperties": false,
@@ -4963,6 +5785,7 @@
                       "exact_revision_mismatch",
                       "change_intent_not_available",
                       "model_not_selected",
+                      "lifecycle_profile_unavailable",
                       "review_runtime_unavailable"
                     ],
                     "type": "string"
@@ -5200,6 +6023,397 @@
             "configuration": {
               "additionalProperties": false,
               "properties": {
+                "lifecycleProfile": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "effort": {
+                          "anyOf": [
+                            {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "inherited": {
+                          "items": {
+                            "enum": [
+                              "runtimeId",
+                              "model",
+                              "effort",
+                              "speed",
+                              "skillDigests"
+                            ],
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "model": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "modelId": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "phase": {
+                          "enum": [
+                            "planning",
+                            "implementation",
+                            "review",
+                            "corrections"
+                          ],
+                          "type": "string"
+                        },
+                        "requested": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "effort": {
+                              "oneOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "runtime_default",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "explicit",
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "maxLength": 128,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "value"
+                                  ],
+                                  "type": "object"
+                                }
+                              ]
+                            },
+                            "model": {
+                              "oneOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "runtime_default",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "explicit",
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "maxLength": 128,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "value"
+                                  ],
+                                  "type": "object"
+                                }
+                              ]
+                            },
+                            "runtimeId": {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "skillDigests": {
+                              "items": {
+                                "pattern": "^[a-f0-9]{64}$",
+                                "type": "string"
+                              },
+                              "maxItems": 8,
+                              "type": "array"
+                            },
+                            "speed": {
+                              "anyOf": [
+                                {
+                                  "oneOf": [
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "kind": {
+                                          "const": "runtime_default",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "kind"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "kind": {
+                                          "const": "explicit",
+                                          "type": "string"
+                                        },
+                                        "value": {
+                                          "maxLength": 128,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "value"
+                                      ],
+                                      "type": "object"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "standard",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ],
+                                  "type": "object"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "runtimeId",
+                            "model",
+                            "effort",
+                            "speed",
+                            "skillDigests"
+                          ],
+                          "type": "object"
+                        },
+                        "runtimeId": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "serviceTier": {
+                          "anyOf": [
+                            {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "skills": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "contentDigest": {
+                                "pattern": "^[a-f0-9]{64}$",
+                                "type": "string"
+                              },
+                              "description": {
+                                "maxLength": 2000,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "files": {
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "content": {
+                                      "maxLength": 131072,
+                                      "type": "string"
+                                    },
+                                    "path": {
+                                      "maxLength": 512,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "path",
+                                    "content"
+                                  ],
+                                  "type": "object"
+                                },
+                                "maxItems": 32,
+                                "minItems": 1,
+                                "type": "array"
+                              },
+                              "name": {
+                                "maxLength": 64,
+                                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                                "type": "string"
+                              },
+                              "source": {
+                                "oneOf": [
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "candidateId": {
+                                        "pattern": "^[a-f0-9]{64}$",
+                                        "type": "string"
+                                      },
+                                      "kind": {
+                                        "const": "host",
+                                        "type": "string"
+                                      },
+                                      "label": {
+                                        "maxLength": 255,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "label",
+                                      "candidateId"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "candidateId": {
+                                        "pattern": "^[a-f0-9]{64}$",
+                                        "type": "string"
+                                      },
+                                      "commitId": {
+                                        "pattern": "^[a-f0-9]{40}$",
+                                        "type": "string"
+                                      },
+                                      "kind": {
+                                        "const": "github",
+                                        "type": "string"
+                                      },
+                                      "label": {
+                                        "maxLength": 255,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "owner": {
+                                        "pattern": "^[a-z0-9][a-z0-9-]{0,38}$",
+                                        "type": "string"
+                                      },
+                                      "path": {
+                                        "maxLength": 512,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "repository": {
+                                        "pattern": "^[a-z0-9_.-]{1,100}$",
+                                        "type": "string"
+                                      },
+                                      "requestedRef": {
+                                        "maxLength": 255,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "label",
+                                      "candidateId",
+                                      "owner",
+                                      "repository",
+                                      "path",
+                                      "requestedRef",
+                                      "commitId"
+                                    ],
+                                    "type": "object"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "description",
+                              "contentDigest",
+                              "source",
+                              "files"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 20,
+                          "type": "array"
+                        },
+                        "versions": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "installation": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "project": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "installation",
+                            "project"
+                          ],
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "runtimeId",
+                        "modelId",
+                        "model",
+                        "effort",
+                        "serviceTier",
+                        "requested",
+                        "inherited",
+                        "phase",
+                        "versions",
+                        "skills"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "model": {
                   "additionalProperties": false,
                   "properties": {
@@ -5226,6 +6440,17 @@
                     "modelId"
                   ],
                   "type": "object"
+                },
+                "profileBlocker": {
+                  "anyOf": [
+                    {
+                      "maxLength": 1024,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "resources": {
                   "additionalProperties": false,
@@ -5819,6 +7044,7 @@
                       "exact_revision_mismatch",
                       "change_intent_not_available",
                       "model_not_selected",
+                      "lifecycle_profile_unavailable",
                       "review_runtime_unavailable"
                     ],
                     "type": "string"
@@ -6954,6 +8180,426 @@
             "unknown"
           ],
           "type": "string"
+        },
+        "lifecycleProfile": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "effort": {
+                  "anyOf": [
+                    {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "inherited": {
+                  "items": {
+                    "enum": [
+                      "runtimeId",
+                      "model",
+                      "effort",
+                      "speed",
+                      "skillDigests"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "model": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "modelId": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "phase": {
+                  "enum": [
+                    "planning",
+                    "implementation",
+                    "review",
+                    "corrections"
+                  ],
+                  "type": "string"
+                },
+                "requested": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "effort": {
+                      "oneOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "kind": {
+                              "const": "runtime_default",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "kind": {
+                              "const": "explicit",
+                              "type": "string"
+                            },
+                            "value": {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "value"
+                          ],
+                          "type": "object"
+                        }
+                      ]
+                    },
+                    "model": {
+                      "oneOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "kind": {
+                              "const": "runtime_default",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "kind": {
+                              "const": "explicit",
+                              "type": "string"
+                            },
+                            "value": {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "value"
+                          ],
+                          "type": "object"
+                        }
+                      ]
+                    },
+                    "runtimeId": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "skillDigests": {
+                      "items": {
+                        "pattern": "^[a-f0-9]{64}$",
+                        "type": "string"
+                      },
+                      "maxItems": 8,
+                      "type": "array"
+                    },
+                    "speed": {
+                      "anyOf": [
+                        {
+                          "oneOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "kind": {
+                                  "const": "runtime_default",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "kind": {
+                                  "const": "explicit",
+                                  "type": "string"
+                                },
+                                "value": {
+                                  "maxLength": 128,
+                                  "minLength": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "value"
+                              ],
+                              "type": "object"
+                            }
+                          ]
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "kind": {
+                              "const": "standard",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind"
+                          ],
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "runtimeId",
+                    "model",
+                    "effort",
+                    "speed",
+                    "skillDigests"
+                  ],
+                  "type": "object"
+                },
+                "runtimeId": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "serviceTier": {
+                  "anyOf": [
+                    {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "skills": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "contentDigest": {
+                        "pattern": "^[a-f0-9]{64}$",
+                        "type": "string"
+                      },
+                      "description": {
+                        "maxLength": 2000,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "name": {
+                        "maxLength": 64,
+                        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                        "type": "string"
+                      },
+                      "source": {
+                        "oneOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "candidateId": {
+                                "pattern": "^[a-f0-9]{64}$",
+                                "type": "string"
+                              },
+                              "kind": {
+                                "const": "host",
+                                "type": "string"
+                              },
+                              "label": {
+                                "maxLength": 255,
+                                "minLength": 1,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "label",
+                              "candidateId"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "candidateId": {
+                                "pattern": "^[a-f0-9]{64}$",
+                                "type": "string"
+                              },
+                              "commitId": {
+                                "pattern": "^[a-f0-9]{40}$",
+                                "type": "string"
+                              },
+                              "kind": {
+                                "const": "github",
+                                "type": "string"
+                              },
+                              "label": {
+                                "maxLength": 255,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "owner": {
+                                "pattern": "^[a-z0-9][a-z0-9-]{0,38}$",
+                                "type": "string"
+                              },
+                              "path": {
+                                "maxLength": 512,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "repository": {
+                                "pattern": "^[a-z0-9_.-]{1,100}$",
+                                "type": "string"
+                              },
+                              "requestedRef": {
+                                "maxLength": 255,
+                                "minLength": 1,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "label",
+                              "candidateId",
+                              "owner",
+                              "repository",
+                              "path",
+                              "requestedRef",
+                              "commitId"
+                            ],
+                            "type": "object"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "description",
+                      "contentDigest",
+                      "source"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 20,
+                  "type": "array"
+                },
+                "versions": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "installation": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "project": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "installation",
+                    "project"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "runtimeId",
+                "modelId",
+                "model",
+                "effort",
+                "serviceTier",
+                "requested",
+                "inherited",
+                "phase",
+                "versions",
+                "skills"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runtimeProfileResult": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "effort": {
+                  "anyOf": [
+                    {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "model": {
+                  "anyOf": [
+                    {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "serviceTier": {
+                  "anyOf": [
+                    {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "model",
+                "effort",
+                "serviceTier"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "schemaVersion": {
           "const": 1,
@@ -9026,9 +10672,402 @@
                         }
                       ]
                     },
+                    "effectiveProfile": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "effort": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "model": {
+                          "type": "string"
+                        },
+                        "serviceTier": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "model",
+                        "effort",
+                        "serviceTier"
+                      ],
+                      "type": "object"
+                    },
                     "kind": {
                       "const": "codex",
                       "type": "string"
+                    },
+                    "lifecycleProfile": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "effort": {
+                          "anyOf": [
+                            {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "inherited": {
+                          "items": {
+                            "enum": [
+                              "runtimeId",
+                              "model",
+                              "effort",
+                              "speed",
+                              "skillDigests"
+                            ],
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "model": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "modelId": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "phase": {
+                          "enum": [
+                            "planning",
+                            "implementation",
+                            "review",
+                            "corrections"
+                          ],
+                          "type": "string"
+                        },
+                        "requested": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "effort": {
+                              "oneOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "runtime_default",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "explicit",
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "maxLength": 128,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "value"
+                                  ],
+                                  "type": "object"
+                                }
+                              ]
+                            },
+                            "model": {
+                              "oneOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "runtime_default",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "explicit",
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "maxLength": 128,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "value"
+                                  ],
+                                  "type": "object"
+                                }
+                              ]
+                            },
+                            "runtimeId": {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "skillDigests": {
+                              "items": {
+                                "pattern": "^[a-f0-9]{64}$",
+                                "type": "string"
+                              },
+                              "maxItems": 8,
+                              "type": "array"
+                            },
+                            "speed": {
+                              "anyOf": [
+                                {
+                                  "oneOf": [
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "kind": {
+                                          "const": "runtime_default",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "kind"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "kind": {
+                                          "const": "explicit",
+                                          "type": "string"
+                                        },
+                                        "value": {
+                                          "maxLength": 128,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "value"
+                                      ],
+                                      "type": "object"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "standard",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ],
+                                  "type": "object"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "runtimeId",
+                            "model",
+                            "effort",
+                            "speed",
+                            "skillDigests"
+                          ],
+                          "type": "object"
+                        },
+                        "runtimeId": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "serviceTier": {
+                          "anyOf": [
+                            {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "skills": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "contentDigest": {
+                                "pattern": "^[a-f0-9]{64}$",
+                                "type": "string"
+                              },
+                              "description": {
+                                "maxLength": 2000,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "name": {
+                                "maxLength": 64,
+                                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                                "type": "string"
+                              },
+                              "source": {
+                                "oneOf": [
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "candidateId": {
+                                        "pattern": "^[a-f0-9]{64}$",
+                                        "type": "string"
+                                      },
+                                      "kind": {
+                                        "const": "host",
+                                        "type": "string"
+                                      },
+                                      "label": {
+                                        "maxLength": 255,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "label",
+                                      "candidateId"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "candidateId": {
+                                        "pattern": "^[a-f0-9]{64}$",
+                                        "type": "string"
+                                      },
+                                      "commitId": {
+                                        "pattern": "^[a-f0-9]{40}$",
+                                        "type": "string"
+                                      },
+                                      "kind": {
+                                        "const": "github",
+                                        "type": "string"
+                                      },
+                                      "label": {
+                                        "maxLength": 255,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "owner": {
+                                        "pattern": "^[a-z0-9][a-z0-9-]{0,38}$",
+                                        "type": "string"
+                                      },
+                                      "path": {
+                                        "maxLength": 512,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "repository": {
+                                        "pattern": "^[a-z0-9_.-]{1,100}$",
+                                        "type": "string"
+                                      },
+                                      "requestedRef": {
+                                        "maxLength": 255,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "label",
+                                      "candidateId",
+                                      "owner",
+                                      "repository",
+                                      "path",
+                                      "requestedRef",
+                                      "commitId"
+                                    ],
+                                    "type": "object"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "description",
+                              "contentDigest",
+                              "source"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 20,
+                          "type": "array"
+                        },
+                        "versions": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "installation": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "project": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "installation",
+                            "project"
+                          ],
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "runtimeId",
+                        "modelId",
+                        "model",
+                        "effort",
+                        "serviceTier",
+                        "requested",
+                        "inherited",
+                        "phase",
+                        "versions",
+                        "skills"
+                      ],
+                      "type": "object"
                     },
                     "model": {
                       "maxLength": 200,
@@ -10051,9 +12090,402 @@
                         }
                       ]
                     },
+                    "effectiveProfile": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "effort": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "model": {
+                          "type": "string"
+                        },
+                        "serviceTier": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "model",
+                        "effort",
+                        "serviceTier"
+                      ],
+                      "type": "object"
+                    },
                     "kind": {
                       "const": "codex",
                       "type": "string"
+                    },
+                    "lifecycleProfile": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "effort": {
+                          "anyOf": [
+                            {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "inherited": {
+                          "items": {
+                            "enum": [
+                              "runtimeId",
+                              "model",
+                              "effort",
+                              "speed",
+                              "skillDigests"
+                            ],
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "model": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "modelId": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "phase": {
+                          "enum": [
+                            "planning",
+                            "implementation",
+                            "review",
+                            "corrections"
+                          ],
+                          "type": "string"
+                        },
+                        "requested": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "effort": {
+                              "oneOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "runtime_default",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "explicit",
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "maxLength": 128,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "value"
+                                  ],
+                                  "type": "object"
+                                }
+                              ]
+                            },
+                            "model": {
+                              "oneOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "runtime_default",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "explicit",
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "maxLength": 128,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "value"
+                                  ],
+                                  "type": "object"
+                                }
+                              ]
+                            },
+                            "runtimeId": {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "skillDigests": {
+                              "items": {
+                                "pattern": "^[a-f0-9]{64}$",
+                                "type": "string"
+                              },
+                              "maxItems": 8,
+                              "type": "array"
+                            },
+                            "speed": {
+                              "anyOf": [
+                                {
+                                  "oneOf": [
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "kind": {
+                                          "const": "runtime_default",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "kind"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "kind": {
+                                          "const": "explicit",
+                                          "type": "string"
+                                        },
+                                        "value": {
+                                          "maxLength": 128,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "value"
+                                      ],
+                                      "type": "object"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "standard",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ],
+                                  "type": "object"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "runtimeId",
+                            "model",
+                            "effort",
+                            "speed",
+                            "skillDigests"
+                          ],
+                          "type": "object"
+                        },
+                        "runtimeId": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "serviceTier": {
+                          "anyOf": [
+                            {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "skills": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "contentDigest": {
+                                "pattern": "^[a-f0-9]{64}$",
+                                "type": "string"
+                              },
+                              "description": {
+                                "maxLength": 2000,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "name": {
+                                "maxLength": 64,
+                                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                                "type": "string"
+                              },
+                              "source": {
+                                "oneOf": [
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "candidateId": {
+                                        "pattern": "^[a-f0-9]{64}$",
+                                        "type": "string"
+                                      },
+                                      "kind": {
+                                        "const": "host",
+                                        "type": "string"
+                                      },
+                                      "label": {
+                                        "maxLength": 255,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "label",
+                                      "candidateId"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "candidateId": {
+                                        "pattern": "^[a-f0-9]{64}$",
+                                        "type": "string"
+                                      },
+                                      "commitId": {
+                                        "pattern": "^[a-f0-9]{40}$",
+                                        "type": "string"
+                                      },
+                                      "kind": {
+                                        "const": "github",
+                                        "type": "string"
+                                      },
+                                      "label": {
+                                        "maxLength": 255,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "owner": {
+                                        "pattern": "^[a-z0-9][a-z0-9-]{0,38}$",
+                                        "type": "string"
+                                      },
+                                      "path": {
+                                        "maxLength": 512,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "repository": {
+                                        "pattern": "^[a-z0-9_.-]{1,100}$",
+                                        "type": "string"
+                                      },
+                                      "requestedRef": {
+                                        "maxLength": 255,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "label",
+                                      "candidateId",
+                                      "owner",
+                                      "repository",
+                                      "path",
+                                      "requestedRef",
+                                      "commitId"
+                                    ],
+                                    "type": "object"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "description",
+                              "contentDigest",
+                              "source"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 20,
+                          "type": "array"
+                        },
+                        "versions": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "installation": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "project": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "installation",
+                            "project"
+                          ],
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "runtimeId",
+                        "modelId",
+                        "model",
+                        "effort",
+                        "serviceTier",
+                        "requested",
+                        "inherited",
+                        "phase",
+                        "versions",
+                        "skills"
+                      ],
+                      "type": "object"
                     },
                     "model": {
                       "maxLength": 200,
@@ -11166,9 +13598,402 @@
                         }
                       ]
                     },
+                    "effectiveProfile": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "effort": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "model": {
+                          "type": "string"
+                        },
+                        "serviceTier": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "model",
+                        "effort",
+                        "serviceTier"
+                      ],
+                      "type": "object"
+                    },
                     "kind": {
                       "const": "codex",
                       "type": "string"
+                    },
+                    "lifecycleProfile": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "effort": {
+                          "anyOf": [
+                            {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "inherited": {
+                          "items": {
+                            "enum": [
+                              "runtimeId",
+                              "model",
+                              "effort",
+                              "speed",
+                              "skillDigests"
+                            ],
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "model": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "modelId": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "phase": {
+                          "enum": [
+                            "planning",
+                            "implementation",
+                            "review",
+                            "corrections"
+                          ],
+                          "type": "string"
+                        },
+                        "requested": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "effort": {
+                              "oneOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "runtime_default",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "explicit",
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "maxLength": 128,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "value"
+                                  ],
+                                  "type": "object"
+                                }
+                              ]
+                            },
+                            "model": {
+                              "oneOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "runtime_default",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "explicit",
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "maxLength": 128,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "value"
+                                  ],
+                                  "type": "object"
+                                }
+                              ]
+                            },
+                            "runtimeId": {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "skillDigests": {
+                              "items": {
+                                "pattern": "^[a-f0-9]{64}$",
+                                "type": "string"
+                              },
+                              "maxItems": 8,
+                              "type": "array"
+                            },
+                            "speed": {
+                              "anyOf": [
+                                {
+                                  "oneOf": [
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "kind": {
+                                          "const": "runtime_default",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "kind"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "kind": {
+                                          "const": "explicit",
+                                          "type": "string"
+                                        },
+                                        "value": {
+                                          "maxLength": 128,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "value"
+                                      ],
+                                      "type": "object"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "standard",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ],
+                                  "type": "object"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "runtimeId",
+                            "model",
+                            "effort",
+                            "speed",
+                            "skillDigests"
+                          ],
+                          "type": "object"
+                        },
+                        "runtimeId": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "serviceTier": {
+                          "anyOf": [
+                            {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "skills": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "contentDigest": {
+                                "pattern": "^[a-f0-9]{64}$",
+                                "type": "string"
+                              },
+                              "description": {
+                                "maxLength": 2000,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "name": {
+                                "maxLength": 64,
+                                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                                "type": "string"
+                              },
+                              "source": {
+                                "oneOf": [
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "candidateId": {
+                                        "pattern": "^[a-f0-9]{64}$",
+                                        "type": "string"
+                                      },
+                                      "kind": {
+                                        "const": "host",
+                                        "type": "string"
+                                      },
+                                      "label": {
+                                        "maxLength": 255,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "label",
+                                      "candidateId"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "candidateId": {
+                                        "pattern": "^[a-f0-9]{64}$",
+                                        "type": "string"
+                                      },
+                                      "commitId": {
+                                        "pattern": "^[a-f0-9]{40}$",
+                                        "type": "string"
+                                      },
+                                      "kind": {
+                                        "const": "github",
+                                        "type": "string"
+                                      },
+                                      "label": {
+                                        "maxLength": 255,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "owner": {
+                                        "pattern": "^[a-z0-9][a-z0-9-]{0,38}$",
+                                        "type": "string"
+                                      },
+                                      "path": {
+                                        "maxLength": 512,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "repository": {
+                                        "pattern": "^[a-z0-9_.-]{1,100}$",
+                                        "type": "string"
+                                      },
+                                      "requestedRef": {
+                                        "maxLength": 255,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "label",
+                                      "candidateId",
+                                      "owner",
+                                      "repository",
+                                      "path",
+                                      "requestedRef",
+                                      "commitId"
+                                    ],
+                                    "type": "object"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "description",
+                              "contentDigest",
+                              "source"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 20,
+                          "type": "array"
+                        },
+                        "versions": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "installation": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "project": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "installation",
+                            "project"
+                          ],
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "runtimeId",
+                        "modelId",
+                        "model",
+                        "effort",
+                        "serviceTier",
+                        "requested",
+                        "inherited",
+                        "phase",
+                        "versions",
+                        "skills"
+                      ],
+                      "type": "object"
                     },
                     "model": {
                       "maxLength": 200,
@@ -14276,6 +17101,372 @@
           "minLength": 1,
           "type": "string"
         },
+        "lifecycleProfile": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "effort": {
+                  "anyOf": [
+                    {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "inherited": {
+                  "items": {
+                    "enum": [
+                      "runtimeId",
+                      "model",
+                      "effort",
+                      "speed",
+                      "skillDigests"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "model": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "modelId": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "phase": {
+                  "enum": [
+                    "planning",
+                    "implementation",
+                    "review",
+                    "corrections"
+                  ],
+                  "type": "string"
+                },
+                "requested": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "effort": {
+                      "oneOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "kind": {
+                              "const": "runtime_default",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "kind": {
+                              "const": "explicit",
+                              "type": "string"
+                            },
+                            "value": {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "value"
+                          ],
+                          "type": "object"
+                        }
+                      ]
+                    },
+                    "model": {
+                      "oneOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "kind": {
+                              "const": "runtime_default",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "kind": {
+                              "const": "explicit",
+                              "type": "string"
+                            },
+                            "value": {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "value"
+                          ],
+                          "type": "object"
+                        }
+                      ]
+                    },
+                    "runtimeId": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "skillDigests": {
+                      "items": {
+                        "pattern": "^[a-f0-9]{64}$",
+                        "type": "string"
+                      },
+                      "maxItems": 8,
+                      "type": "array"
+                    },
+                    "speed": {
+                      "anyOf": [
+                        {
+                          "oneOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "kind": {
+                                  "const": "runtime_default",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "kind": {
+                                  "const": "explicit",
+                                  "type": "string"
+                                },
+                                "value": {
+                                  "maxLength": 128,
+                                  "minLength": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "value"
+                              ],
+                              "type": "object"
+                            }
+                          ]
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "kind": {
+                              "const": "standard",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind"
+                          ],
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "runtimeId",
+                    "model",
+                    "effort",
+                    "speed",
+                    "skillDigests"
+                  ],
+                  "type": "object"
+                },
+                "runtimeId": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "serviceTier": {
+                  "anyOf": [
+                    {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "skills": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "contentDigest": {
+                        "pattern": "^[a-f0-9]{64}$",
+                        "type": "string"
+                      },
+                      "description": {
+                        "maxLength": 2000,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "name": {
+                        "maxLength": 64,
+                        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                        "type": "string"
+                      },
+                      "source": {
+                        "oneOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "candidateId": {
+                                "pattern": "^[a-f0-9]{64}$",
+                                "type": "string"
+                              },
+                              "kind": {
+                                "const": "host",
+                                "type": "string"
+                              },
+                              "label": {
+                                "maxLength": 255,
+                                "minLength": 1,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "label",
+                              "candidateId"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "candidateId": {
+                                "pattern": "^[a-f0-9]{64}$",
+                                "type": "string"
+                              },
+                              "commitId": {
+                                "pattern": "^[a-f0-9]{40}$",
+                                "type": "string"
+                              },
+                              "kind": {
+                                "const": "github",
+                                "type": "string"
+                              },
+                              "label": {
+                                "maxLength": 255,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "owner": {
+                                "pattern": "^[a-z0-9][a-z0-9-]{0,38}$",
+                                "type": "string"
+                              },
+                              "path": {
+                                "maxLength": 512,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "repository": {
+                                "pattern": "^[a-z0-9_.-]{1,100}$",
+                                "type": "string"
+                              },
+                              "requestedRef": {
+                                "maxLength": 255,
+                                "minLength": 1,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "label",
+                              "candidateId",
+                              "owner",
+                              "repository",
+                              "path",
+                              "requestedRef",
+                              "commitId"
+                            ],
+                            "type": "object"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "description",
+                      "contentDigest",
+                      "source"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 20,
+                  "type": "array"
+                },
+                "versions": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "installation": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "project": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "installation",
+                    "project"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "runtimeId",
+                "modelId",
+                "model",
+                "effort",
+                "serviceTier",
+                "requested",
+                "inherited",
+                "phase",
+                "versions",
+                "skills"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "replacementReview": {
           "anyOf": [
             {
@@ -14590,6 +17781,372 @@
                   "maxLength": 4000,
                   "minLength": 1,
                   "type": "string"
+                },
+                "lifecycleProfile": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "effort": {
+                          "anyOf": [
+                            {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "inherited": {
+                          "items": {
+                            "enum": [
+                              "runtimeId",
+                              "model",
+                              "effort",
+                              "speed",
+                              "skillDigests"
+                            ],
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "model": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "modelId": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "phase": {
+                          "enum": [
+                            "planning",
+                            "implementation",
+                            "review",
+                            "corrections"
+                          ],
+                          "type": "string"
+                        },
+                        "requested": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "effort": {
+                              "oneOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "runtime_default",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "explicit",
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "maxLength": 128,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "value"
+                                  ],
+                                  "type": "object"
+                                }
+                              ]
+                            },
+                            "model": {
+                              "oneOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "runtime_default",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "explicit",
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "maxLength": 128,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "value"
+                                  ],
+                                  "type": "object"
+                                }
+                              ]
+                            },
+                            "runtimeId": {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "skillDigests": {
+                              "items": {
+                                "pattern": "^[a-f0-9]{64}$",
+                                "type": "string"
+                              },
+                              "maxItems": 8,
+                              "type": "array"
+                            },
+                            "speed": {
+                              "anyOf": [
+                                {
+                                  "oneOf": [
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "kind": {
+                                          "const": "runtime_default",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "kind"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "kind": {
+                                          "const": "explicit",
+                                          "type": "string"
+                                        },
+                                        "value": {
+                                          "maxLength": 128,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "value"
+                                      ],
+                                      "type": "object"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "standard",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ],
+                                  "type": "object"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "runtimeId",
+                            "model",
+                            "effort",
+                            "speed",
+                            "skillDigests"
+                          ],
+                          "type": "object"
+                        },
+                        "runtimeId": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "serviceTier": {
+                          "anyOf": [
+                            {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "skills": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "contentDigest": {
+                                "pattern": "^[a-f0-9]{64}$",
+                                "type": "string"
+                              },
+                              "description": {
+                                "maxLength": 2000,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "name": {
+                                "maxLength": 64,
+                                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                                "type": "string"
+                              },
+                              "source": {
+                                "oneOf": [
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "candidateId": {
+                                        "pattern": "^[a-f0-9]{64}$",
+                                        "type": "string"
+                                      },
+                                      "kind": {
+                                        "const": "host",
+                                        "type": "string"
+                                      },
+                                      "label": {
+                                        "maxLength": 255,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "label",
+                                      "candidateId"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "candidateId": {
+                                        "pattern": "^[a-f0-9]{64}$",
+                                        "type": "string"
+                                      },
+                                      "commitId": {
+                                        "pattern": "^[a-f0-9]{40}$",
+                                        "type": "string"
+                                      },
+                                      "kind": {
+                                        "const": "github",
+                                        "type": "string"
+                                      },
+                                      "label": {
+                                        "maxLength": 255,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "owner": {
+                                        "pattern": "^[a-z0-9][a-z0-9-]{0,38}$",
+                                        "type": "string"
+                                      },
+                                      "path": {
+                                        "maxLength": 512,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "repository": {
+                                        "pattern": "^[a-z0-9_.-]{1,100}$",
+                                        "type": "string"
+                                      },
+                                      "requestedRef": {
+                                        "maxLength": 255,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "label",
+                                      "candidateId",
+                                      "owner",
+                                      "repository",
+                                      "path",
+                                      "requestedRef",
+                                      "commitId"
+                                    ],
+                                    "type": "object"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "description",
+                              "contentDigest",
+                              "source"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 20,
+                          "type": "array"
+                        },
+                        "versions": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "installation": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "project": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "installation",
+                            "project"
+                          ],
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "runtimeId",
+                        "modelId",
+                        "model",
+                        "effort",
+                        "serviceTier",
+                        "requested",
+                        "inherited",
+                        "phase",
+                        "versions",
+                        "skills"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "replacementReview": {
                   "anyOf": [
@@ -16839,6 +20396,372 @@
                   "format": "date-time",
                   "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
                   "type": "string"
+                },
+                "lifecycleProfile": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "effort": {
+                          "anyOf": [
+                            {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "inherited": {
+                          "items": {
+                            "enum": [
+                              "runtimeId",
+                              "model",
+                              "effort",
+                              "speed",
+                              "skillDigests"
+                            ],
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "model": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "modelId": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "phase": {
+                          "enum": [
+                            "planning",
+                            "implementation",
+                            "review",
+                            "corrections"
+                          ],
+                          "type": "string"
+                        },
+                        "requested": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "effort": {
+                              "oneOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "runtime_default",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "explicit",
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "maxLength": 128,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "value"
+                                  ],
+                                  "type": "object"
+                                }
+                              ]
+                            },
+                            "model": {
+                              "oneOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "runtime_default",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "explicit",
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "maxLength": 128,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "value"
+                                  ],
+                                  "type": "object"
+                                }
+                              ]
+                            },
+                            "runtimeId": {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "skillDigests": {
+                              "items": {
+                                "pattern": "^[a-f0-9]{64}$",
+                                "type": "string"
+                              },
+                              "maxItems": 8,
+                              "type": "array"
+                            },
+                            "speed": {
+                              "anyOf": [
+                                {
+                                  "oneOf": [
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "kind": {
+                                          "const": "runtime_default",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "kind"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "kind": {
+                                          "const": "explicit",
+                                          "type": "string"
+                                        },
+                                        "value": {
+                                          "maxLength": 128,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "value"
+                                      ],
+                                      "type": "object"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "standard",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ],
+                                  "type": "object"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "runtimeId",
+                            "model",
+                            "effort",
+                            "speed",
+                            "skillDigests"
+                          ],
+                          "type": "object"
+                        },
+                        "runtimeId": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "serviceTier": {
+                          "anyOf": [
+                            {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "skills": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "contentDigest": {
+                                "pattern": "^[a-f0-9]{64}$",
+                                "type": "string"
+                              },
+                              "description": {
+                                "maxLength": 2000,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "name": {
+                                "maxLength": 64,
+                                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                                "type": "string"
+                              },
+                              "source": {
+                                "oneOf": [
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "candidateId": {
+                                        "pattern": "^[a-f0-9]{64}$",
+                                        "type": "string"
+                                      },
+                                      "kind": {
+                                        "const": "host",
+                                        "type": "string"
+                                      },
+                                      "label": {
+                                        "maxLength": 255,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "label",
+                                      "candidateId"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "candidateId": {
+                                        "pattern": "^[a-f0-9]{64}$",
+                                        "type": "string"
+                                      },
+                                      "commitId": {
+                                        "pattern": "^[a-f0-9]{40}$",
+                                        "type": "string"
+                                      },
+                                      "kind": {
+                                        "const": "github",
+                                        "type": "string"
+                                      },
+                                      "label": {
+                                        "maxLength": 255,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "owner": {
+                                        "pattern": "^[a-z0-9][a-z0-9-]{0,38}$",
+                                        "type": "string"
+                                      },
+                                      "path": {
+                                        "maxLength": 512,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "repository": {
+                                        "pattern": "^[a-z0-9_.-]{1,100}$",
+                                        "type": "string"
+                                      },
+                                      "requestedRef": {
+                                        "maxLength": 255,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "label",
+                                      "candidateId",
+                                      "owner",
+                                      "repository",
+                                      "path",
+                                      "requestedRef",
+                                      "commitId"
+                                    ],
+                                    "type": "object"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "description",
+                              "contentDigest",
+                              "source"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 20,
+                          "type": "array"
+                        },
+                        "versions": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "installation": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "project": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "installation",
+                            "project"
+                          ],
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "runtimeId",
+                        "modelId",
+                        "model",
+                        "effort",
+                        "serviceTier",
+                        "requested",
+                        "inherited",
+                        "phase",
+                        "versions",
+                        "skills"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "operatorId": {
                   "format": "uuid",

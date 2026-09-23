@@ -26,7 +26,7 @@ const post = (path: string, body: unknown) =>
   });
 beforeAll(async () => {
   fixture = await createGitFixture();
-  stack = await startStack({ repositoryRoot: fixture.rootPath });
+  stack = await startStack({ connectedCodexFixture: true, repositoryRoot: fixture.rootPath });
   await stack.authenticateOperator();
   const inventory = LocalRepositoryInventorySchema.parse(
     await (await stack.fetchApi("/api/v1/local-repository-sources")).json(),

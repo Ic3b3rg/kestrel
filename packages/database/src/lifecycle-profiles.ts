@@ -14,7 +14,7 @@ import {
 import type { DatabasePool } from "./pool.js";
 import type { PoolClient } from "pg";
 import { FactoryError } from "./factory-planning.js";
-import { readPlanningSkills } from "./factory-skills.js";
+import { readPlanningSkills, requireInstalledPlanningSkills } from "./factory-skills.js";
 
 type Reader = Pick<DatabasePool, "query">;
 async function canonicalProject(reader: Reader, projectId: string | null): Promise<string | null> {
@@ -59,6 +59,7 @@ export async function readLifecycleProfile(
         "Connect the Codex runtime and resolve its authentication or usage limit before starting new work.",
       );
     const profile = resolveLifecycleProfile(defaults, overrides, connection.models);
+    await requireInstalledPlanningSkills(reader, profile.requested.skillDigests);
     const skills = await readPlanningSkills(reader, profile.requested.skillDigests);
     resolved = FrozenLifecycleProfileSchema.parse({ ...profile, phase, versions, skills });
   } catch (error) {
@@ -123,8 +124,10 @@ export async function saveLifecycleProfile(
         "conflict",
         "These settings changed. Reload the profile before saving again.",
       );
-    if (command.settings.skillDigests !== undefined)
+    if (command.settings.skillDigests !== undefined) {
+      await requireInstalledPlanningSkills(client, command.settings.skillDigests);
       await readPlanningSkills(client, command.settings.skillDigests);
+    }
     await client.query(
       "INSERT INTO lifecycle_phase_profiles (project_id, phase, version, settings) VALUES ($1, $2, $3, $4::jsonb) ON CONFLICT (project_id, phase) DO UPDATE SET version = EXCLUDED.version, settings = EXCLUDED.settings, updated_at = clock_timestamp()",
       [canonical, phase, command.expectedVersion + 1, JSON.stringify(command.settings)],

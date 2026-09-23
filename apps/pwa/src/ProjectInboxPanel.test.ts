@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
 
-import { createElement } from "react";
+import { act, createElement } from "react";
+import { createRoot } from "react-dom/client";
+import { ProjectActions } from "./ProjectActions.js";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
@@ -51,6 +53,51 @@ const populatedInbox: ProjectInbox = {
     },
   ],
 };
+
+it("keeps a failed public-PR command in its source form with the authored URL", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const project = populatedInbox.projects[0];
+  if (project === undefined) throw new Error("Missing Project fixture");
+  try {
+    await act(async () => {
+      root.render(
+        createElement(ProjectActions, {
+          project,
+          repository: project.repository,
+          disabled: false,
+          onOpen: () => Promise.reject(new Error("Disconnected")),
+          onAvailable: vi.fn(),
+        }),
+      );
+      await Promise.resolve();
+    });
+    const input = container.querySelector("input");
+    const form = container.querySelector("form");
+    if (input === null || form === null) throw new Error("Missing public PR form");
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
+        input,
+        "https://github.com/openai/openai-node/pull/1234",
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      await Promise.resolve();
+    });
+    expect(input.value).toBe("https://github.com/openai/openai-node/pull/1234");
+    expect(document.activeElement).toBe(container.querySelector('[data-form-feedback="error"]'));
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("could not be opened");
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
 
 const localInbox: ProjectInbox = {
   schemaVersion: 1,

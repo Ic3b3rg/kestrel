@@ -1,3 +1,4 @@
+import { FormFeedback } from "./components/FormFeedback.js";
 import { Button } from "./components/ui/button.js";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs.js";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
@@ -127,6 +128,7 @@ export function HostGitHubProjectPanel({
   );
 
   const select = (number: number) => {
+    if (!online || selectionController.current !== null) return;
     const controller = new AbortController();
     selectionController.current = controller;
     setSelectingNumber(number);
@@ -228,7 +230,7 @@ export function HostGitHubProjectPanel({
         </div>
       </header>
       {inbox?.status.authentication === "needs_authentication" ? (
-        <p className="host-github-session-error" role="alert">
+        <FormFeedback className="host-github-session-error" kind="error">
           <strong>Authentication required.</strong> Run{" "}
           <code>gh auth login --hostname github.com</code>, then refresh.{" "}
           <a
@@ -236,9 +238,9 @@ export function HostGitHubProjectPanel({
           >
             Open Project settings
           </a>
-        </p>
+        </FormFeedback>
       ) : inbox?.status.authentication === "access_denied" ? (
-        <p className="host-github-session-error" role="alert">
+        <FormFeedback className="host-github-session-error" kind="error">
           <strong>Project access required.</strong> Restore access for the selected repository, then
           refresh.{" "}
           <a
@@ -246,28 +248,28 @@ export function HostGitHubProjectPanel({
           >
             Open Project settings
           </a>
-        </p>
+        </FormFeedback>
       ) : null}
       {!online ? (
         <p role="status">Reconnect this workstation to load pull requests.</p>
       ) : loadError ? (
-        <p className="host-github-session-error" role="alert">
+        <FormFeedback className="host-github-session-error" kind="error">
           The inbox could not be loaded. Refresh to retry.
-        </p>
+        </FormFeedback>
       ) : (
         failures.map((state) => (
-          <p className="host-github-session-error" role="alert" key={state.group}>
+          <FormFeedback className="host-github-session-error" kind="error" key={state.group}>
             <strong>{groupLabels[state.group]} unavailable.</strong>{" "}
             {state.failureReason === null
               ? "Refresh to retry."
               : groupFailureMessages[state.failureReason]}
-          </p>
+          </FormFeedback>
         ))
       )}
       {selectionError === null ? null : (
-        <p className="host-github-session-error" role="alert">
+        <FormFeedback className="host-github-session-error" kind="error" focus>
           {selectionError}
-        </p>
+        </FormFeedback>
       )}
       <Tabs
         value={filter}

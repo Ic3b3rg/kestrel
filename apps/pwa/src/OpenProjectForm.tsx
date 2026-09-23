@@ -1,3 +1,4 @@
+import { FormFeedback } from "./components/FormFeedback.js";
 import { SourceOnboardingPanel } from "./SourceOnboardingPanel.js";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./components/ui/dialog.js";
 import { Button } from "./components/ui/button.js";
@@ -103,13 +104,13 @@ export function OpenProjectForm({
 
   const submit = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (disabled || active.current !== null) return;
     const command = OpenLocalProjectCommandSchema.safeParse({ repositoryId });
     if (!command.success) {
       setError("Select an authorized repository.");
       return;
     }
     const controller = new AbortController();
-    active.current?.abort();
     active.current = controller;
     setPending(true);
     setError(null);
@@ -233,10 +234,13 @@ export function OpenProjectForm({
                 <Button type="submit" disabled={pending || repositoryId === ""}>
                   {pending ? "Opening Project…" : "Open selected Project"}
                 </Button>
+                {pending ? (
+                  <FormFeedback kind="pending">Opening the selected Project…</FormFeedback>
+                ) : null}
                 {error === null ? null : (
-                  <p className="project-form-error" role="alert">
+                  <FormFeedback className="project-form-error" kind="error" focus>
                     {error}
-                  </p>
+                  </FormFeedback>
                 )}
               </form>
             )}

@@ -1,3 +1,4 @@
+import { FormFeedback } from "./components/FormFeedback.js";
 import { Button } from "./components/ui/button.js";
 import { useEffect, useId, useRef, useState, type SyntheticEvent } from "react";
 
@@ -69,6 +70,7 @@ export function AcquireObservedReviewRevisionForm({
 
   const submit = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (disabled || active.current !== null) return;
     let command: RetainObservedReviewRevisionCommand;
     try {
       command = RetainObservedReviewRevisionCommandSchema.parse({
@@ -85,7 +87,6 @@ export function AcquireObservedReviewRevisionForm({
       return;
     }
     const controller = new AbortController();
-    active.current?.abort();
     active.current = controller;
     setPending(true);
     setError(null);
@@ -137,10 +138,13 @@ export function AcquireObservedReviewRevisionForm({
         fetch missing GitHub objects into temporary Kestrel-owned storage; Kestrel never receives or
         stores the credential. {intentBytes.toLocaleString("en-US")} / 20,000 UTF-8 bytes.
       </p>
+      {pending ? (
+        <FormFeedback kind="pending">Retaining source for this review…</FormFeedback>
+      ) : null}
       {error === null ? null : (
-        <p id={errorId} className="project-form-error" role="alert">
+        <FormFeedback id={errorId} className="project-form-error" kind="error" focus>
           {error}
-        </p>
+        </FormFeedback>
       )}
     </form>
   );

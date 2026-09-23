@@ -1,19 +1,8 @@
+import { acquireSourceLock } from "./source-lock.js";
 import { promisify } from "node:util";
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import {
-  lstat,
-  mkdir,
-  open,
-  opendir,
-  readFile,
-  realpath,
-  rename,
-  rm,
-  statfs,
-  unlink,
-  writeFile,
-} from "node:fs/promises";
+import { lstat, mkdir, opendir, realpath, rename, rm, statfs, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { readLocalSourceConfig } from "./config.js";
 import { discoverResolvedRepositories } from "./discovery.js";
@@ -311,28 +300,13 @@ export function createManagedSourceService(
       const destination = join(record, remote.name);
       const partial = join(record, "partial");
       const lockPath = join(record, "operation.lock");
-      let lock;
+      let release: (() => Promise<void>) | undefined;
       try {
-        lock = await open(lockPath, "wx", 0o600).catch(async () => {
-          const pid = Number(await readFile(lockPath, "utf8").catch(() => ""));
-          if (!Number.isSafeInteger(pid) || pid <= 0)
-            throw new SourceAuthorizationError(
-              "Managed source recovery is waiting for the previous operation. Try again shortly.",
-            );
-          try {
-            process.kill(pid, 0);
-          } catch (error) {
-            if (error instanceof Error && "code" in error && error.code === "ESRCH") {
-              await unlink(lockPath);
-              return open(lockPath, "wx", 0o600);
-            }
-          }
+        release = await acquireSourceLock(lockPath).catch(() => {
           throw new SourceAuthorizationError(
-            "Another workstation operation owns this clone. Wait and retry.",
+            "Another source operation owns this clone. Wait and retry.",
           );
         });
-        await lock.writeFile(String(process.pid));
-        await lock.sync();
         await writeFile(join(record, "remote.json"), JSON.stringify({ url: remote.url }), {
           mode: 0o600,
           flag: "wx",
@@ -382,12 +356,17 @@ export function createManagedSourceService(
           throw new SourceAuthorizationError("The managed repository is unavailable.");
         return { repositoryId: source.repositoryId, displayName: remote.name };
       } finally {
-        if (lock !== undefined) {
-          await rm(partial, { recursive: true, force: true });
-          await lock.close();
-          await unlink(lockPath);
+        try {
+          if (release !== undefined) {
+            try {
+              await rm(partial, { recursive: true, force: true });
+            } finally {
+              await release();
+            }
+          }
+        } finally {
+          active.delete(key);
         }
-        active.delete(key);
       }
     },
   };

@@ -1,3 +1,4 @@
+import { FormFeedback } from "./components/FormFeedback.js";
 import { useEffect, useState } from "react";
 import type {
   FactoryConceptualReviewCheck,
@@ -165,7 +166,11 @@ export function ReviewEvidenceInspector({
             {sourceEvidence.endLine}
           </p>
           <p className="text-sm">{sourceEvidence.sufficiency}</p>
-          {currentResult?.error == null ? null : <p role="alert">{currentResult.error}</p>}
+          {currentResult?.error == null ? null : (
+            <FormFeedback kind="error" focus>
+              {currentResult.error}
+            </FormFeedback>
+          )}
           {currentResult === null ? (
             <p className="text-sm text-muted-foreground">Loading exact retained lines…</p>
           ) : currentResult.source?.status === "unsupported" ? (
@@ -235,7 +240,11 @@ export function ReviewEvidenceInspector({
               <dd className="break-all font-mono">{checkEvidence.record.treeId}</dd>
             </div>
           </dl>
-          {currentResult?.error == null ? null : <p role="alert">{currentResult.error}</p>}
+          {currentResult?.error == null ? null : (
+            <FormFeedback kind="error" focus>
+              {currentResult.error}
+            </FormFeedback>
+          )}
           {currentResult === null ? (
             <p className="text-sm text-muted-foreground">Loading bounded command output…</p>
           ) : currentResult.check === null ? null : (

@@ -77,7 +77,11 @@ describe("installing and using a host Skill", () => {
       join(root, "broken/SKILL.md"),
       "---\nname: broken\ndescription: A missing reference\n---\nRead [required context](missing.md).\n",
     );
-    stack = await startStack({ repositoryRoot: fixture.rootPath, planningSkillRoot: root });
+    stack = await startStack({
+      connectedCodexFixture: true,
+      repositoryRoot: fixture.rootPath,
+      planningSkillRoot: root,
+    });
     await requireStack().authenticateOperator();
     const inventory = LocalRepositoryInventorySchema.parse(
       await (await requireStack().fetchApi("/api/v1/local-repository-sources")).json(),

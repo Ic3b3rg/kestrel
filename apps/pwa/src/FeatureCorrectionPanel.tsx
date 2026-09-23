@@ -1,3 +1,4 @@
+import { FormFeedback } from "./components/FormFeedback.js";
 import { LifecycleProfileSummary } from "./LifecycleProfilePanel.js";
 import { LifecycleProfileRecord } from "./LifecycleProfileRecord.js";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
@@ -70,8 +71,18 @@ export function FeatureCorrectionPanel({
     [review.artifact],
   );
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [profileReady, setProfileReady] = useState(false);
   const [instruction, setInstruction] = useState("");
   const [correction, setCorrection] = useState<FactoryReviewCorrection | null>(null);
+  const submitting = useRef(false);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+  const [readError, setReadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const instructionId = useId();
@@ -83,8 +94,9 @@ export function FeatureCorrectionPanel({
     if (!online) return;
     try {
       const current = await loadCurrent(projectId, featureId);
+      if (!alive.current) return;
       setCorrection(current.correction);
-      setError(null);
+      setReadError(null);
       if (
         current.correction?.state === "completed" &&
         current.correction.replacementReview?.artifactId !== null &&
@@ -94,8 +106,8 @@ export function FeatureCorrectionPanel({
         onReplacementReview();
       }
     } catch (failure) {
-      if (!onAuthenticationError(failure))
-        setError(planningRequestError(failure, "The correction status is unavailable."));
+      if (alive.current && !onAuthenticationError(failure))
+        setReadError(planningRequestError(failure, "The correction status is unavailable."));
     }
   }, [featureId, loadCurrent, onAuthenticationError, onReplacementReview, online, projectId]);
 
@@ -115,8 +127,17 @@ export function FeatureCorrectionPanel({
   const canRequest = !active && !sourceReviewAlreadyUsed;
 
   const submit = async () => {
-    if (!online || busy || active || review.artifact === null || instruction.trim().length === 0)
+    if (
+      !online ||
+      submitting.current ||
+      !profileReady ||
+      busy ||
+      active ||
+      review.artifact === null ||
+      instruction.trim().length === 0
+    )
       return;
+    submitting.current = true;
     setBusy(true);
     setError(null);
     const durableRequestId = requestId.current ?? crypto.randomUUID();
@@ -133,18 +154,22 @@ export function FeatureCorrectionPanel({
         instruction: instruction.trim(),
         findingIds: findings.filter(({ id }) => selected.has(id)).map(({ id }) => id),
       });
+      if (!alive.current) return;
       setCorrection(result);
       requestId.current = null;
     } catch (failure) {
-      if (!onAuthenticationError(failure))
+      if (alive.current && !onAuthenticationError(failure))
         setError(planningRequestError(failure, "The correction was not started."));
     } finally {
-      setBusy(false);
+      submitting.current = false;
+      if (alive.current) setBusy(false);
     }
   };
 
   const retry = async () => {
-    if (!online || busy || correction === null || !correction.canRetry) return;
+    if (!online || submitting.current || busy || correction === null || !correction.canRetry)
+      return;
+    submitting.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -154,10 +179,11 @@ export function FeatureCorrectionPanel({
         }),
       );
     } catch (failure) {
-      if (!onAuthenticationError(failure))
+      if (alive.current && !onAuthenticationError(failure))
         setError(planningRequestError(failure, "The correction retry was not queued."));
     } finally {
-      setBusy(false);
+      submitting.current = false;
+      if (alive.current) setBusy(false);
     }
   };
 
@@ -181,7 +207,12 @@ export function FeatureCorrectionPanel({
       </div>
 
       {canRequest ? (
-        <LifecycleProfileSummary phase="corrections" projectId={projectId} online={online} />
+        <LifecycleProfileSummary
+          phase="corrections"
+          projectId={projectId}
+          online={online}
+          onReady={setProfileReady}
+        />
       ) : null}
       {correction == null ? null : (
         <LifecycleProfileRecord
@@ -253,7 +284,7 @@ export function FeatureCorrectionPanel({
           <Button
             type="button"
             className="w-fit"
-            disabled={!online || busy || instruction.trim().length === 0}
+            disabled={!online || !profileReady || busy || instruction.trim().length === 0}
             onClick={() => void submit()}
           >
             {busy ? "Starting correction…" : "Apply correction and review again"}
@@ -305,10 +336,14 @@ export function FeatureCorrectionPanel({
           </div>
         </div>
       )}
+      {busy ? (
+        <FormFeedback kind="pending">Submitting the bounded correction command…</FormFeedback>
+      ) : null}
+      {readError === null ? null : <FormFeedback kind="error">{readError}</FormFeedback>}
       {error === null ? null : (
-        <p role="alert" className="text-sm text-destructive">
+        <FormFeedback kind="error" focus className="text-sm text-destructive">
           {error}
-        </p>
+        </FormFeedback>
       )}
     </section>
   );

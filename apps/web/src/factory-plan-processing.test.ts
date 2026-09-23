@@ -8,6 +8,7 @@ import { z } from "zod";
 
 import {
   NamedPlanningReplySchema,
+  defaultLifecycleSettings,
   GeneratedFeaturePlanDocumentSchema,
   type FeaturePlanDocument,
   type PlanningContext,
@@ -110,6 +111,18 @@ beforeEach(async () => {
     projectId: randomUUID(),
     threadId: "conversation-thread",
     purpose: "plan",
+    lifecycleProfile: {
+      phase: "planning",
+      versions: { installation: 0, project: 0 },
+      runtimeId: "codex_subscription",
+      modelId: "fixture-model",
+      model: "fixture-model",
+      effort: null,
+      serviceTier: null,
+      requested: defaultLifecycleSettings,
+      inherited: [],
+      skills: [],
+    },
     expectedPlanVersion: 2,
     previousPlan: { ...plan(), objective: "Export only currently selected notes." },
     messages: [

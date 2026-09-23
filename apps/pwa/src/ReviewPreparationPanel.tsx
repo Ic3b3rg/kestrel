@@ -1,3 +1,4 @@
+import { FormFeedback } from "./components/FormFeedback.js";
 import { Button } from "./components/ui/button.js";
 import { useEffect, useRef, useState } from "react";
 
@@ -223,14 +224,15 @@ export function ReviewPreparationPanel({
   useEffect(() => () => controller.current?.abort(), []);
 
   const prepare = async () => {
+    if (disabled || controller.current !== null) return;
     const active = new AbortController();
-    controller.current?.abort();
     controller.current = active;
     setPending("prepare");
     setError(null);
     setAccepted(null);
     try {
-      setPreparation(await readPreparation(projectId, proposalId, active.signal));
+      const result = await readPreparation(projectId, proposalId, active.signal);
+      if (!active.signal.aborted) setPreparation(result);
     } catch (caught) {
       if (!active.signal.aborted && onAuthenticationError?.(caught) !== true) {
         setError(
@@ -248,9 +250,14 @@ export function ReviewPreparationPanel({
   };
 
   const start = async () => {
-    if (preparation?.readiness !== "ready" || preparation.preparationDigest === null) return;
+    if (
+      disabled ||
+      controller.current !== null ||
+      preparation?.readiness !== "ready" ||
+      preparation.preparationDigest === null
+    )
+      return;
     const active = new AbortController();
-    controller.current?.abort();
     controller.current = active;
     setPending("start");
     setError(null);
@@ -261,7 +268,7 @@ export function ReviewPreparationPanel({
         { preparationDigest: preparation.preparationDigest },
         active.signal,
       );
-      setAccepted(result);
+      if (!active.signal.aborted) setAccepted(result);
     } catch (caught) {
       if (!active.signal.aborted && onAuthenticationError?.(caught) !== true) {
         setError(
@@ -329,10 +336,18 @@ export function ReviewPreparationPanel({
           <span>Workflow {accepted.workflow.id}</span>
         </p>
       )}
+      {pending === null ? null : (
+        <FormFeedback kind="pending">
+          {pending === "prepare" ? "Checking the exact review inputs…" : "Starting this review…"}
+        </FormFeedback>
+      )}
+      {accepted === null ? null : (
+        <FormFeedback kind="success">The review was accepted.</FormFeedback>
+      )}
       {error === null ? null : (
-        <p className="project-form-error" role="alert">
+        <FormFeedback className="project-form-error" kind="error" focus>
           {error}
-        </p>
+        </FormFeedback>
       )}
 
       <div className="review-preparation-actions">

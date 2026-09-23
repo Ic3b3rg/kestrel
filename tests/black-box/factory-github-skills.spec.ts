@@ -34,6 +34,7 @@ test.describe("GitHub planning Skill imports", () => {
     cleanup.push(() => repository.close());
     provider = await createPlanningSkillGitHubFixture();
     stack = await startStack({
+      connectedCodexFixture: true,
       repositoryRoot: repository.rootPath,
       githubFixture: provider.githubFixture,
     });

@@ -1,3 +1,4 @@
+import { FormFeedback } from "./components/FormFeedback.js";
 import { LifecycleProfileRecord } from "./LifecycleProfileRecord.js";
 import { useContext, useEffect, useId, useRef, useState } from "react";
 import type {
@@ -427,9 +428,9 @@ function ExecutionPanel({
         <p role="status">Loading execution…</p>
       ) : null}
       {error === null ? null : (
-        <p role="alert" className="planning-error">
+        <FormFeedback kind="error" focus className="planning-error">
           {error}
-        </p>
+        </FormFeedback>
       )}
       {execution === null ? null : (
         <>

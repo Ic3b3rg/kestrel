@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, realpath, rm, symlink } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -37,6 +37,21 @@ async function fixture() {
 }
 
 describe("explicit local source authorization", () => {
+  it("recovers a stopped owner while preserving an active authorization lock", async () => {
+    const { env, repository } = await fixture();
+    const alpha = await repository("alpha");
+    const preview = await previewSourceAuthorization(alpha, env);
+    const path = `${env.LOCAL_REPOSITORY_ROOTS_FILE}.lock`;
+    await writeFile(path, String(process.pid), { mode: 0o600 });
+    await expect(confirmSourceAuthorization(preview, env)).rejects.toThrow("busy");
+    const stopped = await run(process.execPath, [
+      "-e",
+      "process.stdout.write(String(process.pid))",
+    ]);
+    await writeFile(path, stopped.stdout, { mode: 0o600 });
+    await confirmSourceAuthorization(preview, env);
+    expect(await readRepositoryRootConfiguration(env.LOCAL_REPOSITORY_ROOTS_FILE)).toEqual([alpha]);
+  });
   it("previews only direct child repositories and authorizes exactly the confirmed set", async () => {
     const { container, env, repository } = await fixture();
     const alpha = await repository("alpha");
