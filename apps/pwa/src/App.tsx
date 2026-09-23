@@ -44,6 +44,7 @@ import {
   type OperatorSecurityError,
 } from "./OperatorSecurityPanel.js";
 import { ProjectInboxPanel } from "./ProjectInboxPanel.js";
+import { PlanningSkillLibrary } from "./PlanningSkillLibrary.js";
 import { RepositoryAccessPanel } from "./RepositoryAccessPanel.js";
 
 const PROJECT_ERROR_MESSAGE = "Kestrel could not read the authoritative Project inbox. Try again.";
@@ -817,7 +818,7 @@ export function App() {
                 online={online}
                 onAuthenticationError={handleAuthenticationBoundaryError}
               />
-            ) : (
+            ) : route.section === "source-control" ? (
               <>
                 <HostGitHubConnectionPanel
                   online={online}
@@ -832,6 +833,11 @@ export function App() {
                   onRetry={() => setProjectReloadGeneration((generation) => generation + 1)}
                 />
               </>
+            ) : (
+              <PlanningSkillLibrary
+                online={online}
+                onAuthenticationError={handleAuthenticationBoundaryError}
+              />
             )}
           </GlobalSettingsView>
         );

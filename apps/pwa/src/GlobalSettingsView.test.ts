@@ -40,6 +40,7 @@ describe("GlobalSettingsView", () => {
     expect(html).toContain('href="/settings/projects"');
     expect(html).toContain('href="/settings/providers" aria-current="page"');
     expect(html).toContain('href="/settings/source-control"');
+    expect(html).toContain('href="/settings/skills"');
     expect(html).not.toContain("Durable identity");
     expect(html).not.toContain("Run diagnostic");
   });

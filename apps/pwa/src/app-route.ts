@@ -21,13 +21,14 @@ export type AppRoute =
   | { kind: "projects" }
   | { kind: "settings"; section: SettingsSection };
 
-export type SettingsSection = "profile" | "projects" | "providers" | "source-control";
+export type SettingsSection = "profile" | "projects" | "providers" | "source-control" | "skills";
 
 const settingsSections: readonly SettingsSection[] = [
   "profile",
   "projects",
   "providers",
   "source-control",
+  "skills",
 ];
 
 function legacySettingsSection(hash: string): SettingsSection {

@@ -99,7 +99,13 @@ describe("authenticated app routing", () => {
       kind: "settings",
       section: "source-control",
     });
-    for (const section of ["profile", "projects", "providers", "source-control"] as const) {
+    for (const section of [
+      "profile",
+      "projects",
+      "providers",
+      "source-control",
+      "skills",
+    ] as const) {
       const route = { kind: "settings" as const, section };
       expect(readAppRoute(`/settings/${section}`)).toEqual(route);
       expect(appPath(route)).toBe(`/settings/${section}`);
