@@ -25,14 +25,17 @@ type FailureMode =
   | "credential_field"
   | "escaped_pipe"
   | "empty_models"
+  | "eof"
   | "logged_out"
   | "malformed"
+  | "null_initialize"
   | "old_version"
   | "oversized"
   | "paginated"
   | "protocol_mismatch"
   | "timed_out"
   | "usage_action_required"
+  | "workspace_routing"
   | "usage_waiting";
 
 async function writeFailureFake(mode: FailureMode) {
@@ -46,7 +49,10 @@ if (mode === "crashed") process.exit(17);
 const lines = createInterface({ input: process.stdin });
 const startDescendant = () => {
   const descendantDelay = mode === "timed_out" ? 5500 : 250;
-  spawn(process.execPath, ["-e", \`setTimeout(() => require("node:fs").writeFileSync(\${JSON.stringify(descendantMarker)}, "leaked"), \${descendantDelay})\`], {
+  const descendantCode = mode === "cancelled"
+    ? \`const fs = require("node:fs"); const marker = \${JSON.stringify(descendantMarker)}; const timer = setInterval(() => { if (fs.existsSync(marker + ".release")) { fs.writeFileSync(marker, "leaked"); clearInterval(timer); } }, 10); setTimeout(() => clearInterval(timer), 5000).unref();\`
+    : \`setTimeout(() => require("node:fs").writeFileSync(\${JSON.stringify(descendantMarker)}, "leaked"), \${descendantDelay})\`;
+  spawn(process.execPath, ["-e", descendantCode], {
     stdio: "ignore"
   });
 };
@@ -73,7 +79,7 @@ lines.on("line", (line) => {
       });
       escaped.unref();
     }
-    console.log(JSON.stringify({ id: message.id, result: mode === "protocol_mismatch" ? {
+    console.log(JSON.stringify({ id: message.id, result: mode === "null_initialize" ? null : mode === "protocol_mismatch" ? {
       protocolVersion: 1
     } : {
       codexHome: "/private/operator/.codex",
@@ -96,7 +102,8 @@ lines.on("line", (line) => {
       refreshToken: "provider_secret_should_not_escape"
     } : {
       account: { type: "chatgpt", email: "operator@example.com", planType: "plus" },
-      requiresOpenaiAuth: true
+      requiresOpenaiAuth: true,
+      ...(mode === "workspace_routing" ? { workspaceRouting: { chatgptAccountId: "private-account", backendOrigin: "https://chatgpt.com/backend-api", accountRoutingOverride: "NO_CONSTRAINT" } } : {})
     }}));
   } else if (message.method === "model/list") {
     const secondPage = mode === "paginated" && message.params.cursor === "page-2";
@@ -109,7 +116,8 @@ lines.on("line", (line) => {
         hidden: false,
         isDefault: !secondPage,
         defaultReasoningEffort: "low",
-        supportedReasoningEfforts: []
+        supportedReasoningEfforts: [],
+        ...(mode === "workspace_routing" ? { availableAccessPrograms: { cyber: ["standard"] } } : {})
       }],
       nextCursor: mode === "paginated" && !secondPage ? "page-2" : null
     }}));
@@ -119,13 +127,15 @@ lines.on("line", (line) => {
       : mode === "usage_action_required"
         ? "workspace_member_usage_limit_reached"
         : null;
-    console.log(JSON.stringify({ id: message.id, result: { rateLimits: {
+    const response = JSON.stringify({ id: message.id, result: { rateLimits: {
       planType: "plus",
       primary: { usedPercent: reached === null ? 25 : 100, windowDurationMins: 300, resetsAt: 1788386400 },
       secondary: null,
       rateLimitReachedType: reached,
       spendControlReached: false
-    }}}));
+    }}});
+    if (mode === "eof") process.stdout.end(response);
+    else console.log(response);
   }
 });
 lines.on("close", () => appendFileSync(actualLogPath, JSON.stringify({ cleanedUp: true }) + "\\n"));
@@ -167,6 +177,18 @@ afterEach(async () => {
       .map((directory) => rm(directory, { force: true, recursive: true })),
   );
 });
+
+it.each(["workspace_routing", "eof"] as const)(
+  "accepts %s without exposing protocol metadata",
+  async (mode) => {
+    const fixture = await writeFailureFake(mode);
+    const connection = await fixture.runtime.readConnection();
+    expect(connection.state).toBe("ready");
+    expect(JSON.stringify(connection)).not.toContain("workspaceRouting");
+    expect(JSON.stringify(connection)).not.toContain("private-account");
+    expect(JSON.stringify(connection)).not.toContain("availableAccessPrograms");
+  },
+);
 
 describe("Codex App Server Agent Runtime port", () => {
   it("initializes one bounded process and returns normalized subscription readiness after cleanup", async () => {
@@ -277,6 +299,7 @@ lines.on("close", () => {
   it.each([
     ["old_version", "cli_version_unsupported", { version: "0.151.0", supported: false }],
     ["protocol_mismatch", "protocol_unsupported", null],
+    ["null_initialize", "protocol_unsupported", null],
     ["logged_out", "authentication_required", { version: "0.152.1", supported: true }],
     ["api_key", "chatgpt_subscription_required", { version: "0.152.1", supported: true }],
   ] as const)("fails closed for %s with typed remediation facts", async (mode, reason, cli) => {
@@ -416,6 +439,7 @@ lines.on("close", () => {
     controller.abort();
 
     await expect(connection).rejects.toMatchObject({ kind: "cancelled" });
+    await writeFile(fixture.descendantMarker + ".release", "cancelled");
     await new Promise((resolve) => setTimeout(resolve, 350));
     await expectMissing(fixture.descendantMarker);
   }, 15_000);

@@ -1,9 +1,8 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { tmpdir } from "node:os";
 import { isAbsolute } from "node:path";
-import { createInterface } from "node:readline";
 
 import { z } from "zod";
+import { CodexAppServerTransport, CodexFactoryError } from "./codex-app-server-transport.js";
 
 import {
   CodexChatGptPlanSchema,
@@ -17,9 +16,6 @@ const CLIENT_NAME = "kestrel";
 const CLIENT_VERSION = "0.0.0";
 const DEFAULT_ARGUMENTS = ["app-server", "--stdio"] as const;
 const DEFAULT_TIMEOUT_MS = 10_000;
-const PROCESS_STOP_TIMEOUT_MS = 1_000;
-const MAX_STDOUT_BYTES = 2 * 1024 * 1024;
-const MAX_STDERR_BYTES = 32 * 1024;
 const MODEL_PAGE_SIZE = 100;
 const MAX_MODEL_PAGES = 5;
 const MINIMUM_CODEX_MINOR_VERSION = 152;
@@ -46,6 +42,14 @@ const AccountResultSchema = z.strictObject({
     ])
     .nullable(),
   requiresOpenaiAuth: z.boolean(),
+  workspaceRouting: z
+    .strictObject({
+      chatgptAccountId: z.string().max(512),
+      backendOrigin: z.string().max(2_048),
+      accountRoutingOverride: z.enum(["NO_CONSTRAINT", "us", "us_cr"]),
+    })
+    .nullable()
+    .optional(),
 });
 const BoundedProtocolStringSchema = z.string().max(10_000);
 const ModelServiceTierSchema = z.strictObject({
@@ -63,6 +67,10 @@ const ModelUpgradeInfoSchema = z.strictObject({
 const ModelSchema = z.strictObject({
   additionalSpeedTiers: z.array(z.string().max(128)).max(20).optional(),
   availabilityNux: z.strictObject({ message: BoundedProtocolStringSchema }).nullable().optional(),
+  availableAccessPrograms: z
+    .strictObject({ cyber: z.array(z.enum(["standard", "daybreakBlue", "daybreakRed"])).max(3) })
+    .nullable()
+    .optional(),
   defaultReasoningEffort: z.string().min(1).max(128),
   defaultServiceTier: z.string().min(1).max(128).nullable().optional(),
   description: BoundedProtocolStringSchema,
@@ -160,229 +168,21 @@ export interface CodexAgentRuntimePort {
   readConnection(signal?: AbortSignal): Promise<CodexSubscriptionConnection>;
 }
 
-interface PendingResponse {
-  id: number;
-  invalidResponseKind: "invalid_response" | "unsupported_protocol";
-  resolve(value: unknown): void;
-  reject(error: CodexAppServerError): void;
-  schema: z.ZodType;
-}
-
-function safeEnvironment(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { LANG: "C", LC_ALL: "C", NO_COLOR: "1" };
-  for (const name of ["HOME", "PATH", "CODEX_HOME", "XDG_CONFIG_HOME"] as const) {
-    if (process.env[name] !== undefined) env[name] = process.env[name];
-  }
-  return env;
-}
-
-function killProcessGroup(child: ChildProcessWithoutNullStreams, signal: NodeJS.Signals): void {
-  if (process.platform !== "win32" && child.pid !== undefined) {
-    try {
-      process.kill(-child.pid, signal);
-      return;
-    } catch {
-      // Fall back to the direct child if its process group has already stopped.
-    }
-  }
-  child.kill(signal);
-}
-
-function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(resolve, milliseconds);
-    timer.unref();
-  });
-}
-
-class AppServerSession {
-  readonly #child: ChildProcessWithoutNullStreams;
-  readonly #closed: Promise<void>;
-  readonly #exited: Promise<void>;
-  readonly #lines;
-  readonly #timeout: NodeJS.Timeout;
-  readonly #signal: AbortSignal | undefined;
-  #closing = false;
-  #failure: CodexAppServerError | null = null;
-  #pending: PendingResponse | null = null;
-  #stdoutBytes = 0;
-  #stderrBytes = 0;
-
-  constructor(
-    executable: string,
-    args: readonly string[],
-    timeoutMs: number,
-    signal?: AbortSignal,
-  ) {
-    this.#signal = signal;
-    this.#child = spawn(executable, args, {
-      cwd: tmpdir(),
-      detached: process.platform !== "win32",
-      env: safeEnvironment(),
-      shell: false,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    this.#closed = new Promise((resolve) => this.#child.once("close", () => resolve()));
-    this.#exited = new Promise((resolve) => this.#child.once("exit", () => resolve()));
-    this.#lines = createInterface({ input: this.#child.stdout, crlfDelay: Infinity });
-    this.#timeout = setTimeout(() => this.#fail(new CodexAppServerError("timeout")), timeoutMs);
-    this.#timeout.unref();
-
-    this.#child.once("error", () => this.#fail(new CodexAppServerError("unavailable")));
-    this.#child.once("close", () => {
-      if (!this.#closing && this.#failure === null) {
-        this.#fail(new CodexAppServerError("crashed"));
-      }
-    });
-    this.#child.stdout.on("data", (chunk: Buffer) => {
-      this.#stdoutBytes += chunk.byteLength;
-      if (this.#stdoutBytes > MAX_STDOUT_BYTES) {
-        this.#fail(new CodexAppServerError("invalid_response"));
-      }
-    });
-    this.#child.stderr.on("data", (chunk: Buffer) => {
-      this.#stderrBytes += chunk.byteLength;
-      if (this.#stderrBytes > MAX_STDERR_BYTES) {
-        this.#fail(new CodexAppServerError("invalid_response"));
-      }
-    });
-    this.#lines.on("line", (line) => this.#receive(line));
-    this.#lines.once("error", () => this.#fail(new CodexAppServerError("invalid_response")));
-    signal?.addEventListener("abort", this.#onAbort, { once: true });
-    if (signal?.aborted) this.#onAbort();
-  }
-
-  #onAbort = (): void => {
-    this.#fail(new CodexAppServerError("cancelled"));
-  };
-
-  #fail(error: CodexAppServerError): void {
-    if (this.#failure !== null) return;
-    this.#failure = error;
-    this.#pending?.reject(error);
-    this.#pending = null;
-    killProcessGroup(this.#child, "SIGKILL");
-  }
-
-  #receive(line: string): void {
-    if (Buffer.byteLength(line, "utf8") > MAX_STDOUT_BYTES) {
-      this.#fail(new CodexAppServerError("invalid_response"));
-      return;
-    }
-    let message: unknown;
-    try {
-      message = JSON.parse(line);
-    } catch {
-      this.#fail(new CodexAppServerError("invalid_response"));
-      return;
-    }
-    if (typeof message !== "object" || message === null || Array.isArray(message)) {
-      this.#fail(new CodexAppServerError("invalid_response"));
-      return;
-    }
-    const record = message as Record<string, unknown>;
-    if (!("id" in record)) {
-      if (typeof record.method !== "string") {
-        this.#fail(new CodexAppServerError("invalid_response"));
-      }
-      return;
-    }
-    const pending = this.#pending;
-    if (pending === null || record.id !== pending.id || "result" in record === "error" in record) {
-      this.#fail(new CodexAppServerError("invalid_response"));
-      return;
-    }
-    if ("error" in record) {
-      pending.reject(new CodexAppServerError(pending.invalidResponseKind));
-      this.#pending = null;
-      return;
-    }
-    const parsed = pending.schema.safeParse(record.result);
-    if (!parsed.success) {
-      pending.reject(new CodexAppServerError(pending.invalidResponseKind));
-      this.#pending = null;
-      return;
-    }
-    this.#pending = null;
-    pending.resolve(parsed.data);
-  }
-
-  async request<T>(
-    id: number,
-    method: string,
-    params: unknown,
-    schema: z.ZodType<T>,
-    invalidResponseKind: PendingResponse["invalidResponseKind"] = "invalid_response",
-  ): Promise<T> {
-    if (this.#failure !== null) throw this.#failure;
-    if (this.#pending !== null) throw new CodexAppServerError("invalid_response");
-    const response = new Promise<unknown>((resolve, reject) => {
-      this.#pending = { id, invalidResponseKind, resolve, reject, schema };
-    });
-    this.#send({ id, method, params });
-    return (await response) as T;
-  }
-
-  notify(method: string, params: unknown): void {
-    if (this.#failure !== null) throw this.#failure;
-    this.#send({ method, params });
-  }
-
-  #send(message: unknown): void {
-    this.#child.stdin.write(`${JSON.stringify(message)}\n`, (error) => {
-      if (error !== null && error !== undefined) {
-        this.#fail(new CodexAppServerError("crashed"));
-      }
-    });
-  }
-
-  async #waitForClose(): Promise<boolean> {
-    return Promise.race([
-      this.#closed.then(() => true),
-      delay(PROCESS_STOP_TIMEOUT_MS).then(() => false),
-    ]);
-  }
-
-  async #waitForCloseOrExit(): Promise<"closed" | "exited" | "timeout"> {
-    return Promise.race([
-      this.#closed.then(() => "closed" as const),
-      this.#exited.then(() => "exited" as const),
-      delay(PROCESS_STOP_TIMEOUT_MS).then(() => "timeout" as const),
-    ]);
-  }
-
-  async #closeExitedProcessPipes(): Promise<void> {
-    this.#child.stdin.destroy();
-    this.#child.stdout.destroy();
-    this.#child.stderr.destroy();
-    await this.#waitForClose();
-  }
-
-  async close(): Promise<void> {
-    this.#closing = true;
-    clearTimeout(this.#timeout);
-    this.#signal?.removeEventListener("abort", this.#onAbort);
-    this.#child.stdin.end();
-    let settlement = await this.#waitForCloseOrExit();
-    if (settlement === "exited") {
-      await this.#closeExitedProcessPipes();
-    } else if (settlement === "timeout") {
-      killProcessGroup(this.#child, "SIGTERM");
-      settlement = await this.#waitForCloseOrExit();
-      if (settlement === "exited") {
-        await this.#closeExitedProcessPipes();
-      } else if (settlement === "timeout") {
-        killProcessGroup(this.#child, "SIGKILL");
-        if (!(await this.#waitForClose())) {
-          this.#child.unref();
-          this.#child.stdin.destroy();
-          this.#child.stdout.destroy();
-          this.#child.stderr.destroy();
-        }
-      }
-    }
-    this.#lines.close();
-  }
+async function probeRequest<T>(
+  session: CodexAppServerTransport,
+  method: string,
+  params: unknown,
+  schema: z.ZodType<T>,
+  invalidResponseKind: "invalid_response" | "unsupported_protocol" = "invalid_response",
+): Promise<T> {
+  const response = await session.request(
+    method,
+    params,
+    () => new CodexAppServerError(invalidResponseKind),
+  );
+  const parsed = schema.safeParse(response);
+  if (!parsed.success) throw new CodexAppServerError(invalidResponseKind);
+  return parsed.data;
 }
 
 function readCodexVersion(userAgent: string): { supported: boolean; version: string } {
@@ -397,16 +197,14 @@ function readCodexVersion(userAgent: string): { supported: boolean; version: str
   return { supported, version: `${major}.${minor}.${patch}` };
 }
 
-async function readAvailableModels(
-  session: AppServerSession,
-): Promise<{ models: AppServerModel[]; nextRequestId: number }> {
+async function readAvailableModels(session: CodexAppServerTransport): Promise<AppServerModel[]> {
   const models: AppServerModel[] = [];
   const seenCursors = new Set<string>();
   let cursor: string | null = null;
 
   for (let page = 0; page < MAX_MODEL_PAGES; page += 1) {
-    const result: ModelListResult = await session.request(
-      2 + page,
+    const result: ModelListResult = await probeRequest(
+      session,
       "model/list",
       { cursor, includeHidden: false, limit: MODEL_PAGE_SIZE },
       ModelListResultSchema,
@@ -418,7 +216,7 @@ async function readAvailableModels(
       if (new Set(models.map(({ id }) => id)).size !== models.length) {
         throw new CodexAppServerError("invalid_response");
       }
-      return { models, nextRequestId: 3 + page };
+      return models;
     }
     if (result.data.length === 0) throw new CodexAppServerError("invalid_response");
     if (seenCursors.has(nextCursor)) throw new CodexAppServerError("invalid_response");
@@ -485,6 +283,12 @@ function failedConnection(
 }
 
 function failureReason(error: unknown): IncompleteProbeReason {
+  if (error instanceof CodexFactoryError) {
+    if (error.code === "cancelled") throw new CodexAppServerError("cancelled");
+    if (error.code === "timeout") return "timed_out";
+    if (error.code === "unavailable") return "cli_not_installed";
+    return "unexpected_response";
+  }
   if (!(error instanceof CodexAppServerError)) return "unexpected_response";
   switch (error.kind) {
     case "unavailable":
@@ -516,11 +320,23 @@ export function createCodexAppServerAgentRuntime(
       if (executable === undefined || !isAbsolute(executable)) {
         return failedConnection("cli_not_installed");
       }
-      const session = new AppServerSession(executable, args, timeoutMs, signal);
+      const session = new CodexAppServerTransport({
+        profile: "connection",
+        executable,
+        arguments: args,
+        timeoutMs,
+        cwd: tmpdir(),
+        ...(signal === undefined ? {} : { signal }),
+        receive(message) {
+          // Inspection has no authority to service approval or tool requests.
+          if ("id" in message || typeof message.method !== "string")
+            throw new CodexAppServerError("invalid_response");
+        },
+      });
       let cli: CodexSubscriptionConnection["cli"] = null;
       try {
-        const initialized = await session.request(
-          0,
+        const initialized = await probeRequest(
+          session,
           "initialize",
           {
             clientInfo: { name: CLIENT_NAME, title: "Kestrel", version: CLIENT_VERSION },
@@ -533,8 +349,8 @@ export function createCodexAppServerAgentRuntime(
         if (!version.supported) throw new CodexAppServerError("unsupported_version");
         session.notify("initialized", {});
 
-        const accountResult = await session.request(
-          1,
+        const accountResult = await probeRequest(
+          session,
           "account/read",
           { refreshToken: false },
           AccountResultSchema,
@@ -551,9 +367,9 @@ export function createCodexAppServerAgentRuntime(
           return failedConnection("chatgpt_subscription_required", cli);
         }
 
-        const modelResult = await readAvailableModels(session);
-        const rateLimits = await session.request(
-          modelResult.nextRequestId,
+        const models = await readAvailableModels(session);
+        const rateLimits = await probeRequest(
+          session,
           "account/rateLimits/read",
           null,
           RateLimitsResultSchema,
@@ -566,7 +382,7 @@ export function createCodexAppServerAgentRuntime(
         }
         const usage = normalizeUsage(rateLimits.rateLimits);
         const reason =
-          modelResult.models.length === 0
+          models.length === 0
             ? ("model_catalog_empty" as const)
             : usage.availability === "waiting_for_usage_reset"
               ? ("waiting_for_usage_reset" as const)
@@ -588,7 +404,7 @@ export function createCodexAppServerAgentRuntime(
             email: accountResult.account.email,
             plan: accountResult.account.planType,
           },
-          models: modelResult.models.map(({ id, displayName, isDefault }) => ({
+          models: models.map(({ id, displayName, isDefault }) => ({
             id,
             displayName,
             isDefault,

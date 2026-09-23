@@ -98,6 +98,20 @@ runs transactionally. Aggregate publication proves every Work Item publication i
 the board can also expose partial publication. Exact source, command and certificate proof stays in
 the execution ledger and verification boundary. The graph grants no writer or merge authority.
 
+## Codex App Server adapter
+
+Connection inspection, planning and execution share one bounded JSONL transport and process
+lifecycle. It correlates client responses independently from server requests, decodes split UTF-8,
+filters the inherited environment and owns cancellation, timeout and process-group cleanup. The
+connection and turn profiles preserve their existing byte limits, stop deadlines and error
+translation. Response schemas and supported-version checks belong to the calling runtime; malformed
+initialization must still produce the connection's protocol remediation state.
+
+The adapter grants no tool authority. Inspection rejects server requests, planning retains its
+read-only policy, execution retains its external containment checks and review remains non-writable.
+Closing the App Server proves only its process outcome; Sandbox teardown remains the separate proof
+required before checkpointing or releasing a writer reservation.
+
 ## Verification and integration
 
 Use a smallest failing behavior test before each behavior change. Run focused tests while iterating,

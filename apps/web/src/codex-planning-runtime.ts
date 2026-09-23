@@ -3,13 +3,13 @@ import { tmpdir } from "node:os";
 import { isAbsolute } from "node:path";
 
 import {
-  CodexFactoryTransport,
+  CodexAppServerTransport,
   CodexFactoryError,
   record,
   boundedString,
   inputQuestion,
   protocolError,
-} from "./codex-factory-transport.js";
+} from "./codex-app-server-transport.js";
 
 export type CodexPlanningErrorCode =
   | "unavailable"
@@ -80,7 +80,7 @@ const SAFETY_ARGUMENTS = [
 ];
 
 class PlanningSession {
-  readonly #transport: CodexFactoryTransport;
+  readonly #transport: CodexAppServerTransport;
   #turnCompleted = false;
   #threadId: string | undefined;
   #turnId: string | undefined;
@@ -93,7 +93,8 @@ class PlanningSession {
     this.#turnResult = new Promise((resolve) => {
       this.#resolveTurn = resolve;
     });
-    this.#transport = new CodexFactoryTransport({
+    this.#transport = new CodexAppServerTransport({
+      profile: "turn",
       executable: options.executable ?? "codex",
       arguments: [
         ...(options.arguments ?? ["app-server", "--listen", "stdio://"]),
@@ -113,7 +114,7 @@ class PlanningSession {
     this.#transport.notify(method, params);
   }
   request(method: string, params: unknown): Promise<Record<string, unknown>> {
-    return this.#transport.request(method, params);
+    return this.#transport.request(method, params).then(record);
   }
 
   #receive(message: Record<string, unknown>): void {

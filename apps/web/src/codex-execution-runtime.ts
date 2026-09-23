@@ -18,7 +18,7 @@ import { isAbsolute, join, relative, sep } from "node:path";
 
 import {
   CodexFactoryError,
-  CodexFactoryTransport,
+  CodexAppServerTransport,
   boundedString,
   inputQuestion,
   isRecord,
@@ -26,7 +26,7 @@ import {
   record,
   safeEnvironment,
   type CodexFactoryErrorCode,
-} from "./codex-factory-transport.js";
+} from "./codex-app-server-transport.js";
 
 export type CodexExecutionErrorCode =
   CodexFactoryErrorCode | "sandbox_unavailable" | "stop_unconfirmed";
@@ -928,7 +928,7 @@ async function closeForwarder(
 }
 
 class ExecutionTurn {
-  readonly transport: CodexFactoryTransport;
+  readonly transport: CodexAppServerTransport;
   readonly #input: CodexExecutionTurnInput;
   readonly #options: CodexExecutionRuntimeOptions;
   readonly #hostProfile: IsolatedCodexProfile | null;
@@ -958,7 +958,8 @@ class ExecutionTurn {
     this.#input = input;
     this.#options = options;
     this.#hostProfile = hostProfile;
-    this.transport = new CodexFactoryTransport({
+    this.transport = new CodexAppServerTransport({
+      profile: "turn",
       executable: options.executable ?? "codex",
       arguments: [
         ...(options.arguments ?? ["app-server", "--listen", "stdio://"]),
@@ -1113,10 +1114,12 @@ class ExecutionTurn {
     this.#enqueue(() => this.#input.onActivity(activity));
   }
   async run(hostCwd: string): Promise<CodexExecutionTurnResult> {
-    const initialized = await this.transport.request("initialize", {
-      clientInfo: { name: "kestrel", version: "0.0.0" },
-      capabilities: { experimentalApi: true },
-    });
+    const initialized = await this.transport
+      .request("initialize", {
+        clientInfo: { name: "kestrel", version: "0.0.0" },
+        capabilities: { experimentalApi: true },
+      })
+      .then(record);
     const initializedVersion = codexVersion(initialized.userAgent);
     if (
       this.#options.expectedCodexVersion !== undefined &&
@@ -1126,14 +1129,20 @@ class ExecutionTurn {
     if (this.#hostProfile !== null && initialized.codexHome !== this.#hostProfile.codexHome)
       throw new CodexExecutionError("permission_required");
     this.transport.notify("initialized");
-    const local = await this.transport.request("environment/status", { environmentId: "local" });
+    const local = await this.transport
+      .request("environment/status", { environmentId: "local" })
+      .then(record);
     if (local.status !== "unknown") throw new CodexExecutionError("permission_required");
-    const remote = await this.transport.request("environment/info", { environmentId: "remote" });
+    const remote = await this.transport
+      .request("environment/info", { environmentId: "remote" })
+      .then(record);
     if (remote.cwd !== "file:///workspace") throw new CodexExecutionError("permission_required");
-    const response = await this.transport.request("config/read", {
-      cwd: hostCwd,
-      includeLayers: false,
-    });
+    const response = await this.transport
+      .request("config/read", {
+        cwd: hostCwd,
+        includeLayers: false,
+      })
+      .then(record);
     const config = record(response.config);
     const features = record(config.features);
     const mcpServers = record(config.mcp_servers ?? {});
@@ -1165,29 +1174,31 @@ class ExecutionTurn {
     const disabledMcpServers = Object.fromEntries(
       names.map((name) => [boundedString(name), { enabled: false }]),
     );
-    const thread = await this.transport.request("thread/start", {
-      cwd: hostCwd,
-      model: this.#input.model,
-      modelProvider: "openai",
-      sandbox: "read-only",
-      approvalPolicy: "never",
-      approvalsReviewer: "user",
-      environments: ENVIRONMENTS,
-      config: {
-        features: FEATURES,
-        model_provider: "openai",
-        web_search: "disabled",
-        allow_login_shell: false,
-        mcp_servers: disabledMcpServers,
-        shell_environment_policy: {
-          inherit: "none",
-          set: { PATH: "/usr/local/bin:/usr/bin:/bin", HOME: "/home/codex", TMPDIR: "/tmp" },
+    const thread = await this.transport
+      .request("thread/start", {
+        cwd: hostCwd,
+        model: this.#input.model,
+        modelProvider: "openai",
+        sandbox: "read-only",
+        approvalPolicy: "never",
+        approvalsReviewer: "user",
+        environments: ENVIRONMENTS,
+        config: {
+          features: FEATURES,
+          model_provider: "openai",
+          web_search: "disabled",
+          allow_login_shell: false,
+          mcp_servers: disabledMcpServers,
+          shell_environment_policy: {
+            inherit: "none",
+            set: { PATH: "/usr/local/bin:/usr/bin:/bin", HOME: "/home/codex", TMPDIR: "/tmp" },
+          },
         },
-      },
-      developerInstructions:
-        this.#options.developerInstructions ??
-        "Implement only the approved scope in the selected remote workspace. That environment is contained externally. Do not access host tools, external services, privileges, or Git metadata writes. Ask when requirements or authorization must change.",
-    });
+        developerInstructions:
+          this.#options.developerInstructions ??
+          "Implement only the approved scope in the selected remote workspace. That environment is contained externally. Do not access host tools, external services, privileges, or Git metadata writes. Ask when requirements or authorization must change.",
+      })
+      .then(record);
     const sandbox = record(thread.sandbox);
     if (
       thread.cwd !== hostCwd ||
@@ -1203,17 +1214,21 @@ class ExecutionTurn {
       throw new CodexExecutionError("permission_required");
     this.#threadId = boundedString(record(thread.thread).id);
     await this.transport.guard(this.#input.onThread(this.#threadId));
-    const turn = await this.transport.request("turn/start", {
-      threadId: this.#threadId,
-      model: this.#input.model,
-      clientUserMessageId: this.#input.requestId,
-      input: [{ type: "text", text: this.#input.prompt }],
-      approvalPolicy: "never",
-      approvalsReviewer: "user",
-      sandboxPolicy: { type: "externalSandbox", networkAccess: "restricted" },
-      environments: ENVIRONMENTS,
-      ...(this.#input.outputSchema === undefined ? {} : { outputSchema: this.#input.outputSchema }),
-    });
+    const turn = await this.transport
+      .request("turn/start", {
+        threadId: this.#threadId,
+        model: this.#input.model,
+        clientUserMessageId: this.#input.requestId,
+        input: [{ type: "text", text: this.#input.prompt }],
+        approvalPolicy: "never",
+        approvalsReviewer: "user",
+        sandboxPolicy: { type: "externalSandbox", networkAccess: "restricted" },
+        environments: ENVIRONMENTS,
+        ...(this.#input.outputSchema === undefined
+          ? {}
+          : { outputSchema: this.#input.outputSchema }),
+      })
+      .then(record);
     this.#observe(this.#threadId, record(turn.turn).id);
     return this.transport.guard(this.#result);
   }
