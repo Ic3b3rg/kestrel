@@ -12,6 +12,7 @@ const sections: readonly { id: SettingsSection; label: string; description: stri
   { id: "projects", label: "Projects", description: "Authorized repositories and Projects." },
   { id: "providers", label: "Providers", description: "Model access and preferences." },
   { id: "source-control", label: "Source control", description: "GitHub on this workstation." },
+  { id: "skills", label: "Skills", description: "Installed procedures for Planning Sessions." },
 ];
 
 function isPlainClick(event: MouseEvent<HTMLAnchorElement>): boolean {

@@ -93,6 +93,59 @@ test.describe("Planning Skills in the chat", () => {
     const original = (await chat()).turns[0]?.skills?.[0];
     expect(original?.name).toBe("recovery-checklist");
     if (original === undefined) throw new Error("The accepted turn did not retain its Skill");
+    const featureUrl = page.url();
+    await page.getByRole("link", { name: "Settings", exact: true }).click();
+    await expect(page).toHaveURL(/\/settings\/profile$/u);
+    const sections = page.getByRole("navigation", { name: "Settings sections" });
+    await sections.getByRole("link", { name: "Skills" }).click();
+    await expect(page).toHaveURL(/\/settings\/skills$/u);
+    const library = page.getByRole("region", { name: "Installed Skills" });
+    await expect(library).toContainText("$recovery-checklist");
+    await expect(library).toContainText("Clarify recovery requirements.");
+    await expect(library).toContainText(original.contentDigest.slice(0, 12));
+    await page.reload();
+    const inspectInstalled = library.getByRole("button", { name: "Inspect recovery-checklist" });
+    await inspectInstalled.focus();
+    await page.keyboard.press("Enter");
+    const installedInstructions = page.getByRole("dialog", {
+      name: "Installed Skill instructions",
+    });
+    await expect(installedInstructions.getByLabel("Retained Skill instructions")).toContainText(
+      "Original procedure.",
+    );
+    await installedInstructions
+      .getByLabel("Instructions and references")
+      .selectOption("references/recovery.md");
+    await expect(installedInstructions.getByLabel("Retained Skill instructions")).toContainText(
+      "survive a process restart",
+    );
+    await page.setViewportSize({ width: 320, height: 800 });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    await page.keyboard.press("Escape");
+    await expect(installedInstructions).toHaveCount(0);
+    await expect(inspectInstalled).toBeFocused();
+    await page.screenshot({
+      path: test.info().outputPath("skills-library-mobile.png"),
+      animations: "disabled",
+    });
+    await page.context().setOffline(true);
+    await expect(library).toContainText("Skill Library is offline");
+    await expect(library).not.toContainText("Clarify recovery requirements.");
+    await page.context().setOffline(false);
+    await expect(library).toContainText("Clarify recovery requirements.");
+    await page.goBack();
+    await expect(page).toHaveURL(/\/settings\/profile$/u);
+    await page.goForward();
+    await expect(page).toHaveURL(/\/settings\/skills$/u);
+    await page.goto(new URL("/settings/skills", requireStack().pwaUrl).toString());
+    await expect(library).toContainText("Clarify recovery requirements.");
+    await page.setViewportSize({ width: 1024, height: 800 });
+    await page.goto(featureUrl);
     await writeFile(skillFile, entry("Updated procedure for future turns."));
     await page.getByRole("button", { name: "Skills (1)", exact: true }).click();
     await skills.getByLabel("Host Skill to import").selectOption({ label: "recovery-checklist" });
