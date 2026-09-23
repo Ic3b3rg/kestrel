@@ -1,14 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type {
-  Feature,
-  FeaturePlanningSkills,
-  StartPlanningFeatureCommand,
-} from "@kestrel/contracts";
+import type { Feature, StartPlanningFeatureCommand } from "@kestrel/contracts";
 import { ApiClientError } from "./api.js";
 import { fetchPlanningFeatureRequest, startPlanningFeature } from "./factory-start-api.js";
 import { planningRequestError } from "./FeatureNavigation.js";
 import { NewPlanningChatPanel } from "./NewPlanningChatPanel.js";
-import { PlanningSkillsPanel } from "./PlanningSkillsPanel.js";
 import { Button } from "./components/ui/button.js";
 import type { AppRoute } from "./app-route.js";
 
@@ -33,11 +28,6 @@ export function NewPlanningWorkspace({
   onAuthenticationError,
   onDraftDirtyChange,
 }: NewPlanningWorkspaceProps) {
-  const [skills, setSkills] = useState<FeaturePlanningSkills>({
-    schemaVersion: 1,
-    version: 0,
-    skills: [],
-  });
   const [checking, setChecking] = useState(false);
   const [readError, setReadError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -111,7 +101,7 @@ export function NewPlanningWorkspace({
       attempt.current ??= {
         requestId,
         text: text.trim(),
-        skillDigests: skills.skills.map((skill) => skill.contentDigest),
+        skillDigests: [],
       };
       // Accepted work belongs to the workstation; navigation cannot abort this command.
       const result = await startPlanningFeature(projectId, attempt.current);
@@ -161,25 +151,8 @@ export function NewPlanningWorkspace({
         onBack={() => onNavigate({ kind: "project", projectId })}
         onDraftChange={(text) => {
           hasDraft.current = text.trim() !== "";
-          onDraftDirtyChange(hasDraft.current || skills.skills.length > 0);
+          onDraftDirtyChange(hasDraft.current);
         }}
-        tools={
-          <PlanningSkillsPanel
-            projectId={projectId}
-            online={online}
-            editable={!pending && !checking && attempt.current === null}
-            selection={skills}
-            onAuthenticationError={onAuthenticationError}
-            onDraftSelection={(selected) => {
-              setSkills((current) => ({
-                schemaVersion: 1,
-                version: current.version + 1,
-                skills: selected,
-              }));
-              onDraftDirtyChange(hasDraft.current || selected.length > 0);
-            }}
-          />
-        }
       />
     </>
   );

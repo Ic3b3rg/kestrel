@@ -67,7 +67,6 @@ test.describe("GitHub planning Skill imports", () => {
     await expect(page.getByRole("region", { name: "Sign in to Kestrel" })).toHaveCount(0);
     await page.goto(`${stack.pwaUrl}/settings/skills`);
     await expect(page).toHaveURL(/\/settings\/skills$/u);
-    const skills = page.getByRole("dialog", { name: "Planning Skills", exact: true });
     const importer = page.getByRole("region", { name: "Import from GitHub" });
     const readChat = async () =>
       FeatureChatSchema.parse(await (await stack.fetchApi(`/api/v1${featurePath}`)).json());
@@ -136,29 +135,39 @@ test.describe("GitHub planning Skill imports", () => {
     );
     await page.goto(`${stack.pwaUrl}${featurePath}`);
     await expect(page.getByRole("heading", { name: title, level: 1, exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Skills", exact: true }).click();
-    await expect(skills.getByRole("button", { name: "Import from GitHub" })).toHaveCount(0);
-    await skills.getByRole("checkbox", { name: "Use $grilling-starter", exact: true }).check();
-    await skills.getByRole("button", { name: "Use selected Skills", exact: true }).click();
-    await expect(skills).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Skills (1)", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Skills", exact: true })).toHaveCount(0);
+    await page
+      .getByLabel("Message", { exact: true })
+      .fill("/grilling-starter Help plan this change.");
+    await page.getByRole("button", { name: "Send message", exact: true }).click();
+    await expect(page.getByText("Codex is unavailable", { exact: true })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Active Planning Skills" })).toContainText(
+      "$grilling-starter",
+    );
     await page.reload();
-    await page.getByRole("button", { name: "Skills (1)", exact: true }).click();
-    await expect(
-      skills.getByRole("checkbox", { name: "Use $grilling-starter", exact: true }),
-    ).toBeChecked();
+    await expect(page.getByRole("region", { name: "Active Planning Skills" })).toContainText(
+      "$grilling-starter",
+    );
     const retainedResponse = page.waitForResponse(
       (response) =>
         response.url().endsWith(`/planning-skills/${preview.contentDigest}`) &&
         response.request().method() === "GET",
     );
-    await skills.getByRole("button", { name: "Inspect $grilling-starter", exact: true }).click();
+    await page
+      .getByRole("button", {
+        name: `Used $grilling-starter · ${preview.contentDigest.slice(0, 8)}`,
+        exact: true,
+      })
+      .click();
     const retained = GitHubPlanningSkillBundleSchema.parse(await (await retainedResponse).json());
     expect(retained).toEqual(preview);
-    await expect(skills.getByText(provider.originalCommit, { exact: true }).last()).toBeVisible();
-    await skills.getByLabel("Instructions and references").selectOption("sources/LICENSE");
-    await expect(skills.getByLabel("Retained Skill instructions")).toContainText("MIT License");
-    await skills.getByRole("button", { name: "Back to Skills", exact: true }).focus();
+    const provenance = page.getByRole("dialog", { name: "Skill used for this artifact" });
+    await expect(
+      provenance.getByText(provider.originalCommit, { exact: true }).last(),
+    ).toBeVisible();
+    await provenance.getByLabel("Instructions and references").selectOption("sources/LICENSE");
+    await expect(provenance.getByLabel("Retained Skill instructions")).toContainText("MIT License");
+    await provenance.getByLabel("Instructions and references").focus();
     await page.keyboard.press("Tab");
     expect(
       await page.evaluate(() => document.activeElement?.closest('[role="dialog"]') !== null),
@@ -176,11 +185,11 @@ test.describe("GitHub planning Skill imports", () => {
       animations: "disabled",
     });
     await page.keyboard.press("Escape");
-    await expect(skills).toHaveCount(0);
+    await expect(provenance).toHaveCount(0);
     const chat = await readChat();
     expect(chat.skills?.skills[0]?.contentDigest).toBe(preview.contentDigest);
     expect(chat.feature.state).toBe("planning");
-    expect(chat.turns).toEqual([]);
+    expect(chat.turns[0]?.skills?.[0]?.contentDigest).toBe(preview.contentDigest);
     expect(
       (await readPlanningSkillGitHubState(stack)).calls.every(({ method }) => method === "GET"),
     ).toBe(true);

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ReactNode, type SyntheticEvent } from "react";
+import { useEffect, useId, useRef, useState, type SyntheticEvent } from "react";
 import { ArrowLeft, ArrowUp } from "lucide-react";
 import { Button } from "./components/ui/button.js";
 import { Label } from "./components/ui/label.js";
@@ -11,7 +11,6 @@ export interface NewPlanningChatPanelProps {
   error: string | null;
   locked?: boolean;
   pendingMessage?: string;
-  tools?: ReactNode;
   onDraftChange?: (text: string) => void;
   onAuthenticationError: (error: unknown) => boolean;
   onSubmit: (text: string) => void;
@@ -25,7 +24,6 @@ export function NewPlanningChatPanel({
   error,
   locked = false,
   pendingMessage = "Saving your first message…",
-  tools,
   onDraftChange,
   onAuthenticationError,
   onSubmit,
@@ -99,7 +97,6 @@ export function NewPlanningChatPanel({
             />
             <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-3">
-                {tools}
                 <p className="text-xs text-muted-foreground">Ctrl or ⌘ + Enter to send</p>
               </div>
               <Button type="submit" disabled={!online || pending || draft.trim() === ""}>

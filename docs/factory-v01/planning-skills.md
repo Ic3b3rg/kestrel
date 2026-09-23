@@ -1,11 +1,11 @@
 # Planning Skill imports
 
-The Operator imports and selects Skills inside Kestrel's planning composer or an existing Feature
-chat. Before the first prompt, selection remains in the composer; accepting that prompt freezes the
-selection together with the new Feature and first turn. A Skill supplies planning instructions; it
-does not acquire the runtime authority described by those instructions. **Skills → Import from
-GitHub** offers the grilling starter or an explicit repository, Markdown entry path and ref. An
-optional host configuration also authorizes one absolute directory through
+The Operator imports Skills in **Settings → Skills** and invokes them with `/name` in either
+Planning composer. Before the first prompt, tokens are only part of the draft; accepting that prompt
+freezes the resolved selection together with the new Feature and first turn. A Skill supplies
+planning instructions; it does not acquire the runtime authority described by those instructions.
+The global Library offers the grilling starter or an explicit GitHub repository, Markdown entry path
+and ref. An optional host configuration also authorizes one absolute directory through
 `KESTREL_PLANNING_SKILL_ROOT`; each direct child directory is an import candidate. Candidate
 responses disclose names and opaque identities, not host paths. An unconfigured host directory
 leaves GitHub imports, the installed catalog and retained instructions usable.
@@ -61,7 +61,10 @@ bundle JSON. Selection and message acceptance lock the same Feature. Sending fro
 fails explicitly; accepting a message atomically freezes its Skill digests and queues its turn.
 `$name` and `/name` select an installed Skill by name. An explicitly selected older version wins
 over a newer catalog version with the same name. Unknown names reject the message without partially
-selecting other names.
+selecting other names. Accepted invocations appear as active chips beside the existing Feature's
+composer. The Operator can remove a chip when no reply is active; removal uses the current selection
+version and does not alter earlier turns or plans. To use an updated version of the same name,
+remove the old chip and invoke the name again in a later message.
 
 Import and selection commands have durable request identities. Retrying an uncertain command returns
 its original accepted result, including when files or the current selection changed later. Each
