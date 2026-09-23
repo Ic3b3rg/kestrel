@@ -116,10 +116,17 @@ function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+const profiles = {
+  connection: { stdoutBytes: 2 * 1024 * 1024, stderrBytes: 32 * 1024, stopMs: 1_000, initialId: 0 },
+  turn: { stdoutBytes: 4 * 1024 * 1024, stderrBytes: 64 * 1024, stopMs: 250, initialId: 1 },
+} as const;
+
 // Shared bounded stdio framing; authority and turn interpretation stay with each runtime.
-export class CodexFactoryTransport {
+export class CodexAppServerTransport {
   readonly #child: ChildProcessWithoutNullStreams;
   readonly #closed: Promise<void>;
+  readonly #processExited: Promise<void>;
+  readonly #profile: keyof typeof profiles;
   readonly #failed: Promise<never>;
   readonly #timeout: NodeJS.Timeout;
   readonly #decoder = new StringDecoder("utf8");
@@ -127,7 +134,11 @@ export class CodexFactoryTransport {
   readonly #receive: (message: Record<string, unknown>) => void;
   #rejectFailure!: (error: Error) => void;
   #failure: Error | null = null;
-  #pending: { id: number; resolve(value: unknown): void } | null = null;
+  #pending: {
+    id: number;
+    resolve(value: unknown): void;
+    protocolError(value: unknown): Error;
+  } | null = null;
   #nextId = 1;
   #buffer = "";
   #stdoutBytes = 0;
@@ -138,6 +149,7 @@ export class CodexFactoryTransport {
   #operationCompleted = false;
 
   constructor(options: {
+    profile: keyof typeof profiles;
     executable: string;
     arguments: readonly string[];
     cwd: string;
@@ -146,6 +158,8 @@ export class CodexFactoryTransport {
     signal?: AbortSignal;
     receive(message: Record<string, unknown>): void;
   }) {
+    this.#profile = options.profile;
+    this.#nextId = profiles[options.profile].initialId;
     this.#signal = options.signal;
     this.#receive = (message) => options.receive(message);
     this.#failed = new Promise((_, reject) => {
@@ -159,6 +173,7 @@ export class CodexFactoryTransport {
       detached: process.platform !== "win32",
       stdio: ["pipe", "pipe", "pipe"],
     });
+    this.#processExited = new Promise((resolve) => this.#child.once("exit", () => resolve()));
     this.#closed = new Promise((resolve) =>
       this.#child.once("close", () => {
         this.#exited = true;
@@ -168,18 +183,42 @@ export class CodexFactoryTransport {
     this.#child.once("error", () => this.fail(new CodexFactoryError("unavailable")));
     this.#child.once("close", () => {
       if (!this.#closing && !this.#operationCompleted)
-        this.fail(new CodexFactoryError(this.#operationStarted ? "interrupted" : "unavailable"));
+        this.fail(
+          new CodexFactoryError(
+            this.#profile === "connection"
+              ? "invalid_response"
+              : this.#operationStarted
+                ? "interrupted"
+                : "unavailable",
+          ),
+        );
     });
-    this.#child.stdin.on("error", () => this.fail(new CodexFactoryError("unavailable")));
+    this.#child.stdin.on("error", () =>
+      this.fail(
+        new CodexFactoryError(this.#profile === "connection" ? "invalid_response" : "unavailable"),
+      ),
+    );
     this.#child.stdout.on("data", (chunk: Buffer) => this.#receiveChunk(chunk));
+    this.#child.stdout.on("end", () => {
+      // The connection probe historically accepted readline's final EOF-delimited frame.
+      if (this.#profile !== "connection" || this.#failure !== null || this.#closing) return;
+      this.#buffer += this.#decoder.end();
+      if (this.#buffer.length > 0) {
+        this.#buffer += "\n";
+        this.#receiveFrames();
+      }
+    });
+    this.#child.stdout.on("error", () => this.fail(new CodexFactoryError("invalid_response")));
     this.#child.stderr.on("data", (chunk: Buffer) => {
       this.#stderrBytes += chunk.byteLength;
-      if (this.#stderrBytes > 64 * 1024) this.fail(new CodexFactoryError("invalid_response"));
+      if (this.#stderrBytes > profiles[this.#profile].stderrBytes)
+        this.fail(new CodexFactoryError("invalid_response"));
     });
     this.#timeout = setTimeout(
       () => this.fail(new CodexFactoryError("timeout")),
       options.timeoutMs,
     );
+    if (this.#profile === "connection") this.#timeout.unref();
     options.signal?.addEventListener("abort", this.#onAbort, { once: true });
     if (options.signal?.aborted) this.#onAbort();
   }
@@ -193,6 +232,7 @@ export class CodexFactoryTransport {
     this.#failure = error;
     this.#rejectFailure(error);
     this.#pending = null;
+    if (this.#profile === "connection") killGroup(this.#child, "SIGKILL");
   }
 
   started(): void {
@@ -212,7 +252,12 @@ export class CodexFactoryTransport {
 
   send(message: unknown): void {
     this.#child.stdin.write(`${JSON.stringify(message)}\n`, (error) => {
-      if (error) this.fail(new CodexFactoryError("unavailable"));
+      if (error)
+        this.fail(
+          new CodexFactoryError(
+            this.#profile === "connection" ? "invalid_response" : "unavailable",
+          ),
+        );
     });
   }
 
@@ -221,23 +266,31 @@ export class CodexFactoryTransport {
     this.send({ method, params });
   }
 
-  async request(method: string, params: unknown): Promise<Record<string, unknown>> {
+  async request(
+    method: string,
+    params: unknown,
+    mapProtocolError: (value: unknown) => Error = protocolError,
+  ): Promise<unknown> {
     if (this.#failure !== null) throw this.#failure;
     if (this.#pending !== null) throw new CodexFactoryError("invalid_response");
     const id = this.#nextId++;
     const response = new Promise<unknown>((resolve) => {
-      this.#pending = { id, resolve };
+      this.#pending = { id, resolve, protocolError: mapProtocolError };
     });
     this.send({ id, method, params });
-    return record(await this.guard(response));
+    return this.guard(response);
   }
 
   #receiveChunk(chunk: Buffer): void {
     if (this.#failure !== null || this.#closing) return;
     this.#stdoutBytes += chunk.byteLength;
-    if (this.#stdoutBytes > 4 * 1024 * 1024)
+    if (this.#stdoutBytes > profiles[this.#profile].stdoutBytes)
       return this.fail(new CodexFactoryError("invalid_response"));
     this.#buffer += this.#decoder.write(chunk);
+    this.#receiveFrames();
+  }
+
+  #receiveFrames(): void {
     let newline: number;
     while ((newline = this.#buffer.indexOf("\n")) !== -1) {
       const line = this.#buffer.slice(0, newline);
@@ -255,7 +308,7 @@ export class CodexFactoryTransport {
           )
             throw new CodexFactoryError("invalid_response");
           this.#pending = null;
-          if ("error" in message) throw protocolError(message.error);
+          if ("error" in message) throw pending.protocolError(message.error);
           pending.resolve(message.result);
         } else this.#receive(message);
       } catch (error) {
@@ -277,14 +330,26 @@ export class CodexFactoryTransport {
     this.#signal?.removeEventListener("abort", this.#onAbort);
     if (interrupt !== undefined) this.send({ id: this.#nextId++, ...interrupt });
     this.#child.stdin.end();
-    await Promise.race([this.#closed, delay(250)]);
-    killGroup(this.#child, "SIGTERM");
-    await Promise.race([this.#closed, delay(250)]);
-    killGroup(this.#child, "SIGKILL");
-    await Promise.race([this.#closed, delay(250)]);
+    const wait = () =>
+      Promise.race([
+        this.#closed.then(() => "closed" as const),
+        ...(this.#profile === "connection"
+          ? [this.#processExited.then(() => "exited" as const)]
+          : []),
+        delay(profiles[this.#profile].stopMs).then(() => "timeout" as const),
+      ]);
+    for (const signal of [null, "SIGTERM", "SIGKILL"] as const) {
+      if (signal !== null) killGroup(this.#child, signal);
+      const settlement = await wait();
+      // A connection probe can outlive its parent through detached Codex helper pipes.
+      // Turn sessions still terminate their group; Sandbox teardown is proved separately.
+      if (this.#profile === "connection" && settlement !== "timeout") break;
+    }
     this.#child.stdin.destroy();
     this.#child.stdout.destroy();
     this.#child.stderr.destroy();
+    if (this.#profile === "connection")
+      await Promise.race([this.#closed, delay(profiles.connection.stopMs)]);
     this.#child.unref();
     return { exited: this.#exited };
   }

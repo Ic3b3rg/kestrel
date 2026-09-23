@@ -104,11 +104,18 @@ Docker socket; it does not replace them.
 
 ## One Codex transport, distinct runtime policies
 
-The duplication is concrete: [AppServerSession](../../apps/web/src/codex-app-server.ts)
-and [CodexFactoryTransport](../../apps/web/src/codex-factory-transport.ts) both spawn a
+At the reviewed baseline, `AppServerSession` and `CodexFactoryTransport` both spawned a
 child, restrict its environment, bound output, correlate one pending request, and close
 the process. They differ in parsing, error translation, streaming, and shutdown handling.
 These are Kestrel source facts, not protocol requirements.
+
+Implementation follow-up (#287): [CodexAppServerTransport](../../apps/web/src/codex-app-server-transport.ts)
+now owns those mechanics. The installed 0.156.1 binary's
+`generate-json-schema --experimental` output confirms optional `workspaceRouting` on
+`GetAccountResponse` and `availableAccessPrograms` on `Model`. Both previously made the
+strict connection probe fail. Their exact bounded shapes are accepted and omitted from the
+normalized connection; they grant no routing or tool authority. Runtime version certification
+remains separate from this read-only metadata compatibility check.
 
 Recommended common adapter responsibilities:
 
