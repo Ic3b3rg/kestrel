@@ -60,6 +60,37 @@ export function lifecycleProfileEvidence(value: unknown) {
   });
 }
 export type FrozenLifecycleProfile = z.infer<typeof FrozenLifecycleProfileSchema>;
+export function assertLifecycleProfileAvailable(
+  profile: z.infer<typeof ResolvedLifecycleProfileSchema>,
+  models: z.infer<typeof CodexSubscriptionModelSchema>[],
+) {
+  const model = models.find((candidate) => candidate.id === profile.modelId);
+  if (
+    profile.runtimeId !== "codex_subscription" ||
+    model === undefined ||
+    (model.model ?? model.id) !== profile.model
+  )
+    throw new Error(
+      "The frozen model is unavailable. Restore that model before retrying, or authorize new work with an available profile.",
+    );
+  if (
+    profile.effort !== null &&
+    model.defaultReasoningEffort !== profile.effort &&
+    !model.supportedReasoningEfforts?.some((option) => option.reasoningEffort === profile.effort)
+  )
+    throw new Error(
+      "The frozen effort is unavailable. Restore that capability before retrying, or authorize new work with an available profile.",
+    );
+  if (
+    profile.serviceTier !== null &&
+    (profile.serviceTier === "default"
+      ? model.serviceTiers === undefined
+      : !model.serviceTiers?.some((tier) => tier.id === profile.serviceTier))
+  )
+    throw new Error(
+      "The frozen speed is unavailable. Restore that capability before retrying, or authorize new work with an available profile.",
+    );
+}
 export const LifecycleProfileViewSchema = z.strictObject({
   phase: LifecyclePhaseSchema,
   versions: LifecycleVersionsSchema,

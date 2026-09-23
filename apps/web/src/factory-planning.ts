@@ -9,6 +9,7 @@ import {
   GeneratedFeaturePlanDocumentSchema,
   NamedPlanningReplySchema,
   KestrelIdSchema,
+  assertLifecycleProfileAvailable,
   PlanningSkillSummarySchema,
   type PlanningContext,
 } from "@kestrel/contracts";
@@ -248,11 +249,14 @@ export function createFactoryPlanningProcessor({
             "This message predates lifecycle profiles. Send a new message with the current Planning profile.",
           );
         const model = profile.model;
-        if (!readiness.models.some(({ id }) => id === profile.modelId))
+        try {
+          assertLifecycleProfileAvailable(profile, readiness.models);
+        } catch (error) {
           throw new CodexPlanningError(
             "unavailable",
-            "The frozen Planning model is unavailable. Restore runtime access before retrying.",
+            error instanceof Error ? error.message : "The frozen Planning profile is unavailable.",
           );
+        }
         cwd = await planningDirectory(config, turn.featureId);
         const result = await runtime.runTurn({
           cwd,

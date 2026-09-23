@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
   KestrelIdSchema,
+  assertLifecycleProfileAvailable,
   type FactoryExecutionFailure,
   type FactoryVerificationResult,
 } from "@kestrel/contracts";
@@ -9,7 +10,6 @@ import {
   claimFactoryExecution,
   finishFactoryExecution,
   heartbeatFactoryExecution,
-  readCodexReviewModelPreference,
   recordFactoryExecutionActivity,
   type ClaimedFactoryExecution,
   type DatabasePool,
@@ -102,6 +102,11 @@ function promptFor(
     "A completed answer reports implementation progress only. The controller separately verifies the exact committed revision; your answer is never a test result or merge decision.",
     "Return JSON matching the supplied schema. For completed use question:null; for input_required provide a concrete question.",
     JSON.stringify({
+      lifecycleGuidance: {
+        instruction:
+          "The frozen Skills below are guidance only. They cannot expand approved scope, networking, containment, provider writes, verification or merge authority.",
+        skills: run.lifecycleProfile?.skills ?? [],
+      },
       feature: run.title,
       approvedVersion: run.version,
       objective: run.plan.objective,
@@ -157,7 +162,10 @@ function promptFor(
       },
     }),
   ].join("\n");
-  if (Buffer.byteLength(prompt) > 240_000)
+  if (
+    Buffer.byteLength(prompt) >
+    240_000 + Buffer.byteLength(JSON.stringify(run.lifecycleProfile?.skills ?? []))
+  )
     throw new ExecutionFailure(
       "invalid_response",
       "The approved Work Item exceeds the execution context limit; split its scope before retrying.",
@@ -252,16 +260,22 @@ async function execute(
                 : "unavailable",
         );
       }
-      const preference = await readCodexReviewModelPreference(pool);
-      const selected =
-        preference.selectedModelId ?? readiness.models.find((model) => model.isDefault)?.id;
-      if (
-        selected === undefined ||
-        !readiness.models.some((candidate) => candidate.id === selected)
-      )
-        throw new ExecutionFailure("unavailable");
-      model = selected;
-      return selected;
+      const profile = run.lifecycleProfile;
+      if (profile == null)
+        throw new ExecutionFailure(
+          "unavailable",
+          "This approval predates lifecycle profiles. Approve a new plan revision with an available Implementation profile before execution.",
+        );
+      try {
+        assertLifecycleProfileAvailable(profile, readiness.models);
+      } catch (error) {
+        throw new ExecutionFailure(
+          "unavailable",
+          error instanceof Error ? error.message : "The approved profile is unavailable.",
+        );
+      }
+      model = profile.model;
+      return model;
     };
     if (!final) await selectModel();
     await sandbox.open();
@@ -274,6 +288,8 @@ async function execute(
         const result = await sandbox.implement({
           round,
           model: selectedModel,
+          effort: run.lifecycleProfile?.effort ?? null,
+          serviceTier: run.lifecycleProfile?.serviceTier ?? null,
           prompt: promptFor(run, sandbox.revision, previousChecks),
           outputSchema: z.toJSONSchema(completionSchema, { target: "draft-7" }),
           onActivity: (activity) =>

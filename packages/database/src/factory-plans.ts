@@ -1,3 +1,5 @@
+import { freezeLifecycleProfile } from "./lifecycle-profiles.js";
+import { lifecycleProfileEvidence, type CodexSubscriptionConnection } from "@kestrel/contracts";
 import { readPlanningSkills, skillSummary } from "./factory-skills.js";
 import {
   FactoryBoardSchema,
@@ -261,6 +263,7 @@ export async function approveFactoryPlan(
     plan: FeaturePlanDocument;
     featureUrl?: string;
   }) => void,
+  connection?: CodexSubscriptionConnection,
 ): Promise<FactoryBoard> {
   await reconcilePlanningTurns(pool);
   return withFactoryFeature(pool, projectId, featureId, async (client, feature) => {
@@ -293,9 +296,13 @@ export async function approveFactoryPlan(
       plan: document,
       ...(featureUrl === undefined ? {} : { featureUrl }),
     });
+    const lifecycleProfile =
+      connection === undefined
+        ? null
+        : await freezeLifecycleProfile(client, "implementation", projectId, connection);
     await client.query(
-      "INSERT INTO factory_plan_approvals (feature_id, plan_version, request_id, operator_id) VALUES ($1,$2,$3,$4)",
-      [featureId, version, requestId, actorId],
+      "INSERT INTO factory_plan_approvals (feature_id, plan_version, request_id, operator_id, lifecycle_profile) VALUES ($1,$2,$3,$4,$5::jsonb)",
+      [featureId, version, requestId, actorId, JSON.stringify(lifecycleProfile)],
     );
     await client.query(
       "INSERT INTO factory_activity (feature_id, kind, summary) VALUES ($1, 'plan_approved', $2)",
@@ -387,8 +394,9 @@ export async function readFactoryPlans(
       plan_version: number;
       operator_id: string;
       approved_at: Date;
+      lifecycle_profile: unknown;
     }>(
-      "SELECT plan_version, operator_id, approved_at FROM factory_plan_approvals WHERE feature_id = $1 AND plan_version = $2",
+      "SELECT plan_version, operator_id, approved_at, lifecycle_profile FROM factory_plan_approvals WHERE feature_id = $1 AND plan_version = $2",
       [featureId, feature.approved_plan_version],
     );
     const turns = await client.query<{
@@ -419,6 +427,10 @@ export async function readFactoryPlans(
         approved === undefined
           ? null
           : {
+              lifecycleProfile:
+                approved.lifecycle_profile == null
+                  ? null
+                  : lifecycleProfileEvidence(approved.lifecycle_profile),
               version: approved.plan_version,
               operatorId: approved.operator_id,
               approvedAt: approved.approved_at.toISOString(),

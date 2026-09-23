@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type SyntheticEvent } from "react";
 import {
   LifecycleProfileViewSchema,
+  LifecycleSettingsSchema,
   type LifecycleOverrides,
   type LifecyclePhase,
   type LifecycleProfileView,
@@ -287,7 +288,7 @@ function ProfileEditor({
         )}
       </div>
     );
-  const effective = { ...view.defaults, ...draft };
+  const effective = LifecycleSettingsSchema.parse({ ...view.defaults, ...draft });
   const model =
     effective.model.kind === "runtime_default"
       ? view.models.find((model) => model.isDefault)

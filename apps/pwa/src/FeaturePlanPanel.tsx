@@ -1,3 +1,4 @@
+import { LifecycleProfileSummary } from "./LifecycleProfilePanel.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   FeaturePlanDocumentSchema,
@@ -560,6 +561,11 @@ export function FeaturePlanPanel({
           {displayed === null || plans?.approval != null || !planning ? null : (
             <section className="plan-approval" aria-label="Approve this plan">
               <h3>Approve this exact version</h3>
+              <LifecycleProfileSummary
+                phase="implementation"
+                projectId={projectId}
+                online={online}
+              />
               <p>
                 Authorize the scope, ordered Work Items and execution limits shown above. Approval
                 queues this feature and publishes its GitHub issues. Imported issues are reused.

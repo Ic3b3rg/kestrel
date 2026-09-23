@@ -1,5 +1,9 @@
 import { expect, it } from "vitest";
-import { resolveLifecycleProfile, defaultLifecycleSettings } from "./lifecycle-profile.js";
+import {
+  assertLifecycleProfileAvailable,
+  resolveLifecycleProfile,
+  defaultLifecycleSettings,
+} from "./lifecycle-profile.js";
 
 const catalog = [
   {
@@ -16,6 +20,24 @@ const catalog = [
     defaultServiceTier: "accelerated",
   },
 ];
+it("retains frozen defaults while blocking removed capabilities", () => {
+  const selected = catalog[0];
+  if (selected === undefined) throw new Error("Missing model fixture");
+  const profile = resolveLifecycleProfile(defaultLifecycleSettings, {}, catalog);
+  expect(() =>
+    assertLifecycleProfileAvailable(profile, [
+      { ...selected, defaultReasoningEffort: "deep", defaultServiceTier: null },
+    ]),
+  ).not.toThrow();
+  expect(() =>
+    assertLifecycleProfileAvailable(profile, [
+      { ...selected, supportedReasoningEfforts: [], defaultReasoningEffort: "deep" },
+    ]),
+  ).toThrow("effort");
+  expect(() =>
+    assertLifecycleProfileAvailable(profile, [{ ...selected, serviceTiers: [] }]),
+  ).toThrow("speed");
+});
 it("resolves each inherited field and keeps standard speed distinct from the runtime default", () => {
   const defaults = {
     ...defaultLifecycleSettings,

@@ -1,3 +1,4 @@
+import { LifecycleProfileEvidenceSchema } from "./lifecycle-profile.js";
 import { z } from "zod";
 
 import { FeatureSchema, PlanningContextSchema, PlanningTurnSchema } from "./factory.js";
@@ -204,7 +205,12 @@ export const FeaturePlansSchema = z.strictObject({
   feature: FeatureSchema,
   current: FeaturePlanVersionSchema.nullable(),
   approval: z
-    .strictObject({ version, operatorId: KestrelIdSchema, approvedAt: z.iso.datetime() })
+    .strictObject({
+      version,
+      operatorId: KestrelIdSchema,
+      approvedAt: z.iso.datetime(),
+      lifecycleProfile: LifecycleProfileEvidenceSchema.nullable().optional(),
+    })
     .nullable(),
   versions: z
     .array(

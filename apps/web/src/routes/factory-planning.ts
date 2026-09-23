@@ -205,6 +205,7 @@ export function registerFactoryPlanningRoutes(
           ApproveFeaturePlanCommandSchema.parse(request.body).requestId,
           `${request.protocol}://${request.host}/projects/${projectId}/features/${featureId}?view=board`,
           validateFactoryPublication,
+          await runtime.readConnection(),
         );
       } catch (error) {
         const failure = factoryError(request, error);

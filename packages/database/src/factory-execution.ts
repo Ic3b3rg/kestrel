@@ -1,3 +1,4 @@
+import { FrozenLifecycleProfileSchema, type FrozenLifecycleProfile } from "@kestrel/contracts";
 import type { PoolClient } from "pg";
 import {
   FeaturePlanDocumentSchema,
@@ -45,6 +46,7 @@ import {
 export type { FactoryFeatureWorkspace } from "./factory-execution-ledger.js";
 
 export interface ClaimedFactoryExecution {
+  lifecycleProfile?: FrozenLifecycleProfile | null;
   id: string;
   ownerInstanceId: string;
   projectId: string;
@@ -568,7 +570,14 @@ export async function claimFactoryExecution(
               : `${item?.key ?? "Work Item"} is being implemented`,
         ],
       );
+      const approvalProfile = await client.query<{ lifecycle_profile: unknown }>(
+        "SELECT lifecycle_profile FROM factory_plan_approvals WHERE feature_id = $1 AND plan_version = $2",
+        [row.feature_id, row.plan_version],
+      );
+      const frozenProfile = approvalProfile.rows[0]?.lifecycle_profile;
       return {
+        lifecycleProfile:
+          frozenProfile == null ? null : FrozenLifecycleProfileSchema.parse(frozenProfile),
         id,
         ownerInstanceId,
         projectId: feature.project_id,
