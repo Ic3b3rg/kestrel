@@ -150,8 +150,8 @@ test("authorizes folders, recovers a clone and freezes a Project profile through
       sessionSigningKey: randomBytes(32),
       pwaRoot: resolve("apps/pwa/dist"),
       codexAgentRuntime: createCodexAppServerAgentRuntime({ executable: codex }),
-      sourceOnboardingService: createSourceOnboardingService(env, async () =>
-        ++chooseCount === 1 ? null : join(directory, "sources"),
+      sourceOnboardingService: createSourceOnboardingService(env, () =>
+        Promise.resolve(++chooseCount === 1 ? null : join(directory, "sources")),
       ),
       managedSourceService: managed,
       localRepositoryService: local,
@@ -206,6 +206,7 @@ test("authorizes folders, recovers a clone and freezes a Project profile through
     await expect(dialog).toHaveCount(0);
     const projectUrl = page.url();
     const projectId = new URL(projectUrl).pathname.split("/")[2];
+    if (!projectId) throw new Error("Opened Project URL has no Project identifier");
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(`${origin}/projects/${projectId}/settings`);
     await page.getByLabel("Model", { exact: true }).selectOption("value:gpt-6-astra");

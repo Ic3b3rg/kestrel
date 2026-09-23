@@ -1,7 +1,7 @@
 import { once } from "node:events";
 import { acquireSourceLock } from "./source-lock.js";
 import { execFile, spawn } from "node:child_process";
-import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";

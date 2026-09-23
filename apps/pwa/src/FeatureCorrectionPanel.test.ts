@@ -299,7 +299,7 @@ it("reuses an uncertain publication retry identity until the durable result is c
         online: true,
         onAuthenticationError: vi.fn(() => false),
         onReplacementReview: vi.fn(),
-        loadCurrent: vi.fn(async () => ({ schemaVersion: 1 as const, correction })),
+        loadCurrent: vi.fn(() => Promise.resolve({ schemaVersion: 1 as const, correction })),
         requestCorrection: vi.fn(),
         retryCorrection,
       }),
@@ -307,7 +307,7 @@ it("reuses an uncertain publication retry identity until the durable result is c
   );
   const retry = () =>
     Array.from(container.querySelectorAll("button")).find((button) =>
-      button.textContent?.includes("Retry"),
+      button.textContent.includes("Retry"),
     );
   await renderAct(() => retry()?.click());
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("not queued");

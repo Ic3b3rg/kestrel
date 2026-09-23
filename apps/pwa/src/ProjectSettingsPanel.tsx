@@ -4,6 +4,8 @@ import type { DirectApiProfile, ProjectInbox } from "@kestrel/contracts";
 import { projectLabel } from "./AuthenticatedShell.js";
 import { DirectApiProfilePanel } from "./DirectApiProfilePanel.js";
 import { ProjectGitHubAccessPanel } from "./HostGitHubConnectionPanel.js";
+import { Button } from "./components/ui/button.js";
+import { FormFeedback } from "./components/FormFeedback.js";
 
 type Project = ProjectInbox["projects"][number];
 
@@ -17,6 +19,79 @@ const localSourceStateLabels = {
   attached: "Attached",
   detached: "Detached",
 } as const;
+
+export function ProjectSettingsRoute({
+  projectId,
+  inbox,
+  loading,
+  error,
+  online,
+  onAuthenticationError,
+  onRetry,
+  onBack,
+  onChanged,
+}: {
+  projectId: string;
+  inbox: ProjectInbox | null;
+  loading: boolean;
+  error: string | null;
+  online: boolean;
+  onAuthenticationError: (error: unknown) => boolean;
+  onRetry: () => void;
+  onBack: () => void;
+  onChanged: () => void;
+}) {
+  const project = inbox?.projects.find((candidate) => candidate.id === projectId);
+  if (project !== undefined)
+    return (
+      <ProjectSettingsPanel
+        key={project.id}
+        project={project}
+        online={online}
+        onAuthenticationError={onAuthenticationError}
+        onChanged={onChanged}
+      />
+    );
+  if (!online)
+    return (
+      <section className="workspace-state space-y-4">
+        <h1>Project settings</h1>
+        <FormFeedback kind="error" title="Project settings are offline">
+          Reconnect this workstation to read the selected Project.
+        </FormFeedback>
+      </section>
+    );
+  if (inbox === null && loading)
+    return (
+      <section className="workspace-state space-y-4" aria-busy="true">
+        <h1>Reading Project settings</h1>
+        <FormFeedback kind="pending">Loading the selected Project…</FormFeedback>
+      </section>
+    );
+  if (inbox === null)
+    return (
+      <section className="workspace-state space-y-4">
+        <h1>Project settings unavailable</h1>
+        <FormFeedback focus kind="error" title="The Project could not be read">
+          {error ?? "Retry the authoritative Project inventory."}
+        </FormFeedback>
+        <Button type="button" onClick={onRetry}>
+          Retry Project
+        </Button>
+      </section>
+    );
+  return (
+    <section className="workspace-state space-y-4">
+      <h1>Project not found</h1>
+      <FormFeedback kind="error" title="This Project is no longer available">
+        Choose another Project from the sidebar.
+      </FormFeedback>
+      <Button type="button" onClick={onBack}>
+        Back to Projects
+      </Button>
+    </section>
+  );
+}
 
 export function ProjectSettingsPanel({
   project,
