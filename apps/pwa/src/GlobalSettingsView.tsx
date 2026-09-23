@@ -1,7 +1,18 @@
 import { SourceOnboardingPanel } from "./SourceOnboardingPanel.js";
-import type { MouseEvent, ReactNode } from "react";
+import { LifecycleProfilePanel } from "./LifecycleProfilePanel.js";
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 
-import type { ProjectInbox } from "@kestrel/contracts";
+import type { ProjectInbox, Session } from "@kestrel/contracts";
+import { ApiClientError, updateOperatorCredentials } from "./api.js";
+import {
+  OperatorSecurityPanel,
+  type OperatorCredentialFormValue,
+  type OperatorSecurityError,
+} from "./OperatorSecurityPanel.js";
+import { RepositoryAccessPanel } from "./RepositoryAccessPanel.js";
+import { CodexSubscriptionConnectionPanel } from "./CodexSubscriptionConnectionPanel.js";
+import { HostGitHubConnectionPanel } from "./HostGitHubConnectionPanel.js";
+import { PlanningSkillLibrary } from "./PlanningSkillLibrary.js";
 
 import { appPath, type SettingsSection } from "./app-route.js";
 import { projectLabel } from "./AuthenticatedShell.js";
@@ -15,6 +26,148 @@ const sections: readonly { id: SettingsSection; label: string; description: stri
   { id: "source-control", label: "Source control", description: "GitHub on this workstation." },
   { id: "skills", label: "Skills", description: "Installed procedures for Planning Sessions." },
 ];
+
+export interface GlobalSettingsRouteProps {
+  section: SettingsSection;
+  online: boolean;
+  session: Session;
+  sessionCommandBlocked: boolean;
+  projects: ProjectInbox["projects"] | null;
+  projectsError: string | null;
+  projectsLoading: boolean;
+  onRetryProjects: () => void;
+  onNavigate: (section: SettingsSection) => void;
+  onOpenProjectSettings: (projectId: string) => void;
+  onAuthenticationError: (error: unknown) => boolean;
+  onCredentialsChanged: (message: string) => void;
+  onSessionCommandPending: (pending: boolean) => void;
+}
+
+function OperatorProfileSettings({
+  online,
+  session,
+  sessionCommandBlocked,
+  onAuthenticationError,
+  onCredentialsChanged,
+  onSessionCommandPending,
+}: Pick<
+  GlobalSettingsRouteProps,
+  | "online"
+  | "session"
+  | "sessionCommandBlocked"
+  | "onAuthenticationError"
+  | "onCredentialsChanged"
+  | "onSessionCommandPending"
+>) {
+  const command = useRef<AbortController | null>(null);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<OperatorSecurityError | null>(null);
+  useEffect(() => {
+    const cancel = () => {
+      command.current?.abort();
+      command.current = null;
+      setPending(false);
+      onSessionCommandPending(false);
+    };
+    if (!online) cancel();
+    return cancel;
+  }, [online, session.operator.id, session.credentialVersion, onSessionCommandPending]);
+
+  const changeCredentials = async (value: OperatorCredentialFormValue) => {
+    if (!online || sessionCommandBlocked || command.current !== null) return;
+    const controller = new AbortController();
+    command.current = controller;
+    setPending(true);
+    setError(null);
+    onSessionCommandPending(true);
+    try {
+      await updateOperatorCredentials({ ...value, session }, controller.signal);
+      if (!controller.signal.aborted && command.current === controller)
+        onCredentialsChanged("Credentials changed. Sign in with your updated Operator account.");
+    } catch (failure) {
+      if (!controller.signal.aborted && !onAuthenticationError(failure))
+        setError({
+          action: "credentials",
+          message:
+            failure instanceof ApiClientError
+              ? `${failure.details.message} Reference: ${failure.details.correlationId}`
+              : "Kestrel could not change the Operator credentials.",
+        });
+    } finally {
+      if (command.current === controller) {
+        command.current = null;
+        setPending(false);
+        onSessionCommandPending(false);
+      }
+    }
+  };
+  return (
+    <OperatorSecurityPanel
+      online={online}
+      session={session}
+      pending={pending ? "credentials" : sessionCommandBlocked ? "logout" : null}
+      error={error}
+      onClearError={() => setError(null)}
+      onChangeCredentials={changeCredentials}
+    />
+  );
+}
+
+export function GlobalSettingsRoute(props: GlobalSettingsRouteProps) {
+  const projectLinks = (
+    <SettingsProjectLinks
+      projects={props.projects}
+      error={props.projectsError}
+      loading={props.projectsLoading}
+      online={props.online}
+      onRetry={props.onRetryProjects}
+      onNavigate={props.onOpenProjectSettings}
+    />
+  );
+  return (
+    <GlobalSettingsView section={props.section} onNavigate={props.onNavigate}>
+      {props.section === "profile" ? (
+        <OperatorProfileSettings
+          online={props.online}
+          session={props.session}
+          sessionCommandBlocked={props.sessionCommandBlocked}
+          onAuthenticationError={props.onAuthenticationError}
+          onCredentialsChanged={props.onCredentialsChanged}
+          onSessionCommandPending={props.onSessionCommandPending}
+        />
+      ) : props.section === "projects" ? (
+        <>
+          <RepositoryAccessPanel
+            online={props.online}
+            onAuthenticationError={props.onAuthenticationError}
+          />
+          {projectLinks}
+        </>
+      ) : props.section === "providers" ? (
+        <>
+          <CodexSubscriptionConnectionPanel
+            online={props.online}
+            onAuthenticationError={props.onAuthenticationError}
+          />
+          <LifecycleProfilePanel online={props.online} />
+        </>
+      ) : props.section === "source-control" ? (
+        <>
+          <HostGitHubConnectionPanel
+            online={props.online}
+            onAuthenticationError={props.onAuthenticationError}
+          />
+          {projectLinks}
+        </>
+      ) : (
+        <PlanningSkillLibrary
+          online={props.online}
+          onAuthenticationError={props.onAuthenticationError}
+        />
+      )}
+    </GlobalSettingsView>
+  );
+}
 
 function isPlainClick(event: MouseEvent<HTMLAnchorElement>): boolean {
   return (

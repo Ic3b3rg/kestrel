@@ -48,11 +48,12 @@ describe("exact Conceptual Review inputs through authenticated HTTP and retained
 
       const modelDisabled = await journey.stack.fetchApi(`${root}/preparation`);
       expect(modelDisabled.status).toBe(200);
-      expect(
-        FactoryConceptualReviewPreparationSchema.parse(await modelDisabled.json()),
-      ).toMatchObject({
+      const preparation = FactoryConceptualReviewPreparationSchema.parse(
+        await modelDisabled.json(),
+      );
+      expect(preparation.preparationDigest).toMatch(/^[a-f0-9]{64}$/u);
+      expect(preparation).toMatchObject({
         featureId,
-        preparationDigest: expect.stringMatching(/^[a-f0-9]{64}$/u),
         basis: {
           objective: "Preserve stable ordering while adding its consumer",
           outcomes: [

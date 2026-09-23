@@ -31,6 +31,16 @@ Operator only for consequential unresolved decisions. Preserve the behavior and 
    remaining data/command ownership in route modules. Global settings require no Project selection;
    Project settings restore their scope from the URL.
 
+### Settings route boundary
+
+The global Settings route composes its sections and owns the Profile credential command, error state
+and cancellation on offline or route disposal. The shell retains session invalidation and
+coordinates mutual exclusion with sign-out. Global sections work without a selected Project. The
+Project Settings route selects the exact URL-scoped Project and owns its loading, unavailable and
+missing states. Existing provider, repository, Skills and Direct API panels retain their reads and
+commands. The shared Project inbox stays in the shell for sidebar and other routes; Settings
+consumes that observation and requests refresh after changes without another fetch layer.
+
 Each item is a separate issue and reviewable PR. Complete blockers first; no unrelated roadmap
 behavior is included. A child is ready only with acceptance criteria and a practical test path.
 Update the delivery record with exact evidence and GitHub state.

@@ -91,7 +91,7 @@ import {
   type ReviewWorkflowService,
 } from "./routes/review-workflows.js";
 import { registerAuthentication } from "./authentication.js";
-import { createManagedSourceService, readLocalSourceConfig } from "@kestrel/local-source";
+import { type createManagedSourceService, readLocalSourceConfig } from "@kestrel/local-source";
 
 export interface BuildAppOptions {
   boss: DiagnosticJobSender;

@@ -4,12 +4,20 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 import {
   ExternalConceptualReviewPreparationSchema,
   FactoryConceptualReviewWorkflowReadSchema,
-  FactoryGitHubIssuesSchema,
+  ProjectBoardSnapshotSchema,
   HostGitHubProjectInboxSchema,
   ProjectInboxSchema,
   ReviewRevisionAvailableSchema,
   type ChangeIntentVersionCreated,
-  type CodexReviewModelPreference,
+  defaultLifecycleSettings,
+  LifecyclePhaseSchema,
+  LifecycleProfileViewSchema,
+  LifecycleSettingsSchema,
+  SaveLifecycleProfileCommandSchema,
+  resolveLifecycleProfile,
+  type LifecyclePhase,
+  type LifecycleSettings,
+  type FrozenLifecycleProfile,
   type CodexSubscriptionConnection,
   type HostGitHubConnection,
   type ProjectUpserted,
@@ -1851,30 +1859,27 @@ test.describe("observable Installation PWA", () => {
       expect(route.request().method()).toBe("GET");
       await route.fulfill({ json: { schemaVersion: 1, features: [] }, status: 200 });
     });
-    await page.route(
-      `**/api/v1/projects/${openedProject.project.id}/github-issues?page=1`,
-      async (route) => {
-        expect(route.request().method()).toBe("GET");
-        await route.fulfill({
-          json: FactoryGitHubIssuesSchema.parse({
-            schemaVersion: 1,
-            projectId: openedProject.project.id,
-            repository: {
-              id: "901",
-              name: openedRepository.name,
-              owner: openedRepository.owner,
-            },
-            state: "available",
-            failure: null,
+    await page.route(`**/api/v1/projects/${openedProject.project.id}/board*`, async (route) => {
+      expect(route.request().method()).toBe("GET");
+      await route.fulfill({
+        json: ProjectBoardSnapshotSchema.parse({
+          schemaVersion: 1,
+          projectId: openedProject.project.id,
+          readAt: "2026-09-23T12:00:00.000Z",
+          planningFeatures: [],
+          workItems: [],
+          github: {
             issues: [],
-            page: 1,
-            nextPage: null,
+            checkedAt: "2026-09-23T12:00:00.000Z",
+            fetchedAt: "2026-09-23T12:00:00.000Z",
+            failure: null,
             limited: false,
-          }),
-          status: 200,
-        });
-      },
-    );
+            retained: false,
+          },
+        }),
+        status: 200,
+      });
+    });
     await page.route(
       `**/api/v1/projects/${openedProject.project.id}/model-profiles/direct-api`,
       async (route) => {
@@ -2024,24 +2029,63 @@ test.describe("observable Installation PWA", () => {
       await route.fulfill({ json: connection, status: 200 });
     });
 
-    let reviewModelPreference: CodexReviewModelPreference = {
-      schemaVersion: 1,
-      route: "codex_subscription",
-      selectedModelId: null,
-      updatedAt: null,
-    };
-    await page.route("**/api/v1/settings/review-model", async (route) => {
-      if (route.request().method() === "PUT") {
-        const command = route.request().postDataJSON() as { modelId: string };
-        reviewModelPreference = {
-          schemaVersion: 1,
-          route: "codex_subscription",
-          selectedModelId: command.modelId,
-          updatedAt: "2026-09-07T12:01:00.000Z",
+    const lifecycleDefaults = new Map<
+      LifecyclePhase,
+      { settings: LifecycleSettings; version: number }
+    >();
+    await page.route(
+      /\/api\/v1\/(?:projects\/[^/]+\/)?lifecycle-profiles\/[^/]+$/u,
+      async (route) => {
+        if (codexProbeBlocked) await firstCodexProbeGate;
+        const phase = LifecyclePhaseSchema.parse(
+          new URL(route.request().url()).pathname.split("/").at(-1),
+        );
+        let current = lifecycleDefaults.get(phase) ?? {
+          settings: defaultLifecycleSettings,
+          version: 0,
         };
-      }
-      await route.fulfill({ json: reviewModelPreference, status: 200 });
-    });
+        if (route.request().method() === "PUT") {
+          expect(new URL(route.request().url()).pathname).toBe(
+            `/api/v1/lifecycle-profiles/${phase}`,
+          );
+          const command = SaveLifecycleProfileCommandSchema.parse(route.request().postDataJSON());
+          expect(command.expectedVersion).toBe(current.version);
+          current = {
+            settings: LifecycleSettingsSchema.parse({ ...current.settings, ...command.settings }),
+            version: current.version + 1,
+          };
+          lifecycleDefaults.set(phase, current);
+        }
+        const models = codexAuthenticationRequired ? [] : codexModels;
+        const versions = { installation: current.version, project: 0 };
+        let resolved: FrozenLifecycleProfile | null = null;
+        let blocked: string | null = null;
+        try {
+          if (codexAuthenticationRequired) throw new Error("Codex authentication is required");
+          resolved = {
+            ...resolveLifecycleProfile(current.settings, {}, models),
+            phase,
+            versions,
+            skills: [],
+          };
+        } catch (error) {
+          if (!(error instanceof Error)) throw error;
+          blocked = error.message;
+        }
+        await route.fulfill({
+          json: LifecycleProfileViewSchema.parse({
+            phase,
+            versions,
+            defaults: current.settings,
+            overrides: {},
+            models,
+            resolved,
+            blocked,
+          }),
+          status: 200,
+        });
+      },
+    );
 
     await page.goto(runningStack.pwaUrl);
     await expect(page.getByRole("heading", { name: "Sign in to Kestrel" })).toBeVisible();
@@ -2178,16 +2222,14 @@ test.describe("observable Installation PWA", () => {
     ).toBeVisible();
     await expect(page.getByText("Observed base", { exact: true })).toHaveCount(1);
     await expect(page.getByText("Observed head", { exact: true })).toHaveCount(1);
-    await expect(page.getByRole("status").filter({ hasText: "Project refreshed" })).toContainText(
-      "Project refreshed from the public GitHub pull request.",
-    );
+    await expect(
+      page.getByRole("status").filter({ hasText: "This pull request is open." }),
+    ).toBeVisible();
     expect(projectPostCount).toBe(1);
     await page.getByRole("link", { name: "Settings", exact: true }).click();
     await expect(page).toHaveURL(/\/settings\/profile$/u);
     await expect(page.getByRole("heading", { name: "Operator security" })).toBeVisible();
-    await expect(
-      page.getByText("Project refreshed from the public GitHub pull request."),
-    ).toHaveCount(0);
+    await expect(page.getByText("This pull request is open.")).toHaveCount(0);
     const settingsSections = page.getByRole("navigation", { name: "Settings sections" });
     await expect(settingsSections.getByRole("link", { name: "Profile" })).toHaveAttribute(
       "aria-current",
@@ -2203,7 +2245,7 @@ test.describe("observable Installation PWA", () => {
     await expect(page).toHaveURL(/\/settings\/source-control$/u);
     const sourceControlPanel = page.locator(".github-connection");
     const codexPanel = page.locator(".codex-connection");
-    const reviewModelPanel = page.locator(".review-model-settings");
+    const reviewModelPanel = page.getByRole("region", { name: "Lifecycle settings" });
     await expect(sourceControlPanel.getByRole("status")).toContainText("Checking");
     connectionProbeBlocked = false;
     releaseFirstConnectionProbe();
@@ -2215,7 +2257,7 @@ test.describe("observable Installation PWA", () => {
     await settingsSections.getByRole("link", { name: "Providers" }).click();
     await expect(page).toHaveURL(/\/settings\/providers$/u);
     await expect(codexPanel.getByRole("status")).toContainText("Checking");
-    await expect(reviewModelPanel.locator(".state-marker")).toContainText("Checking");
+    await expect(reviewModelPanel.getByRole("status")).toContainText("Loading Lifecycle settings");
     codexProbeBlocked = false;
     releaseFirstCodexProbe();
     await expect(codexPanel.getByRole("status")).toContainText("Ready");
@@ -2223,31 +2265,51 @@ test.describe("observable Installation PWA", () => {
     await expect(codexPanel).toContainText("Plus");
     await expect(codexPanel).toContainText("GPT-5.6 Sol");
     await expect(codexPanel).toContainText("25% used");
-    await expect(reviewModelPanel.locator(".state-marker")).toContainText("Choose a model");
-    await reviewModelPanel.getByLabel("Default for future reviews").selectOption("gpt-5.6-sol");
-    await reviewModelPanel.getByRole("button", { name: "Save default" }).click();
-    await expect(reviewModelPanel.locator(".state-marker")).toContainText("Ready");
-    await expect(reviewModelPanel).toContainText("Default saved for future review preparation");
+    await reviewModelPanel.getByRole("button", { name: "Conceptual Review", exact: true }).click();
+    await expect(reviewModelPanel.getByLabel("Model", { exact: true })).toHaveValue(
+      "runtime_default",
+    );
+    await reviewModelPanel.getByLabel("Model", { exact: true }).selectOption("value:gpt-5.6-sol");
+    await reviewModelPanel.getByRole("button", { name: "Save profile" }).click();
+    await expect(reviewModelPanel.getByRole("status")).toContainText(
+      "Profile saved for future work.",
+    );
 
     codexModels = [{ id: "gpt-5.6-terra", displayName: "GPT-5.6 Terra", isDefault: true }];
-    await reviewModelPanel.getByRole("button", { name: "Refresh catalog" }).click();
-    await expect(reviewModelPanel.locator(".state-marker")).toContainText("Action required");
-    await expect(reviewModelPanel).toContainText("gpt-5.6-sol");
-    await expect(reviewModelPanel).toContainText("did not select a fallback");
-    await expect(reviewModelPanel.getByLabel("Default for future reviews")).toHaveValue("");
+    await reviewModelPanel.getByRole("button", { name: "Reload profile" }).click();
+    await expect(reviewModelPanel.getByRole("alert")).toContainText(
+      "The selected model is unavailable",
+    );
+    await expect(reviewModelPanel.getByLabel("Model", { exact: true })).toHaveValue(
+      "value:gpt-5.6-sol",
+    );
+    await expect(
+      reviewModelPanel.getByRole("option", { name: "gpt-5.6-sol · unavailable" }),
+    ).toHaveCount(1);
 
     codexModels = [];
-    await reviewModelPanel.getByRole("button", { name: "Refresh catalog" }).click();
-    await expect(reviewModelPanel.locator(".state-marker")).toContainText("Action required");
-    await expect(reviewModelPanel).toContainText("No picker-visible models");
-    await expect(reviewModelPanel.getByLabel("Default for future reviews")).toBeDisabled();
+    await reviewModelPanel.getByRole("button", { name: "Reload profile" }).click();
+    await expect(
+      reviewModelPanel.getByRole("option", { name: "GPT-5.6 Terra · suggested" }),
+    ).toHaveCount(0);
+    await expect(reviewModelPanel.getByRole("alert")).toContainText(
+      "The selected model is unavailable",
+    );
+    await expect(reviewModelPanel.getByLabel("Model", { exact: true })).toHaveValue(
+      "value:gpt-5.6-sol",
+    );
 
     codexModels = [{ id: "gpt-5.6-terra", displayName: "GPT-5.6 Terra", isDefault: true }];
-    await reviewModelPanel.getByRole("button", { name: "Refresh catalog" }).click();
-    await expect(reviewModelPanel.getByLabel("Default for future reviews")).toBeEnabled();
-    await reviewModelPanel.getByLabel("Default for future reviews").selectOption("gpt-5.6-terra");
-    await reviewModelPanel.getByRole("button", { name: "Save default" }).click();
-    await expect(reviewModelPanel.locator(".state-marker")).toContainText("Ready");
+    await reviewModelPanel.getByRole("button", { name: "Reload profile" }).click();
+    await expect(
+      reviewModelPanel.getByRole("option", { name: "GPT-5.6 Terra · suggested" }),
+    ).toHaveCount(1);
+    await reviewModelPanel.getByLabel("Model", { exact: true }).selectOption("value:gpt-5.6-terra");
+    await reviewModelPanel.getByRole("button", { name: "Save profile" }).click();
+    await expect(reviewModelPanel.getByRole("alert")).toHaveCount(0);
+    await expect(reviewModelPanel.getByRole("status")).toContainText(
+      "Profile saved for future work.",
+    );
 
     await page.setViewportSize({ height: 800, width: 320 });
     expect(
@@ -2279,7 +2341,10 @@ test.describe("observable Installation PWA", () => {
     await page.setViewportSize({ height: 800, width: 1_024 });
     await page.goto(new URL("/settings#review-model-title", runningStack.pwaUrl).toString());
     await expect(page).toHaveURL(/\/settings\/providers#review-model-title$/u);
-    await expect(page.getByLabel("Default for future reviews")).toHaveValue("gpt-5.6-terra");
+    await reviewModelPanel.getByRole("button", { name: "Conceptual Review", exact: true }).click();
+    await expect(reviewModelPanel.getByLabel("Model", { exact: true })).toHaveValue(
+      "value:gpt-5.6-terra",
+    );
 
     await openProjectBoard(page, "Ic3b3rg/kestrel");
     const firstProjectSettings = page.getByRole("link", {
@@ -2311,7 +2376,7 @@ test.describe("observable Installation PWA", () => {
     await expect(projectAccessPanel.getByText("Account", { exact: true })).toHaveCount(0);
     connectionActionRequired = true;
     await projectAccessPanel.getByRole("button", { name: "Verify again" }).click();
-    await expect(projectAccessPanel.getByRole("status")).toContainText("Action required");
+    await expect(projectAccessPanel.getByRole("alert")).toContainText("Action required");
     await expect(projectAccessPanel).toContainText("gh auth login --hostname github.com");
     connectionActionRequired = false;
     await projectAccessPanel.getByRole("button", { name: "Verify again" }).click();
@@ -2363,11 +2428,14 @@ test.describe("observable Installation PWA", () => {
     await settingsSections.getByRole("link", { name: "Providers" }).click();
     codexAuthenticationRequired = true;
     await codexPanel.getByRole("button", { name: "Verify again" }).click();
-    await expect(codexPanel.getByRole("status")).toContainText("Action required");
+    await expect(codexPanel.getByRole("alert")).toContainText("Action required");
     await expect(codexPanel).toContainText("codex login");
     await expect(codexPanel).not.toContainText("operator@example.com");
-    await expect(reviewModelPanel.locator(".state-marker")).toContainText("Action required");
-    await expect(reviewModelPanel).toContainText("Codex authentication is required");
+    await reviewModelPanel.getByRole("button", { name: "Conceptual Review", exact: true }).click();
+    await reviewModelPanel.getByRole("button", { name: "Reload profile" }).click();
+    await expect(reviewModelPanel.getByRole("alert")).toContainText(
+      "Codex authentication is required",
+    );
     codexAuthenticationRequired = false;
     await codexPanel.getByRole("button", { name: "Verify again" }).click();
     await expect(codexPanel.getByRole("status")).toContainText("Ready");
@@ -2376,19 +2444,26 @@ test.describe("observable Installation PWA", () => {
     await expect(page.locator('[data-sidebar="footer"]')).not.toContainText("Signed in as");
     await expect(page.locator('[data-sidebar="footer"]')).not.toContainText("Connected");
     await expect(page.getByRole("heading", { name: "Operator security" })).toHaveCount(0);
-    const reviewModelSelector = page.getByLabel("Default for future reviews");
+    await reviewModelPanel.getByRole("button", { name: "Reload profile" }).click();
+    await expect(reviewModelPanel.getByRole("alert")).toHaveCount(0);
+    const reviewModelSelector = reviewModelPanel.getByLabel("Model", { exact: true });
     await reviewModelSelector.focus();
     await expect(reviewModelSelector).toBeFocused();
     await page.keyboard.press("Home");
     await page.keyboard.press("End");
-    await expect(reviewModelSelector).toHaveValue("gpt-5.6-terra");
+    await expect(reviewModelSelector).toHaveValue("value:gpt-5.6-terra");
     await page.reload();
     await expect(
       page.getByRole("heading", { level: 1, name: "Settings", exact: true }),
     ).toBeVisible();
     await expect(page).toHaveURL(/\/settings\/providers$/u);
     await expect(page.getByRole("heading", { name: "Sign in to Kestrel" })).toHaveCount(0);
-    await expect(page.getByLabel("Default for future reviews")).toHaveValue("gpt-5.6-terra");
+    await page.keyboard.press("Tab");
+    await expect(page.getByRole("link", { name: "Skip to workspace" })).toBeFocused();
+    await reviewModelPanel.getByRole("button", { name: "Conceptual Review", exact: true }).click();
+    await expect(reviewModelPanel.getByLabel("Model", { exact: true })).toHaveValue(
+      "value:gpt-5.6-terra",
+    );
     for (const internalLabel of [
       "Durable identity",
       "Installation ID",
@@ -2398,8 +2473,6 @@ test.describe("observable Installation PWA", () => {
     ]) {
       await expect(page.getByText(internalLabel, { exact: true })).toHaveCount(0);
     }
-    await page.keyboard.press("Tab");
-    await expect(page.getByRole("link", { name: "Skip to workspace" })).toBeFocused();
     const projectsLink = settingsSections.getByRole("link", { name: "Projects" });
     const settingsPopupPromise = page.context().waitForEvent("page", { timeout: 5_000 });
     await projectsLink.click({ modifiers: [process.platform === "darwin" ? "Meta" : "Control"] });
@@ -2434,12 +2507,12 @@ test.describe("observable Installation PWA", () => {
       page.getByRole("button", { name: "Change credentials and sign out" }),
     ).toBeDisabled();
     await settingsSections.getByRole("link", { name: "Source control" }).click();
-    await expect(sourceControlPanel.getByRole("status")).toContainText("Unavailable");
+    await expect(sourceControlPanel.getByRole("alert")).toContainText("Unavailable");
     await settingsSections.getByRole("link", { name: "Providers" }).click();
-    await expect(codexPanel.getByRole("status")).toContainText("Unavailable");
+    await expect(codexPanel.getByRole("alert")).toContainText("Unavailable");
     await settingsSections.getByRole("link", { name: "Profile" }).click();
-    await expect(page.getByRole("link", { name: /openai\/openai-node/u })).toHaveCount(0);
-    await expect(page.getByRole("link", { name: /Ic3b3rg\/kestrel/u })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: /openai\/openai-node/u })).toBeVisible();
+    await expect(page.getByRole("link", { name: /Ic3b3rg\/kestrel/u })).toBeVisible();
 
     await context.setOffline(false);
     await expect(page.getByLabel("Current password")).toBeEnabled();

@@ -1,6 +1,5 @@
-import { LifecycleProfilePanel } from "./LifecycleProfilePanel.js";
-import { Button } from "./components/ui/button.js";
 import { FormFeedback } from "./components/FormFeedback.js";
+import { Button } from "./components/ui/button.js";
 import { WorkspaceSuspendedContext } from "./components/ui/workspace-suspension.js";
 import { FeatureNavigation } from "./FeatureNavigation.js";
 import { FeatureChatPanel } from "./FeatureChatPanel.js";
@@ -12,7 +11,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   Feature,
   ChangeIntentVersionCreated,
-  DirectApiProfile,
   LoginCommand,
   ProjectInbox,
   ProjectUpserted,
@@ -29,24 +27,14 @@ import {
   logoutOperator,
   openPublicGitHubPullRequest,
   observeHostGitHubPullRequest,
-  updateOperatorCredentials,
 } from "./api.js";
-import { ProjectSettingsPanel } from "./ProjectSettingsPanel.js";
+import { ProjectSettingsRoute } from "./ProjectSettingsPanel.js";
 import { AuthenticatedShell, projectLabel } from "./AuthenticatedShell.js";
 import { appPath, readAppRoute, type AppRoute } from "./app-route.js";
-import { GlobalSettingsView, SettingsProjectLinks } from "./GlobalSettingsView.js";
-import { CodexSubscriptionConnectionPanel } from "./CodexSubscriptionConnectionPanel.js";
-import { HostGitHubConnectionPanel } from "./HostGitHubConnectionPanel.js";
+import { GlobalSettingsRoute } from "./GlobalSettingsView.js";
 import { LoginView } from "./LoginView.js";
 import { OpenProjectForm } from "./OpenProjectForm.js";
-import {
-  OperatorSecurityPanel,
-  type OperatorCredentialFormValue,
-  type OperatorSecurityError,
-} from "./OperatorSecurityPanel.js";
 import { ProjectInboxPanel } from "./ProjectInboxPanel.js";
-import { PlanningSkillLibrary } from "./PlanningSkillLibrary.js";
-import { RepositoryAccessPanel } from "./RepositoryAccessPanel.js";
 
 const PROJECT_ERROR_MESSAGE = "Kestrel could not read the authoritative Project inbox. Try again.";
 const SESSION_ERROR_MESSAGE = "Kestrel could not verify the Operator session. Try again.";
@@ -88,26 +76,6 @@ function withCreatedIntent(
                   },
             ),
           },
-    ),
-  };
-}
-
-function withDirectApiProfile(
-  current: ProjectInbox | null,
-  projectId: string,
-  profile: DirectApiProfile,
-): ProjectInbox | null {
-  if (current === null) return null;
-  const modelAccess =
-    profile.availability === "available"
-      ? "direct_api_available"
-      : profile.availability === "stale"
-        ? "direct_api_stale"
-        : "direct_api_unavailable";
-  return {
-    schemaVersion: 1,
-    projects: current.projects.map((project) =>
-      project.id === projectId ? { ...project, modelAccess } : project,
     ),
   };
 }
@@ -168,9 +136,9 @@ export function App() {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loginSuccess, setLoginSuccess] = useState<string | null>(null);
   const [loginPending, setLoginPending] = useState(false);
-
-  const [securityPending, setSecurityPending] = useState<"credentials" | "logout" | null>(null);
-  const [securityError, setSecurityError] = useState<OperatorSecurityError | null>(null);
+  const [logoutPending, setLogoutPending] = useState(false);
+  const [sessionCommandPending, setSessionCommandPending] = useState(false);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
   const [projectInbox, setProjectInbox] = useState<ProjectInbox | null>(null);
   const [projectLoading, setProjectLoading] = useState(false);
   const [projectError, setProjectError] = useState<string | null>(null);
@@ -180,9 +148,16 @@ export function App() {
   const loginController = useRef<AbortController | null>(null);
   const projectCommandController = useRef<AbortController | null>(null);
   const projectInboxController = useRef<AbortController | null>(null);
-  const securityController = useRef<AbortController | null>(null);
+  const logoutController = useRef<AbortController | null>(null);
   const historyPosition = useRef(readHistoryPosition(window.history.state) ?? 0);
   const restoringHistory = useRef(false);
+  const handleSessionCommandPending = useCallback((pending: boolean) => {
+    setSessionCommandPending(pending);
+    if (pending) {
+      projectCommandController.current?.abort();
+      setProjectPending(false);
+    }
+  }, []);
 
   useEffect(() => {
     window.history.replaceState({ kestrelPosition: historyPosition.current }, "");
@@ -205,15 +180,7 @@ export function App() {
     saveFeatureNavigation(projectFeatureIds);
   }, [projectFeatureIds]);
   useEffect(() => {
-    setSecurityError((current) => {
-      if (current?.action === "logout") return null;
-      if (
-        (route.kind !== "settings" || route.section !== "profile") &&
-        current?.action === "credentials"
-      )
-        return null;
-      return current;
-    });
+    setLogoutError(null);
   }, [route]);
   useEffect(() => {
     if (session === null)
@@ -375,14 +342,14 @@ export function App() {
   const requireAuthentication = useCallback(
     (message: string | null) => {
       projectCommandController.current?.abort();
-      securityController.current?.abort();
+      logoutController.current?.abort();
       setSession(null);
       setSessionChecking(false);
       setSessionCheckError(null);
       resetProjectState();
       setLoginError(message);
       setLoginSuccess(null);
-      setSecurityError(null);
+      setLogoutError(null);
     },
     [resetProjectState],
   );
@@ -406,7 +373,7 @@ export function App() {
     const handleOffline = () => {
       loginController.current?.abort();
       projectCommandController.current?.abort();
-      securityController.current?.abort();
+      logoutController.current?.abort();
       setNetworkOnline(false);
       setSessionChecking(true);
       projectInboxController.current?.abort();
@@ -422,7 +389,7 @@ export function App() {
       window.removeEventListener("offline", handleOffline);
       loginController.current?.abort();
       projectCommandController.current?.abort();
-      securityController.current?.abort();
+      logoutController.current?.abort();
     };
   }, []);
 
@@ -630,13 +597,13 @@ export function App() {
   };
 
   const handleLogout = async (): Promise<void> => {
-    if (securityController.current !== null) return;
+    if (logoutController.current !== null || sessionCommandPending) return;
     const controller = new AbortController();
     projectCommandController.current?.abort();
-    securityController.current = controller;
+    logoutController.current = controller;
     setProjectPending(false);
-    setSecurityPending("logout");
-    setSecurityError(null);
+    setLogoutPending(true);
+    setLogoutError(null);
     setLoginSuccess(null);
     try {
       const outcome = await logoutOperator(controller.signal);
@@ -650,47 +617,12 @@ export function App() {
       resetProjectState();
     } catch (error) {
       if (!controller.signal.aborted && !handleAuthenticationBoundaryError(error)) {
-        setSecurityError({
-          action: "logout",
-          message: errorMessage(error, "Kestrel could not sign out this browser."),
-        });
+        setLogoutError(errorMessage(error, "Kestrel could not sign out this browser."));
       }
     } finally {
-      if (securityController.current === controller) {
-        securityController.current = null;
-        setSecurityPending(null);
-      }
-    }
-  };
-
-  const handleCredentialChange = async (value: OperatorCredentialFormValue): Promise<void> => {
-    if (session === null || session === undefined) {
-      return;
-    }
-    const controller = new AbortController();
-    projectCommandController.current?.abort();
-    securityController.current?.abort();
-    securityController.current = controller;
-    setProjectPending(false);
-    setSecurityPending("credentials");
-    setSecurityError(null);
-    try {
-      await updateOperatorCredentials({ ...value, session }, controller.signal);
-      setLoginError(null);
-      setLoginSuccess("Credentials changed. Sign in with your updated Operator account.");
-      setSession(null);
-      resetProjectState();
-    } catch (error) {
-      if (!controller.signal.aborted && !handleAuthenticationBoundaryError(error)) {
-        setSecurityError({
-          action: "credentials",
-          message: errorMessage(error, "Kestrel could not change the Operator credentials."),
-        });
-      }
-    } finally {
-      if (securityController.current === controller) {
-        securityController.current = null;
-        setSecurityPending(null);
+      if (logoutController.current === controller) {
+        logoutController.current = null;
+        setLogoutPending(false);
       }
     }
   };
@@ -767,124 +699,40 @@ export function App() {
         );
       case "settings":
         return (
-          <GlobalSettingsView
+          <GlobalSettingsRoute
             section={route.section}
+            online={online}
+            session={session}
+            sessionCommandBlocked={logoutPending}
+            projects={projectInbox?.projects ?? null}
+            projectsError={projectError}
+            projectsLoading={projectLoading}
+            onRetryProjects={() => setProjectReloadGeneration((generation) => generation + 1)}
             onNavigate={(section) => navigate({ kind: "settings", section })}
-          >
-            {route.section === "profile" ? (
-              <OperatorSecurityPanel
-                error={securityError}
-                online={online}
-                pending={securityPending}
-                session={session}
-                onChangeCredentials={handleCredentialChange}
-                onClearError={() => setSecurityError(null)}
-              />
-            ) : route.section === "projects" ? (
-              <>
-                <RepositoryAccessPanel
-                  online={online}
-                  onAuthenticationError={handleAuthenticationBoundaryError}
-                />
-                <SettingsProjectLinks
-                  error={projectError}
-                  loading={projectLoading}
-                  online={online}
-                  projects={projectInbox?.projects ?? null}
-                  onNavigate={(projectId) => navigate({ kind: "project_settings", projectId })}
-                  onRetry={() => setProjectReloadGeneration((generation) => generation + 1)}
-                />
-              </>
-            ) : route.section === "providers" ? (
-              <>
-                <CodexSubscriptionConnectionPanel
-                  online={online}
-                  onAuthenticationError={handleAuthenticationBoundaryError}
-                />
-                <LifecycleProfilePanel online={online} />
-              </>
-            ) : route.section === "source-control" ? (
-              <>
-                <HostGitHubConnectionPanel
-                  online={online}
-                  onAuthenticationError={handleAuthenticationBoundaryError}
-                />
-                <SettingsProjectLinks
-                  error={projectError}
-                  loading={projectLoading}
-                  online={online}
-                  projects={projectInbox?.projects ?? null}
-                  onNavigate={(projectId) => navigate({ kind: "project_settings", projectId })}
-                  onRetry={() => setProjectReloadGeneration((generation) => generation + 1)}
-                />
-              </>
-            ) : (
-              <PlanningSkillLibrary
-                online={online}
-                onAuthenticationError={handleAuthenticationBoundaryError}
-              />
-            )}
-          </GlobalSettingsView>
+            onOpenProjectSettings={(projectId) => navigate({ kind: "project_settings", projectId })}
+            onAuthenticationError={handleAuthenticationBoundaryError}
+            onSessionCommandPending={handleSessionCommandPending}
+            onCredentialsChanged={(message) => {
+              setLoginError(null);
+              setLoginSuccess(message);
+              setSession(null);
+              resetProjectState();
+            }}
+          />
         );
       case "project_settings":
-        if (selectedProject !== null) {
-          return (
-            <ProjectSettingsPanel
-              key={selectedProject.id}
-              project={selectedProject}
-              online={online}
-              onAuthenticationError={handleAuthenticationBoundaryError}
-              onChanged={(projectId, profile) => {
-                setProjectInbox((current) => withDirectApiProfile(current, projectId, profile));
-                setProjectReloadGeneration((generation) => generation + 1);
-              }}
-            />
-          );
-        }
-        if (!online) {
-          return (
-            <section className="workspace-state space-y-4">
-              <h1>Project settings</h1>
-              <FormFeedback kind="error" title="Project settings are offline">
-                Reconnect this workstation to read the selected Project.
-              </FormFeedback>
-            </section>
-          );
-        }
-        if (projectInbox === null && projectLoading) {
-          return (
-            <section className="workspace-state space-y-4" aria-busy="true">
-              <h1>Reading Project settings</h1>
-              <FormFeedback kind="pending">Loading the selected Project…</FormFeedback>
-            </section>
-          );
-        }
-        if (projectInbox === null) {
-          return (
-            <section className="workspace-state space-y-4">
-              <h1>Project settings unavailable</h1>
-              <FormFeedback focus kind="error" title="The Project could not be read">
-                {projectError ?? "Retry the authoritative Project inventory."}
-              </FormFeedback>
-              <Button
-                type="button"
-                onClick={() => setProjectReloadGeneration((value) => value + 1)}
-              >
-                Retry Project
-              </Button>
-            </section>
-          );
-        }
         return (
-          <section className="workspace-state space-y-4">
-            <h1>Project not found</h1>
-            <FormFeedback kind="error" title="This Project is no longer available">
-              Choose another Project from the sidebar.
-            </FormFeedback>
-            <Button type="button" onClick={() => navigate({ kind: "projects" })}>
-              Back to Projects
-            </Button>
-          </section>
+          <ProjectSettingsRoute
+            projectId={route.projectId}
+            inbox={projectInbox}
+            online={online}
+            loading={projectLoading}
+            error={projectError}
+            onAuthenticationError={handleAuthenticationBoundaryError}
+            onRetry={() => setProjectReloadGeneration((generation) => generation + 1)}
+            onBack={() => navigate({ kind: "projects" })}
+            onChanged={() => setProjectReloadGeneration((generation) => generation + 1)}
+          />
         );
       case "project":
         if (selectedProject !== null) {
@@ -1010,9 +858,9 @@ export function App() {
             error={projectError}
             inbox={projectInbox}
             loading={projectLoading}
-            logoutDisabled={securityPending !== null}
-            logoutError={securityError?.action === "logout" ? securityError.message : null}
-            logoutPending={securityPending === "logout"}
+            logoutDisabled={logoutPending || sessionCommandPending}
+            logoutError={logoutError}
+            logoutPending={logoutPending}
             online={online}
             openProjectControl={<div ref={setOpenProjectTrigger} />}
             route={route}
@@ -1029,7 +877,7 @@ export function App() {
                 />
               )
             }
-            onClearLogoutError={() => setSecurityError(null)}
+            onClearLogoutError={() => setLogoutError(null)}
             onLogout={handleLogout}
             onNavigate={navigate}
             onRetry={() => setProjectReloadGeneration((generation) => generation + 1)}
