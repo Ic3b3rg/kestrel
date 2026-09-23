@@ -1,3 +1,7 @@
+import {
+  createCodexAppServerAgentRuntime,
+  type CodexAgentRuntimePort,
+} from "../codex-app-server.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
@@ -60,6 +64,7 @@ export function createDatabaseFactoryReviewCorrectionService(
     FactoryFeatureGitHubAdapter,
     "observePullRequest"
   > = createFactoryFeatureGitHubAdapter(),
+  connection: Pick<CodexAgentRuntimePort, "readConnection"> = createCodexAppServerAgentRuntime(),
 ): FactoryReviewCorrectionService {
   return {
     current: ({ projectId, featureId }) =>
@@ -99,7 +104,15 @@ export function createDatabaseFactoryReviewCorrectionService(
         observation.headCommitId !== command.review.headCommitId
       )
         throw new FactoryReviewCorrectionError("review_outdated");
-      return requestFactoryReviewCorrection(pool, boss, projectId, featureId, actorId, command);
+      return requestFactoryReviewCorrection(
+        pool,
+        boss,
+        projectId,
+        featureId,
+        actorId,
+        command,
+        await connection.readConnection(),
+      );
     },
     retry: ({ projectId, featureId }, correctionId, actorId, requestId) =>
       retryFactoryReviewCorrection(pool, projectId, featureId, correctionId, actorId, requestId),

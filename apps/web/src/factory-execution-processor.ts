@@ -261,6 +261,11 @@ async function execute(
         );
       }
       const profile = run.lifecycleProfile;
+      if (run.purpose === "correction" && profile?.phase !== "corrections")
+        throw new ExecutionFailure(
+          "unavailable",
+          "This correction lacks an authorized Corrections profile. Authorize a new correction from the current review with an available profile; settings changes cannot amend this request.",
+        );
       if (profile == null)
         throw new ExecutionFailure(
           "unavailable",

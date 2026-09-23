@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { LifecycleProfileEvidenceSchema } from "./lifecycle-profile.js";
 
 import { GitObjectIdSchema, KestrelIdSchema } from "./v1.js";
 
@@ -63,6 +64,7 @@ export const FactoryReviewCorrectionSchema = z
       headCommitId: GitObjectIdSchema,
     }),
     instruction: FactoryReviewCorrectionCommandSchema.shape.instruction,
+    lifecycleProfile: LifecycleProfileEvidenceSchema.nullable().optional(),
     findings: z
       .array(
         z.strictObject({

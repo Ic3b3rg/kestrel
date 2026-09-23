@@ -1,3 +1,5 @@
+import { LifecycleProfileSummary } from "./LifecycleProfilePanel.js";
+import { LifecycleProfileRecord } from "./LifecycleProfileRecord.js";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type {
   FactoryConceptualReviewWorkflowRead,
@@ -178,6 +180,15 @@ export function FeatureCorrectionPanel({
         </div>
       </div>
 
+      {canRequest ? (
+        <LifecycleProfileSummary phase="corrections" projectId={projectId} online={online} />
+      ) : null}
+      {correction == null ? null : (
+        <LifecycleProfileRecord
+          profile={correction.lifecycleProfile}
+          label="Authorized Corrections profile"
+        />
+      )}
       {canRequest ? (
         <div className="grid gap-3">
           {findings.length === 0 ? (

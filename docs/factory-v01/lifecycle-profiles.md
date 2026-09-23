@@ -19,5 +19,22 @@ separately. Changing Settings affects future accepted messages only. Historical 
 profile remain readable; new execution cannot invent a profile for an old message. Send a new
 message to authorize work under the current profile.
 
-Existing Installation model preferences seed Planning without inventing effort or speed preferences.
-Profiles do not change command authority, source containment, networking, verification, or merge.
+The approval boundaries are:
+
+| Phase                   | Frozen with                                     | Reused by                                              |
+| ----------------------- | ----------------------------------------------- | ------------------------------------------------------ |
+| Planning                | Accepted message or plan-generation request     | Retries of that request                                |
+| Implementation & repair | Exact plan-version approval                     | Work Items and technical repair rounds                 |
+| Conceptual Review       | Explicit review start and exact revision digest | Attempts of that review, including source-only reviews |
+| Corrections             | Authorized instruction and selected findings    | Correction attempts and bounded repair rounds          |
+
+Review settings are part of the immutable Analysis Configuration. Changing them between preview and
+start invalidates the preview and requires a fresh review of the inputs. Corrections use their own
+profile, not the implementation or review profile. Deterministic checks, publication, and merge do
+not consume an agent profile. The interface retains requested profiles and runtime-reported controls
+separately, including when a run fails. Missing legacy profiles block new model work before source
+mutation; they are never silently filled from current settings.
+
+Existing Installation model preferences seed the phase defaults without inventing effort or speed
+preferences. Profiles do not change command authority, source containment, networking, verification,
+or merge.

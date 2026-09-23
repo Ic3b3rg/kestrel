@@ -324,8 +324,19 @@ it("blocks a legacy approval before opening a workspace or starting a model", as
   expect(storedWorkspace).toBeNull();
   expect(vi.mocked(finishFactoryExecution).mock.calls.at(-1)?.[2]).toMatchObject({
     failure: "unavailable",
-    question: expect.stringContaining("Approve a new plan revision"),
   });
+  expect(vi.mocked(finishFactoryExecution).mock.calls.at(-1)?.[2].question).toContain(
+    "Approve a new plan revision",
+  );
+});
+it("blocks correction work carrying an Implementation profile before mutation", async () => {
+  run.purpose = "correction";
+  await processor().process({ runId: run.id });
+  expect(runTurn).not.toHaveBeenCalled();
+  expect(storedWorkspace).toBeNull();
+  expect(vi.mocked(finishFactoryExecution).mock.calls.at(-1)?.[2].question).toContain(
+    "Corrections profile",
+  );
 });
 
 it("rejects the cumulative Feature when W2 passes its own check but breaks W1", async () => {
@@ -461,6 +472,7 @@ it("applies only the selected correction authority before rechecking the full ma
   Object.assign(run, {
     id: "01991c36-7f90-7000-8000-000000000004",
     purpose: "correction",
+    lifecycleProfile: { ...run.lifecycleProfile, phase: "corrections" },
     workItemId: null,
     key: "Selected review correction",
     correction: {

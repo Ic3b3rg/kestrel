@@ -234,7 +234,12 @@ export async function buildApp({
     () => readLocalSourceConfig(),
     { boss, runtimeProfile: factoryConceptualReviewRuntimeProfile, connection: codexAgentRuntime },
   ),
-  factoryReviewCorrectionService = createDatabaseFactoryReviewCorrectionService(pool, boss),
+  factoryReviewCorrectionService = createDatabaseFactoryReviewCorrectionService(
+    pool,
+    boss,
+    undefined,
+    codexAgentRuntime,
+  ),
   factoryFeatureMergeService = createDatabaseFactoryFeatureMergeService(pool, boss),
   sessionSigningKey,
 }: BuildAppOptions): Promise<FastifyInstance> {
