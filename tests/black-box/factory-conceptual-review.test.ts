@@ -52,7 +52,7 @@ describe("exact Conceptual Review inputs through authenticated HTTP and retained
         FactoryConceptualReviewPreparationSchema.parse(await modelDisabled.json()),
       ).toMatchObject({
         featureId,
-        preparationDigest: null,
+        preparationDigest: expect.stringMatching(/^[a-f0-9]{64}$/u),
         basis: {
           objective: "Preserve stable ordering while adding its consumer",
           outcomes: [
@@ -68,7 +68,7 @@ describe("exact Conceptual Review inputs through authenticated HTTP and retained
         readiness: {
           state: "blocked",
           startAllowed: false,
-          blockers: ["model_not_selected", "review_runtime_unavailable"],
+          blockers: ["review_runtime_unavailable"],
         },
       });
 

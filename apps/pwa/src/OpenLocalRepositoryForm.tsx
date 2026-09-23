@@ -1,3 +1,4 @@
+import { FormFeedback } from "./components/FormFeedback.js";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./components/ui/dialog.js";
 import { Button } from "./components/ui/button.js";
 import { Textarea } from "./components/ui/textarea.js";
@@ -267,7 +268,8 @@ export function OpenLocalRepositoryForm({
 
   const submit = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (disabled || references === null) {
+    if (disabled || active.current !== null) return;
+    if (references === null) {
       setError("Select an authorized repository and wait for its committed references.");
       return;
     }
@@ -289,7 +291,6 @@ export function OpenLocalRepositoryForm({
       return;
     }
     const controller = new AbortController();
-    active.current?.abort();
     active.current = controller;
     setPending(true);
     setError(null);
@@ -503,9 +504,9 @@ export function OpenLocalRepositoryForm({
                   {intentBytes.toLocaleString("en-US")} / 20,000 UTF-8 bytes
                 </p>
                 {intentTooLarge ? (
-                  <p id={intentErrorId} className="project-form-error" role="alert">
+                  <FormFeedback id={intentErrorId} className="project-form-error" kind="error">
                     Change Intent must be 20,000 UTF-8 bytes or fewer.
-                  </p>
+                  </FormFeedback>
                 ) : null}
               </div>
               {matchingProposals.length > 0 ? (
@@ -547,10 +548,13 @@ export function OpenLocalRepositoryForm({
                 </dl>
               ) : null}
               {loading === "references" ? <p role="status">Reading committed references…</p> : null}
+              {pending ? (
+                <FormFeedback kind="pending">Retaining the exact revision…</FormFeedback>
+              ) : null}
               {error ? (
-                <p className="project-form-error" role="alert">
+                <FormFeedback className="project-form-error" kind="error" focus>
                   {error}
-                </p>
+                </FormFeedback>
               ) : null}
               <Button
                 type="submit"

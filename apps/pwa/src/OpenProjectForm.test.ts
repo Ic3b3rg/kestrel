@@ -124,6 +124,29 @@ describe("Open Project form", () => {
     expect(document.body.textContent).toContain("No repository roots are configured");
     expect(document.body.textContent).toContain("authorize-repository-root");
   });
+  it("keeps the selected repository and focuses a local failure without submitting twice", async () => {
+    const pending = Promise.withResolvers<ProjectUpserted>();
+    const openProject = vi.fn(() => pending.promise);
+    render({ openProject });
+    await click(findButton(document.body, "Open Project"));
+    await selectRepository();
+    const form = document.body.querySelector("form");
+    if (form === null) throw new Error("Missing form");
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      await Promise.resolve();
+    });
+    expect(openProject).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      pending.reject(new Error("disconnected"));
+      await Promise.resolve();
+    });
+    const feedback = document.body.querySelector('[data-form-feedback="error"]');
+    expect(feedback?.textContent).toContain("could not open");
+    expect(document.activeElement).toBe(feedback);
+    expect(document.body.querySelector("select")?.value).toBe(repositoryId);
+  });
 
   it("keeps repository discovery failures inside the dialog", async () => {
     render({ loadRepositories: vi.fn().mockRejectedValue(new Error("private path detail")) });

@@ -1,3 +1,5 @@
+import { FormFeedback } from "./components/FormFeedback.js";
+import { LifecycleProfileSummary } from "./LifecycleProfilePanel.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Feature, StartPlanningFeatureCommand } from "@kestrel/contracts";
 import { ApiClientError } from "./api.js";
@@ -28,6 +30,7 @@ export function NewPlanningWorkspace({
   onAuthenticationError,
   onDraftDirtyChange,
 }: NewPlanningWorkspaceProps) {
+  const [profileReady, setProfileReady] = useState(false);
   const [checking, setChecking] = useState(false);
   const [readError, setReadError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -90,7 +93,13 @@ export function NewPlanningWorkspace({
   }, [online, lookup]);
 
   const submit = async (text: string) => {
-    if (!online || submitted.current || text.trim() === "") return;
+    if (
+      !online ||
+      (!profileReady && attempt.current === null) ||
+      submitted.current ||
+      text.trim() === ""
+    )
+      return;
     submitted.current = true;
     setPending(true);
     setError(null);
@@ -126,7 +135,7 @@ export function NewPlanningWorkspace({
   return (
     <>
       {readError === null ? null : (
-        <div role="alert" className="mb-4 flex flex-wrap items-center gap-3 text-sm">
+        <FormFeedback kind="error" className="mb-4 flex flex-wrap items-center gap-3 text-sm">
           <p>{readError}</p>
           <Button
             variant="outline"
@@ -135,12 +144,19 @@ export function NewPlanningWorkspace({
           >
             Check saved conversation
           </Button>
-        </div>
+        </FormFeedback>
       )}
+      <LifecycleProfileSummary
+        phase="planning"
+        projectId={projectId}
+        online={online}
+        onReady={setProfileReady}
+      />
       <NewPlanningChatPanel
         projectName={projectName}
         onAuthenticationError={onAuthenticationError}
         online={online}
+        readyToSubmit={profileReady || attempt.current !== null}
         pending={pending || checking}
         error={error}
         locked={attempt.current !== null}

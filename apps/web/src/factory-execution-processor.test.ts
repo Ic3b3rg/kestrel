@@ -155,6 +155,24 @@ beforeEach(async () => {
     key: "value",
     attempt: 1,
     version: 1,
+    lifecycleProfile: {
+      phase: "implementation",
+      versions: { installation: 1, project: 0 },
+      runtimeId: "codex_subscription",
+      modelId: "fixture-model",
+      model: "fixture-model",
+      effort: null,
+      serviceTier: null,
+      skills: [],
+      inherited: [],
+      requested: {
+        runtimeId: "codex_subscription",
+        model: { kind: "runtime_default" },
+        effort: { kind: "runtime_default" },
+        speed: { kind: "runtime_default" },
+        skillDigests: [],
+      },
+    },
     plan: {
       objective: "Expose value two",
       scope: { includes: ["Return two"], excludes: ["Provider writes"] },
@@ -299,6 +317,28 @@ afterAll(async () => {
   await pool.end();
 });
 
+it("blocks a legacy approval before opening a workspace or starting a model", async () => {
+  run.lifecycleProfile = null;
+  await processor().process({ runId: run.id });
+  expect(runTurn).not.toHaveBeenCalled();
+  expect(storedWorkspace).toBeNull();
+  expect(vi.mocked(finishFactoryExecution).mock.calls.at(-1)?.[2]).toMatchObject({
+    failure: "unavailable",
+  });
+  expect(vi.mocked(finishFactoryExecution).mock.calls.at(-1)?.[2].question).toContain(
+    "Approve a new plan revision",
+  );
+});
+it("blocks correction work carrying an Implementation profile before mutation", async () => {
+  run.purpose = "correction";
+  await processor().process({ runId: run.id });
+  expect(runTurn).not.toHaveBeenCalled();
+  expect(storedWorkspace).toBeNull();
+  expect(vi.mocked(finishFactoryExecution).mock.calls.at(-1)?.[2].question).toContain(
+    "Corrections profile",
+  );
+});
+
 it("rejects the cumulative Feature when W2 passes its own check but breaks W1", async () => {
   const processing = processor();
   await processing.process({ runId: run.id });
@@ -432,6 +472,7 @@ it("applies only the selected correction authority before rechecking the full ma
   Object.assign(run, {
     id: "01991c36-7f90-7000-8000-000000000004",
     purpose: "correction",
+    lifecycleProfile: { ...run.lifecycleProfile, phase: "corrections" },
     workItemId: null,
     key: "Selected review correction",
     correction: {
@@ -1335,12 +1376,8 @@ it("reports a missing sandbox image as a recoverable run failure", async () => {
 });
 
 it("keeps an unavailable selected model as a gate without falling back", async () => {
-  vi.mocked(readCodexReviewModelPreference).mockResolvedValue({
-    schemaVersion: 1,
-    route: "codex_subscription",
-    selectedModelId: "missing-model",
-    updatedAt: "2026-09-07T18:00:00.000Z",
-  });
+  if (run.lifecycleProfile == null) throw new Error("Missing approved profile");
+  run.lifecycleProfile.modelId = "missing-model";
   await processor().process({ runId: run.id });
   expect(initializeFactoryFeatureWorkspace).not.toHaveBeenCalled();
   expect(runTurn).not.toHaveBeenCalled();

@@ -1,3 +1,4 @@
+import { FormFeedback } from "./components/FormFeedback.js";
 import { useId, type MouseEvent } from "react";
 import { ArrowUpRight, GitPullRequest, Plus, RefreshCw, Settings } from "lucide-react";
 import type { ProjectBoardSnapshot, ProjectBoardWorkItem } from "@kestrel/contracts";
@@ -179,9 +180,9 @@ export function ProjectFactoryBoardPanel({
         </div>
       </header>
       {error === null ? null : (
-        <p role="alert" className="text-sm">
+        <FormFeedback kind="error" focus className="text-sm">
           {error}
-        </p>
+        </FormFeedback>
       )}
       {!online ? (
         <p role="status" className="text-sm text-muted-foreground">
@@ -189,9 +190,9 @@ export function ProjectFactoryBoardPanel({
         </p>
       ) : null}
       {githubIssueFailure === null ? null : (
-        <div role="alert">
+        <FormFeedback kind="error">
           <FactoryProviderProblem failure={githubIssueFailure} projectId={projectId} />
-        </div>
+        </FormFeedback>
       )}
       {snapshot?.github.retained ? (
         <p role="status" className="text-sm text-muted-foreground">

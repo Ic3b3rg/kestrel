@@ -404,11 +404,27 @@ export function createCodexAppServerAgentRuntime(
             email: accountResult.account.email,
             plan: accountResult.account.planType,
           },
-          models: models.map(({ id, displayName, isDefault }) => ({
-            id,
-            displayName,
-            isDefault,
-          })),
+          models: models.map(
+            ({
+              id,
+              displayName,
+              isDefault,
+              model,
+              defaultReasoningEffort,
+              supportedReasoningEfforts,
+              serviceTiers,
+              defaultServiceTier,
+            }) => ({
+              id,
+              displayName,
+              isDefault,
+              model,
+              defaultReasoningEffort,
+              supportedReasoningEfforts,
+              ...(serviceTiers === undefined ? {} : { serviceTiers }),
+              ...(defaultServiceTier === undefined ? {} : { defaultServiceTier }),
+            }),
+          ),
           usage,
           checkedAt: new Date().toISOString(),
         });

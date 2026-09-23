@@ -14,3 +14,5 @@ export * from "./factory-feature-publication.js";
 export * from "./conceptual-review.js";
 export * from "./factory-review-corrections.js";
 export * from "./factory-feature-merge.js";
+export * from "./source-onboarding.js";
+export * from "./lifecycle-profile.js";

@@ -304,25 +304,36 @@ unavailable; it does not expose or silently replace the key.
 
 ## Authorize local repositories
 
-Local discovery is disabled safely until the Operator authorizes an explicit parent directory from
-the trusted host. The supported command validates the complete resulting configuration before it
-changes the current development Installation:
+Use **Local folder** in **Open Project** or **Settings → Projects** to choose a folder on the macOS
+workstation. Kestrel previews the selected repository, or only the readable direct-child
+repositories of a container. **Authorize repositories** saves exactly that preview and refreshes the
+inventory. Cancellation does not authorize anything. Other hosts can use the trusted-host command:
 
 ```sh
-npm run authorize-repository-root -- /absolute/path/to/authorized-parent
+npm run authorize-repository-root -- /absolute/path/to/repository-or-parent
+# From the repository to authorize, with Kestrel installed elsewhere:
+npm --prefix /path/to/kestrel run authorize-repository-root
 ```
 
-Each successful command adds one canonical root to the owner-only
-`.kestrel/development/repository-roots.json` file (or beneath the explicit `KESTREL_STATE_ROOT`). It
-stores local configuration only, never credentials. Missing, unreadable, relative, duplicate,
-nested, symlinked, or Kestrel-storage-overlapping candidates fail without replacing the previous
-valid file and without including the rejected path in the error message.
+An omitted path uses the caller's current directory. Each successful command stores the selected
+repositories in the owner-only `repository-roots.json` file beneath the absolute
+`KESTREL_STATE_ROOT`. Missing, unreadable, relative explicit, duplicate, nested, symlinked, or
+storage-overlapping selections fail without replacing the previous valid file. A container
+authorizes only its current direct-child repositories, not future additions or recursively nested
+repositories. A stale UI preview must be selected again. Host paths never reach the browser.
 
-If Kestrel is already running, choose **Refresh repositories** in Settings or in **Open local
-repository**. A restart reads the same persisted configuration. The path is read only by the
-host-native web process; it is never mounted into an application container or returned to the
-browser. `LOCAL_REPOSITORY_ROOTS` remains an explicit JSON-array override for specialized native
-runs and takes precedence over the persisted development configuration.
+Choose **Refresh repositories** after terminal authorization; no restart is needed. A restart reads
+the same persisted configuration. `LOCAL_REPOSITORY_ROOTS` remains an explicit JSON-array override
+for specialized native runs and takes precedence over the persisted configuration.
+
+**Clone from Git URL**, in the same two entry points, accepts HTTPS and SSH remotes. Kestrel retains
+a validated committed repository under `managed-sources` in the absolute workstation state root;
+host Git and SSH keep credential custody. A failed or interrupted partial clone never enters the
+source inventory. Retrying the same canonical remote reuses a completed source, including after
+restart. **Update remote references** explicitly fetches the managed copy; opening its Project does
+not contact the remote. Clone operations have a two-minute deadline and the configured source byte
+limit. SSH uses the workstation's existing host trust and authentication without interactive
+prompts.
 
 The web process validates all five local-source settings before listening:
 
@@ -334,8 +345,8 @@ The web process validates all five local-source settings before listening:
 
 The launcher discovers an absolute Git executable and creates the artifact directory with mode 0700.
 `LOCAL_GIT_EXECUTABLE`, `ARTIFACT_ROOT`, `REVIEW_REVISION_MAX_BYTES`, and
-`REVIEW_REVISION_MAX_OBJECTS` remain explicit overrides for a specialized native run. Restart the
-web process after changing authorized roots.
+`REVIEW_REVISION_MAX_OBJECTS` remain explicit overrides for a specialized native run. Refresh the
+repository inventory after changing authorized roots.
 
 Every configured repository root must already exist and be readable by the web service user.
 Duplicate, nested, symlinked, escaped, inaccessible, or source/Kestrel-storage-overlapping roots

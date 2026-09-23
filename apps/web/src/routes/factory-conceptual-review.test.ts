@@ -9,6 +9,7 @@ import type {
 import { ApiErrorSchema, FactoryConceptualReviewHistorySchema } from "@kestrel/contracts";
 import {
   FactoryConceptualReviewPersistenceError,
+  FactoryError,
   FactoryConceptualReviewWorkflowPersistenceError,
 } from "@kestrel/database";
 import { LocalSourceError } from "@kestrel/local-source";
@@ -551,4 +552,11 @@ it("refreshes published review currency from the live PR and degrades provider f
     recordHead: vi.fn(),
   });
   expect(unavailable?.currency).toBe("unknown");
+});
+
+it("keeps a missing profile Project distinct from provider unavailability", async () => {
+  prepare.mockRejectedValueOnce(new FactoryError("not_found"));
+  const response = await app.inject({ method: "GET", url: `${root}/preparation` });
+  expect(response.statusCode).toBe(404);
+  expect(ApiErrorSchema.parse(response.json()).code).toBe("NOT_FOUND");
 });

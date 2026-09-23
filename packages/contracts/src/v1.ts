@@ -251,6 +251,28 @@ export const CodexSubscriptionAccountSchema = z.strictObject({
 });
 
 export const CodexSubscriptionModelSchema = z.strictObject({
+  model: z.string().min(1).max(128).optional(),
+  defaultReasoningEffort: z.string().min(1).max(128).optional(),
+  supportedReasoningEfforts: z
+    .array(
+      z.strictObject({
+        reasoningEffort: z.string().min(1).max(128),
+        description: z.string().max(10000),
+      }),
+    )
+    .max(20)
+    .optional(),
+  serviceTiers: z
+    .array(
+      z.strictObject({
+        id: z.string().min(1).max(128),
+        name: z.string().min(1).max(128),
+        description: z.string().max(10000),
+      }),
+    )
+    .max(20)
+    .optional(),
+  defaultServiceTier: z.string().min(1).max(128).nullable().optional(),
   id: z
     .string()
     .min(1)

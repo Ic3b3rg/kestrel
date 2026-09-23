@@ -60,6 +60,16 @@ async function fixture(mode = "happy", runtimeOptions: Partial<CodexExecutionRun
   };
 }
 
+it("delivers the approved model controls to the contained execution turn", async () => {
+  const { cwd, runtime, logPath } = await fixture();
+  await runtime.runTurn({ ...input(cwd), effort: "high", serviceTier: "default" });
+  const messages = await protocolMessages(logPath);
+  expect(messages.find((message) => message.method === "turn/start")?.params).toMatchObject({
+    effort: "high",
+    serviceTierForTurn: "default",
+  });
+});
+
 it("mounts review source read-only and rejects every file-change event", async () => {
   const instructions = "Inspect retained source only. Never implement or repair it.";
   const { cwd, runtime, logPath } = await fixture("happy", {
@@ -734,6 +744,7 @@ it("persists container intent before creation and stops the isolated writer befo
     threadId: "execution-thread",
     turnId: "execution-turn",
     text: "Implemented. 🪶",
+    effectiveProfile: { model: "fixture-model", effort: null, serviceTier: null },
   });
   expect(lifecycle.slice(0, 4)).toEqual(["intent", "container", "thread", "turn"]);
   expect(lifecycle.at(-1)).toBe("stopped");

@@ -1,3 +1,5 @@
+import { FormFeedback } from "./components/FormFeedback.js";
+import { LifecycleProfileRecord } from "./LifecycleProfileRecord.js";
 import { useContext, useEffect, useId, useRef, useState } from "react";
 import type {
   FactoryExecution,
@@ -248,6 +250,12 @@ function RunDetails({ run }: { run: FactoryExecutionRun }) {
           </div>
         </details>
       )}
+      {run.runtime?.lifecycleProfile == null ? null : (
+        <LifecycleProfileRecord
+          profile={run.runtime.lifecycleProfile}
+          effective={run.runtime.effectiveProfile}
+        />
+      )}
       {run.runtime === null ? null : (
         <p className="break-words text-sm text-muted-foreground">
           Codex · {displayText(run.runtime.model)}
@@ -420,9 +428,9 @@ function ExecutionPanel({
         <p role="status">Loading execution…</p>
       ) : null}
       {error === null ? null : (
-        <p role="alert" className="planning-error">
+        <FormFeedback kind="error" focus className="planning-error">
           {error}
-        </p>
+        </FormFeedback>
       )}
       {execution === null ? null : (
         <>

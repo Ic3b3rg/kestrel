@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { mockLifecycleProfileRequests } from "./lifecycle-profile.test-support.js";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -100,6 +101,7 @@ describe("persistent planning conversation", () => {
   let root: Root;
   let container: HTMLDivElement;
   beforeEach(() => {
+    mockLifecycleProfileRequests();
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     container = document.createElement("div");
     document.body.append(container);

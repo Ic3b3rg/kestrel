@@ -40,6 +40,8 @@ interface PlanningTurnInput {
   cwd: string;
   threadId?: string;
   model: string;
+  effort?: string | null;
+  serviceTier?: string | null;
   prompt: string;
   requestId: string;
   outputSchema?: Record<string, unknown>;
@@ -48,6 +50,7 @@ interface PlanningTurnInput {
 }
 
 interface PlanningTurnResult {
+  effectiveProfile?: { model: string; effort: string | null; serviceTier: string | null };
   threadId: string;
   turnId: string;
   text: string;
@@ -215,6 +218,8 @@ class PlanningSession {
       threadId,
       cwd,
       model: input.model,
+      ...(input.effort == null ? {} : { effort: input.effort }),
+      ...(input.serviceTier == null ? {} : { serviceTierForTurn: input.serviceTier }),
       clientUserMessageId: input.requestId,
       input: [{ type: "text", text: input.prompt }],
       approvalPolicy: "never",
@@ -315,11 +320,17 @@ export function createCodexPlanningRuntime(options: CodexPlanningOptions = {}) {
           {
             cwd,
             model: input.model,
+            ...(input.serviceTier == null ? {} : { serviceTier: input.serviceTier }),
             modelProvider: "openai",
             sandbox: "read-only",
             approvalPolicy: "never",
             approvalsReviewer: "user",
-            config: { ...CONFIG, model_provider: "openai", mcp_servers: mcpServers },
+            config: {
+              ...CONFIG,
+              model_provider: "openai",
+              mcp_servers: mcpServers,
+              ...(input.effort == null ? {} : { model_reasoning_effort: input.effort }),
+            },
             developerInstructions:
               "Plan using only the source material supplied in the prompt. Do not use tools, modify files, or perform external actions. Ask planning questions in your answer.",
             ...(input.threadId === undefined
@@ -329,7 +340,15 @@ export function createCodexPlanningRuntime(options: CodexPlanningOptions = {}) {
         );
         const threadId = verifiedThread(thread, cwd, input.model, input.threadId);
         await session.guard(input.onThread(threadId));
-        return await session.turn(input, cwd, threadId);
+        const result = await session.turn(input, cwd, threadId);
+        return {
+          ...result,
+          effectiveProfile: {
+            model: boundedString(thread.model),
+            effort: typeof thread.reasoningEffort === "string" ? thread.reasoningEffort : null,
+            serviceTier: typeof thread.serviceTier === "string" ? thread.serviceTier : null,
+          },
+        };
       } catch (error) {
         throw error instanceof CodexFactoryError
           ? new CodexPlanningError(error.code, error.question)

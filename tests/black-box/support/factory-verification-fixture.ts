@@ -108,6 +108,7 @@ export async function createVerificationFixture(
   let stack: RunningStack;
   try {
     stack = await startStack({
+      connectedCodexFixture: true,
       repositoryRoot: source.rootPath,
       ...options,
       githubFixture: options.githubFixture ?? factoryGitHubFixture,
@@ -303,7 +304,7 @@ export function processVerificationFixture(
       connection:{readConnection:async()=>{
         events.push('model-selection');
         return {schemaVersion:1,state:'ready',reason:null,cli:{version:'0.153.4',supported:true,protocol:'app_server_v2'},
-          account:{authentication:'chatgpt',email:null,plan:'pro'},models:[{id:'controlled-model',displayName:'Controlled',isDefault:true}],
+          account:{authentication:'chatgpt',email:null,plan:'pro'},models:[{id:'controlled-model',displayName:'Controlled',isDefault:true,defaultReasoningEffort:'low',supportedReasoningEfforts:[],serviceTiers:[]}],
           usage:{availability:'available',primary:null,secondary:null},checkedAt:new Date().toISOString()};
       }},
       runtime:{

@@ -1,3 +1,5 @@
+import { FormFeedback } from "./components/FormFeedback.js";
+import { LifecycleProfileRecord } from "./LifecycleProfileRecord.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   ExternalConceptualReviewPreparation,
@@ -37,6 +39,8 @@ const blockerMessages: Record<
   certificate_mismatch: "The recorded verification does not match this pull request.",
   exact_revision_mismatch: "The retained source does not match the current pull request head.",
   change_intent_not_available: "Confirm a purpose for this pull request before starting review.",
+  lifecycle_profile_unavailable:
+    "Choose an available Conceptual Review profile in Project Lifecycle settings.",
   model_not_selected: "Choose a Codex review model in Project settings.",
   review_runtime_unavailable:
     "The local review runner is unavailable. Check the Codex connection and runtime.",
@@ -132,9 +136,12 @@ function ExternalPullRequestReviewPanelContent({
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | undefined>();
   const [loading, setLoading] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
+  useEffect(() => setStartError(null), [projectId, changeProposalId, selectedArtifactId]);
   const [error, setError] = useState<string | null>(null);
   const request = useRef<AbortController | null>(null);
   const generation = useRef(0);
+  const submittingReview = useRef(false);
   const pendingStart = useRef<FactoryConceptualReviewStartCommand | null>(null);
 
   const read = useCallback(async () => {
@@ -246,6 +253,7 @@ function ExternalPullRequestReviewPanelContent({
 
   const start = async () => {
     if (
+      submittingReview.current ||
       disabled ||
       !online ||
       starting ||
@@ -254,6 +262,7 @@ function ExternalPullRequestReviewPanelContent({
     ) {
       return;
     }
+    submittingReview.current = true;
     const command =
       pendingStart.current?.preparationDigest === preparation.preparationDigest
         ? pendingStart.current
@@ -266,7 +275,7 @@ function ExternalPullRequestReviewPanelContent({
     generation.current = currentGeneration;
     request.current?.abort();
     setStarting(true);
-    setError(null);
+    setStartError(null);
     try {
       const accepted = await startReview(projectId, changeProposalId, command);
       if (generation.current === currentGeneration) {
@@ -276,9 +285,10 @@ function ExternalPullRequestReviewPanelContent({
       }
     } catch (failure) {
       if (generation.current === currentGeneration && !onAuthenticationError(failure)) {
-        setError(planningRequestError(failure, "Kestrel could not start the review."));
+        setStartError(planningRequestError(failure, "Kestrel could not start the review."));
       }
     } finally {
+      submittingReview.current = false;
       if (generation.current === currentGeneration) setStarting(false);
     }
   };
@@ -310,6 +320,13 @@ function ExternalPullRequestReviewPanelContent({
             </p>
           </div>
           <div className="min-w-52 space-y-2">
+            <LifecycleProfileRecord
+              label="Review profile"
+              profile={preparation?.configuration.lifecycleProfile}
+            />
+            {preparation?.configuration.profileBlocker == null ? null : (
+              <FormFeedback kind="error">{preparation.configuration.profileBlocker}</FormFeedback>
+            )}
             <Button
               type="button"
               className="w-full"
@@ -354,11 +371,19 @@ function ExternalPullRequestReviewPanelContent({
           </>
         )}
 
+        {starting ? (
+          <FormFeedback kind="pending">Starting the review of this exact revision…</FormFeedback>
+        ) : null}
+        {startError === null ? null : (
+          <FormFeedback kind="error" focus>
+            {startError}
+          </FormFeedback>
+        )}
         {error === null ? null : (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/40 bg-destructive/5 p-3">
-            <p role="alert" className="text-sm">
+            <FormFeedback kind="error" focus className="text-sm">
               {error}
-            </p>
+            </FormFeedback>
             <Button type="button" size="sm" variant="outline" onClick={() => void read()}>
               Try again
             </Button>

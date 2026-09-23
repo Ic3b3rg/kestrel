@@ -67,7 +67,7 @@ describe("versioned Factory plans", () => {
   beforeAll(async () => {
     const fixture = await createGitFixture();
     cleanup.push(() => fixture.close());
-    stack = await startStack({ repositoryRoot: fixture.rootPath });
+    stack = await startStack({ connectedCodexFixture: true, repositoryRoot: fixture.rootPath });
     cleanup.push(() => stack.close());
     await stack.authenticateOperator();
     const inventory = LocalRepositoryInventorySchema.parse(

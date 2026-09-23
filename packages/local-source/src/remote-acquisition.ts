@@ -459,7 +459,7 @@ async function verifyAcquisitionBudget(
 }
 
 export async function readCredentialConfiguration(
-  config: LocalSourceConfig,
+  config: Pick<LocalSourceConfig, "gitExecutable">,
   signal?: AbortSignal,
 ): Promise<readonly CredentialConfigEntry[]> {
   const entries: CredentialConfigEntry[] = [];

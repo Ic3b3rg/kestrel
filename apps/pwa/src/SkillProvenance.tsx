@@ -1,3 +1,4 @@
+import { FormFeedback } from "./components/FormFeedback.js";
 import { useEffect, useState } from "react";
 import type { PlanningSkillBundle, PlanningSkillSummary } from "@kestrel/contracts";
 import { Button } from "./components/ui/button.js";
@@ -63,7 +64,9 @@ export function SkillProvenance({
               <PlanningSkillContents bundle={preview} />
             )
           ) : (
-            <p role="alert">{error}</p>
+            <FormFeedback kind="error" focus>
+              {error}
+            </FormFeedback>
           )}
         </DialogContent>
       </Dialog>

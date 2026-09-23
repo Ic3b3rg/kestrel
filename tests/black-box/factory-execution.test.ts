@@ -23,6 +23,7 @@ describe("Factory execution authority", () => {
     const source = await createGitFixture();
     cleanup.push(() => source.close());
     stack = await startStack({
+      connectedCodexFixture: true,
       repositoryRoot: source.rootPath,
       githubFixture: factoryGitHubFixture,
     });

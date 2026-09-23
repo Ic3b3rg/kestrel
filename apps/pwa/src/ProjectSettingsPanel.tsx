@@ -1,3 +1,4 @@
+import { LifecycleProfilePanel } from "./LifecycleProfilePanel.js";
 import type { DirectApiProfile, ProjectInbox } from "@kestrel/contracts";
 
 import { projectLabel } from "./AuthenticatedShell.js";
@@ -89,6 +90,7 @@ export function ProjectSettingsPanel({
         {...(onAuthenticationError === undefined ? {} : { onAuthenticationError })}
       />
 
+      <LifecycleProfilePanel projectId={project.id} online={online} />
       <DirectApiProfilePanel
         key={project.id}
         projectId={project.id}

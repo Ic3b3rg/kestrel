@@ -69,6 +69,7 @@ describe("Factory GitHub issue authority", () => {
     const fixture = await createGitFixture();
     cleanup.push(() => fixture.close());
     stack = await startStack({
+      connectedCodexFixture: true,
       repositoryRoot: fixture.rootPath,
       githubFixture: factoryGitHubFixture,
     });

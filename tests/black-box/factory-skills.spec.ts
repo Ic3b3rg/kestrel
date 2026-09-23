@@ -33,7 +33,11 @@ test.describe("Planning Skills in the chat", () => {
       join(research, "SKILL.md"),
       "---\nname: research\ndescription: Check primary sources.\n---\nVerify the source before planning.\n",
     );
-    stack = await startStack({ repositoryRoot: fixture.rootPath, planningSkillRoot: root });
+    stack = await startStack({
+      connectedCodexFixture: true,
+      repositoryRoot: fixture.rootPath,
+      planningSkillRoot: root,
+    });
     await requireStack().bootstrapOperator(TEST_OPERATOR_CREDENTIALS);
   });
   test.afterAll(async () => {

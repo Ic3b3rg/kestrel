@@ -1,3 +1,5 @@
+import { FormFeedback } from "./components/FormFeedback.js";
+import { LifecycleProfileRecord } from "./LifecycleProfileRecord.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   FactoryConceptualReviewBlocker,
@@ -42,6 +44,8 @@ const blockers: Record<FactoryConceptualReviewBlocker, string> = {
   approved_plan_mismatch: "The published Feature no longer matches its approved plan.",
   certificate_mismatch: "The final verification evidence does not match the published revision.",
   exact_revision_mismatch: "The retained source does not match the pull request base and head.",
+  lifecycle_profile_unavailable:
+    "Choose an available Conceptual Review profile in Project Lifecycle settings.",
   model_not_selected: "Choose a Codex review model in Settings before starting review.",
   review_runtime_unavailable:
     "The bounded review runner is not available yet. You can inspect every frozen input now.",
@@ -292,9 +296,9 @@ function SourceInspector({
         </Button>
       </div>
       {error === null ? null : (
-        <p role="alert" className="text-sm">
+        <FormFeedback kind="error" focus className="text-sm">
           {error}
-        </p>
+        </FormFeedback>
       )}
       {catalog === null ? null : (
         <div className="grid min-w-0 gap-2 md:grid-cols-[minmax(12rem,0.8fr)_minmax(0,1.2fr)]">
@@ -481,9 +485,9 @@ function CheckInspector({
         Inspect final checks
       </Button>
       {error === null ? null : (
-        <p role="alert" className="text-sm">
+        <FormFeedback kind="error" focus className="text-sm">
           {error}
-        </p>
+        </FormFeedback>
       )}
       {catalog === null ? null : (
         <div className="grid gap-2">
@@ -608,10 +612,13 @@ function FeatureReviewPanelContent({
   const [review, setReview] = useState<FactoryConceptualReviewWorkflowRead | null>(null);
   const [reviewHistory, setReviewHistory] = useState<FactoryConceptualReviewHistory | null>(null);
   const [reviewBusy, setReviewBusy] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
+  useEffect(() => setStartError(null), [projectId, featureId, selectedArtifactId]);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const request = useRef<AbortController | null>(null);
   const reviewRequest = useRef<AbortController | null>(null);
   const reviewGeneration = useRef(0);
+  const submittingReview = useRef(false);
   const pendingReviewStart = useRef<FactoryConceptualReviewStartCommand | null>(null);
   const read = useCallback(async () => {
     if (!online) return;
@@ -761,14 +768,16 @@ function FeatureReviewPanelContent({
 
   const start = async () => {
     if (
+      submittingReview.current ||
       !online ||
       reviewBusy ||
       preparation?.preparationDigest === null ||
       preparation?.preparationDigest === undefined
     )
       return;
+    submittingReview.current = true;
     setReviewBusy(true);
-    setReviewError(null);
+    setStartError(null);
     const command =
       pendingReviewStart.current?.preparationDigest === preparation.preparationDigest
         ? pendingReviewStart.current
@@ -789,8 +798,9 @@ function FeatureReviewPanelContent({
       }
     } catch (failure) {
       if (reviewGeneration.current === generation && !onAuthenticationError(failure))
-        setReviewError(planningRequestError(failure, "The Conceptual Review was not started."));
+        setStartError(planningRequestError(failure, "The Conceptual Review was not started."));
     } finally {
+      submittingReview.current = false;
       if (reviewGeneration.current === generation) setReviewBusy(false);
     }
   };
@@ -809,7 +819,11 @@ function FeatureReviewPanelContent({
               : "Review unavailable"
             : "Reconnect to inspect review"}
         </h2>
-        {error === null ? null : <p role="alert">{error}</p>}
+        {error === null ? null : (
+          <FormFeedback kind="error" focus>
+            {error}
+          </FormFeedback>
+        )}
         <Button
           type="button"
           variant="outline"
@@ -850,6 +864,13 @@ function FeatureReviewPanelContent({
           </p>
         </div>
         <div className="min-w-60 space-y-2">
+          <LifecycleProfileRecord
+            label="Review profile"
+            profile={preparation.configuration.lifecycleProfile}
+          />
+          {preparation.configuration.profileBlocker == null ? null : (
+            <FormFeedback kind="error">{preparation.configuration.profileBlocker}</FormFeedback>
+          )}
           <Button
             type="button"
             className="w-full"
@@ -881,14 +902,22 @@ function FeatureReviewPanelContent({
         </div>
       </section>
       {error === null ? null : (
-        <p role="alert" className="rounded-lg border border-border p-3 text-sm">
+        <FormFeedback kind="error" focus className="rounded-lg border border-border p-3 text-sm">
           {error}
-        </p>
+        </FormFeedback>
+      )}
+      {reviewBusy ? (
+        <FormFeedback kind="pending">Starting the review of this exact revision…</FormFeedback>
+      ) : null}
+      {startError === null ? null : (
+        <FormFeedback kind="error" focus>
+          {startError}
+        </FormFeedback>
       )}
       {reviewError === null ? null : (
-        <p role="alert" className="rounded-lg border border-border p-3 text-sm">
+        <FormFeedback kind="error" focus className="rounded-lg border border-border p-3 text-sm">
           {reviewError}
-        </p>
+        </FormFeedback>
       )}
       {reviewHistory === null || reviewHistory.reviews.length === 0 ? null : (
         <section
@@ -968,6 +997,7 @@ function FeatureReviewPanelContent({
           review.currency === "up_to_date" &&
           basis !== null ? (
             <FeatureCorrectionPanel
+              key={`correction:${review.artifact.id}`}
               projectId={projectId}
               featureId={featureId}
               approvedVersion={basis.provenance.version}
@@ -984,6 +1014,7 @@ function FeatureReviewPanelContent({
           basis !== null &&
           preparation.publication !== null ? (
             <FeatureMergePanel
+              key={`merge:${review.artifact.id}`}
               projectId={projectId}
               featureId={featureId}
               approvedVersion={basis.provenance.version}

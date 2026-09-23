@@ -143,3 +143,23 @@ it("rejects extra correction authority and retries by correction identity", asyn
     requestId,
   );
 });
+
+it("preserves actionable frozen-profile errors at the authenticated command boundary", async () => {
+  const { FactoryError } = await import("@kestrel/database");
+  const detail =
+    "The selected effort is unavailable. Choose a supported effort in Lifecycle settings.";
+  requestService.mockRejectedValueOnce(new FactoryError("conflict", detail));
+  const response = await app.inject({
+    method: "POST",
+    url: root,
+    payload: {
+      requestId: randomUUID(),
+      expectedPlanVersion: 1,
+      review: { workflowId, artifactId, headCommitId },
+      instruction: "Keep the action visible",
+      findingIds: [],
+    },
+  });
+  expect(response.statusCode).toBe(409);
+  expect(ApiErrorSchema.parse(response.json()).message).toBe(detail);
+});

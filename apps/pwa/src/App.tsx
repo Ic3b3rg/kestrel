@@ -1,3 +1,4 @@
+import { LifecycleProfilePanel } from "./LifecycleProfilePanel.js";
 import { Button } from "./components/ui/button.js";
 import { FormFeedback } from "./components/FormFeedback.js";
 import { WorkspaceSuspendedContext } from "./components/ui/workspace-suspension.js";
@@ -167,12 +168,13 @@ export function App() {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loginSuccess, setLoginSuccess] = useState<string | null>(null);
   const [loginPending, setLoginPending] = useState(false);
-  const [announcement, setAnnouncement] = useState("");
+
   const [securityPending, setSecurityPending] = useState<"credentials" | "logout" | null>(null);
   const [securityError, setSecurityError] = useState<OperatorSecurityError | null>(null);
   const [projectInbox, setProjectInbox] = useState<ProjectInbox | null>(null);
   const [projectLoading, setProjectLoading] = useState(false);
   const [projectError, setProjectError] = useState<string | null>(null);
+  const [openProjectTrigger, setOpenProjectTrigger] = useState<HTMLDivElement | null>(null);
   const [projectPending, setProjectPending] = useState(false);
   const [projectReloadGeneration, setProjectReloadGeneration] = useState(0);
   const loginController = useRef<AbortController | null>(null);
@@ -274,7 +276,7 @@ export function App() {
         historyPosition.current += 1;
         window.history.pushState({ kestrelPosition: historyPosition.current }, "", path);
       }
-      setAnnouncement("");
+
       setRoute(nextRoute);
     },
     [planDirty, route],
@@ -323,7 +325,7 @@ export function App() {
       historyPosition.current = nextPosition;
       if (readHistoryPosition(event.state) === null)
         window.history.replaceState({ kestrelPosition: nextPosition }, "");
-      setAnnouncement("");
+
       setRoute(nextRoute);
     };
     window.addEventListener("popstate", handlePopState);
@@ -400,7 +402,6 @@ export function App() {
     const handleOnline = () => {
       setSessionChecking(true);
       setNetworkOnline(true);
-      setAnnouncement("Connection restored.");
     };
     const handleOffline = () => {
       loginController.current?.abort();
@@ -413,7 +414,6 @@ export function App() {
       setProjectLoading(false);
       setProjectPending(false);
       setProjectError(null);
-      setAnnouncement("Offline. Reconnect to continue.");
     };
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
@@ -566,6 +566,7 @@ export function App() {
 
     try {
       const result = await openPublicGitHubPullRequest({ url }, controller.signal);
+      controller.signal.throwIfAborted();
       setProjectInbox((current) => withUpsertedProject(current, result.project));
       const number = Number(new URL(url).pathname.split("/").at(-1));
       const proposal = result.project.changeProposals.find(
@@ -576,14 +577,6 @@ export function App() {
         projectId: result.project.id,
         ...(proposal === undefined ? {} : { proposalId: proposal.id }),
       });
-      setAnnouncement("Project refreshed from the public GitHub pull request.");
-    } catch (error) {
-      if (!controller.signal.aborted) {
-        if (!handleAuthenticationBoundaryError(error)) {
-          setProjectError(errorMessage(error, PROJECT_ERROR_MESSAGE));
-          setAnnouncement("The public pull request could not be opened.");
-        }
-      }
     } finally {
       if (projectCommandController.current === controller) {
         projectCommandController.current = null;
@@ -610,14 +603,12 @@ export function App() {
           }
         : {}),
     });
-    setAnnouncement("Project opened from the authorized local repository.");
   };
 
   const handleLocalRevisionAvailable = (result: ReviewRevisionAvailable): void => {
     setProjectInbox((current) => withUpsertedProject(current, result.project));
     setProjectReloadGeneration((current) => current + 1);
     setProjectError(null);
-    setAnnouncement("The exact Review Revision is available.");
   };
 
   const handleHostPullRequestRefresh = async (projectId: string, number: number): Promise<void> => {
@@ -628,12 +619,8 @@ export function App() {
     setProjectError(null);
     try {
       const result = await observeHostGitHubPullRequest(projectId, { number }, controller.signal);
+      controller.signal.throwIfAborted();
       setProjectInbox((current) => withUpsertedProject(current, result.project));
-      setAnnouncement("Project refreshed through the host GitHub session.");
-    } catch (error) {
-      if (!controller.signal.aborted && !handleAuthenticationBoundaryError(error)) {
-        setProjectError(errorMessage(error, PROJECT_ERROR_MESSAGE));
-      }
     } finally {
       if (projectCommandController.current === controller) {
         projectCommandController.current = null;
@@ -752,24 +739,15 @@ export function App() {
         online={online}
         pending={projectPending}
         onAuthenticationError={handleAuthenticationBoundaryError}
-        onOpen={(url) => void handleOpenPublicPullRequest(url)}
+        onOpen={handleOpenPublicPullRequest}
         onHostObserved={(project) => {
           setProjectInbox((current) => withUpsertedProject(current, project));
-          setAnnouncement("Project refreshed through the host GitHub session.");
         }}
-        onHostRefresh={(projectId, number) => void handleHostPullRequestRefresh(projectId, number)}
+        onHostRefresh={handleHostPullRequestRefresh}
         onIntentCreated={(result) => {
-          const proposal = selectedProject.changeProposals.find(
-            (candidate) => candidate.id === result.changeProposalId,
-          );
           setProjectInbox((current) => withCreatedIntent(current, result));
           setProjectReloadGeneration((generation) => generation + 1);
           setProjectError(null);
-          setAnnouncement(
-            proposal?.kind === "provider_observed"
-              ? "Review purpose saved and confirmed."
-              : `Change Intent version ${String(result.changeIntent.version)} created as ${result.changeIntent.resolution.state}.`,
-          );
         }}
         onLocalAvailable={handleLocalRevisionAvailable}
         onProjectOpened={handleProjectOpened}
@@ -818,10 +796,13 @@ export function App() {
                 />
               </>
             ) : route.section === "providers" ? (
-              <CodexSubscriptionConnectionPanel
-                online={online}
-                onAuthenticationError={handleAuthenticationBoundaryError}
-              />
+              <>
+                <CodexSubscriptionConnectionPanel
+                  online={online}
+                  onAuthenticationError={handleAuthenticationBoundaryError}
+                />
+                <LifecycleProfilePanel online={online} />
+              </>
             ) : route.section === "source-control" ? (
               <>
                 <HostGitHubConnectionPanel
@@ -856,7 +837,6 @@ export function App() {
               onChanged={(projectId, profile) => {
                 setProjectInbox((current) => withDirectApiProfile(current, projectId, profile));
                 setProjectReloadGeneration((generation) => generation + 1);
-                setAnnouncement(`Direct API profile ${profile.availability}.`);
               }}
             />
           );
@@ -1006,7 +986,7 @@ export function App() {
             </p>
             {sessionCheckError === null ? null : (
               <>
-                <p role="alert">{sessionCheckError}</p>
+                <FormFeedback kind="error">{sessionCheckError}</FormFeedback>
                 <Button onClick={() => setSessionCheckGeneration((current) => current + 1)}>
                   Retry session check
                 </Button>
@@ -1017,9 +997,16 @@ export function App() {
       ) : null}
       <WorkspaceSuspendedContext.Provider value={sessionPaused}>
         <div hidden={sessionPaused}>
+          <OpenProjectForm
+            key={`onboarding:${session.operator.id}/${session.credentialVersion}/${session.issuedAt}`}
+            triggerContainer={openProjectTrigger}
+            disabled={!online || projectPending}
+            onAuthenticationError={handleAuthenticationBoundaryError}
+            onOpened={handleProjectOpened}
+          />
           <AuthenticatedShell
             key={`${session.operator.id}/${session.credentialVersion}/${session.issuedAt}`}
-            announcement={announcement}
+
             error={projectError}
             inbox={projectInbox}
             loading={projectLoading}
@@ -1027,13 +1014,7 @@ export function App() {
             logoutError={securityError?.action === "logout" ? securityError.message : null}
             logoutPending={securityPending === "logout"}
             online={online}
-            openProjectControl={
-              <OpenProjectForm
-                disabled={!online || projectPending}
-                onAuthenticationError={handleAuthenticationBoundaryError}
-                onOpened={handleProjectOpened}
-              />
-            }
+            openProjectControl={<div ref={setOpenProjectTrigger} />}
             route={route}
             projectFeatureIds={projectFeatureIds}
             projectNavigation={

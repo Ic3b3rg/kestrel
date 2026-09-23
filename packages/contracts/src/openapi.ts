@@ -1,3 +1,13 @@
+import {
+  LifecycleProfileViewSchema,
+  SaveLifecycleProfileCommandSchema,
+} from "./lifecycle-profile.js";
+import {
+  CloneSourceCommandSchema,
+  ManagedSourceSchema,
+  ManagedSourcesSchema,
+  SourceAuthorizationSchema,
+} from "./source-onboarding.js";
 import { z, type ZodType } from "zod";
 import { FactoryExecutionSchema, FactoryExecutionRunSchema } from "./factory-execution.js";
 import { FactoryGateSchema, ResolveFactoryGateCommandSchema } from "./factory-gates.js";
@@ -201,6 +211,12 @@ export const reviewWorkflowAcceptedJsonSchema = asJsonSchema(ReviewWorkflowAccep
 export const startReviewWorkflowCommandJsonSchema = asJsonSchema(StartReviewWorkflowCommandSchema);
 
 const factoryComponents = {
+  LifecycleProfileView: asComponentSchema(asJsonSchema(LifecycleProfileViewSchema)),
+  SaveLifecycleProfileCommand: asComponentSchema(asJsonSchema(SaveLifecycleProfileCommandSchema)),
+  SourceAuthorization: asComponentSchema(asJsonSchema(SourceAuthorizationSchema)),
+  CloneSourceCommand: asComponentSchema(asJsonSchema(CloneSourceCommandSchema)),
+  ManagedSource: asComponentSchema(asJsonSchema(ManagedSourceSchema)),
+  ManagedSources: asComponentSchema(asJsonSchema(ManagedSourcesSchema)),
   GitHubPlanningSkillBundle: asComponentSchema(asJsonSchema(GitHubPlanningSkillBundleSchema)),
   PreviewGitHubPlanningSkillCommand: asComponentSchema(
     asJsonSchema(PreviewGitHubPlanningSkillCommandSchema),
@@ -508,6 +524,234 @@ export const openApiDocument = sortJson({
   jsonSchemaDialect: "https://json-schema.org/draft/2020-12/schema",
   openapi: "3.1.1",
   paths: {
+    "/api/v1/lifecycle-profiles/{phase}": {
+      get: {
+        operationId: "readInstallationLifecycleProfile",
+        parameters: [
+          {
+            in: "path",
+            name: "phase",
+            required: true,
+            schema: {
+              type: "string",
+              enum: ["planning", "implementation", "review", "corrections"],
+            },
+          },
+        ],
+        responses: {
+          ...factoryErrors,
+          "200": {
+            description: "Current defaults, overrides and effective profile",
+            content: { "application/json": { schema: schemaReference("LifecycleProfileView") } },
+          },
+        },
+      },
+      put: {
+        ...factoryTurnMutation(
+          "saveInstallationLifecycleProfile",
+          "SaveLifecycleProfileCommand",
+          "LifecycleProfileView",
+          200,
+        ),
+        parameters: [
+          ...authenticatedMutationHeaders(false),
+          ...[
+            {
+              in: "path",
+              name: "phase",
+              required: true,
+              schema: {
+                type: "string",
+                enum: ["planning", "implementation", "review", "corrections"],
+              },
+            },
+          ],
+        ],
+      },
+    },
+    "/api/v1/projects/{projectId}/lifecycle-profiles/{phase}": {
+      get: {
+        operationId: "readProjectLifecycleProfile",
+        parameters: [
+          {
+            in: "path",
+            name: "projectId",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+          {
+            in: "path",
+            name: "phase",
+            required: true,
+            schema: {
+              type: "string",
+              enum: ["planning", "implementation", "review", "corrections"],
+            },
+          },
+        ],
+        responses: {
+          ...factoryErrors,
+          "200": {
+            description: "Current defaults, overrides and effective profile",
+            content: { "application/json": { schema: schemaReference("LifecycleProfileView") } },
+          },
+        },
+      },
+      put: {
+        ...factoryTurnMutation(
+          "saveProjectLifecycleProfile",
+          "SaveLifecycleProfileCommand",
+          "LifecycleProfileView",
+          200,
+        ),
+        parameters: [
+          ...authenticatedMutationHeaders(false),
+          ...[
+            {
+              in: "path",
+              name: "projectId",
+              required: true,
+              schema: { type: "string", format: "uuid" },
+            },
+            {
+              in: "path",
+              name: "phase",
+              required: true,
+              schema: {
+                type: "string",
+                enum: ["planning", "implementation", "review", "corrections"],
+              },
+            },
+          ],
+        ],
+      },
+    },
+
+    "/api/v1/local-repository-sources/choose": {
+      post: {
+        operationId: "chooseLocalFolder",
+        responses: {
+          "200": {
+            description: "Explicit source onboarding result",
+            content: {
+              "application/json": { schema: { $ref: "#/components/schemas/SourceAuthorization" } },
+            },
+          },
+          "401": { description: "Operator authentication required" },
+          "403": { description: "Mutation origin or CSRF rejected" },
+          "409": { description: "Selection changed or expired" },
+          "503": { description: "Workstation or remote operation unavailable" },
+        },
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { type: "object", additionalProperties: false, properties: {} },
+            },
+          },
+        },
+      },
+    },
+    "/api/v1/local-repository-sources/confirm": {
+      post: {
+        operationId: "confirmLocalFolder",
+        responses: {
+          "200": {
+            description: "Explicit source onboarding result",
+            content: {
+              "application/json": { schema: { $ref: "#/components/schemas/SourceAuthorization" } },
+            },
+          },
+          "401": { description: "Operator authentication required" },
+          "403": { description: "Mutation origin or CSRF rejected" },
+          "409": { description: "Selection changed or expired" },
+          "503": { description: "Workstation or remote operation unavailable" },
+        },
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                additionalProperties: false,
+                properties: { previewId: { type: "string", format: "uuid" } },
+                required: ["previewId"],
+              },
+            },
+          },
+        },
+      },
+    },
+    "/api/v1/managed-sources/clone": {
+      post: {
+        operationId: "cloneManagedSource",
+        responses: {
+          "200": {
+            description: "Explicit source onboarding result",
+            content: {
+              "application/json": { schema: { $ref: "#/components/schemas/ManagedSource" } },
+            },
+          },
+          "401": { description: "Operator authentication required" },
+          "403": { description: "Mutation origin or CSRF rejected" },
+          "409": { description: "Selection changed or expired" },
+          "503": { description: "Workstation or remote operation unavailable" },
+        },
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": { schema: { $ref: "#/components/schemas/CloneSourceCommand" } },
+          },
+        },
+      },
+    },
+    "/api/v1/managed-sources/refresh": {
+      post: {
+        operationId: "refreshManagedSource",
+        responses: {
+          "200": {
+            description: "Explicit source onboarding result",
+            content: {
+              "application/json": { schema: { $ref: "#/components/schemas/ManagedSource" } },
+            },
+          },
+          "401": { description: "Operator authentication required" },
+          "403": { description: "Mutation origin or CSRF rejected" },
+          "409": { description: "Selection changed or expired" },
+          "503": { description: "Workstation or remote operation unavailable" },
+        },
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                additionalProperties: false,
+                properties: { repositoryId: { type: "string", format: "uuid" } },
+                required: ["repositoryId"],
+              },
+            },
+          },
+        },
+      },
+    },
+    "/api/v1/managed-sources": {
+      get: {
+        operationId: "listManagedSources",
+        responses: {
+          "200": {
+            description: "Managed repository inventory",
+            content: {
+              "application/json": { schema: { $ref: "#/components/schemas/ManagedSources" } },
+            },
+          },
+          "401": { description: "Operator authentication required" },
+          "403": { description: "Mutation origin or CSRF rejected" },
+          "409": { description: "Selection changed or expired" },
+          "503": { description: "Workstation or remote operation unavailable" },
+        },
+      },
+    },
     "/api/v1/connections/codex": {
       get: {
         description:

@@ -1,3 +1,4 @@
+import { SourceOnboardingPanel } from "./SourceOnboardingPanel.js";
 import type { MouseEvent, ReactNode } from "react";
 
 import type { ProjectInbox } from "@kestrel/contracts";
@@ -96,6 +97,7 @@ export function SettingsProjectLinks({
       aria-labelledby="settings-projects-title"
     >
       <h2 id="settings-projects-title">Project settings</h2>
+      <SourceOnboardingPanel disabled={!online} onAuthorized={onRetry} />
       {online && error !== null && projects !== null ? (
         <>
           <FormFeedback kind="error" title="Projects could not be refreshed">

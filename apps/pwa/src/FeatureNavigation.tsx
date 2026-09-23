@@ -1,3 +1,4 @@
+import { FormFeedback } from "./components/FormFeedback.js";
 import { useEffect, useState, type MouseEvent } from "react";
 import { MessageSquare, Plus } from "lucide-react";
 import type { Feature } from "@kestrel/contracts";
@@ -109,12 +110,12 @@ export function FeatureNavigation({
             Loading feature chats…
           </p>
         ) : error !== null ? (
-          <div className="project-rail-state" role="alert">
+          <FormFeedback className="project-rail-state" kind="error" focus>
             <p>{error}</p>
             <Button variant="outline" onClick={() => setGeneration((current) => current + 1)}>
               Refresh chats
             </Button>
-          </div>
+          </FormFeedback>
         ) : features.length === 0 ? (
           <p className="project-rail-state">Start a feature to plan it here.</p>
         ) : null}

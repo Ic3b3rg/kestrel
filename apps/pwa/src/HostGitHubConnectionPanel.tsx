@@ -1,3 +1,4 @@
+import { FormFeedback } from "./components/FormFeedback.js";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { HostGitHubConnection, ProjectInbox } from "@kestrel/contracts";
@@ -128,10 +129,10 @@ function ConnectionSection({
             {heading}
           </h2>
         </div>
-        <p className={`state-marker connection-${state}`} role="status">
+        <FormFeedback kind={loading ? "pending" : state === "ready" ? "success" : "error"}>
           <span aria-hidden="true" />
           {stateLabel}
-        </p>
+        </FormFeedback>
       </div>
       {children}
       <Button

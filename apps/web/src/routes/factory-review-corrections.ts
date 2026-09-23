@@ -1,3 +1,7 @@
+import {
+  createCodexAppServerAgentRuntime,
+  type CodexAgentRuntimePort,
+} from "../codex-app-server.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
@@ -60,6 +64,7 @@ export function createDatabaseFactoryReviewCorrectionService(
     FactoryFeatureGitHubAdapter,
     "observePullRequest"
   > = createFactoryFeatureGitHubAdapter(),
+  connection: Pick<CodexAgentRuntimePort, "readConnection"> = createCodexAppServerAgentRuntime(),
 ): FactoryReviewCorrectionService {
   return {
     current: ({ projectId, featureId }) =>
@@ -99,7 +104,15 @@ export function createDatabaseFactoryReviewCorrectionService(
         observation.headCommitId !== command.review.headCommitId
       )
         throw new FactoryReviewCorrectionError("review_outdated");
-      return requestFactoryReviewCorrection(pool, boss, projectId, featureId, actorId, command);
+      return requestFactoryReviewCorrection(
+        pool,
+        boss,
+        projectId,
+        featureId,
+        actorId,
+        command,
+        await connection.readConnection(),
+      );
     },
     retry: ({ projectId, featureId }, correctionId, actorId, requestId) =>
       retryFactoryReviewCorrection(pool, projectId, featureId, correctionId, actorId, requestId),
@@ -154,7 +167,11 @@ function failure(request: FastifyRequest, error: unknown) {
     if (error.code === "conflict")
       return {
         status: 409 as const,
-        body: apiError(request, "REQUEST_REJECTED", "The correction conflicts with current state"),
+        body: apiError(
+          request,
+          "REQUEST_REJECTED",
+          error.detail ?? "The correction conflicts with current state",
+        ),
       };
   }
   if (error instanceof FactoryGitHubError)

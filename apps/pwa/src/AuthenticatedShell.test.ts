@@ -47,7 +47,6 @@ function render(overrides: Partial<Parameters<typeof AuthenticatedShell>[0]> = {
     createElement(
       AuthenticatedShell,
       {
-        announcement: "Projects synchronized.",
         error: null,
         inbox: { schemaVersion: 1, projects: [localProject, providerProject] },
         loading: false,
@@ -154,7 +153,6 @@ describe("AuthenticatedShell", () => {
       return createElement(
         AuthenticatedShell,
         {
-          announcement: "Projects synchronized.",
           error: null,
           inbox: { schemaVersion: 1, projects: [localProject] },
           loading: false,
@@ -239,7 +237,6 @@ describe("AuthenticatedShell", () => {
           createElement(
             AuthenticatedShell,
             {
-              announcement: "Projects synchronized.",
               error: null,
               inbox: { schemaVersion: 1, projects: [localProject] },
               loading: false,

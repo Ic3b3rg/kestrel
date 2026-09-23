@@ -133,7 +133,7 @@ test.describe("Feature plan approval", () => {
   let fixture: GitFixture | undefined;
   test.beforeAll(async () => {
     fixture = await createGitFixture();
-    stack = await startStack({ repositoryRoot: fixture.rootPath });
+    stack = await startStack({ connectedCodexFixture: true, repositoryRoot: fixture.rootPath });
     await stack.bootstrapOperator(TEST_OPERATOR_CREDENTIALS);
   });
   test.afterAll(async () => {
@@ -567,6 +567,10 @@ test.describe("Feature plan approval", () => {
     await seedPlan(page);
     await page.getByRole("link", { name: "Settings", exact: true }).click();
     const settingsUrl = page.url();
+    await page
+      .getByRole("navigation", { name: "Projects", exact: true })
+      .getByRole("link", { name: /kestrel/u })
+      .click();
     await page.getByRole("link", { name: title, exact: true }).click();
     const chatUrl = page.url();
     await page.getByRole("tab", { name: "Plan", exact: true }).click();
@@ -583,7 +587,7 @@ test.describe("Feature plan approval", () => {
     await page.goBack();
     await expect(page).toHaveURL(planUrl);
     const discardPrompt = page.waitForEvent("dialog");
-    await page.evaluate(() => window.history.go(-2));
+    await page.evaluate(() => window.history.go(-3));
     const prompt = await discardPrompt;
     expect(prompt.message()).toBe("Discard unsaved plan edits and leave this feature?");
     await prompt.dismiss();
@@ -596,9 +600,13 @@ test.describe("Feature plan approval", () => {
     await page.goForward();
     await expect(page).toHaveURL(boardUrl);
     const acceptedDiscardPrompt = page.waitForEvent("dialog");
-    await page.evaluate(() => window.history.go(-4));
+    await page.evaluate(() => window.history.go(-5));
     await (await acceptedDiscardPrompt).accept();
     await expect(page).toHaveURL(settingsUrl);
+    await page
+      .getByRole("navigation", { name: "Projects", exact: true })
+      .getByRole("link", { name: /kestrel/u })
+      .click();
     await page.getByRole("link", { name: title, exact: true }).click();
     await page.getByRole("tab", { name: "Plan", exact: true }).click();
     await expect(

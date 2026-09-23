@@ -22,7 +22,7 @@ describe("persistent Factory planning", () => {
     fixture = await createGitFixture();
     cleanup.push(() => fixture.close());
     await fixture.createSibling("factory-other");
-    stack = await startStack({ repositoryRoot: fixture.rootPath });
+    stack = await startStack({ connectedCodexFixture: true, repositoryRoot: fixture.rootPath });
     cleanup.push(() => stack.close());
     await stack.authenticateOperator();
     const inventory = LocalRepositoryInventorySchema.parse(

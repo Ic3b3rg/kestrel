@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 
 import type { Project } from "@kestrel/contracts";
+import { defaultLifecycleSettings, resolveLifecycleProfile } from "@kestrel/contracts";
 
 import { buildExternalConceptualReviewPreparation } from "./external-conceptual-review.js";
 
@@ -93,6 +94,44 @@ const project: Project = {
     },
   ],
 };
+
+it("binds the review digest to the resolved lifecycle profile and blocks missing choices", () => {
+  const profile = {
+    ...resolveLifecycleProfile(defaultLifecycleSettings, {}, [
+      { id: "review-model", displayName: "Review", isDefault: true },
+    ]),
+    phase: "review" as const,
+    versions: { installation: 1, project: 0 },
+    skills: [],
+  };
+  const input = {
+    project,
+    changeProposalId: proposalId,
+    selectedModelId: "legacy-model",
+    verifiedSource: { revisionId, manifestDigest: digest, headTreeId },
+    runtimeProfile: {
+      containerImage: `sha256:${"e".repeat(64)}`,
+      containerUser: "1000:1000",
+      codexExecutable: "/opt/codex/codex",
+      codexExecutableDigest: "f".repeat(64),
+      codexVersion: "1.2.3",
+    },
+    lifecycleProfile: profile,
+  };
+  const prepared = buildExternalConceptualReviewPreparation(input);
+  expect(prepared.configuration.model.modelId).toBe("review-model");
+  expect(prepared.configuration.lifecycleProfile).toEqual(profile);
+  expect(
+    buildExternalConceptualReviewPreparation({
+      ...input,
+      lifecycleProfile: { ...profile, versions: { installation: 2, project: 0 } },
+    }).preparationDigest,
+  ).not.toBe(prepared.preparationDigest);
+  expect(
+    buildExternalConceptualReviewPreparation({ ...input, lifecycleProfile: null }).readiness
+      .blockers,
+  ).toContain("lifecycle_profile_unavailable");
+});
 
 it("prepares an existing pull request from its stated intent without claiming final checks", () => {
   const preparation = buildExternalConceptualReviewPreparation({

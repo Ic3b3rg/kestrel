@@ -1,3 +1,4 @@
+import { FormFeedback } from "./components/FormFeedback.js";
 import { useEffect, useId, useRef, useState } from "react";
 import type { FactoryGate, ResolveFactoryGateCommand } from "@kestrel/contracts";
 import { ApiClientError } from "./api.js";
@@ -147,7 +148,9 @@ export function FactoryGatePanel({
         approved plan version {gate.approvedVersion}.
       </p>
       {current.resolution !== null ? (
-        <GateAnswer gate={current} />
+        <FormFeedback kind="success">
+          <GateAnswer gate={current} />
+        </FormFeedback>
       ) : !canAnswer ? (
         <p className="text-sm">
           {current.resumeBlockedReason === null ? null : blockedText[current.resumeBlockedReason]}
@@ -205,10 +208,13 @@ export function FactoryGatePanel({
               ? "Record what must change. Execution will stay paused; this does not approve a new scope."
               : "Clarify the technical choice or confirm the problem is resolved. Requirements, checks and authorized limits remain those in the approved plan."}
           </p>
+          {busy ? (
+            <FormFeedback kind="pending">Saving your answer for this gate…</FormFeedback>
+          ) : null}
           {error === null ? null : (
-            <p role="alert" className="planning-error">
+            <FormFeedback kind="error" focus className="planning-error">
               {error}
-            </p>
+            </FormFeedback>
           )}
           <Button
             type="submit"

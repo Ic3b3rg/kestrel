@@ -1,3 +1,4 @@
+import { FrozenLifecycleProfileSchema, type FrozenLifecycleProfile } from "@kestrel/contracts";
 import type { PoolClient } from "pg";
 import {
   FeaturePlanDocumentSchema,
@@ -45,6 +46,7 @@ import {
 export type { FactoryFeatureWorkspace } from "./factory-execution-ledger.js";
 
 export interface ClaimedFactoryExecution {
+  lifecycleProfile?: FrozenLifecycleProfile | null;
   id: string;
   ownerInstanceId: string;
   projectId: string;
@@ -509,11 +511,13 @@ export async function claimFactoryExecution(
        WHERE item.feature_id = $1 AND item.board_column IN ('in_review', 'completed') AND run.state = 'verified' ORDER BY item.position`,
         [row.feature_id],
       );
+      let correctionProfile: unknown;
       let correctionAuthority: ClaimedFactoryExecution["correction"];
       if (correction) {
         const selected = await client.query<{
           id: string;
           instruction: string;
+          lifecycle_profile: unknown;
           findings: unknown;
           source_workflow_id: string;
           source_artifact_id: string;
@@ -523,7 +527,7 @@ export async function claimFactoryExecution(
           current_run_id: string;
           state: string;
         }>(
-          `SELECT id, instruction, findings, source_workflow_id, source_artifact_id,
+          `SELECT id, instruction, lifecycle_profile, findings, source_workflow_id, source_artifact_id,
             source_review_revision_id, base_commit_id, head_commit_id, current_run_id, state
            FROM factory_review_corrections WHERE id = $1 AND feature_id = $2 FOR UPDATE`,
           [row.correction_id, row.feature_id],
@@ -538,6 +542,7 @@ export async function claimFactoryExecution(
           (row.attempt === 1 && initial.headCommitId !== authority.head_commit_id)
         )
           throw new FactoryError("conflict");
+        correctionProfile = authority.lifecycle_profile;
         correctionAuthority = {
           id: authority.id,
           instruction: authority.instruction,
@@ -568,7 +573,16 @@ export async function claimFactoryExecution(
               : `${item?.key ?? "Work Item"} is being implemented`,
         ],
       );
+      const approvalProfile = await client.query<{ lifecycle_profile: unknown }>(
+        "SELECT lifecycle_profile FROM factory_plan_approvals WHERE feature_id = $1 AND plan_version = $2",
+        [row.feature_id, row.plan_version],
+      );
+      const frozenProfile = correction
+        ? correctionProfile
+        : approvalProfile.rows[0]?.lifecycle_profile;
       return {
+        lifecycleProfile:
+          frozenProfile == null ? null : FrozenLifecycleProfileSchema.parse(frozenProfile),
         id,
         ownerInstanceId,
         projectId: feature.project_id,

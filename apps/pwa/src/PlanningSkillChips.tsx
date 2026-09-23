@@ -104,9 +104,14 @@ export function PlanningSkillChips({
           Skills can be removed after the current reply finishes.
         </p>
       ) : null}
+      {pending ? (
+        <FormFeedback kind="pending">Updating the Skills for the next message…</FormFeedback>
+      ) : null}
       {error !== null ? (
         <div className="grid justify-items-start gap-2">
-          <FormFeedback kind="error">{error}</FormFeedback>
+          <FormFeedback kind="error" focus>
+            {error}
+          </FormFeedback>
           {stale ? (
             <Button type="button" variant="outline" onClick={() => void onChanged()}>
               Refresh Skills

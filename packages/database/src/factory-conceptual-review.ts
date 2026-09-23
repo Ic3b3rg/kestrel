@@ -16,6 +16,7 @@ import {
   type FactoryConceptualReviewCheck,
   type FactoryConceptualReviewCheckCatalog,
   type FactoryFeatureConceptualReviewPreparation,
+  type FrozenLifecycleProfile,
 } from "@kestrel/contracts";
 import type { ConceptualReviewSourceBinding } from "@kestrel/local-source";
 
@@ -32,6 +33,8 @@ export class FactoryConceptualReviewPersistenceError extends Error {
 }
 
 export interface FactoryConceptualReviewRuntimeReadiness {
+  lifecycleProfile?: FrozenLifecycleProfile | null;
+  profileBlocker?: string | null;
   profile: {
     containerImage: string;
     containerUser: string;
@@ -434,10 +437,25 @@ export async function readFactoryConceptualReviewPreparation(
   const resolved = await resolveExactReviewInputs(pool, projectId, featureId);
   const blockers: FactoryConceptualReviewBlocker[] = [];
   if (resolved.exact === null) blockers.push(resolved.blocker);
-  if (resolved.row.selected_model_id === null) blockers.push("model_not_selected");
+  const modelId =
+    readiness.lifecycleProfile === undefined
+      ? resolved.row.selected_model_id
+      : (readiness.lifecycleProfile?.model ?? null);
+  if (modelId === null)
+    blockers.push(
+      readiness.lifecycleProfile === undefined
+        ? "model_not_selected"
+        : "lifecycle_profile_unavailable",
+    );
   if (readiness.profile === null) blockers.push("review_runtime_unavailable");
   const configuration = {
-    model: { route: "codex_subscription" as const, modelId: resolved.row.selected_model_id },
+    model: { route: "codex_subscription" as const, modelId },
+    ...(readiness.lifecycleProfile === undefined
+      ? {}
+      : {
+          lifecycleProfile: readiness.lifecycleProfile,
+          profileBlocker: readiness.profileBlocker ?? null,
+        }),
     runtimePolicy: {
       ...CONCEPTUAL_REVIEW_RUNTIME_POLICY,
       containerImage: readiness.profile?.containerImage ?? null,

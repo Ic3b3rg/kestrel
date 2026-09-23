@@ -161,6 +161,12 @@ export async function readExternalConceptualReviewPreparation(
     selectedModelId: metadata.selected_model_id,
     verifiedSource: verified,
     runtimeProfile: readiness.profile,
+    ...(readiness.lifecycleProfile === undefined
+      ? {}
+      : {
+          lifecycleProfile: readiness.lifecycleProfile,
+          profileBlocker: readiness.profileBlocker ?? null,
+        }),
   });
 }
 
@@ -170,6 +176,8 @@ export interface BuildExternalConceptualReviewPreparationInput {
   selectedModelId: string | null;
   verifiedSource: VerifiedExternalConceptualReviewSource | null;
   runtimeProfile: FactoryConceptualReviewRuntimeReadiness["profile"];
+  lifecycleProfile?: FactoryConceptualReviewRuntimeReadiness["lifecycleProfile"];
+  profileBlocker?: string | null;
 }
 
 function sha256(value: unknown): string {
@@ -333,8 +341,15 @@ export function buildExternalConceptualReviewPreparation(
           },
           checks: null,
         };
+  const modelId =
+    input.lifecycleProfile === undefined
+      ? input.selectedModelId
+      : (input.lifecycleProfile?.model ?? null);
   const configuration = {
-    model: { route: "codex_subscription" as const, modelId: input.selectedModelId },
+    model: { route: "codex_subscription" as const, modelId },
+    ...(input.lifecycleProfile === undefined
+      ? {}
+      : { lifecycleProfile: input.lifecycleProfile, profileBlocker: input.profileBlocker ?? null }),
     runtimePolicy: {
       ...CONCEPTUAL_REVIEW_RUNTIME_POLICY,
       containerImage: input.runtimeProfile?.containerImage ?? null,
@@ -349,11 +364,14 @@ export function buildExternalConceptualReviewPreparation(
   const blockers: FactoryConceptualReviewBlocker[] = [];
   if (publication === null || evidence === null) blockers.push("publication_not_ready");
   if (basis === null) blockers.push("change_intent_not_available");
-  if (input.selectedModelId === null) blockers.push("model_not_selected");
+  if (modelId === null)
+    blockers.push(
+      input.lifecycleProfile === undefined ? "model_not_selected" : "lifecycle_profile_unavailable",
+    );
   if (input.runtimeProfile === null) blockers.push("review_runtime_unavailable");
   const completeInputs = basis !== null && publication !== null && evidence !== null;
   const preparationDigest =
-    completeInputs && input.selectedModelId !== null
+    completeInputs && modelId !== null
       ? sha256({
           schemaVersion: 1,
           projectId: input.project.id,

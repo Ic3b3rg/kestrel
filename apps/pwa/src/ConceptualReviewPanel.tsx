@@ -1,3 +1,4 @@
+import { LifecycleProfileRecord } from "./LifecycleProfileRecord.js";
 import { useEffect, useState } from "react";
 import type { FactoryConceptualReviewWorkflowRead } from "@kestrel/contracts";
 import { AlertTriangle, Clock3, GitCompareArrows, LoaderCircle } from "lucide-react";
@@ -69,6 +70,10 @@ export function ConceptualReviewPanel({
             </p>
           </div>
         </div>
+        <LifecycleProfileRecord
+          profile={review.lifecycleProfile}
+          effective={review.runtimeProfileResult}
+        />
       </section>
     );
 
@@ -86,12 +91,20 @@ export function ConceptualReviewPanel({
             ? "No failure reason was retained."
             : failures[review.workflow.failure]}
         </p>
+        <LifecycleProfileRecord
+          profile={review.lifecycleProfile}
+          effective={review.runtimeProfileResult}
+        />
       </section>
     );
 
   if (artifact === null) return null;
   return (
     <section className="min-w-0 space-y-4 rounded-xl border border-border bg-card p-4 [overflow-wrap:anywhere] sm:p-5">
+      <LifecycleProfileRecord
+        profile={review.lifecycleProfile}
+        effective={review.runtimeProfileResult}
+      />
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">

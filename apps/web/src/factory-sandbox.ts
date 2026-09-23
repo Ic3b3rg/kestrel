@@ -1,3 +1,4 @@
+import { lifecycleProfileEvidence } from "@kestrel/contracts";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { StringDecoder } from "node:string_decoder";
@@ -189,7 +190,7 @@ export interface FactorySandboxOptions {
 
 type ImplementationInput = Pick<
   CodexExecutionTurnInput,
-  "model" | "prompt" | "outputSchema" | "onActivity" | "onQuestion"
+  "model" | "effort" | "serviceTier" | "prompt" | "outputSchema" | "onActivity" | "onQuestion"
 > & { round: number };
 
 type VerificationFeedback = Pick<
@@ -331,6 +332,9 @@ export function createFactorySandbox(options: FactorySandboxOptions) {
         runtimeState = {
           ...runtimeState,
           model: input.model,
+          ...(run.lifecycleProfile == null
+            ? {}
+            : { lifecycleProfile: lifecycleProfileEvidence(run.lifecycleProfile) }),
           threadId: null,
           turnId: null,
           containerId: null,
@@ -357,6 +361,10 @@ export function createFactorySandbox(options: FactorySandboxOptions) {
             await saveFactoryExecutionRuntime(pool, run, runtimeState);
           },
         });
+        if (result.effectiveProfile !== undefined) {
+          runtimeState = { ...runtimeState, effectiveProfile: result.effectiveProfile };
+          await saveFactoryExecutionRuntime(pool, run, runtimeState);
+        }
         implementation.assertStopped();
         signal.throwIfAborted();
         checkpointable = true;

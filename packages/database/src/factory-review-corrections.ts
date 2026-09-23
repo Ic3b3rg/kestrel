@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { z } from "zod";
 
+import { freezeLifecycleProfile } from "./lifecycle-profiles.js";
+import { lifecycleProfileEvidence, type CodexSubscriptionConnection } from "@kestrel/contracts";
 import {
   FactoryConceptualReviewArtifactSchema,
   FactoryFeaturePublicationOperationSchema,
@@ -34,6 +36,7 @@ import type { DatabasePool } from "./pool.js";
 import type { FactoryFeatureWorkspace } from "./factory-execution.js";
 
 interface CorrectionRow {
+  lifecycle_profile?: unknown;
   id: string;
   feature_id: string;
   project_id: string;
@@ -110,6 +113,8 @@ function mapCorrection(row: CorrectionRow): FactoryReviewCorrection {
       headCommitId: row.head_commit_id,
     },
     instruction: row.instruction,
+    lifecycleProfile:
+      row.lifecycle_profile == null ? null : lifecycleProfileEvidence(row.lifecycle_profile),
     findings: row.findings,
     state: row.state,
     failure: row.failure,
@@ -329,6 +334,7 @@ export function requestFactoryReviewCorrection(
   featureId: string,
   actorId: string,
   input: FactoryReviewCorrectionCommand,
+  connection?: CodexSubscriptionConnection,
 ): Promise<FactoryReviewCorrection> {
   const command = FactoryReviewCorrectionCommandSchema.parse(input);
   return withFactoryFeature(pool, projectId, featureId, async (client, feature) => {
@@ -410,14 +416,18 @@ export function requestFactoryReviewCorrection(
       [featureId],
     );
     if (running.rowCount !== 0) throw new FactoryReviewCorrectionError("not_ready");
+    const lifecycleProfile =
+      connection === undefined
+        ? null
+        : await freezeLifecycleProfile(client, "corrections", feature.project_id, connection);
     const inserted = (
       await client.query<{ id: string }>(
         `INSERT INTO factory_review_corrections (
           feature_id, project_id, plan_version, requested_by_operator_id, request_id,
           source_workflow_id, source_artifact_id, source_review_revision_id, source_input_digest,
           base_commit_id, head_commit_id, tree_id, instruction, finding_ids, findings,
-          publication_input)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::text[],$15::jsonb,$16::jsonb)
+          publication_input, lifecycle_profile)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::text[],$15::jsonb,$16::jsonb,$17::jsonb)
          RETURNING id`,
         [
           featureId,
@@ -436,6 +446,7 @@ export function requestFactoryReviewCorrection(
           command.findingIds,
           JSON.stringify(FindingSelectionSchema.parse(findings)),
           JSON.stringify(publication),
+          JSON.stringify(lifecycleProfile),
         ],
       )
     ).rows[0];

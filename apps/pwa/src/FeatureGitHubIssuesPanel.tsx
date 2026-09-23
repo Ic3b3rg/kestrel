@@ -1,3 +1,4 @@
+import { FormFeedback } from "./components/FormFeedback.js";
 import { useEffect, useRef, useState } from "react";
 import { CircleDot } from "lucide-react";
 import type {
@@ -312,19 +313,22 @@ export function FeatureGitHubIssuesPanel({
         ) : null}
         {reading ? <p role="status">Reading GitHub issues…</p> : null}
         {readError === null ? null : (
-          <p role="alert" className="planning-error">
+          <FormFeedback kind="error" className="planning-error">
             {readError}
-          </p>
+          </FormFeedback>
         )}
+        {busy ? (
+          <FormFeedback kind="pending">Importing the selected GitHub issues…</FormFeedback>
+        ) : null}
         {error === null ? null : (
-          <div role="alert" className="planning-command-error">
+          <FormFeedback kind="error" focus className="planning-command-error">
             <p>{error}</p>
             {uncertain ? (
               <Button variant="outline" disabled={!online || busy} onClick={() => void run()}>
                 Retry import
               </Button>
             ) : null}
-          </div>
+          </FormFeedback>
         )}
         {imports?.canImport === false ? (
           <p className="planning-notice">

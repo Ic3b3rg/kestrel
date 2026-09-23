@@ -41,3 +41,4 @@ export * from "./external-conceptual-review.js";
 export * from "./factory-conceptual-review-workflows.js";
 export * from "./factory-review-corrections.js";
 export * from "./factory-feature-merge.js";
+export * from "./lifecycle-profiles.js";

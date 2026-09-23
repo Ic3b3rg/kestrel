@@ -236,7 +236,20 @@ export function GitHubPlanningSkillImport({
       {!online ? (
         <FormFeedback kind="error">Reconnect to preview or install a Skill.</FormFeedback>
       ) : null}
-      {error === null ? null : <FormFeedback kind="error">{error}</FormFeedback>}
+      {error === null ? null : (
+        <FormFeedback kind="error" focus>
+          {error}
+        </FormFeedback>
+      )}
+      {previewing || installing ? (
+        <FormFeedback kind="pending">
+          {installing ? "Installing this Skill version…" : "Loading the Skill preview…"}
+        </FormFeedback>
+      ) : installed ? (
+        <FormFeedback kind="success">
+          This Skill version is installed and available in Lifecycle settings.
+        </FormFeedback>
+      ) : null}
       {preview === null ? null : (
         <div className="grid min-w-0 gap-3">
           <div>

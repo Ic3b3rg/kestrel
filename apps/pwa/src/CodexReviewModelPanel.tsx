@@ -1,3 +1,4 @@
+import { FormFeedback } from "./components/FormFeedback.js";
 import { Button } from "./components/ui/button.js";
 import { NativeSelect } from "./components/ui/native-select.js";
 import { Label } from "./components/ui/label.js";
@@ -244,22 +245,22 @@ export function CodexReviewModelPanel({
       </div>
 
       {selectedRemoved ? (
-        <p className="connection-remediation" role="alert">
+        <FormFeedback className="connection-remediation" kind="error">
           Saved model <code>{preference.selectedModelId}</code> no longer appears in the current
           catalog. Choose another model; Kestrel did not select a fallback.
-        </p>
+        </FormFeedback>
       ) : connection?.reason === null || connection?.reason === undefined ? null : (
         <p className="connection-remediation">{connectionMessages[connection.reason]}</p>
       )}
       {failed ? (
-        <p className="connection-remediation" role="alert">
+        <FormFeedback className="connection-remediation" kind="error">
           Kestrel could not read the saved review model. Try again after refreshing the page.
-        </p>
+        </FormFeedback>
       ) : null}
       {saveFailed ? (
-        <p className="connection-remediation" role="alert">
+        <FormFeedback className="connection-remediation" kind="error">
           The model was not saved. Refresh the catalog and choose a currently available model.
-        </p>
+        </FormFeedback>
       ) : null}
       {saved ? (
         <p className="connection-note" role="status">

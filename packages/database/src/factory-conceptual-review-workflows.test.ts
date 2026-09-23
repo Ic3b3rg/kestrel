@@ -264,6 +264,7 @@ const draft: FactoryConceptualReviewDraft = {
 
 function startPool(existing: unknown[] = [], insertError?: Error, unresolvedEnvironment = false) {
   const query = vi.fn((sql: string) => {
+    if (sql.includes("kestrel.lifecycle-profiles")) return { rowCount: 1, rows: [{}] };
     if (["BEGIN", "COMMIT", "ROLLBACK"].includes(sql)) return { rowCount: null, rows: [] };
     if (sql.includes("set_config('lock_timeout'")) return { rowCount: 1, rows: [{}] };
     if (sql.includes("FOR UPDATE OF feature"))
@@ -331,6 +332,7 @@ it("atomically accepts and durably queues one explicit review request", async ()
 
 it("starts the same durable review engine for an existing pull request without a Feature", async () => {
   const query = vi.fn((sql: string) => {
+    if (sql.includes("kestrel.lifecycle-profiles")) return { rowCount: 1, rows: [{}] };
     if (["BEGIN", "COMMIT", "ROLLBACK"].includes(sql)) return { rowCount: null, rows: [] };
     if (sql.includes("set_config('lock_timeout'")) return { rowCount: 1, rows: [{}] };
     if (sql.includes("FOR UPDATE OF project, proposal")) {

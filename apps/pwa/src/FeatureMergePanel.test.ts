@@ -165,7 +165,11 @@ it("requires an explicit acknowledgement before approving the exact reviewed hea
   expect(button.disabled).toBe(true);
   await renderAct(() => checkbox.click());
   expect(button.disabled).toBe(false);
-  await renderAct(() => button.click());
+  await renderAct(() => {
+    button.click();
+    button.click();
+  });
+  expect(approve).toHaveBeenCalledOnce();
   expect(approve).toHaveBeenCalledWith(projectId, featureId, {
     requestId: "c9a433e0-ad98-4d05-ad90-7b0d75ddf84b",
     decision: "approve_merge",

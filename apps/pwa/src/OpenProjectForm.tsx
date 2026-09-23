@@ -1,3 +1,6 @@
+import { createPortal } from "react-dom";
+import { FormFeedback } from "./components/FormFeedback.js";
+import { SourceOnboardingPanel } from "./SourceOnboardingPanel.js";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./components/ui/dialog.js";
 import { Button } from "./components/ui/button.js";
 import { NativeSelect } from "./components/ui/native-select.js";
@@ -15,6 +18,7 @@ import { ApiClientError, fetchLocalRepositories, openLocalProject } from "./api.
 import { RepositorySetupState } from "./RepositorySetupState.js";
 
 export interface OpenProjectFormProps {
+  triggerContainer?: HTMLElement | null;
   disabled: boolean;
   triggerLabel?: string;
   loadRepositories?: (signal?: AbortSignal) => Promise<LocalRepositoryInventory>;
@@ -36,6 +40,7 @@ function safeError(error: unknown, fallback: string): string {
 export function OpenProjectForm({
   disabled,
   triggerLabel = "Open Project",
+  triggerContainer,
   loadRepositories = fetchLocalRepositories,
   onAuthenticationError,
   onOpened,
@@ -102,13 +107,13 @@ export function OpenProjectForm({
 
   const submit = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (disabled || active.current !== null) return;
     const command = OpenLocalProjectCommandSchema.safeParse({ repositoryId });
     if (!command.success) {
       setError("Select an authorized repository.");
       return;
     }
     const controller = new AbortController();
-    active.current?.abort();
     active.current = controller;
     setPending(true);
     setError(null);
@@ -130,6 +135,11 @@ export function OpenProjectForm({
     }
   };
 
+  const triggerButton = (
+    <Button ref={trigger} type="button" disabled={disabled} onClick={() => void show()}>
+      {triggerLabel}
+    </Button>
+  );
   return (
     <Dialog
       open={open}
@@ -138,9 +148,11 @@ export function OpenProjectForm({
       }}
     >
       <div className="open-project-entry">
-        <Button ref={trigger} type="button" disabled={disabled} onClick={() => void show()}>
-          {triggerLabel}
-        </Button>
+        {triggerContainer === undefined
+          ? triggerButton
+          : triggerContainer === null
+            ? null
+            : createPortal(triggerButton, triggerContainer)}
         {open ? (
           <DialogContent
             showCloseButton={false}
@@ -150,7 +162,7 @@ export function OpenProjectForm({
             }}
             onCloseAutoFocus={(event) => {
               event.preventDefault();
-              trigger.current?.focus();
+              (trigger.current ?? document.getElementById("workspace"))?.focus();
             }}
             className="local-repository-dialog open-project-dialog max-h-[85dvh] overflow-y-auto sm:max-w-xl"
             aria-labelledby={titleId}
@@ -180,6 +192,10 @@ export function OpenProjectForm({
             <DialogDescription id={descriptionId}>
               Choose a local repository to open its Project.
             </DialogDescription>
+            <SourceOnboardingPanel
+              disabled={disabled || pending || loading}
+              onAuthorized={readInventory}
+            />
             <div className="local-inventory-actions">
               <p>Repositories you have already opened keep their Project history.</p>
               <Button
@@ -228,10 +244,13 @@ export function OpenProjectForm({
                 <Button type="submit" disabled={pending || repositoryId === ""}>
                   {pending ? "Opening Project…" : "Open selected Project"}
                 </Button>
+                {pending ? (
+                  <FormFeedback kind="pending">Opening the selected Project…</FormFeedback>
+                ) : null}
                 {error === null ? null : (
-                  <p className="project-form-error" role="alert">
+                  <FormFeedback className="project-form-error" kind="error" focus>
                     {error}
-                  </p>
+                  </FormFeedback>
                 )}
               </form>
             )}

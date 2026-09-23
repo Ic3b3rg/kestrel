@@ -60,6 +60,8 @@ export interface CodexExecutionTurnInput extends CodexExecutionLifecycle {
   cwd: string;
   gitDirectory?: string;
   model: string;
+  effort?: string | null;
+  serviceTier?: string | null;
   prompt: string;
   requestId: string;
   outputSchema?: Record<string, unknown>;
@@ -70,6 +72,7 @@ export interface CodexExecutionTurnInput extends CodexExecutionLifecycle {
   onQuestion(question: CodexExecutionQuestion): Promise<void>;
 }
 export interface CodexExecutionTurnResult {
+  effectiveProfile?: { model: string; effort: string | null; serviceTier: string | null };
   threadId: string;
   turnId: string;
   text: string;
@@ -1178,12 +1181,14 @@ class ExecutionTurn {
       .request("thread/start", {
         cwd: hostCwd,
         model: this.#input.model,
+        ...(this.#input.serviceTier == null ? {} : { serviceTier: this.#input.serviceTier }),
         modelProvider: "openai",
         sandbox: "read-only",
         approvalPolicy: "never",
         approvalsReviewer: "user",
         environments: ENVIRONMENTS,
         config: {
+          ...(this.#input.effort == null ? {} : { model_reasoning_effort: this.#input.effort }),
           features: FEATURES,
           model_provider: "openai",
           web_search: "disabled",
@@ -1218,6 +1223,8 @@ class ExecutionTurn {
       .request("turn/start", {
         threadId: this.#threadId,
         model: this.#input.model,
+        ...(this.#input.effort == null ? {} : { effort: this.#input.effort }),
+        ...(this.#input.serviceTier == null ? {} : { serviceTierForTurn: this.#input.serviceTier }),
         clientUserMessageId: this.#input.requestId,
         input: [{ type: "text", text: this.#input.prompt }],
         approvalPolicy: "never",
@@ -1230,7 +1237,15 @@ class ExecutionTurn {
       })
       .then(record);
     this.#observe(this.#threadId, record(turn.turn).id);
-    return this.transport.guard(this.#result);
+    const result = await this.transport.guard(this.#result);
+    return {
+      ...result,
+      effectiveProfile: {
+        model: boundedString(thread.model),
+        effort: typeof thread.reasoningEffort === "string" ? thread.reasoningEffort : null,
+        serviceTier: typeof thread.serviceTier === "string" ? thread.serviceTier : null,
+      },
+    };
   }
   async close(): Promise<void> {
     await this.transport.close(

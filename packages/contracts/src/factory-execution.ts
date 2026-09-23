@@ -1,3 +1,4 @@
+import { LifecycleProfileEvidenceSchema } from "./lifecycle-profile.js";
 import { z } from "zod";
 
 import { FactoryVerificationCommandSchema } from "./factory-plan.js";
@@ -81,6 +82,14 @@ const runDetails = {
   revision: FactoryExecutionRevisionSchema.nullable(),
   runtime: z
     .strictObject({
+      lifecycleProfile: LifecycleProfileEvidenceSchema.optional(),
+      effectiveProfile: z
+        .strictObject({
+          model: z.string(),
+          effort: z.string().nullable(),
+          serviceTier: z.string().nullable(),
+        })
+        .optional(),
       kind: z.literal("codex"),
       model: z.string().min(1).max(200),
       threadId: z.string().max(256).nullable(),

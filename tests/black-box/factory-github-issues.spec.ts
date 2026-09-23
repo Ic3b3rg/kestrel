@@ -118,6 +118,7 @@ test.describe("Factory GitHub issues", () => {
   test.beforeAll(async () => {
     fixture = await createGitFixture();
     stack = await startStack({
+      connectedCodexFixture: true,
       repositoryRoot: fixture.rootPath,
       githubFixture: factoryGitHubFixture,
     });

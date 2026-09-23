@@ -18,7 +18,7 @@ import type { PoolClient } from "pg";
 import type { DatabasePool } from "./pool.js";
 import { FactoryError, withFactoryFeature } from "./factory-planning.js";
 
-type Reader = DatabasePool | PoolClient;
+type Reader = Pick<DatabasePool, "query">;
 export const skillSummary = (bundle: PlanningSkillBundle): PlanningSkillSummary =>
   PlanningSkillSummarySchema.parse({
     name: bundle.name,
@@ -301,8 +301,8 @@ export async function saveFeaturePlanningSkills(
   });
 }
 
-async function requireInstalledPlanningSkills(
-  client: PoolClient,
+export async function requireInstalledPlanningSkills(
+  client: Reader,
   digests: string[],
 ): Promise<void> {
   if (digests.length === 0) return;
@@ -313,7 +313,7 @@ async function requireInstalledPlanningSkills(
   if (installed.rows.length !== digests.length)
     throw new FactoryError(
       "conflict",
-      "Install the previewed Skill before selecting it for planning",
+      "Install the selected Skill version in the Skill Library before using it for new work",
     );
 }
 

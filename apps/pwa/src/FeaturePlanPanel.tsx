@@ -1,3 +1,6 @@
+import { FormFeedback } from "./components/FormFeedback.js";
+import { LifecycleProfileRecord } from "./LifecycleProfileRecord.js";
+import { LifecycleProfileSummary } from "./LifecycleProfilePanel.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   FeaturePlanDocumentSchema,
@@ -153,6 +156,8 @@ export function FeaturePlanPanel({
   savePlan = saveFeaturePlan,
   approvePlan = approveFeaturePlan,
 }: FeaturePlanPanelProps) {
+  const [planningProfileReady, setPlanningProfileReady] = useState(false);
+  const [approvalProfileReady, setApprovalProfileReady] = useState(false);
   const [plans, setPlans] = useState<FeaturePlans | null>(null);
   const [imports, setImports] = useState<FactoryIssueImports | null>(null);
   const [displayed, setDisplayed] = useState<FeaturePlanVersion | null>(null);
@@ -227,7 +232,13 @@ export function FeaturePlanPanel({
   }, [visible, online, generation, readError, refresh, plans]);
 
   const run = async (next?: PlanAttempt) => {
-    if (!online || submitting.current) return;
+    if (
+      !online ||
+      submitting.current ||
+      (next?.kind === "approve" && !approvalProfileReady) ||
+      (next?.kind === "generate" && !planningProfileReady)
+    )
+      return;
     if (next !== undefined) command.current = next;
     const attempt = command.current;
     if (attempt === null) return;
@@ -388,9 +399,9 @@ export function FeaturePlanPanel({
         </Button>
       </header>
       {readError === null ? null : (
-        <p role="alert" className="planning-error">
+        <FormFeedback kind="error" className="planning-error">
           {readError}
-        </p>
+        </FormFeedback>
       )}
       {plans === null && reading ? <p role="status">Loading the plan…</p> : null}
       {plans?.feature.state === "cancelled" ? (
@@ -399,6 +410,12 @@ export function FeaturePlanPanel({
         <p className="planning-notice">
           Version {plans.approval.version} is approved. Its scope and limits are frozen.
         </p>
+      )}
+      {plans?.approval == null ? null : (
+        <LifecycleProfileRecord
+          profile={plans.approval.lifecycleProfile}
+          label="Approved Implementation profile"
+        />
       )}
       {displayed !== null && !latestDisplayed ? (
         <p className="planning-notice">
@@ -448,8 +465,9 @@ export function FeaturePlanPanel({
           ) : null}
         </div>
       )}
+      {busy ? <FormFeedback kind="pending">Saving this plan command…</FormFeedback> : null}
       {error === null ? null : (
-        <div role="alert" className="planning-command-error">
+        <FormFeedback kind="error" focus className="planning-command-error">
           <p>{error}</p>
           {draft === null ? null : <p>Your unsaved edits are retained.</p>}
           {uncertain ? (
@@ -457,17 +475,17 @@ export function FeaturePlanPanel({
               Retry request
             </Button>
           ) : null}
-        </div>
+        </FormFeedback>
       )}
       {validation.length === 0 ? null : (
-        <div role="alert" className="planning-command-error">
+        <FormFeedback kind="error" className="planning-command-error">
           <p>Resolve these plan problems before saving:</p>
           <ul>
             {validation.map((message, index) => (
               <li key={index}>{message}</li>
             ))}
           </ul>
-        </div>
+        </FormFeedback>
       )}
       {assignmentProblems.length === 0 ? null : (
         <div className="planning-notice" role="status">
@@ -525,10 +543,23 @@ export function FeaturePlanPanel({
             </>
           )}
           {planning ? (
+            <LifecycleProfileSummary
+              phase="planning"
+              projectId={projectId}
+              online={online}
+              onReady={setPlanningProfileReady}
+            />
+          ) : null}
+          {planning ? (
             <div className="plan-actions">
               <Button
                 variant={displayed === null ? "default" : "outline"}
-                disabled={controlsDisabled || pending || (displayed !== null && !latestDisplayed)}
+                disabled={
+                  controlsDisabled ||
+                  pending ||
+                  !planningProfileReady ||
+                  (displayed !== null && !latestDisplayed)
+                }
                 onClick={() =>
                   void run({
                     kind: "generate",
@@ -560,10 +591,15 @@ export function FeaturePlanPanel({
           {displayed === null || plans?.approval != null || !planning ? null : (
             <section className="plan-approval" aria-label="Approve this plan">
               <h3>Approve this exact version</h3>
+              <LifecycleProfileSummary
+                onReady={setApprovalProfileReady}
+                phase="implementation"
+                projectId={projectId}
+                online={online}
+              />
               <p>
                 Authorize the scope, ordered Work Items and execution limits shown above. Approval
                 queues this feature and publishes its GitHub issues. Imported issues are reused.
-                Execution is not available yet.
               </p>
               <p>
                 {displayed.document.workItems.length} Work Items ·{" "}
@@ -575,6 +611,7 @@ export function FeaturePlanPanel({
                 disabled={
                   controlsDisabled ||
                   pending ||
+                  !approvalProfileReady ||
                   !latestDisplayed ||
                   imports === null ||
                   assignmentProblems.length > 0 ||
@@ -646,10 +683,11 @@ export function FeaturePlanPanel({
               Feature: {plans.feature.title}. Current plan:{" "}
               {currentVersion === null ? "none" : `version ${String(currentVersion)}`}.
             </p>
+
             {error === null ? null : (
-              <p role="alert" className="planning-error">
+              <FormFeedback kind="error" focus className="planning-error">
                 {error}
-              </p>
+              </FormFeedback>
             )}
             <Button
               disabled={!online || busy}

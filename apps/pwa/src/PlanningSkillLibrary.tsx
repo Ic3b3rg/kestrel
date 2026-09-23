@@ -224,7 +224,11 @@ export function PlanningSkillLibrary({
               </Button>
             </>
           )}
-          {importError !== null ? <FormFeedback kind="error">{importError}</FormFeedback> : null}
+          {importError !== null ? (
+            <FormFeedback kind="error" focus>
+              {importError}
+            </FormFeedback>
+          ) : null}
           {importSuccess !== null ? (
             <FormFeedback kind="success">{importSuccess}</FormFeedback>
           ) : null}

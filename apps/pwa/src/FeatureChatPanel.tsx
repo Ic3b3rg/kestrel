@@ -1,3 +1,5 @@
+import { FormFeedback } from "./components/FormFeedback.js";
+import { LifecycleProfileSummary } from "./LifecycleProfilePanel.js";
 import { useCallback, useEffect, useRef, useState, type SyntheticEvent } from "react";
 import { Pencil, RefreshCw, Send, Square } from "lucide-react";
 import type {
@@ -7,6 +9,7 @@ import type {
   SendPlanningMessageCommand,
 } from "@kestrel/contracts";
 
+import { LifecycleProfileRecord } from "./LifecycleProfileRecord.js";
 import {
   ApiClientError,
   cancelPlanningTurn,
@@ -156,7 +159,11 @@ function FeatureTitleControl({
             disabled={pending || error !== null}
             onChange={(event) => setTitle(event.currentTarget.value)}
           />
-          {error === null ? null : <p role="alert">{error}</p>}
+          {error === null ? null : (
+            <FormFeedback kind="error" focus>
+              {error}
+            </FormFeedback>
+          )}
           <Button type="submit" disabled={!online || pending || title.trim() === ""}>
             {pending ? "Saving…" : error === null ? "Save name" : "Retry rename"}
           </Button>
@@ -216,6 +223,7 @@ export function FeatureChatPanel({
   const attempt = useRef<Attempt | null>(null);
   const activeRead = useRef<AbortController | null>(null);
   const alive = useRef(true);
+  const [profileReady, setProfileReady] = useState(false);
   const submitting = useRef(false);
 
   const refresh = useCallback(async () => {
@@ -320,6 +328,7 @@ export function FeatureChatPanel({
   const submit = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (
+      !profileReady ||
       chat?.feature.state !== "planning" ||
       draft.trim() === "" ||
       commandError !== null ||
@@ -357,7 +366,7 @@ export function FeatureChatPanel({
               ? "Loading conversation"
               : "Conversation unavailable"}
         </h1>
-        {readError === null ? null : <p role="alert">{readError}</p>}
+        {readError === null ? null : <FormFeedback kind="error">{readError}</FormFeedback>}
         {!online ? (
           <p>Your accepted messages remain saved on the workstation.</p>
         ) : (
@@ -462,9 +471,9 @@ export function FeatureChatPanel({
         </TabsList>
         <TabsContent value="chat" className="feature-chat-content">
           {readError === null ? null : (
-            <p className="planning-error" role="alert">
+            <FormFeedback className="planning-error" kind="error">
               {readError}
-            </p>
+            </FormFeedback>
           )}
           {chat.context?.notice === null || chat.context?.notice === undefined ? null : (
             <p className="planning-notice">{chat.context.notice}</p>
@@ -514,6 +523,13 @@ export function FeatureChatPanel({
                       </time>
                     </header>
                     <div className="planning-message-content">{message.content}</div>
+                    {turn === undefined ? null : (
+                      <LifecycleProfileRecord
+                        profile={turn.lifecycleProfile}
+                        effective={turn.runtimeProfileResult}
+                        label="Planning profile used"
+                      />
+                    )}
                     {message.role !== "assistant" ||
                     message.generatedPlanVersion === undefined ? null : (
                       <GeneratedPlanDocuments
@@ -602,8 +618,11 @@ export function FeatureChatPanel({
               );
             })}
           </ol>
+          {commandPending ? (
+            <FormFeedback kind="pending">Saving this chat command…</FormFeedback>
+          ) : null}
           {commandError === null ? null : (
-            <div className="planning-command-error" role="alert">
+            <FormFeedback className="planning-command-error" kind="error" focus>
               <p>{commandError}</p>
               {commandError.includes("is not installed") ? (
                 <a href="/settings/skills">Open Settings → Skills</a>
@@ -621,8 +640,14 @@ export function FeatureChatPanel({
                       : "Retry request"}
                 </Button>
               ) : null}
-            </div>
+            </FormFeedback>
           )}
+          <LifecycleProfileSummary
+            phase="planning"
+            projectId={projectId}
+            online={online}
+            onReady={setProfileReady}
+          />
           <form className="planning-composer" onSubmit={submit}>
             <Label htmlFor="planning-message">Message</Label>
             <PlanningSkillChips
@@ -669,6 +694,7 @@ export function FeatureChatPanel({
                   commandPending ||
                   activeTurn !== undefined ||
                   commandError !== null ||
+                  !profileReady ||
                   draft.trim() === ""
                 }
               >

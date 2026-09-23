@@ -17,7 +17,6 @@ import {
   completeGeneratedFactoryPlan,
   completePlanningTurn,
   isPlanningTurnRunning,
-  readCodexReviewModelPreference,
   savePlanningContext,
   savePlanningThread,
   type DatabasePool,
@@ -242,15 +241,19 @@ export function createFactoryPlanningProcessor({
                   : "unavailable";
           throw new CodexPlanningError(failure);
         }
-        const preference = await readCodexReviewModelPreference(pool);
-        const model =
-          preference.selectedModelId ?? readiness.models.find(({ isDefault }) => isDefault)?.id;
-        if (model === undefined || !readiness.models.some(({ id }) => id === model))
-          throw new CodexPlanningError("unavailable");
+        const profile = turn.lifecycleProfile;
+        if (profile == null)
+          throw new CodexPlanningError(
+            "unavailable",
+            "This message predates lifecycle profiles. Send a new message with the current Planning profile.",
+          );
+        const model = profile.model;
         cwd = await planningDirectory(config, turn.featureId);
         const result = await runtime.runTurn({
           cwd,
           model,
+          effort: profile.effort,
+          serviceTier: profile.serviceTier,
           requestId: turn.id,
           prompt,
           ...(turn.purpose === "plan"
@@ -268,6 +271,11 @@ export function createFactoryPlanningProcessor({
           onThread: (threadId) => savePlanningThread(pool, turn, threadId),
         });
         signal.throwIfAborted();
+        if (result.effectiveProfile !== undefined)
+          await pool.query(
+            "UPDATE factory_planning_turns SET runtime_profile_result = $2::jsonb WHERE id = $1 AND state = 'running'",
+            [turn.id, JSON.stringify(result.effectiveProfile)],
+          );
         if (turn.purpose === "plan") {
           const plan = parseGeneratedFeaturePlan(result.text);
           // Redacting structured command arguments would silently create a different plan.

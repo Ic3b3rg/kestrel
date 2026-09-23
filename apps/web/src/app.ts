@@ -1,3 +1,9 @@
+import { registerLifecycleProfileRoutes } from "./routes/lifecycle-profiles.js";
+import { registerSourceOnboardingRoutes } from "./routes/source-onboarding.js";
+import {
+  createSourceOnboardingService,
+  type SourceOnboardingService,
+} from "./source-onboarding.js";
 import { randomUUID } from "node:crypto";
 
 import Fastify, { type FastifyInstance } from "fastify";
@@ -85,7 +91,7 @@ import {
   type ReviewWorkflowService,
 } from "./routes/review-workflows.js";
 import { registerAuthentication } from "./authentication.js";
-import { readLocalSourceConfig } from "@kestrel/local-source";
+import { createManagedSourceService, readLocalSourceConfig } from "@kestrel/local-source";
 
 export interface BuildAppOptions {
   boss: DiagnosticJobSender;
@@ -94,6 +100,8 @@ export interface BuildAppOptions {
   eventPool?: DatabasePool;
   eventRetentionLimit: number;
   logger?: boolean;
+  sourceOnboardingService?: SourceOnboardingService;
+  managedSourceService?: ReturnType<typeof createManagedSourceService>;
   localRepositoryService?: LocalRepositoryService;
   pool: DatabasePool;
   projectService?: ProjectService;
@@ -191,6 +199,8 @@ export async function buildApp({
   directApiProfileService = createUnavailableDirectApiProfileService(pool),
   eventPool = pool,
   pwaRoot,
+  sourceOnboardingService = createSourceOnboardingService(),
+  managedSourceService,
   localRepositoryService = {
     listRepositories: () =>
       Promise.resolve({
@@ -219,14 +229,19 @@ export async function buildApp({
   externalConceptualReviewService = createDatabaseExternalConceptualReviewService(
     pool,
     () => readLocalSourceConfig(),
-    { boss, runtimeProfile: factoryConceptualReviewRuntimeProfile },
+    { boss, runtimeProfile: factoryConceptualReviewRuntimeProfile, connection: codexAgentRuntime },
   ),
   factoryConceptualReviewService = createDatabaseFactoryConceptualReviewService(
     pool,
     () => readLocalSourceConfig(),
-    { boss, runtimeProfile: factoryConceptualReviewRuntimeProfile },
+    { boss, runtimeProfile: factoryConceptualReviewRuntimeProfile, connection: codexAgentRuntime },
   ),
-  factoryReviewCorrectionService = createDatabaseFactoryReviewCorrectionService(pool, boss),
+  factoryReviewCorrectionService = createDatabaseFactoryReviewCorrectionService(
+    pool,
+    boss,
+    undefined,
+    codexAgentRuntime,
+  ),
   factoryFeatureMergeService = createDatabaseFactoryFeatureMergeService(pool, boss),
   sessionSigningKey,
 }: BuildAppOptions): Promise<FastifyInstance> {
@@ -279,7 +294,8 @@ export async function buildApp({
   registerOperatorSecurityRoutes(app, pool, sessionSigningKey);
 
   registerDiagnosticRoutes(app, pool, boss, eventRetentionLimit);
-  registerFactoryPlanningRoutes(app, pool, boss);
+  registerFactoryPlanningRoutes(app, pool, boss, codexAgentRuntime);
+  registerLifecycleProfileRoutes(app, pool, codexAgentRuntime);
   registerPlanningSkillRoutes(app, pool);
   registerFactoryIssueRoutes(app, pool, factoryGitHub);
   registerProjectBoardRoutes(app, pool, factoryGitHub);
@@ -299,6 +315,7 @@ export async function buildApp({
   registerDirectApiProfileRoutes(app, directApiProfileService);
   registerChangeIntentRoutes(app, changeIntentService);
   registerLocalRepositoryRoutes(app, localRepositoryService);
+  registerSourceOnboardingRoutes(app, sourceOnboardingService, managedSourceService);
   registerReviewRevisionRoutes(app, reviewRevisionService);
   registerReviewWorkflowRoutes(app, reviewWorkflowService);
   registerExternalConceptualReviewRoutes(app, externalConceptualReviewService);
