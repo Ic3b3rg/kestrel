@@ -3,6 +3,7 @@ export * from "./v1.js";
 export * from "./factory.js";
 export * from "./factory-plan.js";
 export * from "./factory-plan-graph.js";
+export * from "./project-board.js";
 export * from "./factory-issues.js";
 export * from "./factory-execution.js";
 export * from "./factory-verification.js";

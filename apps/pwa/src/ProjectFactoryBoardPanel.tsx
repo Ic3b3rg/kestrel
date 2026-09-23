@@ -1,12 +1,6 @@
 import { useId, type MouseEvent } from "react";
 import { ArrowUpRight, GitPullRequest, Plus, RefreshCw, Settings } from "lucide-react";
-import type {
-  FactoryBoard,
-  FactoryGitHubIssue,
-  FactoryGitHubIssues,
-  FactoryWorkItem,
-  Feature,
-} from "@kestrel/contracts";
+import type { ProjectBoardSnapshot, ProjectBoardWorkItem } from "@kestrel/contracts";
 import { Button } from "./components/ui/button.js";
 import { FactoryProviderProblem } from "./FeatureGitHubIssuesPanel.js";
 
@@ -20,11 +14,7 @@ const columns = [
 export interface ProjectFactoryBoardPanelProps {
   projectId: string;
   projectName: string;
-  features: Feature[];
-  boards: FactoryBoard[];
-  githubIssuePages?: readonly FactoryGitHubIssues[];
-  githubIssuesError?: string | null;
-  githubIssuesLoading?: boolean;
+  snapshot: ProjectBoardSnapshot | null;
   online: boolean;
   loading: boolean;
   error: string | null;
@@ -50,7 +40,7 @@ function openSettings(event: MouseEvent<HTMLAnchorElement>, onOpenSettings: () =
   onOpenSettings();
 }
 
-function GitHubIssueCard({ issue }: { issue: FactoryGitHubIssue }) {
+function GitHubIssueCard({ issue }: { issue: ProjectBoardSnapshot["github"]["issues"][number] }) {
   return (
     <li className="min-w-0">
       <Button
@@ -82,8 +72,8 @@ function WorkItemCard({
   item,
   onOpenFeature,
 }: {
-  feature: Feature;
-  item: FactoryWorkItem;
+  feature: ProjectBoardWorkItem["feature"];
+  item: ProjectBoardWorkItem["item"];
   onOpenFeature: ProjectFactoryBoardPanelProps["onOpenFeature"];
 }) {
   const contextId = useId();
@@ -141,11 +131,7 @@ function WorkItemCard({
 export function ProjectFactoryBoardPanel({
   projectId,
   projectName,
-  features,
-  boards,
-  githubIssuePages = [],
-  githubIssuesError = null,
-  githubIssuesLoading = false,
+  snapshot,
   online,
   loading,
   error,
@@ -157,38 +143,13 @@ export function ProjectFactoryBoardPanel({
   settingsHref,
 }: ProjectFactoryBoardPanelProps) {
   const titleId = useId();
-  const approvedBoards = boards.filter((board) => board.approvedVersion !== null);
-  const planningFeatures = features.filter(
-    (feature) =>
-      feature.state === "planning" &&
-      !approvedBoards.some((board) => board.feature.id === feature.id),
-  );
-  const linkedIssueUrls = new Set(
-    approvedBoards.flatMap((board) =>
-      board.columns.flatMap((column) =>
-        column.items.flatMap((item) => (item.providerUrl === null ? [] : [item.providerUrl])),
-      ),
-    ),
-  );
-  const seenGitHubIssues = new Set<string>();
-  const availableGitHubIssues = githubIssuePages
-    .filter((page) => page.state === "available")
-    .flatMap((page) => page.issues)
-    .filter((issue) => {
-      const key = `${issue.repository.id}:${issue.id}`;
-      if (seenGitHubIssues.has(key) || linkedIssueUrls.has(issue.url)) return false;
-      seenGitHubIssues.add(key);
-      return true;
-    });
-  const githubIssueFailure =
-    githubIssuePages.find((page) => page.failure !== null)?.failure ?? null;
-  const githubIssuesLimited = githubIssuePages.some((page) => page.limited);
+  const planningFeatures = snapshot?.planningFeatures ?? [];
+  const workItems = snapshot?.workItems ?? [];
+  const availableGitHubIssues = snapshot?.github.issues ?? [];
+  const githubIssueFailure = snapshot?.github.failure ?? null;
+  const githubIssuesLimited = snapshot?.github.limited ?? false;
   return (
-    <section
-      className="min-w-0 space-y-6"
-      aria-labelledby={titleId}
-      aria-busy={loading || githubIssuesLoading}
-    >
+    <section className="min-w-0 space-y-6" aria-labelledby={titleId} aria-busy={loading}>
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="mb-1 text-sm text-muted-foreground">Project board</p>
@@ -222,16 +183,6 @@ export function ProjectFactoryBoardPanel({
           {error}
         </p>
       )}
-      {githubIssuesError === null ? null : (
-        <p role="alert" className="text-sm">
-          {githubIssuesError}
-        </p>
-      )}
-      {githubIssuesLoading ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          Reading GitHub issues…
-        </p>
-      ) : null}
       {!online ? (
         <p role="status" className="text-sm text-muted-foreground">
           Reconnect to refresh this board.
@@ -242,18 +193,19 @@ export function ProjectFactoryBoardPanel({
           <FactoryProviderProblem failure={githubIssueFailure} projectId={projectId} />
         </div>
       )}
+      {snapshot?.github.retained ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          Showing the last available GitHub issues.
+        </p>
+      ) : null}
       {githubIssuesLimited ? (
         <p role="status" className="text-sm text-muted-foreground">
-          Showing the first five pages. More open GitHub issues may exist.
+          Showing a limited set of GitHub issues. More open GitHub issues may exist.
         </p>
       ) : null}
       <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {columns.map((column) => {
-          const items = approvedBoards.flatMap((board) =>
-            board.columns
-              .filter((entry) => entry.id === column.id)
-              .flatMap((entry) => entry.items.map((item) => ({ item, feature: board.feature }))),
-          );
+          const items = workItems.filter(({ item }) => item.column === column.id);
           const drafts = column.id === "todo" ? planningFeatures : [];
           const providerIssues = column.id === "todo" ? availableGitHubIssues : [];
           const count = items.length + drafts.length + providerIssues.length;

@@ -408,7 +408,11 @@ export function App() {
       securityController.current?.abort();
       setNetworkOnline(false);
       setSessionChecking(true);
-      resetProjectState();
+      projectInboxController.current?.abort();
+      projectInboxController.current = null;
+      setProjectLoading(false);
+      setProjectPending(false);
+      setProjectError(null);
       setAnnouncement("Offline. Reconnect to continue.");
     };
     window.addEventListener("online", handleOnline);
@@ -420,7 +424,7 @@ export function App() {
       projectCommandController.current?.abort();
       securityController.current?.abort();
     };
-  }, [resetProjectState]);
+  }, []);
 
   useEffect(() => {
     if (!networkOnline) {

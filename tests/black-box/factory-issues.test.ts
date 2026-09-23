@@ -10,6 +10,7 @@ import {
   FeatureSchema,
   LocalRepositoryInventorySchema,
   ProjectUpsertedSchema,
+  ProjectBoardSnapshotSchema,
 } from "@kestrel/contracts";
 import { startStack, type RunningStack } from "./support/compose.js";
 import { createGitFixture } from "./support/git-fixture.js";
@@ -134,6 +135,36 @@ describe("Factory GitHub issue authority", () => {
     expect(response.status, await response.clone().text()).toBe(200);
     return FactoryBoardSchema.parse(await response.json());
   }
+
+  it("reads one authenticated Project snapshot with bounded GitHub freshness and retained local cards", async () => {
+    const path = await featurePath("Board snapshot planning");
+    const endpoint = `/api/v1/projects/${projectId}/board`;
+    expect((await fetch(new URL(endpoint, stack.apiUrl))).status).toBe(401);
+    const response = await stack.fetchApi(endpoint);
+    expect(response.status, await response.clone().text()).toBe(200);
+    const snapshot = ProjectBoardSnapshotSchema.parse(await response.json());
+    expect(snapshot.planningFeatures.some((feature) => path.endsWith(feature.id))).toBe(true);
+    expect(snapshot.github.issues.some(({ number }) => number === 16)).toBe(true);
+    const calls = (await providerState()).calls.length;
+    expect((await stack.fetchApi(endpoint)).status).toBe(200);
+    expect((await providerState()).calls).toHaveLength(calls);
+    await controls({ auth: true });
+    try {
+      const failed = ProjectBoardSnapshotSchema.parse(
+        await (await stack.fetchApi(`${endpoint}?refreshProvider=1`)).json(),
+      );
+      expect(failed.planningFeatures).toEqual(snapshot.planningFeatures);
+      expect(failed.github).toMatchObject({
+        failure: "needs_authentication",
+        retained: true,
+        fetchedAt: snapshot.github.fetchedAt,
+      });
+      expect(failed.github.issues).toEqual(snapshot.github.issues);
+    } finally {
+      await controls({});
+    }
+  });
+
   it("exposes durable issue imports and cannot publish before exact plan approval", async () => {
     const path = await featurePath("Review issue context");
     const imported = await stack.fetchApi(`${path}/imports`);
@@ -237,6 +268,15 @@ describe("Factory GitHub issue authority", () => {
         .find(({ providerUrl }) => providerUrl === snapshot.issue.url),
     ).toBeDefined();
     expect(board.columns[3]?.items).toEqual([]);
+    const projectBoard = ProjectBoardSnapshotSchema.parse(
+      await (await stack.fetchApi(`/api/v1/projects/${projectId}/board?refreshProvider=1`)).json(),
+    );
+    expect(projectBoard.workItems.some(({ item }) => item.providerUrl === snapshot.issue.url)).toBe(
+      true,
+    );
+    expect(projectBoard.github.issues.some(({ url }) => url === snapshot.issue.url)).toBe(false);
+    expect(projectBoard.planningFeatures.some(({ id }) => id === board.feature.id)).toBe(false);
+    expect(projectBoard.workItems.every(({ item }) => item.column !== "completed")).toBe(true);
   }, 60_000);
 
   it("reconciles an uncertain issue create without another POST even when a scan is empty", async () => {

@@ -132,7 +132,9 @@ test.describe("Factory GitHub issues", () => {
     page,
   }) => {
     if (stack === undefined) throw new Error("The GitHub issue stack is unavailable");
-    await openProjectBoard(page, stack.pwaUrl);
+    const requests: string[] = [];
+    page.on("request", (request) => requests.push(new URL(request.url()).pathname));
+    const projectId = await openProjectBoard(page, stack.pwaUrl);
     const todo = page.getByRole("region", { name: "To do", exact: true });
     const issue = todo.getByRole("link", {
       name: "Open GitHub issue #16: Existing issue 16",
@@ -140,6 +142,70 @@ test.describe("Factory GitHub issues", () => {
     });
     await expect(issue).toBeVisible();
     await expect(issue).toContainText("Ic3b3rg/kestrel");
+    expect(requests).toContain(`/api/v1/projects/${projectId}/board`);
+    expect(requests.some((path) => path.endsWith("/github-issues"))).toBe(false);
+    expect(requests.some((path) => /\/features\/[^/]+\/board$/u.test(path))).toBe(false);
+    await page.getByRole("button", { name: "New plan", exact: true }).focus();
+    await page.keyboard.press("Enter");
+    await page
+      .getByLabel("Describe the change", { exact: true })
+      .fill("Keep local planning visible when GitHub is unavailable");
+    await page.getByRole("main").getByRole("button", { name: "Start plan", exact: true }).click();
+    await expect(
+      page.getByRole("heading", { level: 1, name: "New plan", exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Rename feature", exact: true })).toBeVisible();
+    await page.goto(new URL(`/projects/${projectId}`, stack.pwaUrl).href);
+    const planning = page.getByRole("button", { name: /^Open planning chat:/u }).first();
+    await expect(planning).toBeVisible();
+    await page.setViewportSize({ width: 320, height: 844 });
+    await page.getByRole("button", { name: "Refresh board", exact: true }).focus();
+    await page.keyboard.press("Enter");
+    await expect(issue).toBeVisible();
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    await page.screenshot({
+      path: test.info().outputPath("project-board-narrow.png"),
+      animations: "disabled",
+    });
+    await stack.executeWebModule(`
+      import { readFile, writeFile } from "node:fs/promises";
+      const path = "/tmp/kestrel-factory-github.json";
+      const state = JSON.parse(await readFile(path, "utf8")); state.controls = { auth: true };
+      await writeFile(path, JSON.stringify(state));
+    `);
+    try {
+      await page.getByRole("button", { name: "Refresh board", exact: true }).click();
+      await expect(
+        page.getByText("Showing the last available GitHub issues.", { exact: true }),
+      ).toBeVisible();
+      await expect(planning).toBeVisible();
+      await expect(issue).toBeVisible();
+      await page.context().setOffline(true);
+      await expect(
+        page.getByText("Reconnect to refresh this board.", { exact: true }),
+      ).toBeVisible();
+      await expect(planning).toBeVisible();
+    } finally {
+      await page.context().setOffline(false);
+      await stack.executeWebModule(`
+        import { readFile, writeFile } from "node:fs/promises";
+        const path = "/tmp/kestrel-factory-github.json";
+        const state = JSON.parse(await readFile(path, "utf8")); state.controls = {};
+        await writeFile(path, JSON.stringify(state));
+      `);
+    }
+    await page.getByRole("link", { name: "Project settings", exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/settings$`, "u"));
+    const boardReads = requests.filter(
+      (path) => path === `/api/v1/projects/${projectId}/board`,
+    ).length;
+    await page.waitForTimeout(2_200);
+    expect(requests.filter((path) => path === `/api/v1/projects/${projectId}/board`)).toHaveLength(
+      boardReads,
+    );
   });
 
   test("imports a snapshot, binds it through normal plan fields, and resumes partial publication without duplicates", async ({

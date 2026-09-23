@@ -9,6 +9,7 @@ import { registerDiagnosticRoutes } from "./routes/diagnostics.js";
 import { registerPlanningSkillRoutes } from "./routes/factory-skills.js";
 import { registerFactoryPlanningRoutes } from "./routes/factory-planning.js";
 import { registerFactoryIssueRoutes } from "./routes/factory-issues.js";
+import { registerProjectBoardRoutes } from "./routes/project-board.js";
 import { registerFactoryExecutionRoutes } from "./routes/factory-execution.js";
 import { registerFactoryFeaturePublicationRoutes } from "./routes/factory-feature-publication.js";
 import {
@@ -281,6 +282,7 @@ export async function buildApp({
   registerFactoryPlanningRoutes(app, pool, boss);
   registerPlanningSkillRoutes(app, pool);
   registerFactoryIssueRoutes(app, pool, factoryGitHub);
+  registerProjectBoardRoutes(app, pool, factoryGitHub);
   registerFactoryExecutionRoutes(app, pool);
   registerFactoryFeaturePublicationRoutes(app, pool);
   registerFactoryConceptualReviewRoutes(app, factoryConceptualReviewService);

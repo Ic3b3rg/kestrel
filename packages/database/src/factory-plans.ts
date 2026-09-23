@@ -54,7 +54,11 @@ interface PlanRow {
   created_at: Date;
 }
 
-async function boardFor(client: PoolClient, feature: FeatureRow): Promise<FactoryBoard> {
+async function boardFor(
+  client: PoolClient,
+  feature: FeatureRow,
+  includeActivity = true,
+): Promise<FactoryBoard> {
   const approved =
     feature.approved_plan_version === null
       ? null
@@ -74,16 +78,18 @@ async function boardFor(client: PoolClient, feature: FeatureRow): Promise<Factor
      WHERE item.feature_id = $1 AND item.plan_version = $2 ORDER BY item.position`,
     [feature.id, feature.approved_plan_version],
   );
-  const activity = await client.query<{
-    id: string;
-    work_item_id: string | null;
-    kind: string;
-    summary: string;
-    created_at: Date;
-  }>(
-    "SELECT * FROM factory_activity WHERE feature_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1000",
-    [feature.id],
-  );
+  const activity = includeActivity
+    ? await client.query<{
+        id: string;
+        work_item_id: string | null;
+        kind: string;
+        summary: string;
+        created_at: Date;
+      }>(
+        "SELECT * FROM factory_activity WHERE feature_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1000",
+        [feature.id],
+      )
+    : { rows: [] };
   const events = activity.rows.toReversed().map((row) => ({
     id: row.id,
     workItemId: row.work_item_id,
@@ -158,6 +164,38 @@ export function readFactoryBoard(
   featureId: string,
 ): Promise<FactoryBoard> {
   return withFactoryFeature(pool, projectId, featureId, boardFor);
+}
+
+export async function readProjectFactoryBoards(pool: DatabasePool, projectId: string) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    const selected = await client.query<{ id: string }>(
+      "SELECT COALESCE(canonical_project_id, id) AS id FROM projects WHERE id = $1",
+      [projectId],
+    );
+    const canonicalId = selected.rows[0]?.id;
+    if (canonicalId === undefined) throw new FactoryError("not_found");
+    const result = await client.query<FeatureRow>(
+      `SELECT feature.*, COALESCE(owner.canonical_project_id, owner.id) AS project_id
+       FROM factory_features feature JOIN projects owner ON owner.id = feature.project_id
+       WHERE COALESCE(owner.canonical_project_id, owner.id) = $1
+       ORDER BY feature.created_at, feature.id LIMIT 200`,
+      [canonicalId],
+    );
+    const boards: FactoryBoard[] = [];
+    for (const feature of result.rows) {
+      if (feature.approved_plan_version !== null)
+        boards.push(await boardFor(client, feature, false));
+    }
+    await client.query("COMMIT");
+    return { projectId: canonicalId, features: result.rows.map(mapFactoryFeature), boards };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export function cancelFactoryFeature(
