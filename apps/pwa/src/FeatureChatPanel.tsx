@@ -23,7 +23,8 @@ import { FeaturePlanPanel } from "./FeaturePlanPanel.js";
 import { GeneratedPlanDocuments } from "./FeaturePlanDocuments.js";
 import { FeatureBoardPanel } from "./FeatureBoardPanel.js";
 import { FeatureReviewPanel } from "./FeatureReviewPanel.js";
-import { PlanningSkillsPanel, SkillProvenance } from "./PlanningSkillsPanel.js";
+import { SkillProvenance } from "./SkillProvenance.js";
+import { PlanningSkillChips } from "./PlanningSkillChips.js";
 import { FeatureGitHubIssuesPanel } from "./FeatureGitHubIssuesPanel.js";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs.js";
 import { Label } from "./components/ui/label.js";
@@ -393,16 +394,6 @@ export function FeatureChatPanel({
         </div>
         <div className="feature-planning-actions">
           <DocumentInspector context={chat.context} />
-          <PlanningSkillsPanel
-            projectId={projectId}
-            featureId={featureId}
-            online={online}
-            editable={editable && activeTurn === undefined}
-            selection={chat.skills ?? { schemaVersion: 1, version: 0, skills: [] }}
-            onChanged={() => void refresh()}
-            onAuthenticationError={onAuthenticationError}
-          />
-
           <FeatureGitHubIssuesPanel
             projectId={projectId}
             featureId={featureId}
@@ -634,6 +625,15 @@ export function FeatureChatPanel({
           )}
           <form className="planning-composer" onSubmit={submit}>
             <Label htmlFor="planning-message">Message</Label>
+            <PlanningSkillChips
+              projectId={projectId}
+              featureId={featureId}
+              online={online}
+              editable={editable && activeTurn === undefined && !commandPending}
+              selection={chat.skills ?? { schemaVersion: 1, version: 0, skills: [] }}
+              onChanged={refresh}
+              onAuthenticationError={onAuthenticationError}
+            />
             <PlanningSkillComposer
               id="planning-message"
               rows={3}

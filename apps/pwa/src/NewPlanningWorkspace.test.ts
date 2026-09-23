@@ -2,7 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { PlanningFeatureStarted, PlanningSkillSummary } from "@kestrel/contracts";
+import type { PlanningFeatureStarted } from "@kestrel/contracts";
 import { NewPlanningWorkspace, type NewPlanningWorkspaceProps } from "./NewPlanningWorkspace.js";
 import { ApiClientError } from "./api.js";
 
@@ -10,23 +10,6 @@ const api = vi.hoisted(() => ({ lookup: vi.fn(), start: vi.fn() }));
 vi.mock("./factory-start-api.js", () => ({
   fetchPlanningFeatureRequest: api.lookup,
   startPlanningFeature: api.start,
-}));
-const skill: PlanningSkillSummary = {
-  name: "grilling",
-  description: "Ask grounded questions",
-  contentDigest: "a".repeat(64),
-  source: { kind: "host", label: "grilling", candidateId: "b".repeat(64) },
-};
-vi.mock("./PlanningSkillsPanel.js", () => ({
-  PlanningSkillsPanel: (props: {
-    editable: boolean;
-    onDraftSelection: (skills: PlanningSkillSummary[]) => void;
-  }) =>
-    createElement(
-      "button",
-      { type: "button", disabled: !props.editable, onClick: () => props.onDraftSelection([skill]) },
-      "Choose Skills",
-    ),
 }));
 
 const projectId = "01991c36-7f90-7000-8000-000000000001";
@@ -102,16 +85,9 @@ it("looks up an accepted draft URL on reload without creating another Feature", 
   expect(api.start).not.toHaveBeenCalled();
 });
 
-it("retains the first prompt and selected Skills across double-submit and uncertain retry", async () => {
+it("retains the first prompt across double-submit and uncertain retry", async () => {
   api.start.mockRejectedValueOnce(new TypeError("Response lost")).mockResolvedValue(started);
   await render();
-  await act(async () => {
-    await Promise.resolve(
-      [...container.querySelectorAll("button")]
-        .find((button) => button.textContent === "Choose Skills")
-        ?.click(),
-    );
-  });
   await type("Search saved reports.");
   await act(async () => {
     container
@@ -134,7 +110,7 @@ it("retains the first prompt and selected Skills across double-submit and uncert
     {
       requestId: props.requestId,
       text: "Search saved reports.",
-      skillDigests: [skill.contentDigest],
+      skillDigests: [],
     },
   ]);
   expect(props.onStarted).toHaveBeenCalledExactlyOnceWith(started.feature);

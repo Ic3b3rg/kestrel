@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { FileText } from "lucide-react";
 import type { FeatureChat, PlanningFailure, PlanningTurn } from "@kestrel/contracts";
-import { SkillProvenance } from "./PlanningSkillsPanel.js";
+import { SkillProvenance } from "./SkillProvenance.js";
 import { Button } from "./components/ui/button.js";
 import {
   Dialog,

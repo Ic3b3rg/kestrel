@@ -87,13 +87,7 @@ test.describe("Planning Skills in the chat", () => {
     await page.keyboard.press("Escape");
     await page.goto(projectUrl);
     await page.getByRole("button", { name: "New plan", exact: true }).click();
-    await page.getByRole("button", { name: "Skills", exact: true }).click();
-    const skills = page.getByRole("dialog", { name: "Planning Skills", exact: true });
-    await expect(skills.getByRole("button", { name: "Import Skill" })).toHaveCount(0);
-    await skills.getByRole("checkbox", { name: "Use $recovery-checklist", exact: true }).check();
-    await skills.getByRole("button", { name: "Use selected Skills" }).click();
-    await expect(skills).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Skills (1)", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Skills", exact: true })).toHaveCount(0);
     expect(
       FeatureListSchema.parse(
         await page.evaluate(
@@ -183,12 +177,17 @@ test.describe("Planning Skills in the chat", () => {
     ).toContainText("Updated procedure for future turns.");
     await page.keyboard.press("Escape");
     await page.goto(featureUrl);
-    await page.getByRole("button", { name: "Skills (1)", exact: true }).click();
-    await expect(skills.getByRole("checkbox")).toHaveCount(2);
-    const latest = skills.locator('input[type="checkbox"]:not(:checked)');
-    await latest.check();
-    await skills.getByRole("button", { name: "Use selected Skills" }).click();
-    await expect(skills).toHaveCount(0);
+    const activeSkills = page.getByRole("region", { name: "Active Planning Skills" });
+    await expect(activeSkills).toContainText("$recovery-checklist");
+    await activeSkills.getByRole("button", { name: "Remove recovery-checklist" }).click();
+    await expect(activeSkills).toHaveCount(0);
+    await page
+      .getByLabel("Message", { exact: true })
+      .fill("/recovery-checklist Continue planning with the updated procedure.");
+    await page.getByRole("button", { name: "Send message", exact: true }).click();
+    await expect(
+      page.getByText("/recovery-checklist Continue planning with the updated procedure."),
+    ).toBeVisible();
     await page.reload();
     await page
       .getByRole("button", {
@@ -312,19 +311,33 @@ test.describe("Planning Skills in the chat", () => {
       "recovery-checklist",
       "research",
     ]);
+    await page.reload();
+    const activeSkills = page.getByRole("region", { name: "Active Planning Skills" });
+    await expect(activeSkills).toContainText("$recovery-checklist");
+    await expect(activeSkills).toContainText("$research");
+    await activeSkills.getByRole("button", { name: "Remove research" }).focus();
+    await page.keyboard.press("Enter");
+    await expect(activeSkills).not.toContainText("$research");
+    await page.reload();
+    await expect(activeSkills).toContainText("$recovery-checklist");
+    await expect(activeSkills).not.toContainText("$research");
+    expect((await readChat()).turns[0]?.skills?.map((skill) => skill.name).sort()).toEqual([
+      "recovery-checklist",
+      "research",
+    ]);
     const followup = page.getByLabel("Message", { exact: true });
-    await followup.fill("Continue with /research and /recovery-checklist.");
+    await followup.fill("Continue with /recovery-checklist.");
     await page.getByRole("button", { name: "Send message", exact: true }).click();
-    await expect(page.getByText("Continue with /research and /recovery-checklist.")).toBeVisible();
+    await expect(page.getByText("Continue with /recovery-checklist.")).toBeVisible();
     await page.reload();
     chat = await readChat();
-    expect(chat.messages.at(-1)?.content).toBe("Continue with /research and /recovery-checklist.");
+    expect(chat.messages.at(-1)?.content).toBe("Continue with /recovery-checklist.");
     expect(
       chat.turns
         .at(-1)
         ?.skills?.map((skill) => skill.name)
         .sort(),
-    ).toEqual(["recovery-checklist", "research"]);
+    ).toEqual(["recovery-checklist"]);
     await page.setViewportSize({ width: 375, height: 812 });
     expect(
       await page.evaluate(
