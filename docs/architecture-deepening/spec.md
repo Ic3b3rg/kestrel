@@ -57,6 +57,20 @@ and unsafe checkpoint ordering.
 - The public interface does not expose checkout paths or container callbacks. Model selection,
   prompts, Work Item eligibility, merge and Human Gates remain outside.
 
+## Agent Run transition contract
+
+The persistence ledger owns three named terminal operations: live completion, orphan interruption
+and confirmed recovery. Callers acquire the Feature lock before the Run lock and reject stale owners
+before entering the ledger. Exact verification proof and certificate creation share that transaction
+with Run, Work Item, Feature, correction, Human Gate and activity updates. Container probes stay
+outside database transactions; recovery enters only after the persisted stop fence and proof.
+
+These operations share dependent-state rules without erasing their different facts. Live completion
+records its completion time and replaces a correction certificate; recovery preserves the original
+completion time and certificate. An interruption records the stop request before probing. Gate
+answers, correction publication and provider-confirmed merge retain their distinct authority and
+existing entry points.
+
 ## Verification and integration
 
 Use a smallest failing behavior test before each behavior change. Run focused tests while iterating,

@@ -25,45 +25,23 @@ import { FACTORY_EXECUTION_QUEUE, pgBossDatabase } from "./pg-boss.js";
 import { FactoryError, withFactoryFeature, type FeatureRow } from "./factory-planning.js";
 import {
   factoryWorkItemsVerified,
-  persistFactoryFeatureVerification,
   readCurrentFactoryFeatureVerification,
 } from "./factory-verification.js";
-import type { ExecutionRunRow } from "./factory-execution-read.js";
 import { ensureFactoryGate, factoryGateForRetry } from "./factory-gates.js";
 import {
   recoverFactoryExecutions,
   type FactoryExecutionContainerRecovery,
 } from "./factory-execution-recovery.js";
 
-interface OwnedRunRow extends ExecutionRunRow {
-  owner_instance_id: string | null;
-  stop_requested_at: Date | null;
-  source: { repositoryId: string; identity: string } | null;
-  correction_id: string | null;
-}
+import {
+  finishExecutionRun,
+  interruptExecutionRun,
+  workspaceFor,
+  type OwnedExecutionRunRow as OwnedRunRow,
+  type FactoryFeatureWorkspace,
+} from "./factory-execution-ledger.js";
+export type { FactoryFeatureWorkspace } from "./factory-execution-ledger.js";
 
-function correctionFailure(failure: FactoryExecutionFailure | null) {
-  switch (failure) {
-    case "authentication":
-      return "authentication_required" as const;
-    case "usage_limit":
-      return "usage_limit" as const;
-    case "input_required":
-      return "input_required" as const;
-    case "verification_failed":
-      return "verification_failed" as const;
-    case "source_changed":
-      return "source_changed" as const;
-    case "revision_changed":
-      return "head_changed" as const;
-    case "timeout":
-      return "timeout" as const;
-    case "cancelled":
-      return "cancelled" as const;
-    default:
-      return "runtime_unavailable" as const;
-  }
-}
 export interface ClaimedFactoryExecution {
   id: string;
   ownerInstanceId: string;
@@ -710,151 +688,9 @@ export function finishFactoryExecution(
     question: string | null;
   },
 ): Promise<void> {
-  return withRun(pool, run, async (client, feature, row) => {
-    if (row.reservation_released_at !== null) return;
-    const pendingContainers = await client.query(
-      "SELECT name FROM factory_execution_containers WHERE run_id = $1 AND stopped_at IS NULL",
-      [run.id],
-    );
-    const writerStopped = outcome.writerStopped && pendingContainers.rowCount === 0;
-    let verified =
-      outcome.verified &&
-      writerStopped &&
-      feature.state === "implementing" &&
-      row.stop_requested_at === null &&
-      ["running", "verifying"].includes(row.state);
-    if (verified) {
-      const checks = await client.query<{ id: string; result: unknown }>(
-        `SELECT id, result FROM factory_verification_results WHERE run_id = $1 AND round =
-          (SELECT max(round) FROM factory_verification_results WHERE run_id = $1) ORDER BY position`,
-        [run.id],
-      );
-      const revision = FactoryExecutionRevisionSchema.parse(row.revision);
-      const commands = FactoryAcceptedVerificationCommandsSchema.parse(row.accepted_commands);
-      const workspace = await workspaceFor(client, run.featureId);
-      verified =
-        workspace !== null &&
-        workspace.headCommitId === revision.headCommitId &&
-        workspace.treeId === revision.treeId &&
-        workspace.baseCommitId === revision.baseCommitId &&
-        workspace.branch === revision.branch &&
-        checks.rows.length === commands.length &&
-        checks.rows.every(({ result }, index) => {
-          const check = FactoryVerificationResultSchema.omit({ id: true, createdAt: true }).parse(
-            result,
-          );
-          return (
-            check.position === index + 1 &&
-            check.outcome === "passed" &&
-            check.exitCode === 0 &&
-            check.headCommitId === revision.headCommitId &&
-            check.treeId === revision.treeId &&
-            JSON.stringify(check.command) === JSON.stringify(commands[index])
-          );
-        });
-      if (!verified)
-        throw new FactoryError("conflict", "All approved checks must pass on the exact revision");
-      if (row.purpose === "feature_verification" || row.purpose === "correction") {
-        if (
-          workspace === null ||
-          row.source?.repositoryId !== workspace.repositoryId ||
-          row.source.identity !== workspace.sourceIdentity ||
-          JSON.stringify(
-            FactoryVerificationManifestSchema.parse(row.verification_manifest).map(
-              (entry) => entry.command,
-            ),
-          ) !== JSON.stringify(commands)
-        )
-          throw new FactoryError("conflict");
-        await persistFactoryFeatureVerification(
-          client,
-          { ...row, verification_manifest: row.verification_manifest },
-          checks.rows.map((check) => check.id),
-        );
-      }
-    }
-    const cancelled = feature.state === "cancelled";
-    const state = !writerStopped
-      ? "interrupted"
-      : cancelled
-        ? "cancelled"
-        : verified
-          ? "verified"
-          : "blocked";
-    const failure = !writerStopped
-      ? "stop_unconfirmed"
-      : cancelled
-        ? "cancelled"
-        : verified
-          ? null
-          : (outcome.failure ?? "interrupted");
-    await client.query(
-      `UPDATE factory_execution_runs SET state = $2, failure = $3, question = $4, completed_at = clock_timestamp(),
-        reservation_released_at = CASE WHEN $5 THEN clock_timestamp() ELSE NULL END WHERE id = $1`,
-      [run.id, state, failure, outcome.question?.slice(0, 4000) ?? null, writerStopped],
-    );
-    if ((row.purpose ?? "work_item") === "work_item")
-      await client.query("UPDATE factory_work_items SET board_column = $2 WHERE id = $1", [
-        row.work_item_id,
-        verified ? "in_review" : "todo",
-      ]);
-    if (!cancelled)
-      await client.query(
-        `UPDATE factory_features SET state = CASE WHEN $2 THEN
-        CASE WHEN NOT EXISTS (SELECT 1 FROM factory_work_items WHERE feature_id = $1 AND board_column NOT IN ('in_review', 'completed'))
-          THEN 'in_review' ELSE 'implementing' END ELSE 'gated' END, updated_at = clock_timestamp() WHERE id = $1`,
-        [row.feature_id, verified],
-      );
-    if (!verified && !cancelled)
-      await ensureFactoryGate(client, row.id, failure ?? "interrupted", outcome.question);
-    if (row.purpose === "correction") {
-      const correctionVerified = verified && !cancelled;
-      const certificate = correctionVerified
-        ? (
-            await client.query<{ id: string }>(
-              "SELECT id FROM factory_feature_verifications WHERE run_id = $1",
-              [row.id],
-            )
-          ).rows[0]?.id
-        : undefined;
-      await client.query(
-        `UPDATE factory_review_corrections SET state = $2, failure = $3,
-         certificate_id = $4, updated_at = clock_timestamp()
-         WHERE id = $1 AND current_run_id = $5`,
-        [
-          row.correction_id,
-          correctionVerified ? "publishing" : cancelled ? "cancelled" : "gated",
-          correctionVerified ? null : cancelled ? "cancelled" : correctionFailure(failure),
-          certificate ?? null,
-          row.id,
-        ],
-      );
-      await client.query(
-        "INSERT INTO factory_activity (feature_id, kind, summary) VALUES ($1,$2,$3)",
-        [
-          row.feature_id,
-          correctionVerified ? "correction_verified" : "execution_blocked",
-          correctionVerified
-            ? "The selected correction passed every approved Feature check"
-            : `The selected correction stopped: ${failure ?? "interrupted"}`,
-        ],
-      );
-      return;
-    }
-    // The immutable Feature certificate is its success record; do not invent a verified Work Item.
-    if (verified && row.purpose === "feature_verification") return;
-    await client.query(
-      "INSERT INTO factory_activity (feature_id, work_item_id, kind, summary) VALUES ($1,$2,$3,$4)",
-      [
-        row.feature_id,
-        row.work_item_id,
-        verified ? "item_verified" : "execution_blocked",
-        verified
-          ? `${run.key} passed its approved checks and is ready for review`
-          : `${run.key} stopped: ${failure ?? "interrupted"}`,
-      ],
-    );
-  });
+  return withRun(pool, run, (client, feature, row) =>
+    finishExecutionRun(client, feature, row, outcome, run.key),
+  );
 }
 
 export function reserveFactoryExecutionContainer(
@@ -930,49 +766,6 @@ export function stopFactoryExecutionContainer(
     );
     if (result.rowCount !== 1) throw new FactoryError("conflict");
   });
-}
-
-export interface FactoryFeatureWorkspace {
-  projectId: string;
-  featureId: string;
-  repositoryId: string;
-  sourceIdentity: string;
-  baseCommitId: string;
-  objectFormat: "sha1" | "sha256";
-  branch: string;
-  headCommitId: string;
-  treeId: string;
-}
-
-async function workspaceFor(
-  client: PoolClient,
-  featureId: string,
-): Promise<FactoryFeatureWorkspace | null> {
-  const result = await client.query<{
-    project_id: string;
-    feature_id: string;
-    repository_id: string;
-    source_identity: string;
-    base_commit_id: string;
-    object_format: "sha1" | "sha256";
-    branch: string;
-    head_commit_id: string;
-    tree_id: string;
-  }>("SELECT * FROM factory_feature_workspaces WHERE feature_id = $1", [featureId]);
-  const row = result.rows[0];
-  return row === undefined
-    ? null
-    : {
-        projectId: row.project_id,
-        featureId: row.feature_id,
-        repositoryId: row.repository_id,
-        sourceIdentity: row.source_identity,
-        baseCommitId: row.base_commit_id,
-        objectFormat: row.object_format,
-        branch: row.branch,
-        headCommitId: row.head_commit_id,
-        treeId: row.tree_id,
-      };
 }
 
 export function readFactoryFeatureWorkspace(
@@ -1098,46 +891,7 @@ export async function reconcileFactoryExecutions(
         );
         const row = selected.rows[0];
         if (row === undefined) return;
-        const pendingContainers = await client.query(
-          "SELECT name FROM factory_execution_containers WHERE run_id = $1 AND stopped_at IS NULL",
-          [row.id],
-        );
-        const writerStopped = row.owner_instance_id === null && pendingContainers.rowCount === 0;
-        const question = writerStopped
-          ? "Execution delivery stopped before work could start. Retry this attempt after checking the local service."
-          : "Execution was interrupted. Kestrel retains this Project while it verifies and stops the recorded environment. If its identity cannot be confirmed, inspect Docker using the recorded container name; answering this gate cannot release an unconfirmed environment.";
-        await client.query(
-          `UPDATE factory_execution_runs SET state = $2, failure = 'interrupted', question = $3,
-           stop_requested_at = clock_timestamp(), completed_at = clock_timestamp(),
-           reservation_released_at = CASE WHEN $4 THEN clock_timestamp() ELSE NULL END WHERE id = $1`,
-          [row.id, writerStopped ? "blocked" : "interrupted", question, writerStopped],
-        );
-        if ((row.purpose ?? "work_item") === "work_item")
-          await client.query("UPDATE factory_work_items SET board_column = 'todo' WHERE id = $1", [
-            row.work_item_id,
-          ]);
-        if (row.purpose === "correction")
-          await client.query(
-            `UPDATE factory_review_corrections SET state = $3, failure = $4,
-             updated_at = clock_timestamp() WHERE id = $1 AND current_run_id = $2`,
-            [
-              row.correction_id,
-              row.id,
-              feature.state === "cancelled" ? "cancelled" : "gated",
-              feature.state === "cancelled" ? "cancelled" : "runtime_unavailable",
-            ],
-          );
-        if (feature.state !== "cancelled") {
-          await client.query(
-            "UPDATE factory_features SET state = 'gated', updated_at = clock_timestamp() WHERE id = $1",
-            [row.feature_id],
-          );
-          await ensureFactoryGate(client, row.id, "interrupted", question);
-        }
-        await client.query(
-          "INSERT INTO factory_activity (feature_id, work_item_id, kind, summary) VALUES ($1,$2,'execution_blocked',$3)",
-          [row.feature_id, row.work_item_id, question],
-        );
+        await interruptExecutionRun(client, feature, row);
       },
     );
   }

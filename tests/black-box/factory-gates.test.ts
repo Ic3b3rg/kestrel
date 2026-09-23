@@ -173,6 +173,71 @@ describe("Factory Human Gates over HTTP and PostgreSQL", () => {
   });
 
   it(
+    "settles a failed execution atomically and once under competing completions",
+    { timeout: 120_000 },
+    async () => {
+      const featureId = await approve(projects.kestrel, "Atomic execution outcome");
+      const endpoint = path(projects.kestrel, featureId);
+      const run = required((await claim([featureId]))[0]);
+      const snapshot = async () => ({
+        execution: FactoryExecutionSchema.parse(
+          await (await stack.fetchApi(`${endpoint}/execution`)).json(),
+        ),
+        board: FactoryBoardSchema.parse(await (await stack.fetchApi(`${endpoint}/board`)).json()),
+      });
+      try {
+        const before = await snapshot();
+        await stack.executeSql(`
+        CREATE FUNCTION reject_execution_activity() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN IF NEW.feature_id='${featureId}' AND NEW.kind='execution_blocked' THEN RAISE EXCEPTION 'fixture terminal activity blocked'; END IF; RETURN NEW; END $$;
+        CREATE TRIGGER reject_execution_activity BEFORE INSERT ON factory_activity FOR EACH ROW EXECUTE FUNCTION reject_execution_activity();
+      `);
+        try {
+          const failure = await module<string>(`
+          let failure = null;
+          try { await db.finishFactoryExecution(pool,${JSON.stringify(run)}, {verified:false,writerStopped:true,failure:'input_required',question:'Keep the approved ordering?'}); }
+          catch(error) { failure=String(error); }
+          console.log(JSON.stringify(failure));
+        `);
+          expect(failure).toContain("fixture terminal activity blocked");
+          expect(await snapshot()).toEqual(before);
+        } finally {
+          await stack.executeSql(
+            "DROP TRIGGER reject_execution_activity ON factory_activity; DROP FUNCTION reject_execution_activity();",
+          );
+        }
+        const facts = await module<{ gates: number; activities: number; released: boolean }>(`
+        const run=${JSON.stringify(run)};
+        const outcome={verified:false,writerStopped:true,failure:'input_required',question:'Keep the approved ordering?'};
+        await Promise.all([db.finishFactoryExecution(pool,run,outcome),db.finishFactoryExecution(pool,run,outcome)]);
+        const result=await pool.query("SELECT reservation_released_at IS NOT NULL AS released,(SELECT count(*)::int FROM factory_human_gates WHERE run_id=$1) AS gates,(SELECT count(*)::int FROM factory_activity WHERE feature_id=$2 AND kind='execution_blocked') AS activities FROM factory_execution_runs WHERE id=$1",[run.id,run.featureId]);
+        console.log(JSON.stringify(result.rows[0]));
+      `);
+        expect(facts).toEqual({ gates: 1, activities: 1, released: true });
+        const after = await snapshot();
+        expect(after.execution.gate?.question).toBe("Keep the approved ordering?");
+        expect(after.execution.workItems[0]?.runs[0]).toMatchObject({
+          state: "blocked",
+          writerStopped: true,
+        });
+        expect(
+          after.board.columns.find((column) => column.id === "todo")?.items[0]?.blocking?.kind,
+        ).toBe("human_gate");
+        expect(await claim([featureId])).toEqual([]);
+      } finally {
+        const response = await post(`${endpoint}/cancel`, {
+          requestId: randomUUID(),
+          expectedVersion: 1,
+        });
+        await response.arrayBuffer();
+        await module(
+          `await db.finishFactoryExecution(pool,${JSON.stringify(run)},{verified:false,writerStopped:true,failure:'cancelled',question:null}); console.log('null');`,
+        );
+      }
+    },
+  );
+
+  it(
     "keeps the gated Feature first, progresses another Project, and releases its global execution slot",
     { timeout: 120_000 },
     async () => {

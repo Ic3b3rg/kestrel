@@ -1,11 +1,6 @@
-import {
-  FactoryExecutionFailureSchema,
-  type FactoryExecutionFailure,
-  type FactoryReviewCorrectionFailure,
-} from "@kestrel/contracts";
 import type { PoolClient } from "pg";
 
-import { ensureFactoryGate } from "./factory-gates.js";
+import { recoverExecutionRun } from "./factory-execution-ledger.js";
 import { FactoryError, withFactoryFeature, type FeatureRow } from "./factory-planning.js";
 import type { DatabasePool } from "./pool.js";
 
@@ -31,28 +26,6 @@ interface RecoveryRun extends RunIdentity {
   question: string | null;
 }
 
-function correctionFailure(failure: FactoryExecutionFailure): FactoryReviewCorrectionFailure {
-  switch (failure) {
-    case "authentication":
-      return "authentication_required";
-    case "usage_limit":
-      return "usage_limit";
-    case "input_required":
-      return "input_required";
-    case "verification_failed":
-      return "verification_failed";
-    case "source_changed":
-      return "source_changed";
-    case "revision_changed":
-      return "head_changed";
-    case "timeout":
-      return "timeout";
-    case "cancelled":
-      return "cancelled";
-    default:
-      return "runtime_unavailable";
-  }
-}
 interface ContainerRow {
   name: string;
   container_id: string | null;
@@ -170,48 +143,7 @@ export async function recoverFactoryExecutions(
       if (current.some((container) => container.stopped_at === null)) return false;
       // An empty lifecycle is also a proof: every create awaits its durable
       // reservation, and the committed stop fence rejects all later reservations.
-      const cancelled = feature.state === "cancelled";
-      const failure = cancelled
-        ? "cancelled"
-        : FactoryExecutionFailureSchema.parse(run.failure ?? "interrupted");
-      await client.query(
-        `UPDATE factory_execution_runs SET state = $2, failure = $3,
-         completed_at = COALESCE(completed_at, clock_timestamp()), reservation_released_at = clock_timestamp()
-         WHERE id = $1`,
-        [run.id, cancelled ? "cancelled" : "blocked", failure],
-      );
-      if ((run.purpose ?? "work_item") === "work_item")
-        await client.query("UPDATE factory_work_items SET board_column = 'todo' WHERE id = $1", [
-          run.work_item_id,
-        ]);
-      if (run.purpose === "correction")
-        await client.query(
-          `UPDATE factory_review_corrections SET state = $2, failure = $3,
-           updated_at = clock_timestamp() WHERE id = $1 AND current_run_id = $4`,
-          [
-            run.correction_id,
-            cancelled ? "cancelled" : "gated",
-            cancelled ? "cancelled" : correctionFailure(failure),
-            run.id,
-          ],
-        );
-      if (!cancelled) {
-        await client.query(
-          "UPDATE factory_features SET state = 'gated', updated_at = clock_timestamp() WHERE id = $1",
-          [run.feature_id],
-        );
-        await ensureFactoryGate(client, run.id, failure, run.question);
-      }
-      await client.query(
-        "INSERT INTO factory_activity (feature_id, work_item_id, kind, summary) VALUES ($1,$2,'execution_blocked',$3)",
-        [
-          run.feature_id,
-          run.work_item_id,
-          cancelled
-            ? "The cancelled execution environment has been stopped."
-            : "The execution environment has been stopped. Inspect the retained attempt and answer its Human Gate before continuing.",
-        ],
-      );
+      await recoverExecutionRun(client, feature, run);
       return true;
     });
     if (didRelease === true) released.push(candidate.id);
