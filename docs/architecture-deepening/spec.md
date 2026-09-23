@@ -84,6 +84,20 @@ publication) before closing pg-boss. Non-interruptible rendering drains under it
 deadline. HTTP drains concurrently, and the host closes shared pools only afterward. Repeated
 start/stop calls cannot duplicate consumers or disposal. No module import starts a process or timer.
 
+## Feature Plan graph
+
+One pure projection validates the approved document through the existing canonical validator and
+combines it with persisted Work Item facts. It owns dependency satisfaction, ordered eligibility,
+blocking precedence and the complete-verification projection. Verification unlocks dependents;
+Completed remains a persisted result of confirmed merge, never an inference from closed tracker
+issues or passed tests. Human Gates and cancellation retain their existing precedence and wording.
+
+Scheduler and board use the same projection. Scheduling still holds its advisory and Feature locks,
+checks aggregate publication, reservations, prior attempts and Human Gate resolution, and creates
+runs transactionally. Aggregate publication proves every Work Item publication in one transaction;
+the board can also expose partial publication. Exact source, command and certificate proof stays in
+the execution ledger and verification boundary. The graph grants no writer or merge authority.
+
 ## Verification and integration
 
 Use a smallest failing behavior test before each behavior change. Run focused tests while iterating,

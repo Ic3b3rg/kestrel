@@ -52,7 +52,7 @@ export interface FeatureRow {
   title: string;
   title_source: "operator" | "pending" | "assistant";
   initial_title: string | null;
-  state: string;
+  state: Feature["state"];
   planning_context: unknown;
   skill_selection_version: number;
   runtime_thread_id: string | null;

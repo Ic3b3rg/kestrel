@@ -1,6 +1,8 @@
 import type { PoolClient } from "pg";
 import {
   FeaturePlanDocumentSchema,
+  projectFeaturePlan,
+  type FactoryWorkItem,
   PlanningContextSchema,
   FactoryExecutionRevisionSchema,
   FactoryVerificationResultSchema,
@@ -146,33 +148,26 @@ export async function queueFactoryExecutions(
       if (approved === undefined) continue;
       const plan = FeaturePlanDocumentSchema.parse(approved.document);
       if (active.rows.length + queued.length >= plan.limits.maxConcurrentProjects) continue;
-      const items = await client.query<{ id: string; key: string; board_column: string }>(
+      const items = await client.query<{
+        id: string;
+        key: string;
+        board_column: FactoryWorkItem["column"];
+      }>(
         "SELECT id, key, board_column FROM factory_work_items WHERE feature_id = $1 AND plan_version = $2 ORDER BY position",
         [candidate.id, approved.version],
       );
-      const ready = items.rows.find(
-        (item) =>
-          item.board_column === "todo" &&
-          plan.workItems
-            .find((definition) => definition.key === item.key)
-            ?.dependsOn.every((key) =>
-              items.rows.some(
-                (dependency) =>
-                  dependency.key === key &&
-                  ["in_review", "completed"].includes(dependency.board_column),
-              ),
-            ),
-      );
+      const graph = projectFeaturePlan(plan, {
+        featureState: candidate.state,
+        items: items.rows.map((item) => ({
+          key: item.key,
+          column: item.board_column,
+          // The locked candidate requires aggregate publication, set atomically only after every item is published.
+          published: true,
+        })),
+      });
+      const ready = items.rows.find((item) => item.key === graph.nextWorkItemKey);
       if (ready === undefined) {
-        if (
-          items.rows.length !== plan.workItems.length ||
-          !items.rows.every(
-            (item, index) =>
-              item.key === plan.workItems[index]?.key &&
-              ["in_review", "completed"].includes(item.board_column),
-          )
-        )
-          continue;
+        if (!graph.allVerified) continue;
         const finalId = await queueFeatureVerification(
           client,
           boss,
