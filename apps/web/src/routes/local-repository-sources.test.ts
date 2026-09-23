@@ -90,6 +90,49 @@ describe("local repository inventory routes", () => {
 
   afterEach(async () => app.close());
 
+  it("protects native folder actions and never accepts browser-supplied host paths", async () => {
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/v1/local-repository-sources/choose",
+          payload: {},
+        })
+      ).statusCode,
+    ).toBe(401);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/v1/local-repository-sources/choose",
+          headers,
+          payload: {},
+        })
+      ).statusCode,
+    ).toBe(403);
+    const authenticated = { ...headers, origin: "https://kestrel.test", "x-kestrel-csrf": csrf };
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/v1/local-repository-sources/choose",
+          headers: authenticated,
+          payload: { path: "/private" },
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/v1/local-repository-sources/confirm",
+          headers: authenticated,
+          payload: { previewId: repositoryId },
+        })
+      ).statusCode,
+    ).toBe(409);
+  });
+
   it("requires authentication and returns only opaque inventory values", async () => {
     expect(
       (await app.inject({ method: "GET", url: "/api/v1/local-repository-sources" })).statusCode,

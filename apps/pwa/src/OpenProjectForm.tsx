@@ -1,3 +1,4 @@
+import { SourceOnboardingPanel } from "./SourceOnboardingPanel.js";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./components/ui/dialog.js";
 import { Button } from "./components/ui/button.js";
 import { NativeSelect } from "./components/ui/native-select.js";
@@ -180,6 +181,10 @@ export function OpenProjectForm({
             <DialogDescription id={descriptionId}>
               Choose a local repository to open its Project.
             </DialogDescription>
+            <SourceOnboardingPanel
+              disabled={disabled || pending || loading}
+              onAuthorized={readInventory}
+            />
             <div className="local-inventory-actions">
               <p>Repositories you have already opened keep their Project history.</p>
               <Button

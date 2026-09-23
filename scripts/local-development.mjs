@@ -195,12 +195,10 @@ async function main() {
   const actionArgument = process.argv[3];
   const validAction = ["start", "bootstrap", "reset-password"].includes(action)
     ? actionArgument === undefined && process.argv.length <= 3
-    : action === "authorize-repository-root" &&
-      actionArgument !== undefined &&
-      process.argv.length === 4;
+    : action === "authorize-repository-root" && process.argv.length <= 4;
   if (!validAction) {
     throw new Error(
-      "Usage: local-development.mjs [start|bootstrap|reset-password|authorize-repository-root <absolute-path>]",
+      "Usage: local-development.mjs [start|bootstrap|reset-password|authorize-repository-root [absolute-path]]",
     );
   }
   const databasePort = readPositiveInteger(
@@ -287,7 +285,11 @@ async function main() {
     authorizationEnvironment.LOCAL_REPOSITORY_ROOTS_FILE = repositoryRootsConfiguration;
     await run(
       process.execPath,
-      ["--import=tsx", "scripts/authorize-repository-root.ts", actionArgument],
+      [
+        "--import=tsx",
+        "scripts/authorize-repository-root.ts",
+        actionArgument ?? environment.INIT_CWD ?? process.cwd(),
+      ],
       authorizationEnvironment,
     );
     return;

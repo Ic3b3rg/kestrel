@@ -1,33 +1,21 @@
 import {
-  readLocalSourceConfig,
-  readRepositoryRootConfiguration,
-  writeRepositoryRootConfiguration,
+  previewSourceAuthorization,
+  confirmSourceAuthorization,
 } from "../packages/local-source/src/index.js";
 
 async function main(): Promise<void> {
-  const repositoryRoot = process.argv[2];
-  const configurationPath = process.env.LOCAL_REPOSITORY_ROOTS_FILE;
-  if (repositoryRoot === undefined || configurationPath === undefined) {
-    throw new Error("Usage: npm run authorize-repository-root -- /absolute/path");
-  }
-
-  const existingRoots = await readRepositoryRootConfiguration(configurationPath);
-  const validationEnvironment = { ...process.env };
-  delete validationEnvironment.LOCAL_REPOSITORY_ROOTS_FILE;
-  validationEnvironment.LOCAL_REPOSITORY_ROOTS = JSON.stringify([...existingRoots, repositoryRoot]);
-  const config = await readLocalSourceConfig(validationEnvironment);
-  await writeRepositoryRootConfiguration(
-    configurationPath,
-    config.repositoryRoots.map(({ path }) => path),
+  const preview = await previewSourceAuthorization(
+    process.argv[2] ?? process.env.INIT_CWD ?? process.cwd(),
   );
-  process.stdout.write(
-    `Authorized repository root (${String(config.repositoryRoots.length)} configured).\n`,
-  );
+  for (const repository of preview.repositories)
+    process.stdout.write(`Repository: ${repository.displayName}\n`);
+  await confirmSourceAuthorization(preview);
+  process.stdout.write(`Authorized repositories (${String(preview.repositories.length)} added).\n`);
 }
 
 main().catch((error: unknown) => {
   process.stderr.write(
-    `${error instanceof Error ? error.message : "Repository root authorization failed"}\n`,
+    `${error instanceof Error ? error.message : "Repository authorization failed"}\n`,
   );
   process.exitCode = 1;
 });

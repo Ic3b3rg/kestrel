@@ -1,3 +1,8 @@
+import { registerSourceOnboardingRoutes } from "./routes/source-onboarding.js";
+import {
+  createSourceOnboardingService,
+  type SourceOnboardingService,
+} from "./source-onboarding.js";
 import { randomUUID } from "node:crypto";
 
 import Fastify, { type FastifyInstance } from "fastify";
@@ -94,6 +99,7 @@ export interface BuildAppOptions {
   eventPool?: DatabasePool;
   eventRetentionLimit: number;
   logger?: boolean;
+  sourceOnboardingService?: SourceOnboardingService;
   localRepositoryService?: LocalRepositoryService;
   pool: DatabasePool;
   projectService?: ProjectService;
@@ -191,6 +197,7 @@ export async function buildApp({
   directApiProfileService = createUnavailableDirectApiProfileService(pool),
   eventPool = pool,
   pwaRoot,
+  sourceOnboardingService = createSourceOnboardingService(),
   localRepositoryService = {
     listRepositories: () =>
       Promise.resolve({
@@ -299,6 +306,7 @@ export async function buildApp({
   registerDirectApiProfileRoutes(app, directApiProfileService);
   registerChangeIntentRoutes(app, changeIntentService);
   registerLocalRepositoryRoutes(app, localRepositoryService);
+  registerSourceOnboardingRoutes(app, sourceOnboardingService);
   registerReviewRevisionRoutes(app, reviewRevisionService);
   registerReviewWorkflowRoutes(app, reviewWorkflowService);
   registerExternalConceptualReviewRoutes(app, externalConceptualReviewService);
