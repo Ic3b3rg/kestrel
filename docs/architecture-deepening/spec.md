@@ -71,6 +71,19 @@ completion time and certificate. An interruption records the stop request before
 answers, correction publication and provider-confirmed merge retain their distinct authority and
 existing entry points.
 
+## Factory background lifecycle
+
+The web host configures services and owns HTTP and shared database pools. Its Factory background
+runtime owns processor construction, pg-boss consumers, startup repair, periodic reconciliation and
+shutdown. Startup completes all durable repairs before registering consumers. Each repair has at
+most one in-flight invocation; each queue retains its existing options and one registration.
+
+Shutdown stops timers and cancels interruptible processing immediately, prevents startup from
+opening new intake, and drains registered consumers, processors and all repairs (including issue
+publication) before closing pg-boss. Non-interruptible rendering drains under its existing provider
+deadline. HTTP drains concurrently, and the host closes shared pools only afterward. Repeated
+start/stop calls cannot duplicate consumers or disposal. No module import starts a process or timer.
+
 ## Verification and integration
 
 Use a smallest failing behavior test before each behavior change. Run focused tests while iterating,

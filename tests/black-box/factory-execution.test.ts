@@ -269,4 +269,20 @@ describe("Factory execution authority", () => {
     });
     expect(execution.workItems[1]?.runs).toEqual([]);
   });
+
+  it("drains the actual web runtime on SIGTERM and restores authenticated reads after restart", async () => {
+    const previousLines = new Set((await stack.logs("web")).split("\n"));
+    await stack.stop("web");
+    const newLines = (await stack.logs("web"))
+      .split("\n")
+      .filter((line) => !previousLines.has(line));
+    expect(newLines.filter((line) => line.includes('"event":"web.stopped"'))).toHaveLength(1);
+    expect(newLines.some((line) => line.includes('"event":"web.stop_failed"'))).toBe(false);
+    await stack.start("web");
+    const response = await stack.fetchApi(
+      `/api/v1/projects/${projectId}/features/${featureId}/board`,
+    );
+    expect(response.status).toBe(200);
+    FactoryBoardSchema.parse(await response.json());
+  });
 });

@@ -3,26 +3,9 @@ import { readFile, realpath } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 
 import { buildApp } from "./app.js";
+import { createFactoryBackgroundRuntime } from "./factory-background-runtime.js";
 import { createCodexAppServerAgentRuntime } from "./codex-app-server.js";
-import { createCodexExecutionContainerRecovery } from "./codex-execution-runtime.js";
-import { reconcileFactorySandboxes } from "./factory-sandbox.js";
 import { CERTIFIED_CODEX_REVIEW_VERSION } from "./codex-review-runtime.js";
-import {
-  createFactoryExecutionProcessor,
-  FACTORY_EXECUTION_WORK_OPTIONS,
-} from "./factory-execution-processor.js";
-import {
-  createFactoryConceptualReviewProcessor,
-  FACTORY_CONCEPTUAL_REVIEW_WORK_OPTIONS,
-} from "./conceptual-review-processor.js";
-import {
-  createFactoryReviewCorrectionProcessor,
-  FACTORY_REVIEW_CORRECTION_WORK_OPTIONS,
-} from "./factory-review-correction-processor.js";
-import {
-  createFactoryFeatureMergeProcessor,
-  FACTORY_FEATURE_MERGE_WORK_OPTIONS,
-} from "./factory-feature-merge-processor.js";
 import { createDatabaseFactoryConceptualReviewService } from "./routes/factory-conceptual-review.js";
 import { createDatabaseExternalConceptualReviewService } from "./routes/external-conceptual-review.js";
 import {
@@ -33,55 +16,19 @@ import { createReviewRevisionService } from "./routes/review-revisions.js";
 import { createDirectApiProfileService } from "./routes/direct-api-profiles.js";
 import { createDatabaseProjectService, createHostGitHubProjectService } from "./routes/projects.js";
 import { readSessionSigningKey } from "./session.js";
-import {
-  createFactoryPublicationProcessor,
-  FACTORY_PUBLICATION_WORK_OPTIONS,
-} from "./factory-publication.js";
-import {
-  createFactoryFeaturePublicationProcessor,
-  FACTORY_FEATURE_PUBLICATION_WORK_OPTIONS,
-} from "./factory-feature-publication.js";
-import { createFactoryFeatureRevisionRetainer } from "./factory-feature-revision.js";
-import {
-  createFactoryPlanningProcessor,
-  FACTORY_PLANNING_WORK_OPTIONS,
-} from "./factory-planning.js";
-import {
-  CHANGE_OVERVIEW_RENDER_WORK_OPTIONS,
-  createChangeOverviewRenderer,
-  createDatabaseChangeOverviewRenderingPersistence,
-} from "./change-overview-renderer.js";
 
 import {
   createPgBoss,
   createPool,
-  CHANGE_OVERVIEW_RENDER_QUEUE,
-  FACTORY_PLANNING_QUEUE,
-  FACTORY_PUBLICATION_QUEUE,
-  FACTORY_FEATURE_PUBLICATION_QUEUE,
-  FACTORY_EXECUTION_QUEUE,
-  FACTORY_CONCEPTUAL_REVIEW_QUEUE,
-  FACTORY_CORRECTION_QUEUE,
-  FACTORY_MERGE_QUEUE,
   readReferencedArtifactLocators,
   readDatabaseConfig,
   readEventRetentionLimit,
   openLocalProject,
   reconcileAcquiringRevisions,
   reconcileLocalSourceAttachments,
-  reconcilePlanningTurns,
-  reconcileFactoryPublications,
-  reconcileFactoryFeaturePublications,
-  reconcileFactoryConceptualReviewWorkflows,
-  reconcileFactoryReviewCorrections,
-  reconcileFactoryFeatureMerges,
   withArtifactLifecycleLock,
 } from "@kestrel/database";
-import {
-  disposeConceptualReviewAttemptResources,
-  readLocalSourceConfig,
-  reconcileArtifactRoot,
-} from "@kestrel/local-source";
+import { readLocalSourceConfig, reconcileArtifactRoot } from "@kestrel/local-source";
 import { createOpenAiTransport, FileCredentialStore } from "@kestrel/model-provider";
 
 function readPort(value: string | undefined): number {
@@ -203,113 +150,35 @@ const app = await buildApp({
   sessionSigningKey,
   reviewRevisionService: createReviewRevisionService(pool, localRepositoryService, boss),
 });
-const changeOverviewRenderer = createChangeOverviewRenderer({
-  credentialStore,
-  persistence: createDatabaseChangeOverviewRenderingPersistence(pool),
-  transport: openAiTransport,
-});
-const planningProcessor = createFactoryPlanningProcessor({
-  pool,
-  readSourceConfig: () => readLocalSourceConfig(),
-});
-const publicationProcessor = createFactoryPublicationProcessor({ pool });
-const featureRevisionRetainer = createFactoryFeatureRevisionRetainer({
-  pool,
-  readSourceConfig: () => readLocalSourceConfig(),
-  renderingCoordinator: boss,
-});
-const featurePublicationProcessor = createFactoryFeaturePublicationProcessor({
-  pool,
-  readSourceConfig: () => readLocalSourceConfig(),
-  retain: featureRevisionRetainer,
-});
-const reviewCorrectionProcessor = createFactoryReviewCorrectionProcessor({
-  pool,
-  readSourceConfig: () => readLocalSourceConfig(),
-  retain: featureRevisionRetainer,
-  review: factoryConceptualReviewService,
-});
-const featureMergeProcessor = createFactoryFeatureMergeProcessor({ pool, boss });
-const recoverExecutionContainer = createCodexExecutionContainerRecovery(
-  factoryDockerExecutable === undefined ? {} : { dockerExecutable: factoryDockerExecutable },
-);
-const executionProcessor = createFactoryExecutionProcessor({
-  pool,
-  readSourceConfig: () => readLocalSourceConfig(),
-  ...(factoryExecutionImage === undefined ? {} : { containerImage: factoryExecutionImage }),
-  ...(factoryDockerExecutable === undefined ? {} : { dockerExecutable: factoryDockerExecutable }),
-});
-const conceptualReviewProcessor = createFactoryConceptualReviewProcessor({
+const background = createFactoryBackgroundRuntime({
   pool,
   boss,
+  log: app.log,
+  localSourceConfig,
   readSourceConfig: () => readLocalSourceConfig(),
+  credentialStore,
+  transport: openAiTransport,
+  conceptualReview: factoryConceptualReviewService,
+  conceptualReviewRuntimeProfile: factoryConceptualReviewRuntimeProfile,
   ...(factoryExecutionImage === undefined ? {} : { containerImage: factoryExecutionImage }),
   ...(factoryDockerExecutable === undefined ? {} : { dockerExecutable: factoryDockerExecutable }),
-  ...(factoryConceptualReviewRuntimeProfile === null
-    ? {}
-    : {
-        codexExecutable: factoryConceptualReviewRuntimeProfile.codexExecutable,
-        codexExecutableDigest: factoryConceptualReviewRuntimeProfile.codexExecutableDigest,
-        codexVersion: factoryConceptualReviewRuntimeProfile.codexVersion,
-        containerUser: factoryConceptualReviewRuntimeProfile.containerUser,
-      }),
 });
-let publicationReconciliation: NodeJS.Timeout | undefined;
-let featurePublicationReconciliation: NodeJS.Timeout | undefined;
-let reconcilingFeaturePublication: Promise<void> | null = null;
-let executionReconciliation: NodeJS.Timeout | undefined;
-let reconcilingExecution: Promise<void> | null = null;
-let conceptualReviewReconciliation: NodeJS.Timeout | undefined;
-let reconcilingConceptualReview: Promise<void> | null = null;
-let reviewCorrectionReconciliation: NodeJS.Timeout | undefined;
-let reconcilingReviewCorrection: Promise<void> | null = null;
-let featureMergeReconciliation: NodeJS.Timeout | undefined;
-let reconcilingFeatureMerge: Promise<void> | null = null;
-boss.on("error", (error) => {
-  app.log.error({ err: error, event: "pgboss.error" });
-});
-let shuttingDown = false;
-
-async function stopExecutionAndHttp(): Promise<void> {
-  // Interrupt tool execution before HTTP draining can wait on an open client.
-  const stoppingExecution = executionProcessor.stop();
-  const stoppingConceptualReview = conceptualReviewProcessor.stop();
-  const stoppingReviewCorrection = reviewCorrectionProcessor.stop();
-  const stoppingFeatureMerge = featureMergeProcessor.stop();
-  const stoppingPublication = featurePublicationProcessor.stop();
-  await Promise.all([
-    stoppingExecution,
-    stoppingConceptualReview,
-    stoppingReviewCorrection,
-    stoppingFeatureMerge,
-    stoppingPublication,
-    app.close(),
-  ]);
-  await reconcilingExecution;
-  await reconcilingConceptualReview;
-  await reconcilingReviewCorrection;
-  await reconcilingFeatureMerge;
-  await reconcilingFeaturePublication;
-}
-
-async function shutdown(signal: string): Promise<void> {
-  if (shuttingDown) {
-    return;
-  }
-  shuttingDown = true;
-  clearInterval(publicationReconciliation);
-  clearInterval(featurePublicationReconciliation);
-  clearInterval(executionReconciliation);
-  clearInterval(conceptualReviewReconciliation);
-  clearInterval(reviewCorrectionReconciliation);
-  clearInterval(featureMergeReconciliation);
+let shuttingDown: Promise<void> | undefined;
+function shutdown(signal: string, graceful = true): Promise<void> {
+  if (shuttingDown !== undefined) return shuttingDown;
   app.log.info({ event: "web.stopping", signal });
-  await stopExecutionAndHttp();
-  await boss.stop();
-  await eventPool.end();
-  await pool.end();
+  shuttingDown = (async () => {
+    // Stop tools before waiting for HTTP clients; keep shared pools until both have drained.
+    const results = await Promise.allSettled([background.stop({ graceful }), app.close()]);
+    results.push(...(await Promise.allSettled([eventPool.end(), pool.end()])));
+    const failures = results
+      .filter((result) => result.status === "rejected")
+      .map((result): unknown => result.reason);
+    if (failures.length > 0) throw new AggregateError(failures, "Web shutdown failed");
+    app.log.info({ event: "web.stopped", signal });
+  })();
+  return shuttingDown;
 }
-
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
     void shutdown(signal).catch((error: unknown) => {
@@ -318,182 +187,14 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     });
   });
 }
-
 try {
-  await boss.start();
-  await reconcilePlanningTurns(pool);
-  await reconcileFactoryPublications(pool, boss);
-  await reconcileFactorySandboxes(
-    pool,
-    boss,
-    factoryDockerExecutable === undefined ? {} : { dockerExecutable: factoryDockerExecutable },
-  );
-  await reconcileFactoryConceptualReviewWorkflows(
-    pool,
-    boss,
-    recoverExecutionContainer,
-    (attemptId) => disposeConceptualReviewAttemptResources(localSourceConfig, attemptId),
-  );
-  await reconcileFactoryReviewCorrections(pool, boss);
-  await reconcileFactoryFeatureMerges(pool, boss);
-  await reconcileFactoryFeaturePublications(pool, boss);
-  featurePublicationReconciliation = setInterval(() => {
-    if (reconcilingFeaturePublication !== null || shuttingDown) return;
-    reconcilingFeaturePublication = reconcileFactoryFeaturePublications(pool, boss)
-      .catch((error: unknown) =>
-        app.log.error({ err: error, event: "factory.feature_publication_reconciliation_failed" }),
-      )
-      .finally(() => {
-        reconcilingFeaturePublication = null;
-      });
-  }, 5_000);
-  featurePublicationReconciliation.unref();
-  executionReconciliation = setInterval(() => {
-    if (reconcilingExecution !== null || shuttingDown) return;
-    reconcilingExecution = reconcileFactorySandboxes(
-      pool,
-      boss,
-      factoryDockerExecutable === undefined ? {} : { dockerExecutable: factoryDockerExecutable },
-    )
-      .catch((error: unknown) =>
-        app.log.error({ err: error, event: "factory.execution_reconciliation_failed" }),
-      )
-      .finally(() => {
-        reconcilingExecution = null;
-      });
-  }, 2_000);
-  executionReconciliation.unref();
-  conceptualReviewReconciliation = setInterval(() => {
-    if (reconcilingConceptualReview !== null || shuttingDown) return;
-    reconcilingConceptualReview = reconcileFactoryConceptualReviewWorkflows(
-      pool,
-      boss,
-      recoverExecutionContainer,
-      (attemptId) => disposeConceptualReviewAttemptResources(localSourceConfig, attemptId),
-    )
-      .catch((error: unknown) =>
-        app.log.error({ err: error, event: "factory.conceptual_review_reconciliation_failed" }),
-      )
-      .finally(() => {
-        reconcilingConceptualReview = null;
-      });
-  }, 2_000);
-  conceptualReviewReconciliation.unref();
-  reviewCorrectionReconciliation = setInterval(() => {
-    if (reconcilingReviewCorrection !== null || shuttingDown) return;
-    reconcilingReviewCorrection = reconcileFactoryReviewCorrections(pool, boss)
-      .catch((error: unknown) =>
-        app.log.error({ err: error, event: "factory.review_correction_reconciliation_failed" }),
-      )
-      .finally(() => {
-        reconcilingReviewCorrection = null;
-      });
-  }, 2_000);
-  reviewCorrectionReconciliation.unref();
-  featureMergeReconciliation = setInterval(() => {
-    if (reconcilingFeatureMerge !== null || shuttingDown) return;
-    reconcilingFeatureMerge = reconcileFactoryFeatureMerges(pool, boss)
-      .catch((error: unknown) =>
-        app.log.error({ err: error, event: "factory.feature_merge_reconciliation_failed" }),
-      )
-      .finally(() => {
-        reconcilingFeatureMerge = null;
-      });
-  }, 2_000);
-  featureMergeReconciliation.unref();
-  let reconcilingPublication = false;
-  publicationReconciliation = setInterval(() => {
-    if (reconcilingPublication || shuttingDown) return;
-    reconcilingPublication = true;
-    void reconcileFactoryPublications(pool, boss)
-      .catch((error: unknown) =>
-        app.log.error({ err: error, event: "factory.publication_reconciliation_failed" }),
-      )
-      .finally(() => {
-        reconcilingPublication = false;
-      });
-  }, 5_000);
-  publicationReconciliation.unref();
-  await boss.work<unknown>(
-    FACTORY_PUBLICATION_QUEUE,
-    FACTORY_PUBLICATION_WORK_OPTIONS,
-    async (jobs) => {
-      const job = jobs[0];
-      if (job !== undefined) await publicationProcessor.process(job.data, job.signal);
-    },
-  );
-  await boss.work<unknown>(FACTORY_PLANNING_QUEUE, FACTORY_PLANNING_WORK_OPTIONS, async (jobs) => {
-    const job = jobs[0];
-    if (job !== undefined) await planningProcessor.process(job.data, job.signal);
-  });
-  await boss.work<unknown>(
-    FACTORY_FEATURE_PUBLICATION_QUEUE,
-    FACTORY_FEATURE_PUBLICATION_WORK_OPTIONS,
-    async (jobs) => {
-      const job = jobs[0];
-      if (job !== undefined) await featurePublicationProcessor.process(job.data, job.signal);
-    },
-  );
-  await boss.work<unknown>(
-    FACTORY_EXECUTION_QUEUE,
-    FACTORY_EXECUTION_WORK_OPTIONS,
-    async (jobs) => {
-      const job = jobs[0];
-      if (job !== undefined) await executionProcessor.process(job.data, job.signal);
-    },
-  );
-  await boss.work<unknown>(
-    FACTORY_CONCEPTUAL_REVIEW_QUEUE,
-    FACTORY_CONCEPTUAL_REVIEW_WORK_OPTIONS,
-    async (jobs) => {
-      const job = jobs[0];
-      if (job !== undefined) await conceptualReviewProcessor.process(job.data, job.signal);
-    },
-  );
-  await boss.work<unknown>(
-    FACTORY_CORRECTION_QUEUE,
-    FACTORY_REVIEW_CORRECTION_WORK_OPTIONS,
-    async (jobs) => {
-      const job = jobs[0];
-      if (job !== undefined) await reviewCorrectionProcessor.process(job.data, job.signal);
-    },
-  );
-  await boss.work<unknown>(
-    FACTORY_MERGE_QUEUE,
-    FACTORY_FEATURE_MERGE_WORK_OPTIONS,
-    async (jobs) => {
-      const job = jobs[0];
-      if (job !== undefined) await featureMergeProcessor.process(job.data, job.signal);
-    },
-  );
-  await boss.work<unknown>(
-    CHANGE_OVERVIEW_RENDER_QUEUE,
-    CHANGE_OVERVIEW_RENDER_WORK_OPTIONS,
-    async (jobs) => {
-      const job = jobs[0];
-      if (job === undefined) return;
-      job.signal.throwIfAborted();
-      const result = await changeOverviewRenderer.process(job.data);
-      job.signal.throwIfAborted();
-      app.log.info({ event: "change_overview.rendering_finished", result });
-    },
-  );
-  await app.listen({
-    host: process.env.HOST ?? "0.0.0.0",
-    port: readPort(process.env.PORT),
-  });
-  app.log.info({ event: "web.started" });
+  await background.start();
+  if (shuttingDown === undefined) {
+    await app.listen({ host: process.env.HOST ?? "0.0.0.0", port: readPort(process.env.PORT) });
+    app.log.info({ event: "web.started" });
+  }
 } catch (error) {
-  clearInterval(publicationReconciliation);
-  clearInterval(featurePublicationReconciliation);
-  clearInterval(executionReconciliation);
-  clearInterval(conceptualReviewReconciliation);
-  clearInterval(reviewCorrectionReconciliation);
-  clearInterval(featureMergeReconciliation);
   app.log.error({ err: error, event: "web.start_failed" });
-  await stopExecutionAndHttp();
-  await boss.stop({ graceful: false });
-  await eventPool.end();
-  await pool.end();
+  await shutdown("start_failed", false);
   process.exitCode = 1;
 }

@@ -55,7 +55,7 @@ services:
 
   web:
     <<: *kestrel-app
-    command: ["npm", "run", "start", "-w", "@kestrel/web"]
+    command: ["node", "apps/web/dist/server.js"]
     depends_on:
       database-role:
         condition: service_completed_successfully
