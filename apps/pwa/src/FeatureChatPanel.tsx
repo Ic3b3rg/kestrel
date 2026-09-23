@@ -27,7 +27,7 @@ import { PlanningSkillsPanel, SkillProvenance } from "./PlanningSkillsPanel.js";
 import { FeatureGitHubIssuesPanel } from "./FeatureGitHubIssuesPanel.js";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs.js";
 import { Label } from "./components/ui/label.js";
-import { Textarea } from "./components/ui/textarea.js";
+import { PlanningSkillComposer } from "./PlanningSkillComposer.js";
 import { Input } from "./components/ui/input.js";
 import {
   Dialog,
@@ -297,6 +297,12 @@ export function FeatureChatPanel({
       await refresh();
     } catch (failure) {
       if (alive.current && !onAuthenticationError(failure)) {
+        if (
+          current.kind === "send" &&
+          failure instanceof ApiClientError &&
+          (failure.status === 400 || failure.status === 409)
+        )
+          attempt.current = null;
         setCommandError(
           planningRequestError(
             failure,
@@ -608,36 +614,46 @@ export function FeatureChatPanel({
           {commandError === null ? null : (
             <div className="planning-command-error" role="alert">
               <p>{commandError}</p>
-              <Button
-                variant="outline"
-                disabled={!online || commandPending}
-                onClick={() => void runAttempt()}
-              >
-                {attemptKind === "send"
-                  ? "Retry send"
-                  : attemptKind === "cancel"
-                    ? "Retry stop"
-                    : "Retry request"}
-              </Button>
+              {commandError.includes("is not installed") ? (
+                <a href="/settings/skills">Open Settings → Skills</a>
+              ) : null}
+              {attempt.current !== null ? (
+                <Button
+                  variant="outline"
+                  disabled={!online || commandPending}
+                  onClick={() => void runAttempt()}
+                >
+                  {attemptKind === "send"
+                    ? "Retry send"
+                    : attemptKind === "cancel"
+                      ? "Retry stop"
+                      : "Retry request"}
+                </Button>
+              ) : null}
             </div>
           )}
           <form className="planning-composer" onSubmit={submit}>
             <Label htmlFor="planning-message">Message</Label>
-            <Textarea
+            <PlanningSkillComposer
               id="planning-message"
               rows={3}
               maxLength={16_000}
               value={draft}
+              online={online}
+              onAuthenticationError={onAuthenticationError}
               disabled={
                 !online ||
                 !editable ||
                 commandPending ||
                 activeTurn !== undefined ||
-                commandError !== null
+                (commandError !== null && attempt.current !== null)
               }
-              onChange={(event) => setDraft(event.currentTarget.value)}
+              onValueChange={(text) => {
+                setDraft(text);
+                if (attempt.current === null) setCommandError(null);
+              }}
               placeholder="Describe the change or answer Kestrel’s question…"
-              aria-describedby="planning-message-help"
+              describedBy="planning-message-help"
             />
             <div className="planning-composer-footer">
               <p id="planning-message-help">

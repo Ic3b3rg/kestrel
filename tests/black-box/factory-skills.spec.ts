@@ -27,6 +27,12 @@ test.describe("Planning Skills in the chat", () => {
       join(skill, "references/recovery.md"),
       "Ask which saved reports must survive a process restart.\n",
     );
+    const research = join(root, "research");
+    await mkdir(research, { recursive: true });
+    await writeFile(
+      join(research, "SKILL.md"),
+      "---\nname: research\ndescription: Check primary sources.\n---\nVerify the source before planning.\n",
+    );
     stack = await startStack({ repositoryRoot: fixture.rootPath, planningSkillRoot: root });
     await requireStack().bootstrapOperator(TEST_OPERATOR_CREDENTIALS);
   });
@@ -217,5 +223,114 @@ test.describe("Planning Skills in the chat", () => {
     expect(latestChat.skills?.skills).toHaveLength(1);
     expect(latestChat.skills?.skills[0]?.contentDigest).not.toBe(original.contentDigest);
     expect(latestChat.turns[0]?.skills?.[0]?.contentDigest).toBe(original.contentDigest);
+  });
+
+  test("invokes two installed Skills inline in both composers and rejects an unknown first message atomically", async ({
+    page,
+  }) => {
+    await page.goto(requireStack().pwaUrl);
+    await page.getByLabel("Username").fill(TEST_OPERATOR_CREDENTIALS.username);
+    await page.getByLabel("Password", { exact: true }).fill(TEST_OPERATOR_CREDENTIALS.password);
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await page.getByRole("button", { name: "Open Project", exact: true }).click();
+    const repositoryDialog = page.getByRole("dialog", { name: "Open an authorized repository" });
+    const repositoryId = await repositoryDialog
+      .getByRole("option")
+      .filter({ hasText: "kestrel" })
+      .first()
+      .getAttribute("value");
+    if (repositoryId === null) throw new Error("Fixture repository has no identity");
+    await repositoryDialog.getByLabel("Repository", { exact: true }).selectOption(repositoryId);
+    await repositoryDialog.getByRole("button", { name: "Open selected Project" }).click();
+    await expect(repositoryDialog).toHaveCount(0);
+    const projectUrl = page.url();
+    const featuresPath = `/api/v1${new URL(projectUrl).pathname}/features`;
+    const featureCount = async () =>
+      FeatureListSchema.parse(
+        await page.evaluate(
+          async (path) => (await fetch(path)).json() as Promise<unknown>,
+          featuresPath,
+        ),
+      ).features.length;
+    const before = await featureCount();
+    await page.getByRole("link", { name: "Settings", exact: true }).click();
+    await page
+      .getByRole("navigation", { name: "Settings sections" })
+      .getByRole("link", { name: "Skills" })
+      .click();
+    const workstation = page.getByRole("region", { name: "Import from workstation" });
+    for (const name of ["recovery-checklist", "research"]) {
+      await workstation.getByLabel("Host Skill to import").selectOption({ label: name });
+      await workstation.getByRole("button", { name: "Import Skill", exact: true }).click();
+      await expect(page.getByRole("region", { name: "Installed Skills" })).toContainText(
+        `$${name}`,
+      );
+    }
+    await page.goto(projectUrl);
+    await page.getByRole("button", { name: "New plan", exact: true }).click();
+    const prompt = page.getByLabel("Describe the change", { exact: true });
+    await prompt.fill("/missing Help plan reports");
+    await page.getByRole("main").getByRole("button", { name: "Start plan", exact: true }).click();
+    await expect(page.getByRole("alert")).toContainText("not installed");
+    await expect(
+      page.getByRole("alert").getByRole("link", { name: "Open Settings → Skills" }),
+    ).toBeVisible();
+    expect(await featureCount()).toBe(before);
+    await page.setViewportSize({ width: 375, height: 812 });
+    await prompt.fill("/rec");
+    await expect(page.getByRole("option", { name: /\/recovery-checklist/u })).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1,
+      ),
+    ).toBe(true);
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    await prompt.press("Enter");
+    await expect(prompt).toHaveValue("/recovery-checklist ");
+    await prompt.pressSequentially("/rese");
+    await expect(page.getByRole("option", { name: /\/research/u })).toBeVisible();
+    await prompt.press("Enter");
+    await prompt.pressSequentially("Help plan reports");
+    const authored = "/recovery-checklist /research Help plan reports";
+    await expect(prompt).toHaveValue(authored);
+    await page.setViewportSize({ width: 1024, height: 800 });
+    await page.getByRole("main").getByRole("button", { name: "Retry", exact: true }).click();
+    await expect(page.getByText("Codex is unavailable", { exact: true })).toBeVisible();
+    expect(await featureCount()).toBe(before + 1);
+    const featureUrl = page.url();
+    const chatPath = `/api/v1${new URL(featureUrl).pathname}`;
+    const readChat = async () =>
+      FeatureChatSchema.parse(
+        await page.evaluate(
+          async (path) => (await fetch(path)).json() as Promise<unknown>,
+          chatPath,
+        ),
+      );
+    let chat = await readChat();
+    expect(chat.messages[0]?.content).toBe(authored);
+    expect(chat.turns[0]?.skills?.map((skill) => skill.name).sort()).toEqual([
+      "recovery-checklist",
+      "research",
+    ]);
+    const followup = page.getByLabel("Message", { exact: true });
+    await followup.fill("Continue with /research and /recovery-checklist.");
+    await page.getByRole("button", { name: "Send message", exact: true }).click();
+    await expect(page.getByText("Continue with /research and /recovery-checklist.")).toBeVisible();
+    await page.reload();
+    chat = await readChat();
+    expect(chat.messages.at(-1)?.content).toBe("Continue with /research and /recovery-checklist.");
+    expect(
+      chat.turns
+        .at(-1)
+        ?.skills?.map((skill) => skill.name)
+        .sort(),
+    ).toEqual(["recovery-checklist", "research"]);
+    await page.setViewportSize({ width: 375, height: 812 });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1,
+      ),
+    ).toBe(true);
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   });
 });

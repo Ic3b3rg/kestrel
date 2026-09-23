@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState, type ReactNode, type SyntheticEvent
 import { ArrowLeft, ArrowUp } from "lucide-react";
 import { Button } from "./components/ui/button.js";
 import { Label } from "./components/ui/label.js";
-import { Textarea } from "./components/ui/textarea.js";
+import { PlanningSkillComposer } from "./PlanningSkillComposer.js";
 
 export interface NewPlanningChatPanelProps {
   projectName: string;
@@ -13,6 +13,7 @@ export interface NewPlanningChatPanelProps {
   pendingMessage?: string;
   tools?: ReactNode;
   onDraftChange?: (text: string) => void;
+  onAuthenticationError: (error: unknown) => boolean;
   onSubmit: (text: string) => void;
   onBack: () => void;
 }
@@ -26,6 +27,7 @@ export function NewPlanningChatPanel({
   pendingMessage = "Saving your first message…",
   tools,
   onDraftChange,
+  onAuthenticationError,
   onSubmit,
   onBack,
 }: NewPlanningChatPanelProps) {
@@ -66,21 +68,23 @@ export function NewPlanningChatPanel({
             <Label htmlFor={composerId} className="sr-only">
               Describe the change
             </Label>
-            <Textarea
-              ref={composer}
+            <PlanningSkillComposer
+              textareaRef={composer}
               id={composerId}
+              online={online}
+              onAuthenticationError={onAuthenticationError}
               autoFocus
               name="prompt"
               rows={5}
               maxLength={16_000}
               value={draft}
               disabled={pending || locked}
-              aria-describedby={helpId}
+              describedBy={helpId}
               placeholder="A feature, a problem, or an idea…"
               className="max-h-80 min-h-32 resize-y border-0 bg-transparent p-1 shadow-none focus-visible:ring-0 dark:bg-transparent"
-              onChange={(event) => {
-                setDraft(event.currentTarget.value);
-                onDraftChange?.(event.currentTarget.value);
+              onValueChange={(text) => {
+                setDraft(text);
+                onDraftChange?.(text);
               }}
               onKeyDown={(event) => {
                 if (
@@ -112,9 +116,14 @@ export function NewPlanningChatPanel({
                 : "You will review and approve the plan before implementation starts."}
           </p>
           {error === null ? null : (
-            <p role="alert" className="text-sm">
-              {error}
-            </p>
+            <div role="alert" className="grid justify-items-start gap-1 text-sm">
+              <p>{error}</p>
+              {error.includes("is not installed") ? (
+                <a href="/settings/skills" className="underline">
+                  Open Settings → Skills
+                </a>
+              ) : null}
+            </div>
           )}
         </form>
       </div>

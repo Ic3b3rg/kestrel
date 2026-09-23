@@ -317,17 +317,25 @@ async function requireInstalledPlanningSkills(
     );
 }
 
+export function planningSkillInvocationNames(text: string): string[] {
+  return [
+    ...new Set(
+      [...text.matchAll(/(?:^|\s)[/$]([a-z0-9][a-z0-9-]{0,63})(?=\s|$|[.,!?])/gu)]
+        .map((match) => match[1])
+        .filter((name) => name !== undefined),
+    ),
+  ];
+}
+
 export async function resolvePlanningSkillInvocation(
   client: PoolClient,
   text: string,
   selected: string[],
 ): Promise<string[]> {
-  const names = [...text.matchAll(/(?:^|\s)[/$]([a-z0-9][a-z0-9-]{0,63})(?=\s|$|[.,!?])/gu)]
-    .map((match) => match[1])
-    .filter((name) => name !== undefined);
+  const names = planningSkillInvocationNames(text);
   const digests = [...selected];
   const explicitSkills = await readPlanningSkills(client, selected);
-  for (const name of new Set(names)) {
+  for (const name of names) {
     if (explicitSkills.some((skill) => skill.name === name)) continue;
     const result = await client.query<{ digest: string }>(
       "SELECT digest FROM factory_planning_skill_catalog WHERE name = $1",
@@ -337,7 +345,7 @@ export async function resolvePlanningSkillInvocation(
     if (installed === undefined)
       throw new FactoryError(
         "conflict",
-        `The Skill ${name} is not installed. Open Skills to import or select an installed procedure.`,
+        `The Skill ${name} is not installed. Open Settings → Skills to install it.`,
       );
     if (!digests.includes(installed.digest)) digests.push(installed.digest);
   }
