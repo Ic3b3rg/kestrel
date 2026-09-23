@@ -998,7 +998,7 @@ export function App() {
       <WorkspaceSuspendedContext.Provider value={sessionPaused}>
         <div hidden={sessionPaused}>
           <OpenProjectForm
-            key={`${session.operator.id}/${session.credentialVersion}/${session.issuedAt}`}
+            key={`onboarding:${session.operator.id}/${session.credentialVersion}/${session.issuedAt}`}
             triggerContainer={openProjectTrigger}
             disabled={!online || projectPending}
             onAuthenticationError={handleAuthenticationBoundaryError}
