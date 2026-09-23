@@ -3,7 +3,7 @@ import {
   type CodexAgentRuntimePort,
 } from "../codex-app-server.js";
 import type { CodexSubscriptionConnection } from "@kestrel/contracts";
-import { readLifecycleProfile } from "@kestrel/database";
+import { FactoryError, readLifecycleProfile } from "@kestrel/database";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 
@@ -437,6 +437,11 @@ function apiError(request: FastifyRequest, code: ApiError["code"], message: stri
 }
 
 function failure(request: FastifyRequest, error: unknown) {
+  if (error instanceof FactoryError && error.code === "not_found")
+    return {
+      status: 404 as const,
+      body: apiError(request, "NOT_FOUND", "The Project is unavailable"),
+    };
   if (error instanceof z.ZodError)
     return {
       status: 400 as const,

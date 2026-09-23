@@ -277,6 +277,10 @@ test.describe("Factory planning chat", () => {
     ).toBeVisible();
     await opener.click();
     await page.getByRole("link", { name: "Settings", exact: true }).click();
+    await expect(
+      page.getByRole("dialog", { name: "Workspace navigation", exact: true }),
+    ).toHaveCount(0);
+    await opener.click();
     await page.getByRole("button", { name: "Sign out", exact: true }).click();
     await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
     expect(await page.evaluate(() => sessionStorage.getItem("kestrel.feature-navigation"))).toBe(
