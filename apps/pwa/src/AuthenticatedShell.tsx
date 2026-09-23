@@ -78,7 +78,7 @@ function WorkspaceShell(props: AuthenticatedShellProps) {
     props.route.kind === "project_settings"
       ? props.route.projectId
       : undefined;
-  const settingsRoute = { kind: "settings" as const };
+  const settingsRoute = { kind: "settings" as const, section: "profile" as const };
   const navigate = (route: NavigableRoute) => (event: MouseEvent<HTMLAnchorElement>) => {
     if (!shouldHandleNavigation(event)) return;
     event.preventDefault();
@@ -217,7 +217,11 @@ function WorkspaceShell(props: AuthenticatedShellProps) {
                 >
                   <a
                     href={appPath(settingsRoute)}
-                    aria-current={props.route.kind === "settings" ? "page" : undefined}
+                    aria-current={
+                      props.route.kind === "settings" && props.route.section === "profile"
+                        ? "page"
+                        : undefined
+                    }
                     onClick={navigate(settingsRoute)}
                   >
                     <Settings2 aria-hidden="true" /> Settings
@@ -264,7 +268,7 @@ function WorkspaceShell(props: AuthenticatedShellProps) {
         </header>
         <main ref={workspace} className="shell-workspace" id="workspace" tabIndex={-1}>
           {props.children}
-          <p className="activity-line" role="status" aria-live="polite" aria-atomic="true">
+          <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
             {props.announcement}
           </p>
         </main>

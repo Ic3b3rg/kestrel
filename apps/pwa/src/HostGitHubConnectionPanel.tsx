@@ -180,7 +180,7 @@ export function HostGitHubConnectionPanel(props: HostGitHubConnectionPanelProps)
 
   return (
     <ConnectionSection
-      heading="Source control"
+      heading="GitHub on this workstation"
       headingId="github-connection-title"
       loading={loading}
       state={visibleState ?? "checking"}
@@ -306,7 +306,10 @@ export function ProjectGitHubAccessPanel({ project, ...props }: ProjectGitHubAcc
       ) : (
         <p className="connection-remediation">
           {recovery}{" "}
-          <a href="/settings#github-connection-title">Open global Source control settings</a>.
+          <a href="/settings/source-control#github-connection-title">
+            Open global Source control settings
+          </a>
+          .
         </p>
       )}
     </ConnectionSection>

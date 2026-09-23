@@ -76,7 +76,7 @@ describe("AuthenticatedShell", () => {
     expect(html).toContain(`href="/projects/${localProject.id}"`);
     expect(html).toContain(`href="/projects/${providerProject.id}"`);
     expect(html).toContain('aria-current="page"');
-    expect(html).toContain('href="/settings"');
+    expect(html).toContain('href="/settings/profile"');
     expect(html).not.toContain("/settings?projectId=");
     expect(html).toContain("Settings");
     expect(html).toContain('href="#workspace"');
@@ -113,8 +113,8 @@ describe("AuthenticatedShell", () => {
   });
 
   it("marks Settings as the current native link", () => {
-    const html = render({ route: { kind: "settings" } });
-    expect(html).toContain('href="/settings" aria-current="page"');
+    const html = render({ route: { kind: "settings", section: "profile" } });
+    expect(html).toContain('href="/settings/profile" aria-current="page"');
   });
 
   it("keeps the selected Project identifiable while its Settings page is current", () => {
@@ -123,7 +123,7 @@ describe("AuthenticatedShell", () => {
       "text/html",
     );
     const projectLink = document.querySelector(`a[href="/projects/${localProject.id}"]`);
-    const settingsLink = document.querySelector('a[href="/settings"]');
+    const settingsLink = document.querySelector('a[href="/settings/profile"]');
 
     expect(projectLink?.textContent).toContain("Selected Project");
     expect(projectLink?.getAttribute("aria-current")).toBeNull();

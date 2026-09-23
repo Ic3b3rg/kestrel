@@ -1113,9 +1113,6 @@ test.describe("observable Installation PWA", () => {
     await requestObserved;
     await expect(page.getByRole("button", { name: "Retaining…" })).toBeDisabled();
     releaseResponse();
-    await expect(page.locator(".activity-line")).toContainText(
-      "The exact Review Revision is available.",
-    );
     await expect(
       page.getByRole("button", { name: "Retain source and confirm purpose" }),
     ).toHaveCount(0);
@@ -1782,7 +1779,10 @@ test.describe("observable Installation PWA", () => {
     expect(browserErrors).toEqual([]);
   });
 
-  test("the Operator runs and observes a diagnostic", async ({ context, page }) => {
+  test("the Operator navigates focused Settings and retains authentication boundaries", async ({
+    context,
+    page,
+  }) => {
     expect(stack).toBeDefined();
     const runningStack = stack as RunningStack;
     const browserErrors: string[] = [];
@@ -2183,20 +2183,41 @@ test.describe("observable Installation PWA", () => {
     );
     expect(projectPostCount).toBe(1);
     await page.getByRole("link", { name: "Settings", exact: true }).click();
-    const sourceControlPanel = page.getByRole("region", { name: "Source control" });
+    await expect(page).toHaveURL(/\/settings\/profile$/u);
+    await expect(page.getByRole("heading", { name: "Operator security" })).toBeVisible();
+    await expect(
+      page.getByText("Project refreshed from the public GitHub pull request."),
+    ).toHaveCount(0);
+    const settingsSections = page.getByRole("navigation", { name: "Settings sections" });
+    await expect(settingsSections.getByRole("link", { name: "Profile" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await settingsSections.getByRole("link", { name: "Projects" }).click();
+    await expect(page).toHaveURL(/\/settings\/projects$/u);
+    await expect(page.getByRole("heading", { name: "Authorized repositories" })).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Open settings for Ic3b3rg/kestrel" }),
+    ).toHaveAttribute("href", `/projects/${openedProject.project.id}/settings`);
+    await settingsSections.getByRole("link", { name: "Source control" }).click();
+    await expect(page).toHaveURL(/\/settings\/source-control$/u);
+    const sourceControlPanel = page.locator(".github-connection");
     const codexPanel = page.locator(".codex-connection");
     const reviewModelPanel = page.locator(".review-model-settings");
     await expect(sourceControlPanel.getByRole("status")).toContainText("Checking");
-    await expect(codexPanel.getByRole("status")).toContainText("Checking");
-    await expect(reviewModelPanel.locator(".state-marker")).toContainText("Checking");
     connectionProbeBlocked = false;
     releaseFirstConnectionProbe();
-    codexProbeBlocked = false;
-    releaseFirstCodexProbe();
     await expect(sourceControlPanel.getByRole("status")).toContainText("Ready");
     await expect(sourceControlPanel).toContainText("operator");
     await expect(sourceControlPanel.getByLabel("Project access")).toHaveCount(0);
     await expect(sourceControlPanel).not.toContainText("Ic3b3rg/kestrel");
+    await expect(codexPanel).toHaveCount(0);
+    await settingsSections.getByRole("link", { name: "Providers" }).click();
+    await expect(page).toHaveURL(/\/settings\/providers$/u);
+    await expect(codexPanel.getByRole("status")).toContainText("Checking");
+    await expect(reviewModelPanel.locator(".state-marker")).toContainText("Checking");
+    codexProbeBlocked = false;
+    releaseFirstCodexProbe();
     await expect(codexPanel.getByRole("status")).toContainText("Ready");
     await expect(codexPanel).toContainText("operator@example.com");
     await expect(codexPanel).toContainText("Plus");
@@ -2227,6 +2248,38 @@ test.describe("observable Installation PWA", () => {
     await reviewModelPanel.getByLabel("Default for future reviews").selectOption("gpt-5.6-terra");
     await reviewModelPanel.getByRole("button", { name: "Save default" }).click();
     await expect(reviewModelPanel.locator(".state-marker")).toContainText("Ready");
+
+    await page.setViewportSize({ height: 800, width: 320 });
+    expect(
+      await settingsSections.evaluate(
+        (navigation) => navigation.scrollWidth <= navigation.clientWidth,
+      ),
+    ).toBe(true);
+    for (const [section, label] of [
+      ["profile", "Profile"],
+      ["projects", "Projects"],
+      ["source-control", "Source control"],
+      ["providers", "Providers"],
+    ] as const) {
+      await settingsSections.getByRole("link", { name: label }).click();
+      await expect(page).toHaveURL(new RegExp(`/settings/${section}$`, "u"));
+      await expect(settingsSections.getByRole("link", { name: label })).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+        ),
+      ).toBe(true);
+      expect(
+        (await new AxeBuilder({ page }).include(".global-settings-view").analyze()).violations,
+      ).toEqual([]);
+    }
+    await page.setViewportSize({ height: 800, width: 1_024 });
+    await page.goto(new URL("/settings#review-model-title", runningStack.pwaUrl).toString());
+    await expect(page).toHaveURL(/\/settings\/providers#review-model-title$/u);
+    await expect(page.getByLabel("Default for future reviews")).toHaveValue("gpt-5.6-terra");
 
     await openProjectBoard(page, "Ic3b3rg/kestrel");
     const firstProjectSettings = page.getByRole("link", {
@@ -2306,6 +2359,8 @@ test.describe("observable Installation PWA", () => {
     await expect(page.getByRole("heading", { level: 1, name: "Project settings" })).toBeVisible();
 
     await page.getByRole("link", { name: "Settings", exact: true }).click();
+    await expect(page).toHaveURL(/\/settings\/profile$/u);
+    await settingsSections.getByRole("link", { name: "Providers" }).click();
     codexAuthenticationRequired = true;
     await codexPanel.getByRole("button", { name: "Verify again" }).click();
     await expect(codexPanel.getByRole("status")).toContainText("Action required");
@@ -2320,10 +2375,7 @@ test.describe("observable Installation PWA", () => {
 
     await expect(page.locator('[data-sidebar="footer"]')).not.toContainText("Signed in as");
     await expect(page.locator('[data-sidebar="footer"]')).not.toContainText("Connected");
-    await expect(page.getByRole("heading", { name: "Operator security" })).toBeVisible();
-    await expect(
-      page.locator(".operator-security").getByRole("button", { name: "Sign out", exact: true }),
-    ).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Operator security" })).toHaveCount(0);
     const reviewModelSelector = page.getByLabel("Default for future reviews");
     await reviewModelSelector.focus();
     await expect(reviewModelSelector).toBeFocused();
@@ -2334,22 +2386,38 @@ test.describe("observable Installation PWA", () => {
     await expect(
       page.getByRole("heading", { level: 1, name: "Settings", exact: true }),
     ).toBeVisible();
+    await expect(page).toHaveURL(/\/settings\/providers$/u);
     await expect(page.getByRole("heading", { name: "Sign in to Kestrel" })).toHaveCount(0);
     await expect(page.getByLabel("Default for future reviews")).toHaveValue("gpt-5.6-terra");
-    const diagnosticButton = page.getByRole("button", { name: "Run diagnostic" });
-    await expect(diagnosticButton).toBeEnabled();
+    for (const internalLabel of [
+      "Durable identity",
+      "Installation ID",
+      "Event cursor",
+      "Latest operation",
+      "Run diagnostic",
+    ]) {
+      await expect(page.getByText(internalLabel, { exact: true })).toHaveCount(0);
+    }
     await page.keyboard.press("Tab");
     await expect(page.getByRole("link", { name: "Skip to workspace" })).toBeFocused();
-    await diagnosticButton.focus();
+    const projectsLink = settingsSections.getByRole("link", { name: "Projects" });
+    const settingsPopupPromise = page.context().waitForEvent("page", { timeout: 5_000 });
+    await projectsLink.click({ modifiers: [process.platform === "darwin" ? "Meta" : "Control"] });
+    const settingsPopup = await settingsPopupPromise;
+    await expect(settingsPopup).toHaveURL(/\/settings\/projects$/u);
+    await settingsPopup.close();
+    await projectsLink.focus();
     await page.keyboard.press("Enter");
-    await expect(page.getByText("Succeeded", { exact: true })).toBeVisible();
-
-    const installationId = await page
-      .getByRole("definition")
-      .filter({ has: page.locator("code") })
-      .first()
-      .textContent();
-    expect(installationId).not.toBeNull();
+    await expect(page).toHaveURL(/\/settings\/projects$/u);
+    await expect(projectsLink).toBeFocused();
+    await page.goBack();
+    await expect(page).toHaveURL(/\/settings\/providers$/u);
+    await settingsSections.getByRole("link", { name: "Profile" }).click();
+    await expect(page).toHaveURL(/\/settings\/profile$/u);
+    await expect(page.getByRole("heading", { name: "Operator security" })).toBeVisible();
+    await expect(
+      page.locator(".operator-security").getByRole("button", { name: "Sign out", exact: true }),
+    ).toHaveCount(0);
 
     await page.getByRole("button", { name: "Open Project", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "Open an authorized repository" })).toBeVisible();
@@ -2361,26 +2429,20 @@ test.describe("observable Installation PWA", () => {
     await expect(page.getByRole("dialog", { name: "Open an authorized repository" })).toHaveCount(
       0,
     );
-    await expect(
-      page.getByRole("heading", { name: "Reconnect to view product data" }),
-    ).toBeVisible();
-    await expect(page.getByRole("button", { name: "Run diagnostic" })).toBeDisabled();
     await expect(page.getByRole("button", { name: "Sign out", exact: true })).toBeDisabled();
     await expect(
       page.getByRole("button", { name: "Change credentials and sign out" }),
     ).toBeDisabled();
+    await settingsSections.getByRole("link", { name: "Source control" }).click();
     await expect(sourceControlPanel.getByRole("status")).toContainText("Unavailable");
+    await settingsSections.getByRole("link", { name: "Providers" }).click();
     await expect(codexPanel.getByRole("status")).toContainText("Unavailable");
-    await expect(
-      page.getByText(installationId ?? "missing Installation ID", { exact: true }),
-    ).toHaveCount(0);
+    await settingsSections.getByRole("link", { name: "Profile" }).click();
     await expect(page.getByRole("link", { name: /openai\/openai-node/u })).toHaveCount(0);
     await expect(page.getByRole("link", { name: /Ic3b3rg\/kestrel/u })).toHaveCount(0);
 
     await context.setOffline(false);
-    await expect(
-      page.getByText(installationId ?? "missing Installation ID", { exact: true }),
-    ).toBeVisible();
+    await expect(page.getByLabel("Current password")).toBeEnabled();
     await expect(page.locator('[data-sidebar="footer"]')).not.toContainText("Connected");
 
     await page.emulateMedia({ reducedMotion: "reduce" });
@@ -2397,7 +2459,7 @@ test.describe("observable Installation PWA", () => {
       await expect(
         page.getByRole("heading", { level: 1, name: "Settings", exact: true }),
       ).toBeVisible();
-      await expect(page.getByLabel("Default for future reviews")).toBeVisible();
+      await expect(page.getByLabel("Current password")).toBeVisible();
       const layout = await page.evaluate(() => {
         const viewportWidth = document.documentElement.clientWidth;
         const offenders = [...document.querySelectorAll("*")]

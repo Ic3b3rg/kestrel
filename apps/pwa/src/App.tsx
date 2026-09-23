@@ -12,8 +12,6 @@ import type {
   Feature,
   ChangeIntentVersionCreated,
   DirectApiProfile,
-  InstallationEvent,
-  InstallationSnapshot,
   LoginCommand,
   ProjectInbox,
   ProjectUpserted,
@@ -24,22 +22,18 @@ import type {
 
 import {
   ApiClientError,
-  fetchInstallation,
   fetchProjectInbox,
   fetchSession,
   loginOperator,
   logoutOperator,
   openPublicGitHubPullRequest,
   observeHostGitHubPullRequest,
-  runDiagnostic,
-  streamInstallationEvents,
   updateOperatorCredentials,
-  type EventConnectionState,
 } from "./api.js";
 import { ProjectSettingsPanel } from "./ProjectSettingsPanel.js";
 import { AuthenticatedShell, projectLabel } from "./AuthenticatedShell.js";
 import { appPath, readAppRoute, type AppRoute } from "./app-route.js";
-import { InstallationView, type PwaConnectionState } from "./InstallationView.js";
+import { GlobalSettingsView, SettingsProjectLinks } from "./GlobalSettingsView.js";
 import { CodexSubscriptionConnectionPanel } from "./CodexSubscriptionConnectionPanel.js";
 import { HostGitHubConnectionPanel } from "./HostGitHubConnectionPanel.js";
 import { LoginView } from "./LoginView.js";
@@ -52,34 +46,8 @@ import {
 import { ProjectInboxPanel } from "./ProjectInboxPanel.js";
 import { RepositoryAccessPanel } from "./RepositoryAccessPanel.js";
 
-const INSTALLATION_ERROR_MESSAGE =
-  "Kestrel could not read authoritative Installation data. Try again.";
 const PROJECT_ERROR_MESSAGE = "Kestrel could not read the authoritative Project inbox. Try again.";
 const SESSION_ERROR_MESSAGE = "Kestrel could not verify the Operator session. Try again.";
-
-function newerSnapshot(
-  current: InstallationSnapshot | null,
-  candidate: InstallationSnapshot,
-): InstallationSnapshot {
-  if (
-    current === null ||
-    BigInt(candidate.installation.revision) >= BigInt(current.installation.revision)
-  ) {
-    return candidate;
-  }
-  return current;
-}
-
-function eventAnnouncement(event: InstallationEvent): string {
-  switch (event.eventType) {
-    case "installation.diagnostic.queued":
-      return "Diagnostic queued.";
-    case "installation.diagnostic.running":
-      return "Diagnostic running.";
-    case "installation.diagnostic.succeeded":
-      return "Diagnostic succeeded.";
-  }
-}
 
 function withUpsertedProject(
   current: ProjectInbox | null,
@@ -187,7 +155,7 @@ export function App() {
   const [projectFeatureIds, setProjectFeatureIds] = useState(readFeatureNavigation);
   const [planDirty, setPlanDirty] = useState(false);
   const [route, setRoute] = useState<AppRoute>(() =>
-    readAppRoute(window.location.pathname, window.location.search),
+    readAppRoute(window.location.pathname, window.location.search, window.location.hash),
   );
   const [networkOnline, setNetworkOnline] = useState(() => navigator.onLine);
   const [session, setSession] = useState<Session | null | undefined>(undefined);
@@ -198,23 +166,14 @@ export function App() {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loginSuccess, setLoginSuccess] = useState<string | null>(null);
   const [loginPending, setLoginPending] = useState(false);
-  const [synchronized, setSynchronized] = useState(false);
-  const [snapshot, setSnapshot] = useState<InstallationSnapshot | null>(null);
-  const [connection, setConnection] = useState<PwaConnectionState>(() =>
-    navigator.onLine ? "connecting" : "offline",
-  );
-  const [requestError, setRequestError] = useState<string | null>(null);
-  const [announcement, setAnnouncement] = useState("Reading the Kestrel Installation.");
-  const [commandPending, setCommandPending] = useState(false);
+  const [announcement, setAnnouncement] = useState("");
   const [securityPending, setSecurityPending] = useState<"credentials" | "logout" | null>(null);
   const [securityError, setSecurityError] = useState<OperatorSecurityError | null>(null);
-  const [reloadGeneration, setReloadGeneration] = useState(0);
   const [projectInbox, setProjectInbox] = useState<ProjectInbox | null>(null);
   const [projectLoading, setProjectLoading] = useState(false);
   const [projectError, setProjectError] = useState<string | null>(null);
   const [projectPending, setProjectPending] = useState(false);
   const [projectReloadGeneration, setProjectReloadGeneration] = useState(0);
-  const commandController = useRef<AbortController | null>(null);
   const loginController = useRef<AbortController | null>(null);
   const projectCommandController = useRef<AbortController | null>(null);
   const projectInboxController = useRef<AbortController | null>(null);
@@ -227,7 +186,11 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (route.kind !== "project_settings" || window.location.pathname !== "/settings") return;
+    if (
+      (route.kind !== "project_settings" && route.kind !== "settings") ||
+      window.location.pathname !== "/settings"
+    )
+      return;
     window.history.replaceState(
       window.history.state,
       "",
@@ -241,7 +204,11 @@ export function App() {
   useEffect(() => {
     setSecurityError((current) => {
       if (current?.action === "logout") return null;
-      if (route.kind !== "settings" && current?.action === "credentials") return null;
+      if (
+        (route.kind !== "settings" || route.section !== "profile") &&
+        current?.action === "credentials"
+      )
+        return null;
       return current;
     });
   }, [route]);
@@ -306,6 +273,7 @@ export function App() {
         historyPosition.current += 1;
         window.history.pushState({ kestrelPosition: historyPosition.current }, "", path);
       }
+      setAnnouncement("");
       setRoute(nextRoute);
     },
     [planDirty, route],
@@ -327,7 +295,11 @@ export function App() {
       }
       // Native fragment navigation creates an entry without an application position.
       const nextPosition = readHistoryPosition(event.state) ?? historyPosition.current + 1;
-      const nextRoute = readAppRoute(window.location.pathname, window.location.search);
+      const nextRoute = readAppRoute(
+        window.location.pathname,
+        window.location.search,
+        window.location.hash,
+      );
       const sameFeature =
         route.kind === "feature" &&
         nextRoute.kind === "feature" &&
@@ -350,6 +322,7 @@ export function App() {
       historyPosition.current = nextPosition;
       if (readHistoryPosition(event.state) === null)
         window.history.replaceState({ kestrelPosition: nextPosition }, "");
+      setAnnouncement("");
       setRoute(nextRoute);
     };
     window.addEventListener("popstate", handlePopState);
@@ -398,16 +371,12 @@ export function App() {
 
   const requireAuthentication = useCallback(
     (message: string | null) => {
-      commandController.current?.abort();
       projectCommandController.current?.abort();
       securityController.current?.abort();
       setSession(null);
       setSessionChecking(false);
       setSessionCheckError(null);
-      setSnapshot(null);
       resetProjectState();
-      setSynchronized(false);
-      setConnection("disconnected");
       setLoginError(message);
       setLoginSuccess(null);
       setSecurityError(null);
@@ -430,26 +399,22 @@ export function App() {
     const handleOnline = () => {
       setSessionChecking(true);
       setNetworkOnline(true);
-      setAnnouncement("Network restored. Refreshing the Installation.");
+      setAnnouncement("Connection restored.");
     };
     const handleOffline = () => {
-      commandController.current?.abort();
       loginController.current?.abort();
       projectCommandController.current?.abort();
       securityController.current?.abort();
       setNetworkOnline(false);
       setSessionChecking(true);
       resetProjectState();
-      setSynchronized(false);
-      setConnection("offline");
-      setAnnouncement("Offline. Installation data is hidden until Kestrel reconnects.");
+      setAnnouncement("Offline. Reconnect to continue.");
     };
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
-      commandController.current?.abort();
       loginController.current?.abort();
       projectCommandController.current?.abort();
       securityController.current?.abort();
@@ -487,104 +452,6 @@ export function App() {
       controller.abort();
     };
   }, [networkOnline, sessionCheckGeneration, requireAuthentication]);
-
-  useEffect(() => {
-    if (!online || session === null || session === undefined) {
-      return;
-    }
-
-    const controller = new AbortController();
-    let active = true;
-    let refreshQueue = Promise.resolve();
-
-    const applySnapshot = (candidate: InstallationSnapshot) => {
-      if (active) {
-        setSnapshot((current) => newerSnapshot(current, candidate));
-      }
-    };
-
-    const readAndApplySnapshot = async (): Promise<InstallationSnapshot> => {
-      const candidate = await fetchInstallation(controller.signal);
-      applySnapshot(candidate);
-      return candidate;
-    };
-
-    const queueSnapshotRefresh = () => {
-      refreshQueue = refreshQueue
-        .then(async () => {
-          await readAndApplySnapshot();
-          if (active) {
-            setSynchronized(true);
-            setRequestError(null);
-          }
-        })
-        .catch((error: unknown) => {
-          if (active && !controller.signal.aborted) {
-            if (!handleAuthenticationBoundaryError(error)) {
-              setRequestError(errorMessage(error, INSTALLATION_ERROR_MESSAGE));
-            }
-          }
-        });
-    };
-
-    const synchronize = async () => {
-      setSynchronized(false);
-      setRequestError(null);
-      setConnection("connecting");
-
-      try {
-        const initial = await readAndApplySnapshot();
-        if (!active) {
-          return;
-        }
-        setSynchronized(true);
-        setAnnouncement("Installation synchronized. Listening for durable events.");
-
-        await streamInstallationEvents({
-          after: initial.eventCursor,
-          signal: controller.signal,
-          onConnectionState(state: EventConnectionState) {
-            if (active) {
-              setConnection(state);
-            }
-          },
-          async onCursorExpired() {
-            if (active) {
-              setSynchronized(false);
-              setAnnouncement("Event history expired. Refreshing the full Installation.");
-            }
-            await refreshQueue;
-            const refreshed = await readAndApplySnapshot();
-            if (active) {
-              setSynchronized(true);
-              setRequestError(null);
-              setAnnouncement("Installation refreshed from authoritative storage.");
-            }
-            return refreshed.eventCursor;
-          },
-          onEvent(event) {
-            if (active) {
-              setAnnouncement(eventAnnouncement(event));
-              queueSnapshotRefresh();
-            }
-          },
-        });
-      } catch (error) {
-        if (active && !controller.signal.aborted) {
-          if (!handleAuthenticationBoundaryError(error)) {
-            setConnection("disconnected");
-            setRequestError(errorMessage(error, INSTALLATION_ERROR_MESSAGE));
-          }
-        }
-      }
-    };
-
-    void synchronize();
-    return () => {
-      active = false;
-      controller.abort();
-    };
-  }, [handleAuthenticationBoundaryError, online, reloadGeneration, session]);
 
   useEffect(() => {
     if (!online || session === null || session === undefined) {
@@ -681,32 +548,6 @@ export function App() {
       if (loginController.current === controller) {
         loginController.current = null;
         setLoginPending(false);
-      }
-    }
-  };
-
-  const handleRunDiagnostic = async () => {
-    const controller = new AbortController();
-    commandController.current?.abort();
-    commandController.current = controller;
-    setCommandPending(true);
-    setRequestError(null);
-
-    try {
-      const accepted = await runDiagnostic(controller.signal);
-      setSnapshot((current) => newerSnapshot(current, accepted));
-      setAnnouncement("Diagnostic queued.");
-    } catch (error) {
-      if (!controller.signal.aborted) {
-        if (!handleAuthenticationBoundaryError(error)) {
-          setRequestError(errorMessage(error, INSTALLATION_ERROR_MESSAGE));
-          setAnnouncement("The diagnostic request failed.");
-        }
-      }
-    } finally {
-      if (commandController.current === controller) {
-        commandController.current = null;
-        setCommandPending(false);
       }
     }
   };
@@ -814,10 +655,7 @@ export function App() {
       );
       setLoginSuccess(outcome.auditError === null ? "Signed out from this browser." : null);
       setSession(null);
-      setSnapshot(null);
       resetProjectState();
-      setSynchronized(false);
-      setConnection("disconnected");
     } catch (error) {
       if (!controller.signal.aborted && !handleAuthenticationBoundaryError(error)) {
         setSecurityError({
@@ -849,10 +687,7 @@ export function App() {
       setLoginError(null);
       setLoginSuccess("Credentials changed. Sign in with your updated Operator account.");
       setSession(null);
-      setSnapshot(null);
       resetProjectState();
-      setSynchronized(false);
-      setConnection("disconnected");
     } catch (error) {
       if (!controller.signal.aborted && !handleAuthenticationBoundaryError(error)) {
         setSecurityError({
@@ -949,24 +784,11 @@ export function App() {
         );
       case "settings":
         return (
-          <InstallationView
-            commandPending={commandPending}
-            connection={connection}
-            connectionControls={
-              <>
-                <HostGitHubConnectionPanel
-                  online={online}
-                  onAuthenticationError={handleAuthenticationBoundaryError}
-                />
-                <CodexSubscriptionConnectionPanel
-                  online={online}
-                  onAuthenticationError={handleAuthenticationBoundaryError}
-                />
-              </>
-            }
-            loading={online && !synchronized && requestError === null}
-            online={online}
-            operatorControls={
+          <GlobalSettingsView
+            section={route.section}
+            onNavigate={(section) => navigate({ kind: "settings", section })}
+          >
+            {route.section === "profile" ? (
               <OperatorSecurityPanel
                 error={securityError}
                 online={online}
@@ -975,19 +797,43 @@ export function App() {
                 onChangeCredentials={handleCredentialChange}
                 onClearError={() => setSecurityError(null)}
               />
-            }
-            repositoryControls={
-              <RepositoryAccessPanel
+            ) : route.section === "projects" ? (
+              <>
+                <RepositoryAccessPanel
+                  online={online}
+                  onAuthenticationError={handleAuthenticationBoundaryError}
+                />
+                <SettingsProjectLinks
+                  error={projectError}
+                  loading={projectLoading}
+                  online={online}
+                  projects={projectInbox?.projects ?? null}
+                  onNavigate={(projectId) => navigate({ kind: "project_settings", projectId })}
+                  onRetry={() => setProjectReloadGeneration((generation) => generation + 1)}
+                />
+              </>
+            ) : route.section === "providers" ? (
+              <CodexSubscriptionConnectionPanel
                 online={online}
                 onAuthenticationError={handleAuthenticationBoundaryError}
               />
-            }
-            requestError={requestError}
-            showData={online && synchronized}
-            snapshot={snapshot}
-            onRetry={() => setReloadGeneration((generation) => generation + 1)}
-            onRunDiagnostic={() => void handleRunDiagnostic()}
-          />
+            ) : (
+              <>
+                <HostGitHubConnectionPanel
+                  online={online}
+                  onAuthenticationError={handleAuthenticationBoundaryError}
+                />
+                <SettingsProjectLinks
+                  error={projectError}
+                  loading={projectLoading}
+                  online={online}
+                  projects={projectInbox?.projects ?? null}
+                  onNavigate={(projectId) => navigate({ kind: "project_settings", projectId })}
+                  onRetry={() => setProjectReloadGeneration((generation) => generation + 1)}
+                />
+              </>
+            )}
+          </GlobalSettingsView>
         );
       case "project_settings":
         if (selectedProject !== null) {
