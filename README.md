@@ -326,6 +326,15 @@ Choose **Refresh repositories** after terminal authorization; no restart is need
 the same persisted configuration. `LOCAL_REPOSITORY_ROOTS` remains an explicit JSON-array override
 for specialized native runs and takes precedence over the persisted configuration.
 
+**Clone from Git URL**, in the same two entry points, accepts HTTPS and SSH remotes. Kestrel retains
+a validated committed repository under `managed-sources` in the absolute workstation state root;
+host Git and SSH keep credential custody. A failed or interrupted partial clone never enters the
+source inventory. Retrying the same canonical remote reuses a completed source, including after
+restart. **Update remote references** explicitly fetches the managed copy; opening its Project does
+not contact the remote. Clone operations have a two-minute deadline and the configured source byte
+limit. SSH uses the workstation's existing host trust and authentication without interactive
+prompts.
+
 The web process validates all five local-source settings before listening:
 
 - `LOCAL_REPOSITORY_ROOTS` — JSON array of absolute, non-overlapping directory roots;

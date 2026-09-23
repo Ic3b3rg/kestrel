@@ -10,3 +10,4 @@ export * from "./git.js";
 export * from "./remote-acquisition.js";
 export * from "./repository-root-configuration.js";
 export * from "./source-authorization.js";
+export * from "./managed-source.js";

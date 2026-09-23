@@ -594,6 +594,20 @@
         ],
         "type": "object"
       },
+      "CloneSourceCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "url": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "type": "object"
+      },
       "CodexReviewModelPreference": {
         "additionalProperties": false,
         "properties": {
@@ -18308,6 +18322,50 @@
         "additionalProperties": false,
         "properties": {},
         "type": "object"
+      },
+      "ManagedSource": {
+        "additionalProperties": false,
+        "properties": {
+          "displayName": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "repositoryId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repositoryId",
+          "displayName"
+        ],
+        "type": "object"
+      },
+      "ManagedSources": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "displayName": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "repositoryId": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "repositoryId",
+            "displayName"
+          ],
+          "type": "object"
+        },
+        "maxItems": 100,
+        "type": "array"
       },
       "ObserveHostGitHubPullRequestCommand": {
         "additionalProperties": false,
@@ -38574,6 +38632,85 @@
         ],
         "type": "object"
       },
+      "SourceAuthorization": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "state": {
+                "const": "cancelled",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "previewId": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                "type": "string"
+              },
+              "repositories": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "displayName": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "repositoryId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "repositoryId",
+                    "displayName"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              "skipped": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "state": {
+                "const": "preview",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "previewId",
+              "repositories",
+              "skipped"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "state": {
+                "const": "authorized",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
+          }
+        ]
+      },
       "StartPlanningFeatureCommand": {
         "additionalProperties": false,
         "properties": {
@@ -39077,6 +39214,96 @@
         }
       }
     },
+    "/api/v1/local-repository-sources/choose": {
+      "post": {
+        "operationId": "chooseLocalFolder",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {},
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceAuthorization"
+                }
+              }
+            },
+            "description": "Explicit source onboarding result"
+          },
+          "401": {
+            "description": "Operator authentication required"
+          },
+          "403": {
+            "description": "Mutation origin or CSRF rejected"
+          },
+          "409": {
+            "description": "Selection changed or expired"
+          },
+          "503": {
+            "description": "Workstation or remote operation unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/local-repository-sources/confirm": {
+      "post": {
+        "operationId": "confirmLocalFolder",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "previewId": {
+                    "format": "uuid",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "previewId"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceAuthorization"
+                }
+              }
+            },
+            "description": "Explicit source onboarding result"
+          },
+          "401": {
+            "description": "Operator authentication required"
+          },
+          "403": {
+            "description": "Mutation origin or CSRF rejected"
+          },
+          "409": {
+            "description": "Selection changed or expired"
+          },
+          "503": {
+            "description": "Workstation or remote operation unavailable"
+          }
+        }
+      }
+    },
     "/api/v1/local-repository-sources/{repositoryId}/references": {
       "get": {
         "operationId": "listLocalRepositoryReferences",
@@ -39162,6 +39389,123 @@
               }
             },
             "description": "Git inspection is unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/managed-sources": {
+      "get": {
+        "operationId": "listManagedSources",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedSources"
+                }
+              }
+            },
+            "description": "Managed repository inventory"
+          },
+          "401": {
+            "description": "Operator authentication required"
+          },
+          "403": {
+            "description": "Mutation origin or CSRF rejected"
+          },
+          "409": {
+            "description": "Selection changed or expired"
+          },
+          "503": {
+            "description": "Workstation or remote operation unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/managed-sources/clone": {
+      "post": {
+        "operationId": "cloneManagedSource",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloneSourceCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedSource"
+                }
+              }
+            },
+            "description": "Explicit source onboarding result"
+          },
+          "401": {
+            "description": "Operator authentication required"
+          },
+          "403": {
+            "description": "Mutation origin or CSRF rejected"
+          },
+          "409": {
+            "description": "Selection changed or expired"
+          },
+          "503": {
+            "description": "Workstation or remote operation unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/managed-sources/refresh": {
+      "post": {
+        "operationId": "refreshManagedSource",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "repositoryId": {
+                    "format": "uuid",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "repositoryId"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedSource"
+                }
+              }
+            },
+            "description": "Explicit source onboarding result"
+          },
+          "401": {
+            "description": "Operator authentication required"
+          },
+          "403": {
+            "description": "Mutation origin or CSRF rejected"
+          },
+          "409": {
+            "description": "Selection changed or expired"
+          },
+          "503": {
+            "description": "Workstation or remote operation unavailable"
           }
         }
       }

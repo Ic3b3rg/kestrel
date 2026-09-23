@@ -1,3 +1,4 @@
+import { ManagedSourcesPanel } from "./ManagedSourcesPanel.js";
 import { useEffect, useRef, useState } from "react";
 import { SourceAuthorizationSchema, type SourceAuthorization } from "@kestrel/contracts";
 import { ApiClientError, authenticatedMutationHeaders, requireJson } from "./api.js";
@@ -68,6 +69,7 @@ export function SourceOnboardingPanel({
   };
   return (
     <section className="grid min-w-0 gap-3" aria-label="Add a repository" aria-busy={pending}>
+      <ManagedSourcesPanel disabled={disabled || pending} onAuthorized={onAuthorized} />
       <div>
         <Button
           type="button"
