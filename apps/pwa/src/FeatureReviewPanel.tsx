@@ -997,7 +997,7 @@ function FeatureReviewPanelContent({
           review.currency === "up_to_date" &&
           basis !== null ? (
             <FeatureCorrectionPanel
-              key={review.artifact.id}
+              key={`correction:${review.artifact.id}`}
               projectId={projectId}
               featureId={featureId}
               approvedVersion={basis.provenance.version}
@@ -1014,7 +1014,7 @@ function FeatureReviewPanelContent({
           basis !== null &&
           preparation.publication !== null ? (
             <FeatureMergePanel
-              key={review.artifact.id}
+              key={`merge:${review.artifact.id}`}
               projectId={projectId}
               featureId={featureId}
               approvedVersion={basis.provenance.version}

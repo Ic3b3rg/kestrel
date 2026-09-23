@@ -167,7 +167,11 @@ function failure(request: FastifyRequest, error: unknown) {
     if (error.code === "conflict")
       return {
         status: 409 as const,
-        body: apiError(request, "REQUEST_REJECTED", "The correction conflicts with current state"),
+        body: apiError(
+          request,
+          "REQUEST_REJECTED",
+          error.detail ?? "The correction conflicts with current state",
+        ),
       };
   }
   if (error instanceof FactoryGitHubError)

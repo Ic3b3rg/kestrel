@@ -258,3 +258,60 @@ it("does not offer another request from the historical source review after repla
   expect(container.textContent).toContain("The replacement review failed visibly");
   expect(container.querySelector("textarea")).toBeNull();
 });
+
+it("reuses an uncertain publication retry identity until the durable result is confirmed", async () => {
+  const correction = {
+    schemaVersion: 1 as const,
+    id: artifactId,
+    featureId,
+    approvedVersion: 2,
+    requestedByOperatorId: projectId,
+    sourceReview: {
+      workflowId,
+      artifactId,
+      reviewRevisionId: artifactId,
+      baseCommitId,
+      headCommitId,
+    },
+    instruction: "Keep the action visible",
+    findings: [],
+    state: "failed" as const,
+    failure: "unavailable" as const,
+    canRetry: true,
+    runId: workflowId,
+    certificateId: projectId,
+    replacementReview: null,
+    createdAt: at,
+    updatedAt: at,
+    completedAt: null,
+  };
+  const retryCorrection = vi
+    .fn()
+    .mockRejectedValueOnce(new Error("Lost response"))
+    .mockResolvedValueOnce({ ...correction, state: "queued", canRetry: false });
+  await renderAct(() =>
+    root.render(
+      createElement(FeatureCorrectionPanel, {
+        projectId,
+        featureId,
+        approvedVersion: 2,
+        review,
+        online: true,
+        onAuthenticationError: vi.fn(() => false),
+        onReplacementReview: vi.fn(),
+        loadCurrent: vi.fn(async () => ({ schemaVersion: 1 as const, correction })),
+        requestCorrection: vi.fn(),
+        retryCorrection,
+      }),
+    ),
+  );
+  const retry = () =>
+    Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("Retry"),
+    );
+  await renderAct(() => retry()?.click());
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("not queued");
+  await renderAct(() => retry()?.click());
+  expect(retryCorrection).toHaveBeenCalledTimes(2);
+  expect(retryCorrection.mock.calls[0]?.[3]).toEqual(retryCorrection.mock.calls[1]?.[3]);
+});

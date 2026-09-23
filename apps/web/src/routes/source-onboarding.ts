@@ -15,10 +15,10 @@ import type { SourceOnboardingService } from "../source-onboarding.js";
 export function registerSourceOnboardingRoutes(
   app: FastifyInstance,
   service: SourceOnboardingService,
+  managed = createManagedSourceService(),
 ): void {
   const json = (schema: z.ZodType) => z.toJSONSchema(schema, { target: "draft-7" });
   const confirm = z.strictObject({ previewId: z.uuid() });
-  const managed = createManagedSourceService();
   const rejectManaged = (error: unknown, correlationId: string) =>
     ApiErrorSchema.parse({
       schemaVersion: 1,

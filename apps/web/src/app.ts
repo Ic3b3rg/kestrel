@@ -91,7 +91,7 @@ import {
   type ReviewWorkflowService,
 } from "./routes/review-workflows.js";
 import { registerAuthentication } from "./authentication.js";
-import { readLocalSourceConfig } from "@kestrel/local-source";
+import { createManagedSourceService, readLocalSourceConfig } from "@kestrel/local-source";
 
 export interface BuildAppOptions {
   boss: DiagnosticJobSender;
@@ -101,6 +101,7 @@ export interface BuildAppOptions {
   eventRetentionLimit: number;
   logger?: boolean;
   sourceOnboardingService?: SourceOnboardingService;
+  managedSourceService?: ReturnType<typeof createManagedSourceService>;
   localRepositoryService?: LocalRepositoryService;
   pool: DatabasePool;
   projectService?: ProjectService;
@@ -199,6 +200,7 @@ export async function buildApp({
   eventPool = pool,
   pwaRoot,
   sourceOnboardingService = createSourceOnboardingService(),
+  managedSourceService,
   localRepositoryService = {
     listRepositories: () =>
       Promise.resolve({
@@ -313,7 +315,7 @@ export async function buildApp({
   registerDirectApiProfileRoutes(app, directApiProfileService);
   registerChangeIntentRoutes(app, changeIntentService);
   registerLocalRepositoryRoutes(app, localRepositoryService);
-  registerSourceOnboardingRoutes(app, sourceOnboardingService);
+  registerSourceOnboardingRoutes(app, sourceOnboardingService, managedSourceService);
   registerReviewRevisionRoutes(app, reviewRevisionService);
   registerReviewWorkflowRoutes(app, reviewWorkflowService);
   registerExternalConceptualReviewRoutes(app, externalConceptualReviewService);

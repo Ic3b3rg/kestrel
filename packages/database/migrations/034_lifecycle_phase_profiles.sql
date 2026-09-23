@@ -16,4 +16,5 @@ FROM codex_review_model_preferences WHERE selected_model_id IS NOT NULL LIMIT 1;
 
 ALTER TABLE factory_planning_turns ADD COLUMN lifecycle_profile jsonb;
 ALTER TABLE factory_planning_turns ADD COLUMN runtime_profile_result jsonb;
+GRANT UPDATE (runtime_profile_result) ON factory_planning_turns TO kestrel_runtime;
 COMMENT ON COLUMN factory_planning_turns.lifecycle_profile IS 'Immutable profile and exact Skill bundles frozen with message acceptance. NULL identifies pre-profile work; no settings fallback is authorized.';

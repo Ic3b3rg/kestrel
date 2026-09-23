@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { FormFeedback } from "./components/FormFeedback.js";
 import { SourceOnboardingPanel } from "./SourceOnboardingPanel.js";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./components/ui/dialog.js";
@@ -17,6 +18,7 @@ import { ApiClientError, fetchLocalRepositories, openLocalProject } from "./api.
 import { RepositorySetupState } from "./RepositorySetupState.js";
 
 export interface OpenProjectFormProps {
+  triggerContainer?: HTMLElement | null;
   disabled: boolean;
   triggerLabel?: string;
   loadRepositories?: (signal?: AbortSignal) => Promise<LocalRepositoryInventory>;
@@ -38,6 +40,7 @@ function safeError(error: unknown, fallback: string): string {
 export function OpenProjectForm({
   disabled,
   triggerLabel = "Open Project",
+  triggerContainer,
   loadRepositories = fetchLocalRepositories,
   onAuthenticationError,
   onOpened,
@@ -132,6 +135,11 @@ export function OpenProjectForm({
     }
   };
 
+  const triggerButton = (
+    <Button ref={trigger} type="button" disabled={disabled} onClick={() => void show()}>
+      {triggerLabel}
+    </Button>
+  );
   return (
     <Dialog
       open={open}
@@ -140,9 +148,11 @@ export function OpenProjectForm({
       }}
     >
       <div className="open-project-entry">
-        <Button ref={trigger} type="button" disabled={disabled} onClick={() => void show()}>
-          {triggerLabel}
-        </Button>
+        {triggerContainer === undefined
+          ? triggerButton
+          : triggerContainer === null
+            ? null
+            : createPortal(triggerButton, triggerContainer)}
         {open ? (
           <DialogContent
             showCloseButton={false}
@@ -152,7 +162,7 @@ export function OpenProjectForm({
             }}
             onCloseAutoFocus={(event) => {
               event.preventDefault();
-              trigger.current?.focus();
+              (trigger.current ?? document.getElementById("workspace"))?.focus();
             }}
             className="local-repository-dialog open-project-dialog max-h-[85dvh] overflow-y-auto sm:max-w-xl"
             aria-labelledby={titleId}

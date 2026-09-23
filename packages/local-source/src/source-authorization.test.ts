@@ -1,4 +1,6 @@
-import { execFile } from "node:child_process";
+import { once } from "node:events";
+import { acquireSourceLock } from "./source-lock.js";
+import { execFile, spawn } from "node:child_process";
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -42,14 +44,34 @@ describe("explicit local source authorization", () => {
     const alpha = await repository("alpha");
     const preview = await previewSourceAuthorization(alpha, env);
     const path = `${env.LOCAL_REPOSITORY_ROOTS_FILE}.lock`;
-    await writeFile(path, String(process.pid), { mode: 0o600 });
+    const release = await acquireSourceLock(path);
     await expect(confirmSourceAuthorization(preview, env)).rejects.toThrow("busy");
-    const stopped = await run(process.execPath, [
-      "-e",
-      "process.stdout.write(String(process.pid))",
-    ]);
-    await writeFile(path, stopped.stdout, { mode: 0o600 });
-    await confirmSourceAuthorization(preview, env);
+    await release();
+    const child = spawn(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        "import {DatabaseSync} from 'node:sqlite'; const db=new DatabaseSync(process.argv[1]); db.exec('BEGIN EXCLUSIVE'); console.log('locked'); setInterval(()=>{},1000);",
+        path,
+      ],
+      { stdio: ["ignore", "pipe", "ignore"] },
+    );
+    try {
+      await once(child.stdout, "data");
+      await expect(confirmSourceAuthorization(preview, env)).rejects.toThrow("busy");
+      child.kill("SIGKILL");
+      await once(child, "exit");
+      const attempts = await Promise.allSettled([acquireSourceLock(path), acquireSourceLock(path)]);
+      expect(attempts.filter(({ status }) => status === "fulfilled")).toHaveLength(1);
+      for (const attempt of attempts) if (attempt.status === "fulfilled") await attempt.value();
+      await confirmSourceAuthorization(preview, env);
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill("SIGKILL");
+        await once(child, "exit");
+      }
+    }
     expect(await readRepositoryRootConfiguration(env.LOCAL_REPOSITORY_ROOTS_FILE)).toEqual([alpha]);
   });
   it("previews only direct child repositories and authorizes exactly the confirmed set", async () => {

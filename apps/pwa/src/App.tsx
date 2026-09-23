@@ -174,6 +174,7 @@ export function App() {
   const [projectInbox, setProjectInbox] = useState<ProjectInbox | null>(null);
   const [projectLoading, setProjectLoading] = useState(false);
   const [projectError, setProjectError] = useState<string | null>(null);
+  const [openProjectTrigger, setOpenProjectTrigger] = useState<HTMLDivElement | null>(null);
   const [projectPending, setProjectPending] = useState(false);
   const [projectReloadGeneration, setProjectReloadGeneration] = useState(0);
   const loginController = useRef<AbortController | null>(null);
@@ -996,6 +997,13 @@ export function App() {
       ) : null}
       <WorkspaceSuspendedContext.Provider value={sessionPaused}>
         <div hidden={sessionPaused}>
+          <OpenProjectForm
+            key={`${session.operator.id}/${session.credentialVersion}/${session.issuedAt}`}
+            triggerContainer={openProjectTrigger}
+            disabled={!online || projectPending}
+            onAuthenticationError={handleAuthenticationBoundaryError}
+            onOpened={handleProjectOpened}
+          />
           <AuthenticatedShell
             key={`${session.operator.id}/${session.credentialVersion}/${session.issuedAt}`}
 
@@ -1006,13 +1014,7 @@ export function App() {
             logoutError={securityError?.action === "logout" ? securityError.message : null}
             logoutPending={securityPending === "logout"}
             online={online}
-            openProjectControl={
-              <OpenProjectForm
-                disabled={!online || projectPending}
-                onAuthenticationError={handleAuthenticationBoundaryError}
-                onOpened={handleProjectOpened}
-              />
-            }
+            openProjectControl={<div ref={setOpenProjectTrigger} />}
             route={route}
             projectFeatureIds={projectFeatureIds}
             projectNavigation={

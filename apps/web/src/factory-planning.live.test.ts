@@ -224,7 +224,7 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX === "1")(
         });
         const localRepositoryService = createLocalRepositoryService(sourceConfig, pool);
         const connection = createCodexAppServerAgentRuntime({ executable: codex });
-        const runtime = createCodexPlanningRuntime({ executable: codex, timeoutMs: 45_000 });
+        const runtime = createCodexPlanningRuntime({ executable: codex, timeoutMs: 120_000 });
         const processor = createFactoryPlanningProcessor({
           pool,
           connection,
@@ -352,7 +352,7 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX === "1")(
             expect(sent.status).toBe(202);
             accepted = PlanningTurnAcceptedSchema.parse(await sent.json());
           }
-          const until = Date.now() + 55_000;
+          const until = Date.now() + 135_000;
           let completed = false;
           while (!completed && Date.now() < until) {
             const chat = await readChat();
@@ -368,7 +368,7 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX === "1")(
                 JSON.stringify({
                   question: turn.question,
                   lifecycleProfile: turn.lifecycleProfile,
-                  runtimeProfile: turn.runtimeProfile,
+                  runtimeProfile: turn.runtimeProfileResult,
                 }),
               ).toEqual({
                 state: "completed",
@@ -493,7 +493,7 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX === "1")(
                 plans.generation !== null && !["queued", "running"].includes(plans.generation.state)
               );
             },
-            { timeout: 55_000, interval: 500 },
+            { timeout: 135_000, interval: 500 },
           )
           .toBe(true);
         const plans = FeaturePlansSchema.parse(await (await request(`${path}/plans`)).json());
@@ -570,7 +570,7 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX === "1")(
         expect(renamed.status).toBe(200);
         expect(FeatureSchema.parse(await renamed.json()).title).toBe(operatorTitle);
         await expect
-          .poll(async () => (await raceChat()).turns[0]?.state, { timeout: 55_000, interval: 250 })
+          .poll(async () => (await raceChat()).turns[0]?.state, { timeout: 135_000, interval: 250 })
           .toBe("completed");
         const namedRace = await raceChat();
         expect(namedRace.feature.title).toBe(operatorTitle);

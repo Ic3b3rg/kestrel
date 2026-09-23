@@ -88,6 +88,7 @@ export function FeatureCorrectionPanel({
   const instructionId = useId();
   const instructionCountId = `${instructionId}-count`;
   const requestId = useRef<string | null>(null);
+  const retryRequestId = useRef<string | null>(null);
   const announcedCompletion = useRef<string | null>(null);
 
   const read = useCallback(async () => {
@@ -172,12 +173,15 @@ export function FeatureCorrectionPanel({
     submitting.current = true;
     setBusy(true);
     setError(null);
+    const durableRequestId = retryRequestId.current ?? crypto.randomUUID();
+    retryRequestId.current = durableRequestId;
     try {
       setCorrection(
         await retryCorrection(projectId, featureId, correction.id, {
-          requestId: crypto.randomUUID(),
+          requestId: durableRequestId,
         }),
       );
+      retryRequestId.current = null;
     } catch (failure) {
       if (alive.current && !onAuthenticationError(failure))
         setError(planningRequestError(failure, "The correction retry was not queued."));
