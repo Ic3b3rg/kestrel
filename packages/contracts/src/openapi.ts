@@ -52,6 +52,7 @@ import {
   FactoryIssuePublicationSchema,
   RetryFactoryPublicationCommandSchema,
 } from "./factory-issues.js";
+import { ProjectBoardSnapshotSchema } from "./project-board.js";
 
 import {
   FeaturePlanDocumentSchema,
@@ -222,6 +223,7 @@ const factoryComponents = {
   FactoryGate: asComponentSchema(asJsonSchema(FactoryGateSchema)),
   ResolveFactoryGateCommand: asComponentSchema(asJsonSchema(ResolveFactoryGateCommandSchema)),
   FactoryGitHubIssues: asComponentSchema(asJsonSchema(FactoryGitHubIssuesSchema)),
+  ProjectBoardSnapshot: asComponentSchema(asJsonSchema(ProjectBoardSnapshotSchema)),
   FactoryIssueImports: asComponentSchema(asJsonSchema(FactoryIssueImportsSchema)),
   ImportFactoryIssuesCommand: asComponentSchema(asJsonSchema(ImportFactoryIssuesCommandSchema)),
   FactoryIssuePublication: asComponentSchema(asJsonSchema(FactoryIssuePublicationSchema)),
@@ -1051,6 +1053,18 @@ export const openApiDocument = sortJson({
         },
       ],
       get: factoryRead("readFactoryGitHubIssues", "FactoryGitHubIssues"),
+    },
+    "/api/v1/projects/{projectId}/board": {
+      parameters: [
+        { in: "path", name: "projectId", required: true, schema: asJsonSchema(KestrelIdSchema) },
+        {
+          in: "query",
+          name: "refreshProvider",
+          required: false,
+          schema: { type: "string", enum: ["0", "1"], default: "0" },
+        },
+      ],
+      get: factoryRead("readProjectBoard", "ProjectBoardSnapshot"),
     },
     "/api/v1/projects/{projectId}/features/{featureId}/imports": {
       parameters: factoryParameters(),

@@ -2,12 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type {
-  FactoryBoard,
-  FactoryGitHubIssues,
-  FactoryWorkItem,
-  Feature,
-} from "@kestrel/contracts";
+import type { FactoryWorkItem, Feature, ProjectBoardSnapshot } from "@kestrel/contracts";
 import {
   ProjectFactoryBoardPanel,
   type ProjectFactoryBoardPanelProps,
@@ -57,40 +52,24 @@ const waitingItem: FactoryWorkItem = {
   blocking: { kind: "human_gate", explanation: "Should the export include archived reports?" },
   providerUrl: null,
 };
-const githubIssues: FactoryGitHubIssues = {
-  schemaVersion: 1,
-  projectId: planning.projectId,
-  repository: { id: "901", owner: "example", name: "reports" },
-  state: "available",
-  failure: null,
-  issues: [
-    {
-      repository: { id: "901", owner: "example", name: "reports" },
-      id: "42",
-      number: 42,
-      url: firstItem.providerUrl ?? "",
-      title: "Provider copy of the export Work Item",
-      body: "Save the selected report as CSV.",
-      state: "open",
-      dependencies: [],
-    },
-  ],
-  page: 1,
-  nextPage: null,
-  limited: false,
-};
-
-function board(feature = approved, items = [firstItem, waitingItem]): FactoryBoard {
+function snapshot(): ProjectBoardSnapshot {
   return {
     schemaVersion: 1,
-    feature,
-    approvedVersion: 1,
-    executionReadiness: { state: "enabled", reason: "automatic_execution" },
-    columns: (["todo", "in_progress", "in_review", "completed"] as const).map((id) => ({
-      id,
-      items: items.filter((item) => item.column === id),
-    })),
-    activity: [],
+    projectId: planning.projectId,
+    readAt: createdAt,
+    planningFeatures: [planning],
+    workItems: [
+      { feature: approved, item: firstItem },
+      { feature: approved, item: waitingItem },
+    ],
+    github: {
+      issues: [],
+      checkedAt: createdAt,
+      fetchedAt: createdAt,
+      failure: null,
+      limited: false,
+      retained: false,
+    },
   };
 }
 
@@ -117,8 +96,7 @@ describe("Project Factory board", () => {
         createElement(ProjectFactoryBoardPanel, {
           projectId: planning.projectId,
           projectName: "Reports",
-          features: [planning, approved],
-          boards: [board()],
+          snapshot: snapshot(),
           online: true,
           loading: false,
           error: null,
@@ -166,36 +144,9 @@ describe("Project Factory board", () => {
     expect(container.querySelectorAll('button[aria-label^="Open planning chat:"]')).toHaveLength(1);
   });
 
-  it("uses the approved board when the Feature list still contains an older planning state", async () => {
-    await render({ features: [{ ...approved, state: "planning" }], boards: [board()] });
-    expect(container.querySelectorAll('button[aria-label^="Open planning chat:"]')).toHaveLength(0);
-    expect(container.querySelector('[aria-label="In review"]')?.textContent).toContain(
-      firstItem.title,
-    );
-  });
-
-  it("does not duplicate a linked GitHub issue as a provider card", async () => {
-    await render({ githubIssuePages: [githubIssues] });
-    expect(container.textContent).toContain(firstItem.title);
-    expect(container.textContent).not.toContain("Provider copy of the export Work Item");
-    expect(
-      container.querySelector(
-        '[aria-label="Open GitHub issue #42: Provider copy of the export Work Item"]',
-      ),
-    ).toBeNull();
-  });
-
   it("keeps Kestrel cards visible when GitHub rate limits the issue catalog", async () => {
     await render({
-      githubIssuePages: [
-        {
-          ...githubIssues,
-          repository: null,
-          state: "unavailable",
-          failure: "rate_limited",
-          issues: [],
-        },
-      ],
+      snapshot: { ...snapshot(), github: { ...snapshot().github, failure: "rate_limited" } },
     });
     expect(container.textContent).toContain(firstItem.title);
     expect(container.textContent).toContain(
@@ -222,8 +173,11 @@ describe("Project Factory board", () => {
       providerUrl: null,
     };
     await render({
-      features: [approved, nextFeature],
-      boards: [board(), board(nextFeature, [nextItem])],
+      snapshot: {
+        ...snapshot(),
+        planningFeatures: [],
+        workItems: [...snapshot().workItems, { feature: nextFeature, item: nextItem }],
+      },
     });
     const todo = container.querySelector('[aria-label="To do"]');
     expect(todo?.textContent).toContain(waitingItem.title);
@@ -265,23 +219,25 @@ describe("Project Factory board", () => {
   });
 
   it("retains known cards during loading, errors, and offline viewing", async () => {
-    const providerIssue = githubIssues.issues[0];
-    if (providerIssue === undefined) throw new Error("Missing GitHub issue fixture");
     await render({
-      githubIssuePages: [
-        {
-          ...githubIssues,
+      snapshot: {
+        ...snapshot(),
+        github: {
+          ...snapshot().github,
+          failure: "unavailable",
+          retained: true,
           issues: [
             {
-              ...providerIssue,
+              repository: { id: "901", owner: "example", name: "reports" },
               id: "43",
               number: 43,
               url: "https://github.com/example/reports/issues/43",
               title: "Keep provider work visible offline",
+              state: "open",
             },
           ],
         },
-      ],
+      },
       online: false,
       loading: true,
       error: "The board could not be refreshed.",
@@ -306,7 +262,7 @@ describe("Project Factory board", () => {
   });
 
   it("shows an empty four-column board with New in To do", async () => {
-    await render({ features: [], boards: [] });
+    await render({ snapshot: null });
     expect(container.querySelectorAll("h2")).toHaveLength(4);
     expect(container.querySelector('[aria-label="To do"]')?.contains(button("New plan"))).toBe(
       true,

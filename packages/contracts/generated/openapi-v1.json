@@ -18888,6 +18888,370 @@
           }
         ]
       },
+      "ProjectBoardSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "github": {
+            "additionalProperties": false,
+            "properties": {
+              "checkedAt": {
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                "type": "string"
+              },
+              "failure": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "unavailable",
+                      "needs_authentication",
+                      "access_denied",
+                      "rate_limited",
+                      "invalid_response",
+                      "timeout",
+                      "cancelled",
+                      "project_not_supported",
+                      "repository_changed",
+                      "uncertain_write",
+                      "issue_already_bound",
+                      "reconciliation_limit"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "fetchedAt": {
+                "anyOf": [
+                  {
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "issues": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "maxLength": 32,
+                      "pattern": "^[1-9][0-9]*$",
+                      "type": "string"
+                    },
+                    "number": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 2147483647,
+                      "type": "integer"
+                    },
+                    "repository": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "maxLength": 32,
+                          "pattern": "^[1-9][0-9]*$",
+                          "type": "string"
+                        },
+                        "name": {
+                          "pattern": "^[a-zA-Z0-9_.-]{1,100}$",
+                          "type": "string"
+                        },
+                        "owner": {
+                          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9-]{0,99}$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "owner",
+                        "name"
+                      ],
+                      "type": "object"
+                    },
+                    "state": {
+                      "enum": [
+                        "open",
+                        "closed"
+                      ],
+                      "type": "string"
+                    },
+                    "title": {
+                      "maxLength": 512,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "url": {
+                      "maxLength": 512,
+                      "pattern": "^https:\\/\\/github\\.com\\/[^/]+\\/[^/]+\\/issues\\/[1-9][0-9]*$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "repository",
+                    "id",
+                    "number",
+                    "url",
+                    "title",
+                    "state"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              "limited": {
+                "type": "boolean"
+              },
+              "retained": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "issues",
+              "checkedAt",
+              "fetchedAt",
+              "failure",
+              "limited",
+              "retained"
+            ],
+            "type": "object"
+          },
+          "planningFeatures": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "createdAt": {
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                },
+                "projectId": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                },
+                "schemaVersion": {
+                  "const": 1,
+                  "type": "number"
+                },
+                "state": {
+                  "enum": [
+                    "planning",
+                    "queued",
+                    "implementing",
+                    "gated",
+                    "in_review",
+                    "merging",
+                    "completed",
+                    "cancelled"
+                  ],
+                  "type": "string"
+                },
+                "title": {
+                  "maxLength": 160,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "schemaVersion",
+                "id",
+                "projectId",
+                "title",
+                "state",
+                "createdAt",
+                "updatedAt"
+              ],
+              "type": "object"
+            },
+            "maxItems": 200,
+            "type": "array"
+          },
+          "projectId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "readAt": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "schemaVersion": {
+            "const": 1,
+            "type": "number"
+          },
+          "workItems": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "feature": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                      "type": "string"
+                    },
+                    "projectId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                      "type": "string"
+                    },
+                    "title": {
+                      "maxLength": 160,
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "projectId",
+                    "title"
+                  ],
+                  "type": "object"
+                },
+                "item": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "blocking": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "explanation": {
+                              "maxLength": 2000,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "kind": {
+                              "enum": [
+                                "dependency",
+                                "execution_unavailable",
+                                "publication",
+                                "cancelled",
+                                "human_gate"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "explanation"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "column": {
+                      "enum": [
+                        "todo",
+                        "in_progress",
+                        "in_review",
+                        "completed"
+                      ],
+                      "type": "string"
+                    },
+                    "dependsOn": {
+                      "items": {
+                        "maxLength": 48,
+                        "minLength": 1,
+                        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$",
+                        "type": "string"
+                      },
+                      "maxItems": 40,
+                      "type": "array"
+                    },
+                    "featureId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                      "type": "string"
+                    },
+                    "id": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                      "type": "string"
+                    },
+                    "key": {
+                      "maxLength": 48,
+                      "minLength": 1,
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$",
+                      "type": "string"
+                    },
+                    "order": {
+                      "maximum": 40,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "providerUrl": {
+                      "anyOf": [
+                        {
+                          "format": "uri",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "title": {
+                      "maxLength": 160,
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "featureId",
+                    "key",
+                    "order",
+                    "title",
+                    "dependsOn",
+                    "column",
+                    "blocking",
+                    "providerUrl"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "feature",
+                "item"
+              ],
+              "type": "object"
+            },
+            "maxItems": 8000,
+            "type": "array"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "projectId",
+          "readAt",
+          "planningFeatures",
+          "workItems",
+          "github"
+        ],
+        "type": "object"
+      },
       "ProjectInbox": {
         "additionalProperties": false,
         "properties": {
@@ -40001,6 +40365,139 @@
           }
         }
       }
+    },
+    "/api/v1/projects/{projectId}/board": {
+      "get": {
+        "operationId": "readProjectBoard",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectBoardSnapshot"
+                }
+              }
+            },
+            "description": "Current durable Factory state"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The Factory command was rejected or could not be completed"
+          }
+        }
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "refreshProvider",
+          "required": false,
+          "schema": {
+            "default": "0",
+            "enum": [
+              "0",
+              "1"
+            ],
+            "type": "string"
+          }
+        }
+      ]
     },
     "/api/v1/projects/{projectId}/change-proposals/{changeProposalId}/change-intents": {
       "post": {

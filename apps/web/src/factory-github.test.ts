@@ -88,7 +88,7 @@ if (url.pathname === '/user') {
   state.userReads++;
   reply(200, {login: (state.mode === 'account_drift' && state.userReads >= 2) || (state.mode === 'account_after_write' && state.issuePosts > 0) ? 'other' : 'operator'});
 }
-if (url.pathname === '/repos/owner/notes') reply(200, {id: state.mode === 'repository_changed' || state.mode === 'repository_after_write' && state.issuePosts > 0 || state.mode === 'repository_after_read' && state.issueReads > 0 ? '42' : '41', owner:'owner', name:'notes'});
+if (url.pathname === '/repos/owner/notes') reply(200, {id: state.mode === 'repository_changed' || state.mode === 'repository_after_write' && state.issuePosts > 0 || (state.mode === 'repository_after_read' || state.mode === 'catalog_partial_drift') && state.issueReads > 0 ? '42' : '41', owner:'owner', name:'notes'});
 const base = '/repos/owner/notes/issues';
 if (url.pathname === base && method === 'GET') {
   state.issueReads++;
@@ -102,8 +102,9 @@ if (url.pathname === base && method === 'GET') {
     if (page === 1) state.issues.slice(-20).reverse().forEach((issue, index) => { issues[index] = issue; });
     reply(200, issues, {Link:'<https://api.github.com/repositories/41/issues?state=all&per_page=20&page=' + (page + 1) + '>; rel="next"'});
   }
-  if (state.mode === 'pagination') {
+  if (state.mode === 'pagination' || state.mode === 'catalog_partial' || state.mode === 'catalog_partial_drift') {
     if (page === 1) reply(200, [state.issues[0], {...state.issues[0], id:'502', number:2, isPullRequest:true, html_url:'https://github.com/owner/notes/pull/2'}], {Link:'<https://api.github.com/repositories/41/issues?state=open&sort=created&direction=desc&per_page=20&page=2>; rel="next"'});
+    if (state.mode === 'catalog_partial' || state.mode === 'catalog_partial_drift') reply(503, {message:'Unavailable'});
     reply(200, [{...state.issues[0], id:'503', number:3, title:'Second page', html_url:'https://github.com/owner/notes/issues/3'}]);
   }
   reply(200, state.mode === 'empty_reconcile' ? [] : state.issues);
@@ -242,6 +243,53 @@ afterEach(async () => {
 });
 
 describe("Factory GitHub subprocess boundary", () => {
+  it("bounds a Project catalog to five pages and preserves partial reads on failure", async () => {
+    const bounded = await fixture("limited");
+    const result = await bounded.adapter.readIssueCatalog({ owner: "owner", name: "notes" });
+    expect(result.limited).toBe(true);
+    expect(result.failure).toBeNull();
+    expect(
+      (await bounded.calls()).filter(({ args }) => args.some((arg) => arg.includes("per_page=20"))),
+    ).toHaveLength(5);
+    const partial = await fixture("catalog_partial");
+    expect(await partial.adapter.readIssueCatalog({ owner: "owner", name: "notes" })).toMatchObject(
+      {
+        issues: [{ id: "501" }],
+        limited: true,
+        failure: "unavailable",
+      },
+    );
+  });
+
+  it("reads a Project catalog with one identity fence around all pages", async () => {
+    const { adapter, calls } = await fixture("pagination");
+    expect(await adapter.readIssueCatalog({ owner: "owner", name: "notes" })).toMatchObject({
+      issues: [{ id: "501" }, { id: "503" }],
+      limited: false,
+      failure: null,
+    });
+    expect((await calls()).filter(({ args }) => args[0] === "version")).toHaveLength(2);
+    expect((await calls()).every(({ args }) => args[0] === "version" || args.includes("GET"))).toBe(
+      true,
+    );
+  });
+
+  it("discards partial pages if their repository identity cannot be confirmed", async () => {
+    const { adapter } = await fixture("catalog_partial_drift");
+    expect(await adapter.readIssueCatalog({ owner: "owner", name: "notes" })).toMatchObject({
+      issues: [],
+      failure: "repository_changed",
+    });
+  });
+
+  it("does not expose catalog cards if the repository changes during the read", async () => {
+    const { adapter } = await fixture("repository_after_read");
+    expect(await adapter.readIssueCatalog({ owner: "owner", name: "notes" })).toMatchObject({
+      issues: [],
+      failure: "repository_changed",
+    });
+  });
+
   it("captures repository/account identity and reads bounded pages excluding pull requests", async () => {
     const { adapter, calls } = await fixture("pagination");
     expect(await adapter.identify({ owner: "owner", name: "notes" })).toEqual(identity);

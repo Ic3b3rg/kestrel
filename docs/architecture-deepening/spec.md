@@ -112,6 +112,25 @@ read-only policy, execution retains its external containment checks and review r
 Closing the App Server proves only its process outcome; Sandbox teardown remains the separate proof
 required before checkpointing or releasing a writer reservation.
 
+## Project Board snapshot
+
+One authenticated Project read owns the local planning/Work Item join and the bounded GitHub
+catalog. Local facts are read in one read-only repeatable-read transaction, without activity bodies
+that the Project cards do not show. They retain the canonical Project scope and shared graph rules.
+The backend removes provider duplicates and linked issues; a closed provider issue cannot complete a
+Work Item. Cards carry their origin and exact Feature navigation scope.
+
+Provider catalog reads identify before the bounded scan, verify identity once afterward, fetch at
+most five pages, and have one ten-second deadline. A bounded 32-Project in-memory catalog refreshes
+after 30 seconds or an explicit refresh; it is a disposable observation cache, never workflow
+authority. Failed refreshes retain known issues, with separate attempt/success timestamps, failure
+and truncation facts. Cancellation cannot install a late result. No database transaction is held
+across provider work.
+
+The browser performs one snapshot read, polls only after it settles, retains same-Project cards
+offline or on read failure, and aborts reads/timers when its route changes. Existing card language,
+actions, keyboard behavior and narrow layout remain intact; retained provider data is disclosed.
+
 ## Verification and integration
 
 Use a smallest failing behavior test before each behavior change. Run focused tests while iterating,

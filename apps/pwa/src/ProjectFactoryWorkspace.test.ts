@@ -1,356 +1,215 @@
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
-import { createRoot } from "react-dom/client";
-import { expect, it, vi } from "vitest";
-import type { FactoryGitHubIssues, Feature } from "@kestrel/contracts";
-import { ProjectFactoryWorkspace } from "./ProjectFactoryWorkspace.js";
-import type { AppRoute } from "./app-route.js";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { ProjectBoardSnapshot } from "@kestrel/contracts";
+import {
+  ProjectFactoryWorkspace,
+  type ProjectFactoryWorkspaceProps,
+} from "./ProjectFactoryWorkspace.js";
 import type * as apiModule from "./api.js";
-
-const api = vi.hoisted(() => ({
-  features: vi.fn<typeof apiModule.fetchFeatures>(),
-  board: vi.fn<typeof apiModule.fetchFactoryBoard>(),
-  issues: vi.fn<typeof apiModule.fetchFactoryGitHubIssues>(),
-}));
+const api = vi.hoisted(() => ({ board: vi.fn<typeof apiModule.fetchProjectBoard>() }));
 vi.mock("./api.js", async (original) => ({
   ...(await original<typeof apiModule>()),
-  fetchFeatures: api.features,
-  fetchFactoryBoard: api.board,
-  fetchFactoryGitHubIssues: api.issues,
+  fetchProjectBoard: api.board,
 }));
 const projectId = "01991c36-7f90-7000-8000-000000000001";
-const feature: Feature = {
-  schemaVersion: 1,
-  id: "01991c36-7f90-7000-8000-000000000002",
-  projectId,
-  state: "planning",
-  title: "Saved report search",
-  createdAt: "2026-09-08T12:00:00.000Z",
-  updatedAt: "2026-09-08T12:00:00.000Z",
-};
-const githubIssues: FactoryGitHubIssues = {
+const otherId = "01991c36-7f90-7000-8000-000000000009";
+const at = "2026-09-23T12:00:00.000Z";
+const snapshot: ProjectBoardSnapshot = {
   schemaVersion: 1,
   projectId,
-  repository: { id: "901", owner: "example", name: "reports" },
-  state: "available",
-  failure: null,
-  issues: [
+  readAt: at,
+  planningFeatures: [
     {
-      repository: { id: "901", owner: "example", name: "reports" },
-      id: "42",
-      number: 42,
-      url: "https://github.com/example/reports/issues/42",
-      title: "Export saved reports",
-      body: "Let operators export a saved report.",
-      state: "open",
-      dependencies: [],
+      schemaVersion: 1,
+      id: "01991c36-7f90-7000-8000-000000000002",
+      projectId,
+      state: "planning",
+      title: "Saved report search",
+      createdAt: at,
+      updatedAt: at,
     },
   ],
-  page: 1,
-  nextPage: null,
-  limited: false,
+  workItems: [],
+  github: {
+    checkedAt: at,
+    fetchedAt: at,
+    failure: null,
+    limited: false,
+    retained: false,
+    issues: [
+      {
+        repository: { id: "901", owner: "example", name: "reports" },
+        id: "42",
+        number: 42,
+        url: "https://github.com/example/reports/issues/42",
+        title: "Export saved reports",
+        state: "open",
+      },
+    ],
+  },
 };
-
-it("loads every bounded GitHub issue page and discloses a truncated catalog", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const nextIssue = githubIssues.issues[0];
-  if (nextIssue === undefined) throw new Error("Missing GitHub issue fixture");
-  api.features.mockReset().mockResolvedValue({ schemaVersion: 1, features: [] });
-  api.board.mockReset();
-  api.issues
-    .mockReset()
-    .mockResolvedValueOnce({ ...githubIssues, nextPage: 2 })
-    .mockResolvedValueOnce({ ...githubIssues, issues: [], page: 2, nextPage: 3 })
-    .mockResolvedValueOnce({ ...githubIssues, issues: [], page: 3, nextPage: 4 })
-    .mockResolvedValueOnce({ ...githubIssues, issues: [], page: 4, nextPage: 5 })
-    .mockResolvedValueOnce({
-      ...githubIssues,
-      issues: [
-        {
-          ...nextIssue,
-          id: "43",
-          number: 43,
-          url: "https://github.com/example/reports/issues/43",
-          title: "Schedule saved report exports",
-        },
-      ],
-      page: 5,
-      limited: true,
-    });
-  const container = document.createElement("div");
-  document.body.append(container);
-  const root = createRoot(container);
-  try {
-    await act(async () => {
-      root.render(
-        createElement(ProjectFactoryWorkspace, {
-          projectId,
-          projectName: "Reports",
-          online: true,
-          onNavigate: vi.fn(),
-          onAuthenticationError: () => false,
-        }),
-      );
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    expect(api.issues.mock.calls.map(([, page]) => page)).toEqual([1, 2, 3, 4, 5]);
-    const todo = container.querySelector('[aria-label="To do"]');
-    expect(todo?.textContent).toContain("Export saved reports");
-    expect(todo?.textContent).toContain("Schedule saved report exports");
-    expect(container.textContent).toContain("More open GitHub issues may exist");
-  } finally {
-    act(() => root.unmount());
-    container.remove();
-    vi.unstubAllGlobals();
-  }
-});
-
-it("loads open GitHub issues with the Project and shows them in To do", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  api.features.mockReset().mockResolvedValue({ schemaVersion: 1, features: [] });
-  api.board.mockReset();
-  api.issues.mockReset().mockResolvedValue(githubIssues);
-  const container = document.createElement("div");
-  document.body.append(container);
-  const root = createRoot(container);
-  try {
-    await act(async () => {
-      await Promise.resolve(
-        root.render(
-          createElement(ProjectFactoryWorkspace, {
-            projectId,
-            projectName: "Reports",
-            online: true,
-            onNavigate: vi.fn(),
-            onAuthenticationError: () => false,
-          }),
-        ),
-      );
-    });
-    const todo = container.querySelector('[aria-label="To do"]');
-    expect(todo?.textContent).toContain("Export saved reports");
-    expect(todo?.textContent).toContain("GitHub issue #42");
-    expect(todo?.querySelector("a")?.href).toBe("https://github.com/example/reports/issues/42");
-  } finally {
-    act(() => root.unmount());
-    container.remove();
-    vi.unstubAllGlobals();
-  }
-});
-
-it("keeps the Project board usable when the GitHub issue request fails", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  api.features.mockReset().mockResolvedValue({ schemaVersion: 1, features: [feature] });
-  api.board.mockReset();
-  api.issues.mockReset().mockRejectedValue(new Error("provider unavailable"));
-  const container = document.createElement("div");
-  document.body.append(container);
-  const root = createRoot(container);
-  try {
-    await act(async () => {
-      await Promise.resolve(
-        root.render(
-          createElement(ProjectFactoryWorkspace, {
-            projectId,
-            projectName: "Reports",
-            online: true,
-            onNavigate: vi.fn(),
-            onAuthenticationError: () => false,
-          }),
-        ),
-      );
-    });
-    expect(container.textContent).toContain(feature.title);
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      "GitHub issues could not be read. Refresh the board to retry.",
+let root: Root;
+let container: HTMLDivElement;
+const navigate = vi.fn<ProjectFactoryWorkspaceProps["onNavigate"]>();
+const authError = vi.fn(() => false);
+const render = async (props: Partial<ProjectFactoryWorkspaceProps> = {}) => {
+  await act(async () => {
+    await Promise.resolve();
+    root.render(
+      createElement(ProjectFactoryWorkspace, {
+        projectId,
+        projectName: "Reports",
+        online: true,
+        onNavigate: navigate,
+        onAuthenticationError: authError,
+        ...props,
+      }),
     );
-  } finally {
-    act(() => root.unmount());
-    container.remove();
-    vi.unstubAllGlobals();
-  }
-});
-
-it("shows GitHub issue loading without hiding retained Project work", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const pendingIssues = Promise.withResolvers<FactoryGitHubIssues>();
-  api.features.mockReset().mockResolvedValue({ schemaVersion: 1, features: [feature] });
-  api.board.mockReset();
-  api.issues.mockReset().mockReturnValue(pendingIssues.promise);
-  const container = document.createElement("div");
-  document.body.append(container);
-  const root = createRoot(container);
-  try {
-    await act(async () => {
-      await Promise.resolve(
-        root.render(
-          createElement(ProjectFactoryWorkspace, {
-            projectId,
-            projectName: "Reports",
-            online: true,
-            onNavigate: vi.fn(),
-            onAuthenticationError: () => false,
-          }),
-        ),
-      );
-    });
-    expect(container.textContent).toContain(feature.title);
-    expect(container.textContent).toContain("Reading GitHub issues…");
-    await act(async () => {
-      pendingIssues.resolve(githubIssues);
-      await pendingIssues.promise;
-    });
-    expect(container.textContent).not.toContain("Reading GitHub issues…");
-  } finally {
-    act(() => root.unmount());
-    container.remove();
-    vi.unstubAllGlobals();
-  }
-});
-
-it("retries the GitHub issue catalog when the Operator refreshes the board", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  api.features.mockReset().mockResolvedValue({ schemaVersion: 1, features: [] });
-  api.board.mockReset();
-  api.issues
-    .mockReset()
-    .mockRejectedValueOnce(new Error("provider unavailable"))
-    .mockResolvedValueOnce(githubIssues);
-  const container = document.createElement("div");
-  document.body.append(container);
-  const root = createRoot(container);
-  try {
-    await act(async () => {
-      await Promise.resolve(
-        root.render(
-          createElement(ProjectFactoryWorkspace, {
-            projectId,
-            projectName: "Reports",
-            online: true,
-            onNavigate: vi.fn(),
-            onAuthenticationError: () => false,
-          }),
-        ),
-      );
-    });
-    expect(container.querySelector('[role="alert"]')).not.toBeNull();
-    await act(async () => {
-      container.querySelector<HTMLButtonElement>('[aria-label="Refresh board"]')?.click();
-      await Promise.resolve();
-    });
-    expect(container.textContent).toContain("Export saved reports");
-    expect(container.querySelector('[role="alert"]')).toBeNull();
-  } finally {
-    act(() => root.unmount());
-    container.remove();
-    vi.unstubAllGlobals();
-  }
-});
-
-it("opens a Project board with direct start, pull-request and settings actions without fetching planned Work Items", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  api.features.mockReset().mockResolvedValue({ schemaVersion: 1, features: [feature] });
-  api.board.mockReset();
-  api.issues.mockReset().mockResolvedValue(githubIssues);
-  const container = document.createElement("div");
-  document.body.append(container);
-  const root = createRoot(container);
-  const navigate = vi.fn<(route: AppRoute) => void>();
-  try {
-    await act(async () => {
-      await Promise.resolve(
-        root.render(
-          createElement(ProjectFactoryWorkspace, {
-            projectId,
-            projectName: "Reports",
-            online: true,
-            onNavigate: navigate,
-            onAuthenticationError: () => false,
-          }),
-        ),
-      );
-    });
-    expect(container.textContent).toContain(feature.title);
-    expect(api.board).not.toHaveBeenCalled();
-    for (const name of ["New", "Pull requests"]) {
-      await act(async () => {
-        await Promise.resolve(
-          [...container.querySelectorAll("button")]
-            .find((button) => button.textContent.trim() === name)
-            ?.click(),
-        );
-      });
-    }
-    const settings = [...container.querySelectorAll("a")].find(
-      (link) => link.textContent.trim() === "Project settings",
-    );
-    expect(settings?.getAttribute("href")).toBe(`/projects/${projectId}/settings`);
-    await act(async () => {
-      settings?.click();
-      await Promise.resolve();
-    });
-    expect(navigate.mock.calls.map(([route]) => route)).toMatchObject([
-      { kind: "planning", projectId },
-      { kind: "project", projectId, view: "pull_requests" },
-      { kind: "project_settings", projectId },
-    ]);
-    const route = navigate.mock.calls[0]?.[0];
-    if (route?.kind !== "planning") throw new Error("Missing planning route");
-    expect(route.requestId).toMatch(/^[a-f0-9-]{36}$/u);
-  } finally {
-    act(() => root.unmount());
-    container.remove();
-    vi.unstubAllGlobals();
-  }
-});
-
-it("polls only after the preceding authoritative read completes and stops after navigation", async () => {
+  });
+};
+const refresh = async () =>
+  act(async () => {
+    await Promise.resolve();
+    container.querySelector<HTMLButtonElement>('[aria-label="Refresh board"]')?.click();
+  });
+beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers();
-  const pending = Promise.withResolvers<{ schemaVersion: 1; features: Feature[] }>();
-  api.features
-    .mockReset()
-    .mockReturnValueOnce(pending.promise)
-    .mockResolvedValue({ schemaVersion: 1, features: [feature] });
-  api.issues.mockReset().mockResolvedValue(githubIssues);
-  const container = document.createElement("div");
-  const root = createRoot(container);
-  try {
-    await act(async () => {
-      await Promise.resolve(
-        root.render(
-          createElement(ProjectFactoryWorkspace, {
-            projectId,
-            projectName: "Reports",
-            online: true,
-            onNavigate: vi.fn(),
-            onAuthenticationError: () => false,
-          }),
-        ),
-      );
-    });
-    await act(async () => {
-      await Promise.resolve(vi.advanceTimersByTimeAsync(6000));
-    });
-    expect(api.features).toHaveBeenCalledOnce();
-    await act(async () => {
-      await Promise.resolve(pending.resolve({ schemaVersion: 1, features: [feature] }));
-    });
-    await act(async () => {
-      await Promise.resolve(vi.advanceTimersByTimeAsync(2000));
-    });
-    expect(api.features).toHaveBeenCalledTimes(2);
-    await act(async () => {
-      await Promise.resolve(root.render(null));
-    });
-    await act(async () => {
-      await Promise.resolve(vi.advanceTimersByTimeAsync(6000));
-    });
-    expect(api.features).toHaveBeenCalledTimes(2);
-  } finally {
-    act(() => root.unmount());
-    vi.useRealTimers();
-    vi.unstubAllGlobals();
-  }
+  api.board.mockReset().mockResolvedValue(snapshot);
+  navigate.mockReset();
+  authError.mockReset().mockReturnValue(false);
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+});
+afterEach(() => {
+  act(() => root.unmount());
+  container.remove();
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
+
+it("uses one snapshot read for local and provider cards with direct Project actions", async () => {
+  await render();
+  expect(api.board).toHaveBeenCalledOnce();
+  expect(api.board.mock.calls[0]?.[0]).toBe(projectId);
+  expect(container.textContent).toContain("Saved report search");
+  expect(container.textContent).toContain("Export saved reports");
+  expect(container.querySelector('a[target="_blank"]')?.getAttribute("href")).toBe(
+    snapshot.github.issues[0]?.url,
+  );
+  await act(async () => {
+    await Promise.resolve();
+    container.querySelector<HTMLButtonElement>('[aria-label="New plan"]')?.click();
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent.includes("Pull requests"))
+      ?.click();
+    container
+      .querySelector<HTMLAnchorElement>(`a[href="/projects/${projectId}/settings"]`)
+      ?.click();
+    container
+      .querySelector<HTMLButtonElement>('[aria-label="Open planning chat: Saved report search"]')
+      ?.click();
+  });
+  expect(navigate.mock.calls.map(([route]) => route)).toMatchObject([
+    { kind: "planning", projectId },
+    { kind: "project", projectId, view: "pull_requests" },
+    { kind: "project_settings", projectId },
+    { kind: "feature", projectId, featureId: snapshot.planningFeatures[0]?.id },
+  ]);
+});
+
+it("keeps local cards usable and reports provider failure, retained data and truncation", async () => {
+  api.board.mockResolvedValue({
+    ...snapshot,
+    github: { ...snapshot.github, failure: "rate_limited", retained: true, limited: true },
+  });
+  await render();
+  expect(container.textContent).toContain("Saved report search");
+  expect(container.textContent).toContain("Export saved reports");
+  expect(container.textContent).toContain("GitHub has limited requests");
+  expect(container.textContent).toContain("Showing the last available GitHub issues");
+  expect(container.textContent).toContain("More open GitHub issues may exist");
+});
+
+it("retains the last snapshot while refreshing and after a failed read", async () => {
+  await render();
+  const pending = Promise.withResolvers<ProjectBoardSnapshot>();
+  api.board.mockReturnValueOnce(pending.promise);
+  await refresh();
+  expect(container.textContent).toContain("Saved report search");
+  expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
+  await act(async () => {
+    await Promise.resolve(pending.reject(new Error("offline")));
+  });
+  expect(container.textContent).toContain("Its last read remains visible");
+  expect(container.textContent).toContain("Export saved reports");
+});
+
+it("refreshes GitHub only on the first read requested by Refresh, then resumes ordinary polling", async () => {
+  await render();
+  await refresh();
+  expect(api.board.mock.calls[1]?.[2]).toBe(true);
+  await act(async () => vi.advanceTimersByTimeAsync(2_000));
+  expect(api.board.mock.calls[2]?.[2]).toBe(false);
+});
+
+it("retains same-Project data offline, cancels work and stops polling", async () => {
+  await render();
+  const signal = api.board.mock.calls[0]?.[1];
+  await render({ online: false });
+  expect(signal?.aborted).toBe(true);
+  await act(async () => vi.advanceTimersByTimeAsync(6_000));
+  expect(api.board).toHaveBeenCalledOnce();
+  expect(container.textContent).toContain("Saved report search");
+  expect(container.textContent).toContain("Reconnect to refresh");
+});
+
+it("rejects a late response after changing Project and never shows retained cards from the old scope", async () => {
+  const pending = Promise.withResolvers<ProjectBoardSnapshot>();
+  api.board.mockReturnValueOnce(pending.promise).mockResolvedValue({
+    ...snapshot,
+    projectId: otherId,
+    planningFeatures: [],
+    github: { ...snapshot.github, issues: [] },
+  });
+  await render();
+  const signal = api.board.mock.calls[0]?.[1];
+  await render({ projectId: otherId, projectName: "Other" });
+  expect(signal?.aborted).toBe(true);
+  await act(async () => {
+    await Promise.resolve(pending.resolve(snapshot));
+  });
+  expect(container.textContent).not.toContain("Saved report search");
+  expect(container.textContent).not.toContain("Export saved reports");
+});
+
+it("waits for a read before polling again and stops on navigation", async () => {
+  const pending = Promise.withResolvers<ProjectBoardSnapshot>();
+  api.board.mockReturnValueOnce(pending.promise);
+  await render();
+  await act(async () => vi.advanceTimersByTimeAsync(6_000));
+  expect(api.board).toHaveBeenCalledOnce();
+  await act(async () => {
+    await Promise.resolve(pending.resolve(snapshot));
+  });
+  await act(async () => vi.advanceTimersByTimeAsync(2_000));
+  expect(api.board).toHaveBeenCalledTimes(2);
+  await act(async () => {
+    await Promise.resolve(root.render(null));
+  });
+  expect(api.board.mock.calls[1]?.[1]?.aborted).toBe(true);
+  await act(async () => vi.advanceTimersByTimeAsync(6_000));
+  expect(api.board).toHaveBeenCalledTimes(2);
+});
+
+it("routes authentication failure to the session boundary", async () => {
+  const error = new Error("session expired");
+  api.board.mockRejectedValue(error);
+  authError.mockReturnValue(true);
+  await render();
+  expect(authError).toHaveBeenCalledWith(error);
+  expect(container.querySelector('[role="alert"]')).toBeNull();
 });

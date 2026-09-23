@@ -12,6 +12,7 @@ import {
   FeaturePlansSchema,
   FeaturePlanVersionSchema,
   FactoryBoardSchema,
+  ProjectBoardSnapshotSchema,
   FactoryGitHubIssuesSchema,
   FactoryIssueImportsSchema,
   FactoryIssuePublicationSchema,
@@ -245,6 +246,22 @@ export async function fetchFeatures(projectId: string, signal?: AbortSignal) {
     signal: signal ?? null,
   });
   return requireJson(response, FeatureListSchema, "feature list");
+}
+
+export async function fetchProjectBoard(
+  projectId: string,
+  signal?: AbortSignal,
+  refreshProvider = false,
+) {
+  const response = await fetch(
+    `/api/v1/projects/${KestrelIdSchema.parse(projectId)}/board${refreshProvider ? "?refreshProvider=1" : ""}`,
+    {
+      credentials: "same-origin",
+      headers: { Accept: "application/json" },
+      signal: signal ?? null,
+    },
+  );
+  return requireJson(response, ProjectBoardSnapshotSchema, "Project board");
 }
 
 export async function fetchFactoryGitHubIssues(

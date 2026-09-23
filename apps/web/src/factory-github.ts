@@ -28,10 +28,19 @@ export type WriteResult<T> =
     };
 export type Reconciliation<T> =
   { state: "found"; value: T } | { state: "missing" | "limited" | "ambiguous" };
+export interface FactoryGitHubCatalog {
+  issues: FactoryGitHubIssue[];
+  limited: boolean;
+  failure: FactoryProviderFailure | null;
+}
 type Dependencies = NonNullable<FactoryGitHubIssue["dependencies"]>;
 type Unsupported = { state: "unsupported" };
 type WriteFailure = Exclude<WriteResult<never>, { state: "confirmed" }>;
 export interface FactoryGitHubAdapter {
+  readIssueCatalog(
+    coordinates: Pick<FactoryGitHubRepository, "owner" | "name">,
+    signal?: AbortSignal,
+  ): Promise<FactoryGitHubCatalog>;
   identify(
     coordinates: Pick<FactoryGitHubRepository, "owner" | "name">,
     signal?: AbortSignal,
@@ -590,6 +599,41 @@ export function createFactoryGitHubAdapter(
   };
   return {
     identify,
+    async readIssueCatalog(coordinates, signal) {
+      const issues: FactoryGitHubIssue[] = [];
+      let limited = false;
+      try {
+        const identity = await identify(coordinates, signal);
+        let failure: FactoryProviderFailure | null = null;
+        try {
+          let page: number | null = 1;
+          for (let count = 0; page !== null && count < 5; count++) {
+            const result = await pageOfIssues(identity, page, "open", signal);
+            issues.push(
+              ...result.values
+                .filter((value) => value.state === "open")
+                .map((value) => issue(identity.repository, value)),
+            );
+            limited ||= result.limited;
+            page = result.nextPage;
+          }
+          limited ||= page !== null;
+        } catch (error) {
+          if (!(error instanceof FactoryGitHubError) || signal?.aborted) throw error;
+          failure = error.failure;
+          limited = true;
+        }
+        await verify(identity, signal);
+        return { issues, limited, failure };
+      } catch (error) {
+        if (!(error instanceof FactoryGitHubError) || signal?.aborted) throw error;
+        return {
+          issues: [],
+          limited: true,
+          failure: error.failure,
+        };
+      }
+    },
     async listIssues(identity, page, signal) {
       await verify(identity, signal);
       const result = await pageOfIssues(identity, page, "open", signal);
