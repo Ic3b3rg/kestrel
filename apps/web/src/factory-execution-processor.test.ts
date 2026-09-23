@@ -39,6 +39,7 @@ import {
   type CodexVerificationResult,
 } from "./codex-execution-runtime.js";
 import { createFactoryExecutionProcessor } from "./factory-execution-processor.js";
+import { createFactorySandbox } from "./factory-sandbox.js";
 
 vi.mock("@kestrel/database", async (importOriginal) => ({
   ...(await importOriginal<typeof database>()),
@@ -841,6 +842,181 @@ it("retains the reservation when runtime teardown is unconfirmed", async () => {
     expect.anything(),
     expect.objectContaining({ verified: false, writerStopped: false, failure: "stop_unconfirmed" }),
   );
+});
+
+it("fences a second container intent while the first reservation acknowledgement is pending", async () => {
+  const reserved = latch();
+  vi.mocked(reserveFactoryExecutionContainer).mockImplementation(() => reserved.promise);
+  let attempts: PromiseSettledResult<void>[] = [];
+  runTurn.mockImplementation(async (input) => {
+    const first = input.beforeContainerCreate("kestrel-factory-first");
+    const second = input.beforeContainerCreate("kestrel-factory-second");
+    const settled = Promise.allSettled([first, second]);
+    reserved.resolve();
+    attempts = await settled;
+    throw new CodexExecutionError("stop_unconfirmed");
+  });
+  await processor().process({ runId: run.id });
+  expect(attempts.map((attempt) => attempt.status)).toEqual(["fulfilled", "rejected"]);
+  expect(reserveFactoryExecutionContainer).toHaveBeenCalledTimes(1);
+  expect(recordFactoryExecutionCheckpoint).not.toHaveBeenCalled();
+  expect(runVerification).not.toHaveBeenCalled();
+  expect(finishFactoryExecution).toHaveBeenCalledWith(
+    pool,
+    expect.anything(),
+    expect.objectContaining({ verified: false, writerStopped: false, failure: "stop_unconfirmed" }),
+  );
+});
+
+it("retains writer ownership after a container reservation has an unknown acknowledgement", async () => {
+  vi.mocked(reserveFactoryExecutionContainer).mockRejectedValue(new Error("Connection lost"));
+  await processor().process({ runId: run.id });
+  expect(recordFactoryExecutionCheckpoint).not.toHaveBeenCalled();
+  expect(finishFactoryExecution).toHaveBeenCalledWith(
+    pool,
+    expect.anything(),
+    expect.objectContaining({ verified: false, writerStopped: false, failure: "stop_unconfirmed" }),
+  );
+});
+
+it("will not checkpoint a Sandbox until a contained implementation has stopped", async () => {
+  const sandbox = createFactorySandbox({
+    pool,
+    run,
+    readSourceConfig: () => Promise.resolve(config),
+    runtime: { runTurn, runVerification },
+    signal: new AbortController().signal,
+    deadline: Date.now() + 60_000,
+  });
+  await sandbox.open();
+  await expect(sandbox.checkpoint(1)).rejects.toMatchObject({ code: "stop_unconfirmed" });
+  expect(recordFactoryExecutionCheckpoint).not.toHaveBeenCalled();
+  expect(runTurn).not.toHaveBeenCalled();
+});
+
+it("keeps missing teardown proof fenced in the Sandbox itself", async () => {
+  runTurn.mockResolvedValue({ threadId: "thread", turnId: "turn", text: "Unproven completion" });
+  const sandbox = createFactorySandbox({
+    pool,
+    run,
+    readSourceConfig: () => Promise.resolve(config),
+    runtime: { runTurn, runVerification },
+    signal: new AbortController().signal,
+    deadline: Date.now() + 60_000,
+  });
+  await sandbox.open();
+  await expect(
+    sandbox.implement({
+      round: 1,
+      model: "fixture-model",
+      prompt: "Approved work",
+      onActivity: async () => {},
+      onQuestion: async () => {},
+    }),
+  ).rejects.toMatchObject({ code: "stop_unconfirmed" });
+  expect(sandbox.writerStopped).toBe(false);
+  await expect(
+    sandbox.implement({
+      round: 2,
+      model: "fixture-model",
+      prompt: "Approved work",
+      onActivity: async () => {},
+      onQuestion: async () => {},
+    }),
+  ).rejects.toMatchObject({ code: "stop_unconfirmed" });
+  expect(runTurn).toHaveBeenCalledTimes(1);
+});
+
+it.each(["cancellation", "evidence failure"])(
+  "retains missing verification teardown proof despite %s",
+  async (failure) => {
+    const abort = new AbortController();
+    runVerification.mockImplementation((input) => {
+      if (failure === "cancellation") abort.abort();
+      return Promise.resolve({
+        processId: input.processId,
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+        stdoutTruncated: false,
+        stderrTruncated: false,
+        durationMs: 1,
+      });
+    });
+    if (failure === "evidence failure")
+      vi.mocked(saveFactoryVerification).mockRejectedValue(new Error("Evidence unavailable"));
+    const sandbox = createFactorySandbox({
+      pool,
+      run,
+      readSourceConfig: () => Promise.resolve(config),
+      runtime: { runTurn, runVerification },
+      signal: abort.signal,
+      deadline: Date.now() + 60_000,
+    });
+    await sandbox.open();
+    await expect(sandbox.verify(1, 1)).rejects.toBeDefined();
+    expect(sandbox.writerStopped).toBe(false);
+  },
+);
+
+it("rejects a verification position outside the approved plan before any runtime effect", async () => {
+  const sandbox = createFactorySandbox({
+    pool,
+    run,
+    readSourceConfig: () => Promise.resolve(config),
+    runtime: { runTurn, runVerification },
+    signal: new AbortController().signal,
+    deadline: Date.now() + 60_000,
+  });
+  await sandbox.open();
+  await expect(sandbox.verify(1, 99)).rejects.toMatchObject({ code: "invalid_response" });
+  expect(runVerification).not.toHaveBeenCalled();
+  expect(saveFactoryVerification).not.toHaveBeenCalled();
+});
+
+it("redacts private paths at the Sandbox boundary for results, activity and questions", async () => {
+  const onActivity = vi.fn();
+  const onQuestion = vi.fn();
+  runTurn.mockImplementation((input) =>
+    container(input, input.requestId, async () => {
+      await input.onActivity({
+        itemId: "item",
+        kind: "message",
+        state: "completed",
+        summary: `Read ${input.cwd}`,
+      });
+      await input.onQuestion({ code: "input_required", question: `Change ${input.cwd}?` });
+      return {
+        threadId: "thread",
+        turnId: "turn",
+        text: JSON.stringify({
+          status: "completed",
+          summary: `Changed ${input.cwd}`,
+          question: null,
+        }),
+      };
+    }),
+  );
+  const sandbox = createFactorySandbox({
+    pool,
+    run,
+    readSourceConfig: () => Promise.resolve(config),
+    runtime: { runTurn, runVerification },
+    signal: new AbortController().signal,
+    deadline: Date.now() + 60_000,
+  });
+  await sandbox.open();
+  const result = await sandbox.implement({
+    round: 1,
+    model: "fixture-model",
+    prompt: "Approved work",
+    onActivity,
+    onQuestion,
+  });
+  expect(result.text).not.toContain(root);
+  expect(result.text).toContain("[private workspace]");
+  expect(JSON.stringify(onActivity.mock.calls)).not.toContain(root);
+  expect(JSON.stringify(onQuestion.mock.calls)).not.toContain(root);
 });
 
 it("rejects a claimed completion without a durable container lifecycle witness", async () => {
