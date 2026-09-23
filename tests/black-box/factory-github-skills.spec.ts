@@ -57,7 +57,7 @@ test.describe("GitHub planning Skill imports", () => {
     for (const close of cleanup.toReversed()) await close();
   });
 
-  test("reviews the starter, retries a lost install after dialog closure, and restores selected provenance", async ({
+  test("reviews the starter in Settings, retries a lost install, and restores selected provenance", async ({
     page,
   }) => {
     await page.goto(stack.pwaUrl);
@@ -65,14 +65,12 @@ test.describe("GitHub planning Skill imports", () => {
     await page.getByLabel("Password", { exact: true }).fill(TEST_OPERATOR_CREDENTIALS.password);
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(page.getByRole("region", { name: "Sign in to Kestrel" })).toHaveCount(0);
-    await page.goto(`${stack.pwaUrl}${featurePath}`);
-    await expect(page.getByRole("heading", { name: title, level: 1, exact: true })).toBeVisible();
+    await page.goto(`${stack.pwaUrl}/settings/skills`);
+    await expect(page).toHaveURL(/\/settings\/skills$/u);
     const skills = page.getByRole("dialog", { name: "Planning Skills", exact: true });
-    const importer = page.getByRole("dialog", { name: "Import a planning Skill", exact: true });
+    const importer = page.getByRole("region", { name: "Import from GitHub" });
     const readChat = async () =>
       FeatureChatSchema.parse(await (await stack.fetchApi(`/api/v1${featurePath}`)).json());
-    await page.getByRole("button", { name: "Skills", exact: true }).click();
-    await skills.getByRole("button", { name: "Import from GitHub", exact: true }).click();
     await expect(
       importer.getByRole("button", { name: "Install reviewed version", exact: true }),
     ).toHaveCount(0);
@@ -102,9 +100,7 @@ test.describe("GitHub planning Skill imports", () => {
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1,
       ),
     ).toBe(true);
-    expect(
-      (await new AxeBuilder({ page }).include('[role="dialog"]').analyze()).violations,
-    ).toEqual([]);
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 
     const commands: InstallGitHubPlanningSkillCommand[] = [];
     await page.route("**/api/v1/planning-skills/github/install", async (route) => {
@@ -121,13 +117,6 @@ test.describe("GitHub planning Skill imports", () => {
     await expect(
       importer.getByRole("button", { name: "Retry installation", exact: true }),
     ).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(importer).toHaveCount(0);
-    await expect(skills).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(skills).toHaveCount(0);
-    await page.getByRole("button", { name: "Skills", exact: true }).click();
-    await skills.getByRole("button", { name: "Import from GitHub", exact: true }).click();
     await expect(importer.getByLabel("Source", { exact: true })).toBeDisabled();
     await expect(importer.getByText(provider.originalCommit, { exact: true }).last()).toBeVisible();
     await importer.getByRole("button", { name: "Retry installation", exact: true }).click();
@@ -142,7 +131,13 @@ test.describe("GitHub planning Skill imports", () => {
     );
     expect(ledgerCount.trim()).toBe("1");
     expect((await readChat()).skills?.skills).toEqual([]);
-    await importer.getByRole("button", { name: "Back to Skills", exact: true }).click();
+    await expect(page.getByRole("region", { name: "Installed Skills" })).toContainText(
+      "$grilling-starter",
+    );
+    await page.goto(`${stack.pwaUrl}${featurePath}`);
+    await expect(page.getByRole("heading", { name: title, level: 1, exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Skills", exact: true }).click();
+    await expect(skills.getByRole("button", { name: "Import from GitHub" })).toHaveCount(0);
     await skills.getByRole("checkbox", { name: "Use $grilling-starter", exact: true }).check();
     await skills.getByRole("button", { name: "Use selected Skills", exact: true }).click();
     await expect(skills).toHaveCount(0);

@@ -1,11 +1,24 @@
 import { useEffect, useRef, useState } from "react";
-import type { PlanningSkillBundle, PlanningSkillSummary } from "@kestrel/contracts";
+import type {
+  InstallPlanningSkillCommand,
+  PlanningSkillBundle,
+  PlanningSkillSummary,
+} from "@kestrel/contracts";
 
+import { ApiClientError } from "./api.js";
 import { Button } from "./components/ui/button.js";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "./components/ui/dialog.js";
 import { FormFeedback } from "./components/FormFeedback.js";
+import { Label } from "./components/ui/label.js";
+import { NativeSelect } from "./components/ui/native-select.js";
 import { planningRequestError } from "./FeatureNavigation.js";
-import { fetchPlanningSkill, fetchPlanningSkillCatalog } from "./factory-skills-api.js";
+import {
+  fetchPlanningSkill,
+  fetchPlanningSkillCandidates,
+  fetchPlanningSkillCatalog,
+  importPlanningSkill,
+} from "./factory-skills-api.js";
+import { GitHubPlanningSkillImport } from "./GitHubPlanningSkillImport.js";
 import { PlanningSkillContents } from "./PlanningSkillContents.js";
 
 export function PlanningSkillLibrary({
@@ -19,6 +32,16 @@ export function PlanningSkillLibrary({
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogRevision, setCatalogRevision] = useState(0);
+  const [candidates, setCandidates] = useState<Array<{ candidateId: string; label: string }>>([]);
+  const [candidatesConfigured, setCandidatesConfigured] = useState(false);
+  const [candidatesLoading, setCandidatesLoading] = useState(false);
+  const [candidatesError, setCandidatesError] = useState<string | null>(null);
+  const [candidatesRevision, setCandidatesRevision] = useState(0);
+  const [candidate, setCandidate] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importSuccess, setImportSuccess] = useState<string | null>(null);
+  const importAttempt = useRef<InstallPlanningSkillCommand | null>(null);
   const [previewDigest, setPreviewDigest] = useState<string | null>(null);
   const [preview, setPreview] = useState<PlanningSkillBundle | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -46,6 +69,62 @@ export function PlanningSkillLibrary({
   }, [catalogRevision, online, onAuthenticationError]);
 
   useEffect(() => {
+    if (!online) return;
+    const controller = new AbortController();
+    setCandidatesError(null);
+    setCandidatesLoading(true);
+    void fetchPlanningSkillCandidates(controller.signal)
+      .then((result) => {
+        if (controller.signal.aborted) return;
+        setCandidatesConfigured(result.configured);
+        setCandidates(result.candidates);
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted && !onAuthenticationError(error))
+          setCandidatesError(
+            planningRequestError(error, "Workstation Skills could not be loaded."),
+          );
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setCandidatesLoading(false);
+      });
+    return () => controller.abort();
+  }, [candidatesRevision, online, onAuthenticationError]);
+
+  const importCandidate = async (command?: InstallPlanningSkillCommand) => {
+    if (!online || importing) return;
+    if (command !== undefined) importAttempt.current = command;
+    const current = importAttempt.current;
+    if (current === null) return;
+    setImporting(true);
+    setImportError(null);
+    setImportSuccess(null);
+    try {
+      const result = await importPlanningSkill(current);
+      importAttempt.current = null;
+      setImportSuccess(`Installed $${result.name} · ${result.contentDigest.slice(0, 12)}`);
+      setCatalogRevision((value) => value + 1);
+    } catch (error) {
+      if (
+        error instanceof ApiClientError &&
+        error.status >= 400 &&
+        error.status < 500 &&
+        error.status !== 408
+      )
+        importAttempt.current = null;
+      if (!onAuthenticationError(error))
+        setImportError(
+          planningRequestError(
+            error,
+            "Import could not be confirmed. Retry the same request safely.",
+          ),
+        );
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  useEffect(() => {
     if (!online || previewDigest === null) return;
     const controller = new AbortController();
     setPreview(null);
@@ -68,6 +147,88 @@ export function PlanningSkillLibrary({
         <p className="text-sm text-muted-foreground">
           Inspect the exact procedures available to Planning Sessions.
         </p>
+      </div>
+      <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+        <GitHubPlanningSkillImport
+          online={online}
+          onAuthenticationError={onAuthenticationError}
+          onInstalled={() => setCatalogRevision((value) => value + 1)}
+        />
+        <section
+          className="grid content-start gap-3 rounded-lg border p-4"
+          aria-label="Import from workstation"
+        >
+          <div>
+            <h3 className="font-semibold">Import from the workstation</h3>
+            <p className="text-sm text-muted-foreground">
+              Install or refresh a Skill from an authorized folder. Kestrel retains its
+              instructions; no installer or Skill script runs.
+            </p>
+          </div>
+          {!online ? (
+            <FormFeedback kind="error">Reconnect to import a workstation Skill.</FormFeedback>
+          ) : candidatesLoading ? (
+            <FormFeedback kind="pending">Loading workstation Skills…</FormFeedback>
+          ) : candidatesError !== null ? (
+            <div className="grid justify-items-start gap-2">
+              <FormFeedback kind="error">{candidatesError}</FormFeedback>
+              <Button variant="outline" onClick={() => setCandidatesRevision((value) => value + 1)}>
+                Retry workstation Skills
+              </Button>
+            </div>
+          ) : !candidatesConfigured ? (
+            <p className="text-sm text-muted-foreground">
+              No authorized Skill folder is configured. Set <code>KESTREL_PLANNING_SKILL_ROOT</code>{" "}
+              when starting Kestrel.
+            </p>
+          ) : (
+            <>
+              <Label htmlFor="library-host-skill-candidate">Available Skills</Label>
+              <NativeSelect
+                id="library-host-skill-candidate"
+                aria-label="Host Skill to import"
+                value={candidate}
+                disabled={importing || importAttempt.current !== null}
+                onChange={(event) => setCandidate(event.currentTarget.value)}
+              >
+                <option value="">Choose a Skill</option>
+                {candidates.map((item) => (
+                  <option key={item.candidateId} value={item.candidateId}>
+                    {item.label}
+                  </option>
+                ))}
+              </NativeSelect>
+              {candidates.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No Skills found in the authorized folder.
+                </p>
+              ) : null}
+              <Button
+                variant="outline"
+                className="justify-self-start"
+                disabled={importing || (candidate === "" && importAttempt.current === null)}
+                onClick={() =>
+                  void importCandidate(
+                    importAttempt.current ?? {
+                      requestId: crypto.randomUUID(),
+                      candidateId: candidate,
+                    },
+                  )
+                }
+              >
+                {importing
+                  ? "Importing…"
+                  : importAttempt.current !== null
+                    ? "Retry import"
+                    : "Import Skill"}
+              </Button>
+            </>
+          )}
+          {importError !== null ? <FormFeedback kind="error">{importError}</FormFeedback> : null}
+          {importSuccess !== null ? (
+            <FormFeedback kind="success">{importSuccess}</FormFeedback>
+          ) : null}
+        </section>
       </div>
       {!online ? (
         <FormFeedback kind="error" title="Skill Library is offline">
