@@ -1,4 +1,4 @@
-import { useContext, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useContext, useEffect, useId, useRef, useState } from "react";
 import {
   PreviewGitHubPlanningSkillCommandSchema,
   type GitHubPlanningSkillBundle,
@@ -11,7 +11,7 @@ import {
   previewGitHubPlanningSkill,
 } from "./factory-github-skills-api.js";
 import { Button } from "./components/ui/button.js";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "./components/ui/dialog.js";
+import { FormFeedback } from "./components/FormFeedback.js";
 import { Input } from "./components/ui/input.js";
 import { Label } from "./components/ui/label.js";
 import { NativeSelect } from "./components/ui/native-select.js";
@@ -21,16 +21,12 @@ export interface GitHubPlanningSkillImportProps {
   online: boolean;
   onInstalled: (bundle: GitHubPlanningSkillBundle) => void;
   onAuthenticationError: (error: unknown) => boolean;
-  dialog?: { open: boolean; onOpenChange: (open: boolean) => void };
-  render?: (content: ReactNode) => ReactNode;
 }
 
 export function GitHubPlanningSkillImport({
   online,
   onInstalled,
   onAuthenticationError,
-  dialog,
-  render,
 }: GitHubPlanningSkillImportProps) {
   const id = useId();
   const suspended = useContext(WorkspaceSuspendedContext);
@@ -154,7 +150,7 @@ export function GitHubPlanningSkillImport({
     if (result !== null) onInstalled(result);
   };
   const file = preview?.files.find(({ path }) => path === filePath) ?? preview?.files[0];
-  const content = (
+  return (
     <section className="grid min-w-0 gap-4 rounded-lg border p-4" aria-labelledby={`${id}-title`}>
       <div>
         <h3 id={`${id}-title`} className="font-semibold">
@@ -238,15 +234,9 @@ export function GitHubPlanningSkillImport({
         </Button>
       </form>
       {!online ? (
-        <p role="status" className="text-sm">
-          Reconnect to preview or install a Skill.
-        </p>
+        <FormFeedback kind="error">Reconnect to preview or install a Skill.</FormFeedback>
       ) : null}
-      {error === null ? null : (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      )}
+      {error === null ? null : <FormFeedback kind="error">{error}</FormFeedback>}
       {preview === null ? null : (
         <div className="grid min-w-0 gap-3">
           <div>
@@ -318,20 +308,5 @@ export function GitHubPlanningSkillImport({
         </div>
       )}
     </section>
-  );
-  if (render !== undefined) return render(content);
-  return dialog === undefined ? (
-    content
-  ) : (
-    <Dialog open={dialog.open && online} onOpenChange={dialog.onOpenChange}>
-      <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-3xl">
-        <DialogTitle>Import a planning Skill</DialogTitle>
-        <DialogDescription>Choose a procedure to use in Kestrel's planning chat.</DialogDescription>
-        {content}
-        <Button variant="outline" onClick={() => dialog.onOpenChange(false)}>
-          Back to Skills
-        </Button>
-      </DialogContent>
-    </Dialog>
   );
 }

@@ -86,14 +86,11 @@ it("selects retained Skills for the first prompt without creating or mutating a 
   }
 });
 
-it("previews retained instructions and retries the same uncertain import before selecting the Skill", async () => {
+it("selects installed Skills without offering imports in the planning modal", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   fixtures.catalog
-    .mockResolvedValueOnce({ schemaVersion: 1, skills: [] })
+    .mockResolvedValueOnce({ schemaVersion: 1, skills: [fixtures.bundle] })
     .mockResolvedValue({ schemaVersion: 1, skills: [fixtures.bundle] });
-  fixtures.imports
-    .mockRejectedValueOnce(new TypeError("Response lost"))
-    .mockResolvedValue(fixtures.bundle);
   fixtures.selection.mockResolvedValue({ schemaVersion: 1, version: 1, skills: [fixtures.bundle] });
   const container = document.createElement("div");
   document.body.append(container);
@@ -125,23 +122,9 @@ it("previews retained instructions and retries the same uncertain import before 
       await Promise.resolve();
     });
     await click("Skills");
-    const candidate = document.querySelector<HTMLSelectElement>(
-      '[aria-label="Host Skill to import"]',
-    );
-    expect(candidate).not.toBeNull();
-    await act(async () => {
-      if (candidate !== null) {
-        candidate.value = fixtures.bundle.source.candidateId;
-        candidate.dispatchEvent(new Event("change", { bubbles: true }));
-      }
-      await Promise.resolve();
-    });
-    await click("Import Skill");
-    await click("Retry import");
-    expect(fixtures.imports).toHaveBeenCalledTimes(2);
-    expect(fixtures.imports.mock.calls[0]).toEqual(fixtures.imports.mock.calls[1]);
-    expect(document.body.textContent).toContain(fixtures.bundle.files[0]?.content);
-    await click("Back to Skills");
+    expect(document.querySelector('[aria-label="Host Skill to import"]')).toBeNull();
+    expect(document.body.textContent).not.toContain("Import from GitHub");
+    expect(fixtures.imports).not.toHaveBeenCalled();
     const checkbox = document.querySelector<HTMLInputElement>('[aria-label="Use $grilling"]');
     expect(checkbox).not.toBeNull();
     await act(async () => {

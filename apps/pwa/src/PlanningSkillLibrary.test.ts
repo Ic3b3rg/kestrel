@@ -1,15 +1,22 @@
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { PlanningSkillBundle, PlanningSkillSummary } from "@kestrel/contracts";
 
 import { PlanningSkillLibrary } from "./PlanningSkillLibrary.js";
 
-const fixtures = vi.hoisted(() => ({ catalog: vi.fn(), bundle: vi.fn() }));
+const fixtures = vi.hoisted(() => ({
+  catalog: vi.fn(),
+  bundle: vi.fn(),
+  candidates: vi.fn(),
+  imports: vi.fn(),
+}));
 vi.mock("./factory-skills-api.js", () => ({
   fetchPlanningSkillCatalog: fixtures.catalog,
   fetchPlanningSkill: fixtures.bundle,
+  fetchPlanningSkillCandidates: fixtures.candidates,
+  importPlanningSkill: fixtures.imports,
 }));
 
 const grilling: PlanningSkillSummary = {
@@ -41,7 +48,64 @@ const bundle: PlanningSkillBundle = {
   ],
 };
 
+beforeEach(() =>
+  fixtures.candidates.mockResolvedValue({ schemaVersion: 1, configured: false, candidates: [] }),
+);
 afterEach(() => vi.clearAllMocks());
+
+it("imports a workstation Skill in Settings and retries an uncertain response with the same command", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  fixtures.catalog
+    .mockResolvedValueOnce({ schemaVersion: 1, skills: [] })
+    .mockResolvedValue({ schemaVersion: 1, skills: [grilling] });
+  fixtures.candidates.mockResolvedValue({
+    schemaVersion: 1,
+    configured: true,
+    candidates: [{ candidateId: grilling.source.candidateId, label: "grilling" }],
+  });
+  fixtures.imports.mockRejectedValueOnce(new TypeError("Response lost")).mockResolvedValue(bundle);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      root.render(
+        createElement(PlanningSkillLibrary, { online: true, onAuthenticationError: () => false }),
+      );
+      await Promise.resolve();
+    });
+    const candidate = container.querySelector<HTMLSelectElement>(
+      '[aria-label="Host Skill to import"]',
+    );
+    expect(candidate).not.toBeNull();
+    act(() => {
+      if (candidate !== null) {
+        candidate.value = grilling.source.candidateId;
+        candidate.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+    await act(async () => {
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Import Skill")
+        ?.click();
+      await Promise.resolve();
+    });
+    expect(container.textContent).toContain("Retry import");
+    await act(async () => {
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Retry import")
+        ?.click();
+      await Promise.resolve();
+    });
+    expect(fixtures.imports).toHaveBeenCalledTimes(2);
+    expect(fixtures.imports.mock.calls[0]).toEqual(fixtures.imports.mock.calls[1]);
+    expect(container.textContent).toContain("Inspect grilling");
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
 
 it("lists installed Skills with provenance and inspects their retained instructions", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

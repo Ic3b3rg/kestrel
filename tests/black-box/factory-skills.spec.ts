@@ -52,21 +52,38 @@ test.describe("Planning Skills in the chat", () => {
     await repositoryDialog.getByLabel("Repository", { exact: true }).selectOption(repositoryId);
     await repositoryDialog.getByRole("button", { name: "Open selected Project" }).click();
     await expect(repositoryDialog).toHaveCount(0);
+    const projectUrl = page.url();
     const featuresPath = `/api/v1${new URL(page.url()).pathname}/features`;
-    await page.getByRole("button", { name: "New plan", exact: true }).click();
-    await page.getByRole("button", { name: "Skills", exact: true }).click();
-    const skills = page.getByRole("dialog", { name: "Planning Skills", exact: true });
-    await skills.getByLabel("Host Skill to import").selectOption({ label: "recovery-checklist" });
-    await skills.getByRole("button", { name: "Import Skill", exact: true }).click();
-    await expect(skills.getByLabel("Retained Skill instructions")).toContainText(
+    await page.getByRole("link", { name: "Settings", exact: true }).click();
+    await page
+      .getByRole("navigation", { name: "Settings sections" })
+      .getByRole("link", { name: "Skills" })
+      .click();
+    const library = page.getByRole("region", { name: "Installed Skills" });
+    const workstation = page.getByRole("region", { name: "Import from workstation" });
+    await workstation
+      .getByLabel("Host Skill to import")
+      .selectOption({ label: "recovery-checklist" });
+    await workstation.getByRole("button", { name: "Import Skill", exact: true }).click();
+    await expect(library.getByRole("button", { name: "Inspect recovery-checklist" })).toBeVisible();
+    await library.getByRole("button", { name: "Inspect recovery-checklist" }).click();
+    const firstInstructions = page.getByRole("dialog", { name: "Installed Skill instructions" });
+    await expect(firstInstructions.getByLabel("Retained Skill instructions")).toContainText(
       "Original procedure.",
     );
-    await skills.getByLabel("Instructions and references").selectOption("references/recovery.md");
-    await expect(skills.getByLabel("Retained Skill instructions")).toContainText(
+    await firstInstructions
+      .getByLabel("Instructions and references")
+      .selectOption("references/recovery.md");
+    await expect(firstInstructions.getByLabel("Retained Skill instructions")).toContainText(
       "survive a process restart",
     );
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
-    await skills.getByRole("button", { name: "Back to Skills" }).click();
+    await page.keyboard.press("Escape");
+    await page.goto(projectUrl);
+    await page.getByRole("button", { name: "New plan", exact: true }).click();
+    await page.getByRole("button", { name: "Skills", exact: true }).click();
+    const skills = page.getByRole("dialog", { name: "Planning Skills", exact: true });
+    await expect(skills.getByRole("button", { name: "Import Skill" })).toHaveCount(0);
     await skills.getByRole("checkbox", { name: "Use $recovery-checklist", exact: true }).check();
     await skills.getByRole("button", { name: "Use selected Skills" }).click();
     await expect(skills).toHaveCount(0);
@@ -99,7 +116,6 @@ test.describe("Planning Skills in the chat", () => {
     const sections = page.getByRole("navigation", { name: "Settings sections" });
     await sections.getByRole("link", { name: "Skills" }).click();
     await expect(page).toHaveURL(/\/settings\/skills$/u);
-    const library = page.getByRole("region", { name: "Installed Skills" });
     await expect(library).toContainText("$recovery-checklist");
     await expect(library).toContainText("Clarify recovery requirements.");
     await expect(library).toContainText(original.contentDigest.slice(0, 12));
@@ -145,15 +161,23 @@ test.describe("Planning Skills in the chat", () => {
     await page.goto(new URL("/settings/skills", requireStack().pwaUrl).toString());
     await expect(library).toContainText("Clarify recovery requirements.");
     await page.setViewportSize({ width: 1024, height: 800 });
-    await page.goto(featureUrl);
     await writeFile(skillFile, entry("Updated procedure for future turns."));
-    await page.getByRole("button", { name: "Skills (1)", exact: true }).click();
-    await skills.getByLabel("Host Skill to import").selectOption({ label: "recovery-checklist" });
-    await skills.getByRole("button", { name: "Import Skill", exact: true }).click();
-    await expect(skills.getByLabel("Retained Skill instructions")).toContainText(
-      "Updated procedure",
+    await workstation
+      .getByLabel("Host Skill to import")
+      .selectOption({ label: "recovery-checklist" });
+    await workstation.getByRole("button", { name: "Import Skill", exact: true }).click();
+    await expect(library.getByRole("button", { name: "Inspect recovery-checklist" })).toHaveCount(
+      1,
     );
-    await skills.getByRole("button", { name: "Back to Skills" }).click();
+    await library.getByRole("button", { name: "Inspect recovery-checklist" }).click();
+    await expect(
+      page
+        .getByRole("dialog", { name: "Installed Skill instructions" })
+        .getByLabel("Retained Skill instructions"),
+    ).toContainText("Updated procedure for future turns.");
+    await page.keyboard.press("Escape");
+    await page.goto(featureUrl);
+    await page.getByRole("button", { name: "Skills (1)", exact: true }).click();
     await expect(skills.getByRole("checkbox")).toHaveCount(2);
     const latest = skills.locator('input[type="checkbox"]:not(:checked)');
     await latest.check();
