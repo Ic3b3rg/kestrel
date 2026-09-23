@@ -227,12 +227,12 @@ export async function buildApp({
   externalConceptualReviewService = createDatabaseExternalConceptualReviewService(
     pool,
     () => readLocalSourceConfig(),
-    { boss, runtimeProfile: factoryConceptualReviewRuntimeProfile },
+    { boss, runtimeProfile: factoryConceptualReviewRuntimeProfile, connection: codexAgentRuntime },
   ),
   factoryConceptualReviewService = createDatabaseFactoryConceptualReviewService(
     pool,
     () => readLocalSourceConfig(),
-    { boss, runtimeProfile: factoryConceptualReviewRuntimeProfile },
+    { boss, runtimeProfile: factoryConceptualReviewRuntimeProfile, connection: codexAgentRuntime },
   ),
   factoryReviewCorrectionService = createDatabaseFactoryReviewCorrectionService(pool, boss),
   factoryFeatureMergeService = createDatabaseFactoryFeatureMergeService(pool, boss),

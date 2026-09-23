@@ -1,3 +1,9 @@
+import {
+  createCodexAppServerAgentRuntime,
+  type CodexAgentRuntimePort,
+} from "../codex-app-server.js";
+import type { CodexSubscriptionConnection } from "@kestrel/contracts";
+import { readLifecycleProfile } from "@kestrel/database";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 
@@ -92,10 +98,17 @@ export function createDatabaseExternalConceptualReviewService(
   readSourceConfig: () => Promise<LocalSourceConfig>,
   options: {
     boss?: DiagnosticJobSender;
+    connection?: Pick<CodexAgentRuntimePort, "readConnection">;
     runtimeProfile?: FactoryConceptualReviewRuntimeReadiness["profile"];
   } = {},
 ): ExternalConceptualReviewService {
-  const prepare = async (database: DatabasePool, context: ExternalConceptualReviewContext) => {
+  const connection = options.connection ?? createCodexAppServerAgentRuntime();
+  const prepare = async (
+    database: DatabasePool,
+    context: ExternalConceptualReviewContext,
+    catalog: CodexSubscriptionConnection,
+  ) => {
+    const lifecycle = await readLifecycleProfile(database, "review", context.projectId, catalog);
     const reference = await readExternalConceptualReviewSourceReference(
       database,
       context.projectId,
@@ -129,7 +142,11 @@ export function createDatabaseExternalConceptualReviewService(
       database,
       context.projectId,
       context.changeProposalId,
-      { profile: options.runtimeProfile ?? null },
+      {
+        profile: options.runtimeProfile ?? null,
+        lifecycleProfile: lifecycle.resolved,
+        profileBlocker: lifecycle.blocked,
+      },
       verifiedSource,
     );
   };
@@ -143,8 +160,9 @@ export function createDatabaseExternalConceptualReviewService(
     );
   };
   return {
-    prepare: (context) => prepare(pool, context),
+    prepare: async (context) => prepare(pool, context, await connection.readConnection()),
     async start(context, command, actor) {
+      const catalog = await connection.readConnection();
       if (options.boss === undefined) {
         throw new FactoryConceptualReviewWorkflowPersistenceError("not_ready");
       }
@@ -152,7 +170,7 @@ export function createDatabaseExternalConceptualReviewService(
         pool,
         options.boss,
         { ...context, ...actor, command },
-        (database) => prepare(database, context),
+        (database) => prepare(database, context, catalog),
       );
     },
     async current(context) {

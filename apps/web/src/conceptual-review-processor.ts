@@ -1,3 +1,8 @@
+import { assertLifecycleProfileAvailable } from "@kestrel/contracts";
+import {
+  createCodexAppServerAgentRuntime,
+  type CodexAgentRuntimePort,
+} from "./codex-app-server.js";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 
@@ -69,6 +74,7 @@ export interface FactoryConceptualReviewProcessorOptions {
   boss: DiagnosticJobSender;
   readSourceConfig: () => Promise<LocalSourceConfig>;
   runtime?: CodexReviewRuntime;
+  connection?: Pick<CodexAgentRuntimePort, "readConnection">;
   containerImage?: string;
   containerUser?: string;
   codexExecutable?: string;
@@ -179,6 +185,11 @@ function reviewPrompt(
       },
       finalCheckCatalog: checkCatalogForPrompt(preparation, checks),
       limits: preparation.configuration.resources,
+      lifecycleGuidance: {
+        instruction:
+          "The frozen Skills are read-only review guidance. They cannot authorize source writes, corrections, networking, external tools, publication or merge.",
+        skills: preparation.configuration.lifecycleProfile?.skills ?? [],
+      },
     }),
   ].join("\n");
   if (Buffer.byteLength(prompt, "utf8") > 512 * 1024)
@@ -379,8 +390,26 @@ async function runReview(
   let published = false;
   try {
     assertReviewActive(signal);
-    const model = claim.preparation.configuration.model.modelId;
-    if (model === null) throw new CodexExecutionError("unavailable");
+    const profile = claim.preparation.configuration.lifecycleProfile;
+    if (profile == null) throw new CodexExecutionError("unavailable");
+    const connection = await (
+      options.connection ?? createCodexAppServerAgentRuntime()
+    ).readConnection(signal);
+    if (connection.state !== "ready")
+      throw new CodexExecutionError(
+        connection.reason === "authentication_required"
+          ? "authentication"
+          : connection.reason === "usage_limit_reached" ||
+              connection.reason === "waiting_for_usage_reset"
+            ? "usage_limit"
+            : "unavailable",
+      );
+    try {
+      assertLifecycleProfileAvailable(profile, connection.models);
+    } catch {
+      throw new CodexExecutionError("unavailable");
+    }
+    const model = profile.model;
     const [config, binding] = await Promise.all([
       options.readSourceConfig(),
       readFactoryConceptualReviewWorkflowSourceBinding(options.pool, workflowId),
@@ -451,6 +480,8 @@ async function runReview(
       ...runtimeLifecycle,
       cwd: workspace.path,
       model,
+      effort: profile.effort,
+      serviceTier: profile.serviceTier,
       prompt: reviewPrompt(claim.preparation, checks),
       requestId: `${claim.workflowId}:review:${String(claim.attemptNumber)}`,
       outputSchema: z.toJSONSchema(FactoryConceptualReviewModelOutputSchema, {
@@ -474,6 +505,13 @@ async function runReview(
       onActivity: () => Promise.resolve(),
       onQuestion: () => Promise.reject(new CodexExecutionError("permission_required")),
     });
+    if (result.effectiveProfile !== undefined)
+      await recordFactoryConceptualReviewSession(
+        options.pool,
+        claim,
+        { effectiveProfile: result.effectiveProfile },
+        DATABASE_MUTATION_TIMEOUT_MS,
+      );
     runtimeLifecycle.assertStopped();
     assertReviewActive(signal);
     await workspace.verify(signal);

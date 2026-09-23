@@ -1,3 +1,4 @@
+import { lifecycleProfileEvidence, RuntimeProfileResultSchema } from "@kestrel/contracts";
 import {
   FactoryConceptualReviewArtifactSchema,
   FactoryConceptualReviewDraftSchema,
@@ -105,6 +106,7 @@ interface WorkflowRow {
   finished_at: Date | null;
   artifact: unknown;
   current_head_commit_id: string | null;
+  runtime_profile_result?: unknown;
 }
 
 const workflowColumns = `
@@ -114,6 +116,8 @@ const workflowColumns = `
   workflow.maximum_attempts, workflow.failure_code, workflow.artifact_id,
   workflow.requested_at, workflow.started_at, workflow.finished_at,
   artifact.artifact,
+  (SELECT attempt.runtime_profile_result FROM review_workflow_attempts AS attempt
+    WHERE attempt.workflow_id = workflow.id AND attempt.attempt_number = workflow.attempt_count) AS runtime_profile_result,
   CASE WHEN workflow.feature_id IS NULL THEN (
     SELECT proposal.head_object_id
     FROM change_proposals AS proposal
@@ -134,6 +138,10 @@ function mapWorkflow(row: WorkflowRow): FactoryConceptualReviewWorkflowRead {
         : "outdated";
   return FactoryConceptualReviewWorkflowReadSchema.parse({
     schemaVersion: 1,
+    lifecycleProfile:
+      preparation.configuration.lifecycleProfile == null
+        ? null
+        : lifecycleProfileEvidence(preparation.configuration.lifecycleProfile),
     workflow: {
       id: row.id,
       requestId: row.request_id,
@@ -151,6 +159,7 @@ function mapWorkflow(row: WorkflowRow): FactoryConceptualReviewWorkflowRead {
       finishedAt: row.finished_at?.toISOString() ?? null,
     },
     artifact,
+    runtimeProfileResult: row.runtime_profile_result ?? null,
     currency,
   });
 }
@@ -170,6 +179,10 @@ function accepted(
     throw new FactoryConceptualReviewWorkflowPersistenceError("not_ready");
   return FactoryConceptualReviewWorkflowReadSchema.parse({
     schemaVersion: 1,
+    lifecycleProfile:
+      preparation.configuration.lifecycleProfile == null
+        ? null
+        : lifecycleProfileEvidence(preparation.configuration.lifecycleProfile),
     workflow: {
       id,
       requestId: command.requestId,
@@ -543,6 +556,9 @@ export async function startFactoryConceptualReviewWorkflow(
     if (unresolvedEnvironment.rowCount !== 0)
       throw new FactoryConceptualReviewWorkflowPersistenceError("active_review");
 
+    await client.query(
+      "SELECT pg_advisory_xact_lock(hashtextextended('kestrel.lifecycle-profiles', 0))",
+    );
     const preparation = await prepare(client as unknown as DatabasePool);
     if (
       preparation.featureId === null ||
@@ -714,6 +730,9 @@ export async function startExternalConceptualReviewWorkflow(
     if (unresolvedEnvironment.rowCount !== 0)
       throw new FactoryConceptualReviewWorkflowPersistenceError("active_review");
 
+    await client.query(
+      "SELECT pg_advisory_xact_lock(hashtextextended('kestrel.lifecycle-profiles', 0))",
+    );
     const preparation = await prepare(client as unknown as DatabasePool);
     if (
       preparation.readiness.state !== "ready" ||
@@ -1067,12 +1086,16 @@ export async function recordFactoryConceptualReviewResourceDisposal(
 export async function recordFactoryConceptualReviewSession(
   pool: DatabasePool,
   claim: FactoryConceptualReviewAttemptIdentity,
-  identity: { threadId: string } | { turnId: string },
+  identity: { threadId: string } | { turnId: string } | { effectiveProfile: unknown },
   transactionTimeoutMs = 10_000,
 ): Promise<void> {
   const threadId = "threadId" in identity ? identity.threadId : null;
   const turnId = "turnId" in identity ? identity.turnId : null;
-  const value = threadId ?? turnId;
+  const effectiveProfile =
+    "effectiveProfile" in identity
+      ? RuntimeProfileResultSchema.parse(identity.effectiveProfile)
+      : null;
+  const value = threadId ?? turnId ?? (effectiveProfile === null ? null : "profile");
   if (value === null || value.length < 1 || value.length > 512 || value.includes("\0"))
     throw new FactoryConceptualReviewWorkflowPersistenceError("invalid_state");
   requireCurrentAttempt(
@@ -1081,6 +1104,7 @@ export async function recordFactoryConceptualReviewSession(
       `UPDATE review_workflow_attempts AS attempt
        SET runtime_thread_id = COALESCE(runtime_thread_id, $4),
          runtime_turn_id = COALESCE(runtime_turn_id, $5),
+         runtime_profile_result = COALESCE(runtime_profile_result, $6::jsonb),
          heartbeat_at = clock_timestamp()
        FROM review_workflows AS workflow
        WHERE attempt.workflow_id = $1 AND attempt.attempt_id = $2
@@ -1090,7 +1114,14 @@ export async function recordFactoryConceptualReviewSession(
          AND workflow.id = attempt.workflow_id AND workflow.attempt_id = attempt.attempt_id
          AND workflow.attempt_count = attempt.attempt_number
          AND workflow.workflow_state = 'running'`,
-      [claim.workflowId, claim.attemptId, claim.attemptNumber, threadId, turnId],
+      [
+        claim.workflowId,
+        claim.attemptId,
+        claim.attemptNumber,
+        threadId,
+        turnId,
+        effectiveProfile === null ? null : JSON.stringify(effectiveProfile),
+      ],
       transactionTimeoutMs,
     ),
   );

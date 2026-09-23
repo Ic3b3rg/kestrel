@@ -1,3 +1,9 @@
+import {
+  createCodexAppServerAgentRuntime,
+  type CodexAgentRuntimePort,
+} from "../codex-app-server.js";
+import type { CodexSubscriptionConnection } from "@kestrel/contracts";
+import { readLifecycleProfile } from "@kestrel/database";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 
@@ -188,6 +194,7 @@ export function createDatabaseFactoryConceptualReviewService(
   readSourceConfig: () => Promise<LocalSourceConfig>,
   options: {
     boss?: DiagnosticJobSender;
+    connection?: Pick<CodexAgentRuntimePort, "readConnection">;
     runtimeProfile?: {
       containerImage: string;
       containerUser: string;
@@ -221,12 +228,22 @@ export function createDatabaseFactoryConceptualReviewService(
     ]);
     await readConceptualReviewSourceCatalog(config, { ...binding, offset: 0, limit: 1 });
   };
-  const prepare = async (database: DatabasePool, context: FactoryConceptualReviewContext) => {
+  const connection = options.connection ?? createCodexAppServerAgentRuntime();
+  const prepare = async (
+    database: DatabasePool,
+    context: FactoryConceptualReviewContext,
+    catalog: CodexSubscriptionConnection,
+  ) => {
+    const lifecycle = await readLifecycleProfile(database, "review", context.projectId, catalog);
     const preparation = await readFactoryConceptualReviewPreparation(
       database,
       context.projectId,
       context.featureId,
-      { profile: options.runtimeProfile ?? null },
+      {
+        profile: options.runtimeProfile ?? null,
+        lifecycleProfile: lifecycle.resolved,
+        profileBlocker: lifecycle.blocked,
+      },
     );
     if (preparation.publication === null || preparation.evidence === null) return preparation;
     try {
@@ -239,7 +256,7 @@ export function createDatabaseFactoryConceptualReviewService(
     }
   };
   return {
-    prepare: (context) => prepare(pool, context),
+    prepare: async (context) => prepare(pool, context, await connection.readConnection()),
     async sourceCatalog({ projectId, featureId }, input) {
       const [config, binding] = await Promise.all([
         readSourceConfig(),
@@ -279,13 +296,14 @@ export function createDatabaseFactoryConceptualReviewService(
       );
     },
     async start(context, command, actor) {
+      const catalog = await connection.readConnection();
       if (options.boss === undefined)
         throw new FactoryConceptualReviewWorkflowPersistenceError("not_ready");
       return startFactoryConceptualReviewWorkflow(
         pool,
         options.boss,
         { ...context, ...actor, command },
-        (database) => prepare(database, context),
+        (database) => prepare(database, context, catalog),
       );
     },
     async current(context) {

@@ -1,3 +1,4 @@
+import { LifecycleProfileRecord } from "./LifecycleProfileRecord.js";
 import { useContext, useEffect, useId, useRef, useState } from "react";
 import type {
   FactoryExecution,
@@ -247,6 +248,12 @@ function RunDetails({ run }: { run: FactoryExecutionRun }) {
             <Revision revision={run.revision} />
           </div>
         </details>
+      )}
+      {run.runtime?.lifecycleProfile == null ? null : (
+        <LifecycleProfileRecord
+          profile={run.runtime.lifecycleProfile}
+          effective={run.runtime.effectiveProfile}
+        />
       )}
       {run.runtime === null ? null : (
         <p className="break-words text-sm text-muted-foreground">

@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  FrozenLifecycleProfileSchema,
+  LifecycleProfileEvidenceSchema,
+  RuntimeProfileResultSchema,
+} from "./lifecycle-profile.js";
 
 import { FactoryVerificationResultSchema } from "./factory-execution.js";
 import {
@@ -150,11 +155,14 @@ export const FactoryConceptualReviewBlockerSchema = z.enum([
   "exact_revision_mismatch",
   "change_intent_not_available",
   "model_not_selected",
+  "lifecycle_profile_unavailable",
   "review_runtime_unavailable",
 ]);
 export type FactoryConceptualReviewBlocker = z.infer<typeof FactoryConceptualReviewBlockerSchema>;
 
 const ConceptualReviewConfigurationSchema = z.strictObject({
+  lifecycleProfile: FrozenLifecycleProfileSchema.nullable().optional(),
+  profileBlocker: z.string().max(1024).nullable().optional(),
   model: z.strictObject({
     route: z.literal("codex_subscription"),
     modelId: z
@@ -896,6 +904,8 @@ export const FactoryConceptualReviewWorkflowReadSchema = z
   .strictObject({
     schemaVersion: z.literal(1),
     workflow: FactoryConceptualReviewWorkflowSchema,
+    lifecycleProfile: LifecycleProfileEvidenceSchema.nullable().optional(),
+    runtimeProfileResult: RuntimeProfileResultSchema.nullable().optional(),
     artifact: FactoryConceptualReviewArtifactSchema.nullable(),
     currency: z.enum(["up_to_date", "outdated", "unknown"]),
   })

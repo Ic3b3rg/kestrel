@@ -1,3 +1,4 @@
+import { LifecycleProfileRecord } from "./LifecycleProfileRecord.js";
 import { LifecycleProfileSummary } from "./LifecycleProfilePanel.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -400,6 +401,12 @@ export function FeaturePlanPanel({
         <p className="planning-notice">
           Version {plans.approval.version} is approved. Its scope and limits are frozen.
         </p>
+      )}
+      {plans?.approval == null ? null : (
+        <LifecycleProfileRecord
+          profile={plans.approval.lifecycleProfile}
+          label="Approved Implementation profile"
+        />
       )}
       {displayed !== null && !latestDisplayed ? (
         <p className="planning-notice">

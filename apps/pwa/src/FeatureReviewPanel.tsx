@@ -1,3 +1,4 @@
+import { LifecycleProfileRecord } from "./LifecycleProfileRecord.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   FactoryConceptualReviewBlocker,
@@ -42,6 +43,8 @@ const blockers: Record<FactoryConceptualReviewBlocker, string> = {
   approved_plan_mismatch: "The published Feature no longer matches its approved plan.",
   certificate_mismatch: "The final verification evidence does not match the published revision.",
   exact_revision_mismatch: "The retained source does not match the pull request base and head.",
+  lifecycle_profile_unavailable:
+    "Choose an available Conceptual Review profile in Project Lifecycle settings.",
   model_not_selected: "Choose a Codex review model in Settings before starting review.",
   review_runtime_unavailable:
     "The bounded review runner is not available yet. You can inspect every frozen input now.",
@@ -850,6 +853,13 @@ function FeatureReviewPanelContent({
           </p>
         </div>
         <div className="min-w-60 space-y-2">
+          <LifecycleProfileRecord
+            label="Review profile"
+            profile={preparation.configuration.lifecycleProfile}
+          />
+          {preparation.configuration.profileBlocker == null ? null : (
+            <p role="alert">{preparation.configuration.profileBlocker}</p>
+          )}
           <Button
             type="button"
             className="w-full"

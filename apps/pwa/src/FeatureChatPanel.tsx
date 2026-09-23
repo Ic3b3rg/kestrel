@@ -8,6 +8,7 @@ import type {
   SendPlanningMessageCommand,
 } from "@kestrel/contracts";
 
+import { LifecycleProfileRecord } from "./LifecycleProfileRecord.js";
 import {
   ApiClientError,
   cancelPlanningTurn,
@@ -515,6 +516,13 @@ export function FeatureChatPanel({
                       </time>
                     </header>
                     <div className="planning-message-content">{message.content}</div>
+                    {turn === undefined ? null : (
+                      <LifecycleProfileRecord
+                        profile={turn.lifecycleProfile}
+                        effective={turn.runtimeProfileResult}
+                        label="Planning profile used"
+                      />
+                    )}
                     {message.role !== "assistant" ||
                     message.generatedPlanVersion === undefined ? null : (
                       <GeneratedPlanDocuments

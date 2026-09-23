@@ -7,6 +7,11 @@ import {
 } from "./factory-skills.js";
 
 const identifier = z.string().min(1).max(128);
+export const RuntimeProfileResultSchema = z.strictObject({
+  model: identifier.nullable(),
+  effort: identifier.nullable(),
+  serviceTier: identifier.nullable(),
+});
 export const LifecyclePhaseSchema = z.enum(["planning", "implementation", "review", "corrections"]);
 export type LifecyclePhase = z.infer<typeof LifecyclePhaseSchema>;
 const choice = z.discriminatedUnion("kind", [

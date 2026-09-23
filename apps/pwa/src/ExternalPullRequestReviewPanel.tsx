@@ -1,3 +1,4 @@
+import { LifecycleProfileRecord } from "./LifecycleProfileRecord.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   ExternalConceptualReviewPreparation,
@@ -37,6 +38,8 @@ const blockerMessages: Record<
   certificate_mismatch: "The recorded verification does not match this pull request.",
   exact_revision_mismatch: "The retained source does not match the current pull request head.",
   change_intent_not_available: "Confirm a purpose for this pull request before starting review.",
+  lifecycle_profile_unavailable:
+    "Choose an available Conceptual Review profile in Project Lifecycle settings.",
   model_not_selected: "Choose a Codex review model in Project settings.",
   review_runtime_unavailable:
     "The local review runner is unavailable. Check the Codex connection and runtime.",
@@ -310,6 +313,13 @@ function ExternalPullRequestReviewPanelContent({
             </p>
           </div>
           <div className="min-w-52 space-y-2">
+            <LifecycleProfileRecord
+              label="Review profile"
+              profile={preparation?.configuration.lifecycleProfile}
+            />
+            {preparation?.configuration.profileBlocker == null ? null : (
+              <p role="alert">{preparation.configuration.profileBlocker}</p>
+            )}
             <Button
               type="button"
               className="w-full"

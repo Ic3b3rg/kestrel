@@ -12,7 +12,7 @@ GRANT USAGE, SELECT ON SEQUENCE lifecycle_phase_profiles_id_seq TO kestrel_runti
 
 INSERT INTO lifecycle_phase_profiles (project_id, phase, version, settings)
 SELECT NULL, 'planning', 1, jsonb_build_object('model', jsonb_build_object('kind', 'explicit', 'value', selected_model_id))
-FROM codex_review_model_preferences LIMIT 1;
+FROM codex_review_model_preferences WHERE selected_model_id IS NOT NULL LIMIT 1;
 
 ALTER TABLE factory_planning_turns ADD COLUMN lifecycle_profile jsonb;
 ALTER TABLE factory_planning_turns ADD COLUMN runtime_profile_result jsonb;

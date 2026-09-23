@@ -1,3 +1,4 @@
+import { defaultLifecycleSettings, resolveLifecycleProfile } from "@kestrel/contracts";
 import { expect, it, vi } from "vitest";
 
 import type {
@@ -131,6 +132,20 @@ const preparation = {
     checks: { runId, manifestDigest: digest, total: 1 },
   },
   configuration: {
+    lifecycleProfile: {
+      ...resolveLifecycleProfile(defaultLifecycleSettings, {}, [
+        {
+          id: "gpt-6-astra",
+          displayName: "Fixture",
+          isDefault: true,
+          defaultReasoningEffort: "high",
+          serviceTiers: [],
+        },
+      ]),
+      phase: "review",
+      versions: { installation: 1, project: 0 },
+      skills: [],
+    },
     model: { modelId: "gpt-6-astra" },
     runtimePolicy: {
       kind: "retained_source_review",
@@ -227,7 +242,16 @@ async function completeRuntimeTurn(input: CodexExecutionTurnInput, text: string)
   await input.onThread("review-thread");
   await input.onTurn("review-turn");
   await input.onStopped(container);
-  return { threadId: "review-thread", turnId: "review-turn", text };
+  return {
+    threadId: "review-thread",
+    turnId: "review-turn",
+    text,
+    effectiveProfile: {
+      model: input.model,
+      effort: input.effort ?? null,
+      serviceTier: input.serviceTier ?? null,
+    },
+  };
 }
 
 function arrange(
@@ -359,6 +383,20 @@ function arrange(
   const processor = createFactoryConceptualReviewProcessor({
     pool: {} as never,
     boss: { send: vi.fn() },
+    connection: {
+      readConnection: vi.fn().mockResolvedValue({
+        state: "ready",
+        models: [
+          {
+            id: "gpt-6-astra",
+            displayName: "Fixture",
+            isDefault: true,
+            defaultReasoningEffort: "high",
+            serviceTiers: [],
+          },
+        ],
+      }),
+    },
     readSourceConfig: vi.fn(() => Promise.resolve({} as never)),
     ...runtimeOption,
     materialize: vi.fn(() => Promise.resolve(workspace)),
@@ -426,6 +464,13 @@ it("reads source omitted from the prompt, validates it, and publishes once after
   const { processor, runTurn, workspace } = arrange();
   await processor.process({ workflowId });
   const turn = runTurn.mock.calls[0]?.[0];
+  expect(turn).toMatchObject({ model: "gpt-6-astra", effort: "high", serviceTier: null });
+  expect(db.recordSession).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.anything(),
+    { effectiveProfile: { model: "gpt-6-astra", effort: "high", serviceTier: null } },
+    expect.any(Number),
+  );
   expect(turn?.prompt).toContain("/workspace/base");
   expect(turn?.prompt).toContain("/workspace/head");
   expect(turn?.prompt).toContain('path:"src/file.ts"');
