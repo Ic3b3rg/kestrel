@@ -82,13 +82,13 @@ export function RepositoryAccessPanel({
     <section className="repository-access" aria-labelledby="repository-settings-title">
       <div className="section-heading repository-access-heading">
         <div>
-          <h2 id="repository-settings-title">Settings</h2>
+          <h2 id="repository-settings-title">Authorized repositories</h2>
         </div>
         <p className="credential-state">Paths stay on the trusted host</p>
       </div>
       <div className="repository-access-intro">
         <div>
-          <h3>Repository access</h3>
+          <h3>Local discovery</h3>
           <p>
             Kestrel lists only repositories beneath explicitly authorized roots. Browser data uses
             bounded labels and opaque identities.

@@ -68,7 +68,7 @@ describe("Repository access Settings", () => {
       .mockResolvedValueOnce(ready);
     await renderPanel({ loadRepositories });
 
-    expect(container.textContent).toContain("Settings");
+    expect(container.textContent).toContain("Authorized repositories");
     expect(container.textContent).toContain("No repository roots are configured");
     expect(container.querySelector('input[type="text"], input[type="file"]')).toBeNull();
 

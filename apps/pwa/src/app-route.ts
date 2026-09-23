@@ -19,15 +19,36 @@ export type AppRoute =
     }
   | { kind: "project_settings"; projectId: string }
   | { kind: "projects" }
-  | { kind: "settings" };
+  | { kind: "settings"; section: SettingsSection };
 
-export function readAppRoute(pathname: string, search = ""): AppRoute {
+export type SettingsSection = "profile" | "projects" | "providers" | "source-control";
+
+const settingsSections: readonly SettingsSection[] = [
+  "profile",
+  "projects",
+  "providers",
+  "source-control",
+];
+
+function legacySettingsSection(hash: string): SettingsSection {
+  if (hash === "#github-connection-title") return "source-control";
+  if (hash === "#codex-connection-title" || hash === "#review-model-title") return "providers";
+  if (hash === "#repository-settings-title") return "projects";
+  return "profile";
+}
+
+export function readAppRoute(pathname: string, search = "", hash = ""): AppRoute {
   if (pathname === "/") return { kind: "projects" };
   if (pathname === "/settings") {
     const projectId = KestrelIdSchema.safeParse(new URLSearchParams(search).get("projectId"));
     return projectId.success
       ? { kind: "project_settings", projectId: projectId.data }
-      : { kind: "settings" };
+      : { kind: "settings", section: legacySettingsSection(hash) };
+  }
+  const settingsMatch = /^\/settings\/([^/]+)$/u.exec(pathname);
+  if (settingsMatch !== null) {
+    const section = settingsSections.find((candidate) => candidate === settingsMatch[1]);
+    return section !== undefined ? { kind: "settings", section } : { kind: "not_found" };
   }
   const projectSettingsMatch = /^\/projects\/([^/]+)\/settings$/u.exec(pathname);
   if (projectSettingsMatch !== null) {
@@ -103,7 +124,7 @@ export function appPath(route: Exclude<AppRoute, { kind: "not_found" }>): string
     case "projects":
       return "/";
     case "settings":
-      return "/settings";
+      return `/settings/${route.section}`;
     case "project_settings":
       return `/projects/${encodeURIComponent(route.projectId)}/settings`;
     case "project":

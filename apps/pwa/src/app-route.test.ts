@@ -89,9 +89,26 @@ describe("authenticated app routing", () => {
     expect(readAppRoute("/settings", `?projectId=${projectId}`)).toEqual(route);
   });
 
-  it("keeps Settings and the Project landing as stable routes", () => {
+  it("keeps every global Settings section in a canonical path", () => {
+    expect(readAppRoute("/settings")).toEqual({ kind: "settings", section: "profile" });
+    expect(readAppRoute("/settings", "", "#review-model-title")).toEqual({
+      kind: "settings",
+      section: "providers",
+    });
+    expect(readAppRoute("/settings", "", "#github-connection-title")).toEqual({
+      kind: "settings",
+      section: "source-control",
+    });
+    for (const section of ["profile", "projects", "providers", "source-control"] as const) {
+      const route = { kind: "settings" as const, section };
+      expect(readAppRoute(`/settings/${section}`)).toEqual(route);
+      expect(appPath(route)).toBe(`/settings/${section}`);
+    }
+    expect(readAppRoute("/settings/other")).toEqual({ kind: "not_found" });
+  });
+
+  it("keeps the Project landing as a stable route", () => {
     expect(readAppRoute("/")).toEqual({ kind: "projects" });
-    expect(readAppRoute("/settings")).toEqual({ kind: "settings" });
   });
 
   it("reports malformed or unknown deep links without inventing a selection", () => {

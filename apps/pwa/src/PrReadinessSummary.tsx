@@ -188,7 +188,7 @@ export function PrReadinessSummary({
               </span>
             ) : null}
             {codex.state === "checked" && codex.value.state === "ready" ? null : (
-              <a href="/settings#codex-connection-title">Correct Codex connection</a>
+              <a href="/settings/providers#codex-connection-title">Correct Codex connection</a>
             )}
           </dd>
         </div>
@@ -202,7 +202,7 @@ export function PrReadinessSummary({
               </span>
             )}
             <span>Codex subscription · default for future reviews.</span>
-            <a href="/settings#review-model-title">
+            <a href="/settings/providers#review-model-title">
               {selectedModel === undefined ? "Choose review model" : "Change review model"}
             </a>
           </dd>

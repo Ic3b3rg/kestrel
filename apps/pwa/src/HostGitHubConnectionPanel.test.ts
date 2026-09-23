@@ -113,7 +113,7 @@ describe("GitHub connection Settings", () => {
     await renderGlobal({ loadConnection });
 
     expect(loadConnection).toHaveBeenCalledWith(undefined, expect.any(AbortSignal));
-    expect(container.textContent).toContain("Source control");
+    expect(container.textContent).toContain("GitHub on this workstation");
     expect(container.textContent).toContain("2.87.0");
     expect(container.textContent).toContain("github.com");
     expect(container.textContent).toContain("operator");

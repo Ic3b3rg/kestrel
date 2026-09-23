@@ -689,6 +689,87 @@
     min-width: 0;
   }
 
+  .settings-navigation {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    max-width: 100%;
+    padding: 1rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .settings-navigation a {
+    flex: none;
+    padding: 0.625rem 0.875rem;
+    border-radius: var(--radius-md);
+    color: var(--muted-foreground);
+    font-size: 0.875rem;
+    text-decoration: none;
+  }
+
+  .settings-navigation a:hover,
+  .settings-navigation a[aria-current="page"] {
+    color: var(--foreground);
+    background: var(--muted);
+  }
+
+  .settings-navigation a:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  .settings-section {
+    min-width: 0;
+  }
+
+  .settings-section-heading {
+    padding: 1.75rem 0 0.5rem;
+  }
+
+  .settings-section-heading h2,
+  .settings-section-heading p {
+    margin: 0;
+  }
+
+  .settings-section-heading p {
+    margin-top: 0.375rem;
+    color: var(--muted-foreground);
+  }
+
+  .settings-project-list {
+    display: grid;
+    gap: 0;
+    margin: 1rem 0 0;
+    padding: 0;
+    list-style: none;
+    border: 1px solid var(--border);
+  }
+
+  .settings-project-list li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 1rem;
+    min-width: 0;
+  }
+
+  .settings-project-list li + li {
+    border-top: 1px solid var(--border);
+  }
+
+  .settings-project-list span,
+  .settings-project-list a {
+    overflow-wrap: anywhere;
+  }
+
+  .settings-project-list a {
+    color: var(--primary);
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+
   .open-project-form {
     display: grid;
     gap: 1rem;
@@ -2455,22 +2536,6 @@
     align-self: center;
   }
 
-  .activity-line {
-    display: flex;
-    gap: 0.75rem;
-    margin: 1.5rem 0 0;
-    color: var(--muted-foreground);
-    font-size: 0.8125rem;
-    line-height: 1.5;
-  }
-
-  .activity-line span {
-    color: var(--foreground);
-    font-size: 0.75rem;
-    font-weight: 600;
-    line-height: 1.5;
-  }
-
   @media (min-width: 80rem) {
     .intro {
       grid-template-columns: minmax(0, 1fr) 18rem;
@@ -2970,12 +3035,6 @@
   }
   .open-project-entry > button {
     width: 100%;
-  }
-  .activity-line {
-    margin-top: 2.5rem;
-    padding-top: 1rem;
-    border-top: 1px solid var(--border);
-    font-size: 0.75rem;
   }
   .site-header,
   footer {

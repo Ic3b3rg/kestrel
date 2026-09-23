@@ -589,7 +589,7 @@ export function FeatureChatPanel({
                               href={
                                 turn.failure === "source_unavailable"
                                   ? `/projects/${encodeURIComponent(projectId)}/settings#repository-settings-title`
-                                  : "/settings#codex-connection-title"
+                                  : "/settings/providers#codex-connection-title"
                               }
                             >
                               {turn.failure === "source_unavailable"
