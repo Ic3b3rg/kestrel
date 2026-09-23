@@ -149,6 +149,7 @@ export function NewPlanningWorkspace({
       )}
       <NewPlanningChatPanel
         projectName={projectName}
+        onAuthenticationError={onAuthenticationError}
         online={online}
         pending={pending || checking}
         error={error}

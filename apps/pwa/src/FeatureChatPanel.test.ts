@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FeatureChat, FeaturePlanVersion } from "@kestrel/contracts";
 import { FeatureChatPanel, type FeatureChatPanelProps } from "./FeatureChatPanel.js";
+import { ApiClientError } from "./api.js";
 
 const projectId = "018f0f89-949a-75a8-8f61-6df78a843b1e";
 const featureId = "018f0f89-9192-755f-aa96-f72094c734df";
@@ -131,6 +132,37 @@ describe("persistent planning conversation", () => {
       await Promise.resolve();
     });
   }
+
+  it("keeps a rejected inline Skill message editable and links to the global Library", async () => {
+    const sendMessage = vi.fn().mockRejectedValueOnce(
+      new ApiClientError(409, {
+        schemaVersion: 1,
+        code: "REQUEST_REJECTED",
+        message: "The Skill missing is not installed. Open Settings → Skills to install it.",
+        correlationId: "01991c36-7f90-7000-8000-000000000003",
+      }),
+    );
+    await render({ loadChat: () => Promise.resolve({ ...initial, turns: [] }), sendMessage });
+    const field = container.querySelector<HTMLTextAreaElement>("#planning-message");
+    expect(field).not.toBeNull();
+    await act(async () => {
+      if (field !== null) {
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
+          field,
+          "/missing Help plan reports",
+        );
+        field.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      await Promise.resolve();
+    });
+    await act(async () => {
+      field?.form?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      await Promise.resolve();
+    });
+    expect(sendMessage).toHaveBeenCalledOnce();
+    expect(field?.disabled).toBe(false);
+    expect(container.querySelector<HTMLAnchorElement>('a[href="/settings/skills"]')).not.toBeNull();
+  });
 
   it("keeps an implementing feature distinct from cancellation while planning remains frozen", async () => {
     await render({

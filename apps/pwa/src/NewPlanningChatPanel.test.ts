@@ -29,6 +29,7 @@ describe("blank planning conversation", () => {
           online: true,
           pending: false,
           error: null,
+          onAuthenticationError: () => false,
           onSubmit: vi.fn(),
           onBack: vi.fn(),
           ...overrides,

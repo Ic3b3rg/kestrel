@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { PlanningFeatureStarted, PlanningSkillSummary } from "@kestrel/contracts";
 import { NewPlanningWorkspace, type NewPlanningWorkspaceProps } from "./NewPlanningWorkspace.js";
+import { ApiClientError } from "./api.js";
 
 const api = vi.hoisted(() => ({ lookup: vi.fn(), start: vi.fn() }));
 vi.mock("./factory-start-api.js", () => ({
@@ -137,6 +138,24 @@ it("retains the first prompt and selected Skills across double-submit and uncert
     },
   ]);
   expect(props.onStarted).toHaveBeenCalledExactlyOnceWith(started.feature);
+});
+
+it("keeps an unknown inline Skill draft editable without creating a Feature", async () => {
+  api.start.mockRejectedValue(
+    new ApiClientError(409, {
+      schemaVersion: 1,
+      code: "REQUEST_REJECTED",
+      message: "The Skill missing is not installed. Open Settings → Skills to install it.",
+      correlationId: "01991c36-7f90-7000-8000-000000000003",
+    }),
+  );
+  await render();
+  await type("/missing Help plan reports");
+  await submit();
+  expect(api.start).toHaveBeenCalledOnce();
+  expect(props.onStarted).not.toHaveBeenCalled();
+  expect(container.querySelector("textarea")?.disabled).toBe(false);
+  expect(container.querySelector<HTMLAnchorElement>('a[href="/settings/skills"]')).not.toBeNull();
 });
 
 it("keeps accepted work alive without navigating from a departed workspace", async () => {
