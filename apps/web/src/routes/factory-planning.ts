@@ -1,3 +1,4 @@
+import type { CodexAgentRuntimePort } from "../codex-app-server.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 
@@ -94,8 +95,9 @@ export function registerFactoryPlanningRoutes(
   app: FastifyInstance,
   pool: DatabasePool,
   boss: DiagnosticJobSender,
+  runtime: CodexAgentRuntimePort,
 ): void {
-  registerFactoryStartRoutes(app, pool, boss);
+  registerFactoryStartRoutes(app, pool, boss, runtime);
   app.post(
     "/api/v1/projects/:projectId/features/:featureId/plans/generate",
     {
@@ -125,6 +127,7 @@ export function registerFactoryPlanningRoutes(
                 : { skillSelectionVersion: command.skillSelectionVersion }),
             },
             { expectedVersion: command.expectedVersion },
+            await runtime.readConnection(),
           ),
         );
       } catch (error) {
@@ -372,6 +375,8 @@ export function registerFactoryPlanningRoutes(
               projectId,
               featureId,
               SendPlanningMessageCommandSchema.parse(request.body),
+              undefined,
+              await runtime.readConnection(),
             ),
           );
       } catch (error) {

@@ -1,3 +1,10 @@
+import { freezeLifecycleProfile } from "./lifecycle-profiles.js";
+import {
+  lifecycleProfileEvidence,
+  FrozenLifecycleProfileSchema,
+  type FrozenLifecycleProfile,
+  type CodexSubscriptionConnection,
+} from "@kestrel/contracts";
 import {
   FeatureSchema,
   PlanningSkillDigestsSchema,
@@ -64,6 +71,7 @@ export interface FeatureRow {
 }
 
 export interface ClaimedPlanningTurn {
+  lifecycleProfile?: FrozenLifecycleProfile | null;
   id: string;
   featureId: string;
   projectId: string;
@@ -110,9 +118,10 @@ export async function claimPlanningTurn(
     purpose: "conversation" | "plan";
     expected_plan_version: number | null;
     skill_digests: unknown;
+    lifecycle_profile: unknown;
   }>(
     `UPDATE factory_planning_turns SET state = 'running', started_at = clock_timestamp()
-     WHERE id = $1 AND state = 'queued' RETURNING feature_id, purpose, expected_plan_version, skill_digests`,
+     WHERE id = $1 AND state = 'queued' RETURNING feature_id, purpose, expected_plan_version, skill_digests, lifecycle_profile`,
     [turnId],
   );
   const claimed = result.rows[0];
@@ -132,7 +141,12 @@ export async function claimPlanningTurn(
     [row.project_id],
   );
   const attached = source.rows[0];
-  const skills = await readPlanningSkills(pool, claimed.skill_digests);
+  const lifecycleProfile =
+    claimed.lifecycle_profile == null
+      ? null
+      : FrozenLifecycleProfileSchema.parse(claimed.lifecycle_profile);
+  const skills =
+    lifecycleProfile?.skills ?? (await readPlanningSkills(pool, claimed.skill_digests));
   const previousSkills = await pool.query<{ skill_digests: unknown }>(
     "SELECT skill_digests FROM factory_planning_turns WHERE feature_id = $1 AND id <> $2 ORDER BY created_at DESC, id DESC LIMIT 1",
     [featureId, turnId],
@@ -157,6 +171,7 @@ export async function claimPlanningTurn(
         : row.runtime_thread_id,
     needsTitle: claimed.purpose === "conversation" && row.title_source === "pending",
     skills,
+    lifecycleProfile,
     purpose: claimed.purpose,
     expectedPlanVersion: claimed.expected_plan_version,
     previousPlan:
@@ -280,6 +295,8 @@ interface MessageRow {
   generated_plan_version?: number | null;
 }
 interface TurnRow {
+  lifecycle_profile?: unknown;
+  runtime_profile_result?: unknown;
   id: string;
   message_id: string;
   state: string;
@@ -425,6 +442,11 @@ export async function readFactoryChat(
       ),
       turns: turns.rows.map((turn) =>
         PlanningTurnSchema.parse({
+          lifecycleProfile:
+            turn.lifecycle_profile == null
+              ? null
+              : lifecycleProfileEvidence(turn.lifecycle_profile),
+          runtimeProfileResult: turn.runtime_profile_result ?? null,
           id: turn.id,
           messageId: turn.message_id,
           state: turn.state,
@@ -452,9 +474,10 @@ export async function acceptPlanningMessage(
   featureId: string,
   command: SendPlanningMessageCommand,
   planIntent?: { expectedVersion: number | null },
+  connection?: CodexSubscriptionConnection,
 ): Promise<PlanningTurnAccepted> {
   return withFactoryFeature(pool, projectId, featureId, (client, row) =>
-    acceptPlanningMessageForFeature(client, boss, row, command, planIntent),
+    acceptPlanningMessageForFeature(client, boss, row, command, planIntent, undefined, connection),
   );
 }
 
@@ -466,6 +489,7 @@ export async function acceptPlanningMessageForFeature(
   command: SendPlanningMessageCommand,
   planIntent?: { expectedVersion: number | null },
   initialSkillDigests?: string[],
+  connection?: CodexSubscriptionConnection,
 ): Promise<PlanningTurnAccepted> {
   const featureId = row.id;
   const purpose = planIntent === undefined ? "conversation" : "plan";
@@ -527,25 +551,39 @@ export async function acceptPlanningMessageForFeature(
     [featureId],
   );
   if (Number(turnCount.rows[0]?.count) >= 400) throw new FactoryError("conversation_limit");
+  const lifecycleProfile =
+    connection === undefined
+      ? null
+      : await freezeLifecycleProfile(client, "planning", row.project_id, connection);
   const selection = await planningSkillSelection(client, featureId, row.skill_selection_version);
   const selected = selection.skills.map(({ contentDigest }) => contentDigest);
-  const skillDigests = await resolvePlanningSkillInvocation(
+  const invokedSkillDigests = await resolvePlanningSkillInvocation(
     client,
     command.text,
     initialSkillDigests ?? selected,
   );
-  if (JSON.stringify(selected) !== JSON.stringify(skillDigests)) {
+  const skillDigests = [
+    ...new Set([...(lifecycleProfile?.requested.skillDigests ?? []), ...invokedSkillDigests]),
+  ];
+  if (JSON.stringify(selected) !== JSON.stringify(invokedSkillDigests)) {
     if (row.skill_selection_version >= 1000)
       throw new FactoryError("conflict", "The Skill selection limit was reached");
     await client.query(
       "INSERT INTO factory_feature_skill_selections (feature_id,version,request_id,digests) VALUES ($1,$2,$3,$4::jsonb)",
-      [featureId, row.skill_selection_version + 1, command.requestId, JSON.stringify(skillDigests)],
+      [
+        featureId,
+        row.skill_selection_version + 1,
+        command.requestId,
+        JSON.stringify(invokedSkillDigests),
+      ],
     );
     await client.query(
       "UPDATE factory_features SET skill_selection_version = skill_selection_version + 1, runtime_thread_id = NULL WHERE id = $1",
       [featureId],
     );
   }
+  if (lifecycleProfile !== null)
+    lifecycleProfile.skills = await readPlanningSkills(client, skillDigests);
   const inserted = await client.query<{ id: string }>(
     "INSERT INTO factory_planning_messages (feature_id, role, content) VALUES ($1, 'user', $2) RETURNING id",
     [featureId, command.text],
@@ -553,7 +591,7 @@ export async function acceptPlanningMessageForFeature(
   const messageId = inserted.rows[0]?.id;
   if (messageId === undefined) throw new Error("Planning message was not persisted");
   const turn = await client.query<{ id: string }>(
-    "INSERT INTO factory_planning_turns (feature_id, message_id, request_id, purpose, expected_plan_version, skill_digests, requested_skill_selection_version) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7) RETURNING id",
+    "INSERT INTO factory_planning_turns (feature_id, message_id, request_id, purpose, expected_plan_version, skill_digests, requested_skill_selection_version, lifecycle_profile) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8::jsonb) RETURNING id",
     [
       featureId,
       messageId,
@@ -562,6 +600,7 @@ export async function acceptPlanningMessageForFeature(
       expectedVersion,
       JSON.stringify(skillDigests),
       command.skillSelectionVersion ?? null,
+      JSON.stringify(lifecycleProfile),
     ],
   );
   const turnId = turn.rows[0]?.id;
@@ -652,7 +691,7 @@ export async function retryPlanningTurn(
     )
       throw new FactoryError("conflict");
     const inserted = await client.query<{ id: string }>(
-      "INSERT INTO factory_planning_turns (feature_id, message_id, request_id, purpose, expected_plan_version, skill_digests, requested_skill_selection_version) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7) RETURNING id",
+      "INSERT INTO factory_planning_turns (feature_id, message_id, request_id, purpose, expected_plan_version, skill_digests, requested_skill_selection_version, lifecycle_profile) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8::jsonb) RETURNING id",
       [
         featureId,
         original.message_id,
@@ -661,6 +700,7 @@ export async function retryPlanningTurn(
         original.expected_plan_version,
         JSON.stringify(original.skill_digests),
         original.requested_skill_selection_version,
+        JSON.stringify(original.lifecycle_profile ?? null),
       ],
     );
     const newTurnId = inserted.rows[0]?.id;

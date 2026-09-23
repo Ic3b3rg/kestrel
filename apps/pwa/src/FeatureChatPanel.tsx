@@ -1,3 +1,4 @@
+import { LifecycleProfileSummary } from "./LifecycleProfilePanel.js";
 import { useCallback, useEffect, useRef, useState, type SyntheticEvent } from "react";
 import { Pencil, RefreshCw, Send, Square } from "lucide-react";
 import type {
@@ -623,6 +624,7 @@ export function FeatureChatPanel({
               ) : null}
             </div>
           )}
+          <LifecycleProfileSummary phase="planning" projectId={projectId} online={online} />
           <form className="planning-composer" onSubmit={submit}>
             <Label htmlFor="planning-message">Message</Label>
             <PlanningSkillChips

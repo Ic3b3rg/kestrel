@@ -1,3 +1,4 @@
+import { registerLifecycleProfileRoutes } from "./routes/lifecycle-profiles.js";
 import { registerSourceOnboardingRoutes } from "./routes/source-onboarding.js";
 import {
   createSourceOnboardingService,
@@ -286,7 +287,8 @@ export async function buildApp({
   registerOperatorSecurityRoutes(app, pool, sessionSigningKey);
 
   registerDiagnosticRoutes(app, pool, boss, eventRetentionLimit);
-  registerFactoryPlanningRoutes(app, pool, boss);
+  registerFactoryPlanningRoutes(app, pool, boss, codexAgentRuntime);
+  registerLifecycleProfileRoutes(app, pool, codexAgentRuntime);
   registerPlanningSkillRoutes(app, pool);
   registerFactoryIssueRoutes(app, pool, factoryGitHub);
   registerProjectBoardRoutes(app, pool, factoryGitHub);

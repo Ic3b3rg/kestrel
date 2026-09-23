@@ -1,4 +1,8 @@
 import {
+  LifecycleProfileViewSchema,
+  SaveLifecycleProfileCommandSchema,
+} from "./lifecycle-profile.js";
+import {
   CloneSourceCommandSchema,
   ManagedSourceSchema,
   ManagedSourcesSchema,
@@ -207,6 +211,8 @@ export const reviewWorkflowAcceptedJsonSchema = asJsonSchema(ReviewWorkflowAccep
 export const startReviewWorkflowCommandJsonSchema = asJsonSchema(StartReviewWorkflowCommandSchema);
 
 const factoryComponents = {
+  LifecycleProfileView: asComponentSchema(asJsonSchema(LifecycleProfileViewSchema)),
+  SaveLifecycleProfileCommand: asComponentSchema(asJsonSchema(SaveLifecycleProfileCommandSchema)),
   SourceAuthorization: asComponentSchema(asJsonSchema(SourceAuthorizationSchema)),
   CloneSourceCommand: asComponentSchema(asJsonSchema(CloneSourceCommandSchema)),
   ManagedSource: asComponentSchema(asJsonSchema(ManagedSourceSchema)),
@@ -518,6 +524,109 @@ export const openApiDocument = sortJson({
   jsonSchemaDialect: "https://json-schema.org/draft/2020-12/schema",
   openapi: "3.1.1",
   paths: {
+    "/api/v1/lifecycle-profiles/{phase}": {
+      get: {
+        operationId: "readInstallationLifecycleProfile",
+        parameters: [
+          {
+            in: "path",
+            name: "phase",
+            required: true,
+            schema: {
+              type: "string",
+              enum: ["planning", "implementation", "review", "corrections"],
+            },
+          },
+        ],
+        responses: {
+          ...factoryErrors,
+          "200": {
+            description: "Current defaults, overrides and effective profile",
+            content: { "application/json": { schema: schemaReference("LifecycleProfileView") } },
+          },
+        },
+      },
+      put: {
+        ...factoryTurnMutation(
+          "saveInstallationLifecycleProfile",
+          "SaveLifecycleProfileCommand",
+          "LifecycleProfileView",
+          200,
+        ),
+        parameters: [
+          ...authenticatedMutationHeaders(false),
+          ...[
+            {
+              in: "path",
+              name: "phase",
+              required: true,
+              schema: {
+                type: "string",
+                enum: ["planning", "implementation", "review", "corrections"],
+              },
+            },
+          ],
+        ],
+      },
+    },
+    "/api/v1/projects/{projectId}/lifecycle-profiles/{phase}": {
+      get: {
+        operationId: "readProjectLifecycleProfile",
+        parameters: [
+          {
+            in: "path",
+            name: "projectId",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+          {
+            in: "path",
+            name: "phase",
+            required: true,
+            schema: {
+              type: "string",
+              enum: ["planning", "implementation", "review", "corrections"],
+            },
+          },
+        ],
+        responses: {
+          ...factoryErrors,
+          "200": {
+            description: "Current defaults, overrides and effective profile",
+            content: { "application/json": { schema: schemaReference("LifecycleProfileView") } },
+          },
+        },
+      },
+      put: {
+        ...factoryTurnMutation(
+          "saveProjectLifecycleProfile",
+          "SaveLifecycleProfileCommand",
+          "LifecycleProfileView",
+          200,
+        ),
+        parameters: [
+          ...authenticatedMutationHeaders(false),
+          ...[
+            {
+              in: "path",
+              name: "projectId",
+              required: true,
+              schema: { type: "string", format: "uuid" },
+            },
+            {
+              in: "path",
+              name: "phase",
+              required: true,
+              schema: {
+                type: "string",
+                enum: ["planning", "implementation", "review", "corrections"],
+              },
+            },
+          ],
+        ],
+      },
+    },
+
     "/api/v1/local-repository-sources/choose": {
       post: {
         operationId: "chooseLocalFolder",

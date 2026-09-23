@@ -1,3 +1,4 @@
+import { LifecycleProfileEvidenceSchema } from "./lifecycle-profile.js";
 import { z } from "zod";
 
 import { GitObjectIdSchema, KestrelIdSchema } from "./v1.js";
@@ -80,6 +81,15 @@ export const PlanningFailureSchema = z.enum([
 export type PlanningFailure = z.infer<typeof PlanningFailureSchema>;
 
 export const PlanningTurnSchema = z.strictObject({
+  lifecycleProfile: LifecycleProfileEvidenceSchema.nullable().optional(),
+  runtimeProfileResult: z
+    .strictObject({
+      model: z.string(),
+      effort: z.string().nullable(),
+      serviceTier: z.string().nullable(),
+    })
+    .nullable()
+    .optional(),
   id: KestrelIdSchema,
   messageId: KestrelIdSchema,
   state: z.enum(["queued", "running", "completed", "failed", "cancelled"]),

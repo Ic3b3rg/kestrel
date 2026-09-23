@@ -18,7 +18,7 @@ import type { PoolClient } from "pg";
 import type { DatabasePool } from "./pool.js";
 import { FactoryError, withFactoryFeature } from "./factory-planning.js";
 
-type Reader = DatabasePool | PoolClient;
+type Reader = Pick<DatabasePool, "query">;
 export const skillSummary = (bundle: PlanningSkillBundle): PlanningSkillSummary =>
   PlanningSkillSummarySchema.parse({
     name: bundle.name,

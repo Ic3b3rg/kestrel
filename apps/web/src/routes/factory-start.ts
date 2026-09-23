@@ -1,3 +1,4 @@
+import type { CodexAgentRuntimePort } from "../codex-app-server.js";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import {
@@ -40,6 +41,7 @@ export function registerFactoryStartRoutes(
   app: FastifyInstance,
   pool: DatabasePool,
   boss: DiagnosticJobSender,
+  runtime: CodexAgentRuntimePort,
 ): void {
   app.get(
     "/api/v1/projects/:projectId/planning/:requestId",
@@ -86,6 +88,7 @@ export function registerFactoryStartRoutes(
               projectId,
               actorId,
               StartPlanningFeatureCommandSchema.parse(request.body),
+              await runtime.readConnection(),
             ),
           );
       } catch (error) {

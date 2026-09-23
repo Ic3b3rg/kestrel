@@ -1,3 +1,4 @@
+import { LifecycleProfilePanel } from "./LifecycleProfilePanel.js";
 import { Button } from "./components/ui/button.js";
 import { FormFeedback } from "./components/FormFeedback.js";
 import { WorkspaceSuspendedContext } from "./components/ui/workspace-suspension.js";
@@ -818,10 +819,13 @@ export function App() {
                 />
               </>
             ) : route.section === "providers" ? (
-              <CodexSubscriptionConnectionPanel
-                online={online}
-                onAuthenticationError={handleAuthenticationBoundaryError}
-              />
+              <>
+                <CodexSubscriptionConnectionPanel
+                  online={online}
+                  onAuthenticationError={handleAuthenticationBoundaryError}
+                />
+                <LifecycleProfilePanel online={online} />
+              </>
             ) : route.section === "source-control" ? (
               <>
                 <HostGitHubConnectionPanel

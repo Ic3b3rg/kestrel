@@ -1,3 +1,4 @@
+import { LifecycleProfileSummary } from "./LifecycleProfilePanel.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Feature, StartPlanningFeatureCommand } from "@kestrel/contracts";
 import { ApiClientError } from "./api.js";
@@ -137,6 +138,7 @@ export function NewPlanningWorkspace({
           </Button>
         </div>
       )}
+      <LifecycleProfileSummary phase="planning" projectId={projectId} online={online} />
       <NewPlanningChatPanel
         projectName={projectName}
         onAuthenticationError={onAuthenticationError}

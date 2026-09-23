@@ -17,7 +17,7 @@ export function registerSourceOnboardingRoutes(
   service: SourceOnboardingService,
 ): void {
   const json = (schema: z.ZodType) => z.toJSONSchema(schema, { target: "draft-7" });
-  const confirm = z.strictObject({ previewId: KestrelIdSchema });
+  const confirm = z.strictObject({ previewId: z.uuid() });
   const managed = createManagedSourceService();
   const rejectManaged = (error: unknown, correlationId: string) =>
     ApiErrorSchema.parse({

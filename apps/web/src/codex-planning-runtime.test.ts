@@ -43,6 +43,29 @@ afterEach(async () => {
 });
 
 describe("Codex planning runtime", () => {
+  it("sends the frozen effort and explicit standard speed without inheriting an old thread tier", async () => {
+    const { cwd, logPath, runtime } = await fixture();
+    await runtime.runTurn({
+      cwd,
+      model: "gpt-5.6-sol",
+      effort: "high",
+      serviceTier: "default",
+      prompt: "Plan only",
+      requestId: "frozen-profile",
+      onThread: () => Promise.resolve(),
+    });
+    const recorded = await messages(logPath);
+    expect(recorded.find((message) => message.method === "turn/start")?.params).toMatchObject({
+      model: "gpt-5.6-sol",
+      effort: "high",
+      serviceTierForTurn: "default",
+    });
+    expect(recorded.find((message) => message.method === "thread/start")?.params).toMatchObject({
+      serviceTier: "default",
+      config: { model_reasoning_effort: "high" },
+    });
+  });
+
   it("refuses a host configuration that changes the selected provider", async () => {
     const { cwd, logPath, runtime } = await fixture("wrong_provider");
     await expect(
@@ -299,6 +322,7 @@ describe("Codex planning runtime", () => {
       threadId: "thread-planning",
       turnId: "turn-planning",
       text: "Quale risultato deve verificare il piano? 🪶",
+      effectiveProfile: { model: "gpt-5.6-sol", effort: null, serviceTier: null },
     });
 
     const recorded = await messages(logPath);

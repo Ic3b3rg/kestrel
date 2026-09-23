@@ -263,7 +263,16 @@ lines.on("close", () => {
       reason: null,
       cli: { version: "0.152.1", supported: true, protocol: "app_server_v2" },
       account: { authentication: "chatgpt", email: "operator@example.com", plan: "plus" },
-      models: [{ id: "gpt-5.6-sol", displayName: "GPT-5.6 Sol", isDefault: true }],
+      models: [
+        {
+          id: "gpt-5.6-sol",
+          displayName: "GPT-5.6 Sol",
+          isDefault: true,
+          model: "gpt-5.6-sol",
+          defaultReasoningEffort: "low",
+          supportedReasoningEfforts: [],
+        },
+      ],
       usage: {
         availability: "available",
         primary: {

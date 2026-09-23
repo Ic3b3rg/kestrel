@@ -1,3 +1,4 @@
+import type { CodexSubscriptionConnection } from "@kestrel/contracts";
 import {
   PlanningFeatureRequestSchema,
   PlanningFeatureStartedSchema,
@@ -54,6 +55,7 @@ export function startPlanningFeature(
   projectId: string,
   actorId: string,
   input: StartPlanningFeatureCommand,
+  connection?: CodexSubscriptionConnection,
 ): Promise<PlanningFeatureStarted> {
   const command = StartPlanningFeatureCommandSchema.parse(input);
   return transaction(pool, async (client) => {
@@ -106,6 +108,7 @@ export function startPlanningFeature(
       { requestId: command.requestId, text: command.text },
       undefined,
       command.skillDigests,
+      connection,
     );
     await client.query(
       `INSERT INTO factory_planning_starts (feature_id,actor_id,request_id,first_prompt,skill_digests,message_id,turn_id)

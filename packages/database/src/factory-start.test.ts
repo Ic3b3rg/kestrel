@@ -1,3 +1,7 @@
+import {
+  FrozenLifecycleProfileSchema,
+  CodexSubscriptionConnectionSchema,
+} from "@kestrel/contracts";
 import { beforeEach, expect, it, vi } from "vitest";
 import { completePlanningTurn, readFactoryChat, type FeatureRow } from "./factory-planning.js";
 import { startPlanningFeature } from "./factory-start.js";
@@ -109,7 +113,10 @@ it("reads the first reply and generated title consistently when naming finishes 
 function startFixture(existing?: Record<string, unknown>) {
   const query = vi.fn((sql: string, parameters?: unknown[]) => {
     void parameters;
-    if (sql.startsWith("SELECT id FROM projects"))
+    if (
+      sql.startsWith("SELECT id FROM projects") ||
+      sql.startsWith("SELECT COALESCE(canonical_project_id, id) AS id")
+    )
       return Promise.resolve({ rowCount: 1, rows: [{ id: projectId }] });
     if (sql.includes("FROM factory_planning_starts"))
       return Promise.resolve({
@@ -269,3 +276,48 @@ it.each(["pending", "operator"])(
     expect(title).toBe(source === "pending" ? "Saved report search" : "Operator's saved title");
   },
 );
+
+it("freezes the concrete profile in the same transaction as the accepted first message", async () => {
+  const fixture = startFixture();
+  const connection = CodexSubscriptionConnectionSchema.parse({
+    schemaVersion: 1,
+    state: "ready",
+    reason: null,
+    cli: { version: "0.152.1", supported: true, protocol: "app_server_v2" },
+    account: { authentication: "chatgpt", email: "operator@example.test", plan: "plus" },
+    models: [
+      {
+        id: "example",
+        model: "wire-example",
+        displayName: "Example",
+        isDefault: true,
+        defaultReasoningEffort: "balanced",
+        supportedReasoningEfforts: [{ reasoningEffort: "balanced", description: "Balanced" }],
+        serviceTiers: [],
+        defaultServiceTier: null,
+      },
+    ],
+    usage: { availability: "available", primary: null, secondary: null },
+    checkedAt: "2026-09-23T10:00:00.000Z",
+  });
+  await startPlanningFeature(fixture.pool, fixture.boss, projectId, actorId, command, connection);
+  const write = fixture.query.mock.calls.find(([sql]) =>
+    sql.startsWith("INSERT INTO factory_planning_turns"),
+  );
+  const frozen = FrozenLifecycleProfileSchema.parse(JSON.parse(String(write?.[1]?.[7])));
+  expect(frozen).toMatchObject({
+    phase: "planning",
+    runtimeId: "codex_subscription",
+    modelId: "example",
+    model: "wire-example",
+    effort: "balanced",
+    serviceTier: "default",
+    skills: [],
+    versions: { installation: 0, project: 0 },
+  });
+  expect(fixture.query.mock.calls.at(-1)?.[0]).toBe("COMMIT");
+  const model = connection.models[0];
+  if (model === undefined) throw new Error("Fixture model missing");
+  model.defaultReasoningEffort = "changed";
+  expect(frozen.effort).toBe("balanced");
+});
