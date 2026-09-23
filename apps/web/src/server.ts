@@ -5,6 +5,7 @@ import { isAbsolute, resolve } from "node:path";
 import { buildApp } from "./app.js";
 import { createCodexAppServerAgentRuntime } from "./codex-app-server.js";
 import { createCodexExecutionContainerRecovery } from "./codex-execution-runtime.js";
+import { reconcileFactorySandboxes } from "./factory-sandbox.js";
 import { CERTIFIED_CODEX_REVIEW_VERSION } from "./codex-review-runtime.js";
 import {
   createFactoryExecutionProcessor,
@@ -71,7 +72,6 @@ import {
   reconcilePlanningTurns,
   reconcileFactoryPublications,
   reconcileFactoryFeaturePublications,
-  reconcileFactoryExecutions,
   reconcileFactoryConceptualReviewWorkflows,
   reconcileFactoryReviewCorrections,
   reconcileFactoryFeatureMerges,
@@ -323,7 +323,11 @@ try {
   await boss.start();
   await reconcilePlanningTurns(pool);
   await reconcileFactoryPublications(pool, boss);
-  await reconcileFactoryExecutions(pool, boss, recoverExecutionContainer);
+  await reconcileFactorySandboxes(
+    pool,
+    boss,
+    factoryDockerExecutable === undefined ? {} : { dockerExecutable: factoryDockerExecutable },
+  );
   await reconcileFactoryConceptualReviewWorkflows(
     pool,
     boss,
@@ -346,7 +350,11 @@ try {
   featurePublicationReconciliation.unref();
   executionReconciliation = setInterval(() => {
     if (reconcilingExecution !== null || shuttingDown) return;
-    reconcilingExecution = reconcileFactoryExecutions(pool, boss, recoverExecutionContainer)
+    reconcilingExecution = reconcileFactorySandboxes(
+      pool,
+      boss,
+      factoryDockerExecutable === undefined ? {} : { dockerExecutable: factoryDockerExecutable },
+    )
       .catch((error: unknown) =>
         app.log.error({ err: error, event: "factory.execution_reconciliation_failed" }),
       )

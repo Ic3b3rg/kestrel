@@ -1,56 +1,31 @@
-import { createHash, randomUUID } from "node:crypto";
-import { homedir } from "node:os";
-import { StringDecoder } from "node:string_decoder";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
   KestrelIdSchema,
-  factoryVerificationManifest,
   type FactoryExecutionFailure,
-  type FactoryExecutionRun,
   type FactoryVerificationResult,
 } from "@kestrel/contracts";
 import {
   claimFactoryExecution,
   finishFactoryExecution,
   heartbeatFactoryExecution,
-  identifyFactoryExecutionContainer,
-  initializeFactoryFeatureWorkspace,
   readCodexReviewModelPreference,
-  readFactoryFeatureWorkspace,
   recordFactoryExecutionActivity,
-  recordFactoryExecutionCheckpoint,
-  reserveFactoryExecutionContainer,
-  saveFactoryExecutionRuntime,
-  saveFactoryVerification,
-  stopFactoryExecutionContainer,
   type ClaimedFactoryExecution,
   type DatabasePool,
   type FactoryFeatureWorkspace,
 } from "@kestrel/database";
-import {
-  assertFeatureWorkspaceSnapshot,
-  checkpointFeatureWorkspace,
-  FeatureWorkspaceError,
-  inspectRepository,
-  listRepositoryReferences,
-  LocalSourceError,
-  openFeatureWorkspace,
-  resolveRepository,
-  snapshotFeatureWorkspace,
-  type FeatureWorkspace,
-  type LocalSourceConfig,
-} from "@kestrel/local-source";
+import type { LocalSourceConfig } from "@kestrel/local-source";
 import {
   createCodexAppServerAgentRuntime,
   type CodexAgentRuntimePort,
 } from "./codex-app-server.js";
+import type { CodexExecutionRuntime } from "./codex-execution-runtime.js";
 import {
-  CodexExecutionError,
-  createCodexExecutionRuntime,
-  type CodexExecutionLifecycle,
-  type CodexExecutionRuntime,
-  type CodexVerificationResult,
-} from "./codex-execution-runtime.js";
+  createFactorySandbox,
+  FactoryExecutionError as ExecutionFailure,
+  factoryExecutionFailure as failureFor,
+} from "./factory-sandbox.js";
 
 export const FACTORY_EXECUTION_WORK_OPTIONS = {
   batchSize: 1,
@@ -76,15 +51,6 @@ function readCompletion(text: string): z.infer<typeof completionSchema> {
   }
 }
 
-class ExecutionFailure extends Error {
-  constructor(
-    readonly code: FactoryExecutionFailure,
-    readonly question: string | null = null,
-  ) {
-    super(`Factory execution failed: ${code}`);
-  }
-}
-
 export interface FactoryExecutionProcessorOptions {
   pool: DatabasePool;
   readSourceConfig: () => Promise<LocalSourceConfig>;
@@ -92,23 +58,6 @@ export interface FactoryExecutionProcessorOptions {
   runtime?: CodexExecutionRuntime;
   containerImage?: string;
   dockerExecutable?: string;
-}
-
-function checkpointId(runId: string, round: number): string {
-  // The random durable run ID and round identify one operation across process restarts.
-  // UUID bits are normalized after a domain-separated hash; no new mutable ID is needed.
-  const bytes = createHash("sha256")
-    .update(`kestrel.factory.checkpoint.v1\0${runId}\0${String(round)}`)
-    .digest()
-    .subarray(0, 16);
-  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x50;
-  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
-  const hex = bytes.toString("hex");
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-}
-
-function boundedText(text: string, maxBytes: number): string {
-  return new StringDecoder("utf8").write(Buffer.from(text).subarray(0, maxBytes));
 }
 
 type VerificationFeedback = Pick<
@@ -216,104 +165,6 @@ function promptFor(
   return prompt;
 }
 
-async function prepareWorkspace(
-  pool: DatabasePool,
-  run: ClaimedFactoryExecution,
-  config: LocalSourceConfig,
-  signal: AbortSignal,
-): Promise<{ workspace: FeatureWorkspace; revision: FactoryFeatureWorkspace }> {
-  if (run.source === null) throw new ExecutionFailure("source_unavailable");
-  let revision = await readFactoryFeatureWorkspace(pool, run);
-  if (run.purpose === "feature_verification" || run.purpose === "correction") {
-    const initial = run.initialRevision;
-    if (revision === null || initial === undefined)
-      throw new ExecutionFailure("source_unavailable");
-    if (
-      revision.baseCommitId !== initial.baseCommitId ||
-      revision.headCommitId !== initial.headCommitId ||
-      revision.treeId !== initial.treeId ||
-      revision.branch !== initial.branch
-    )
-      throw new ExecutionFailure("revision_changed");
-    if (
-      JSON.stringify(run.verificationManifest) !==
-      JSON.stringify(factoryVerificationManifest(run.plan))
-    )
-      throw new ExecutionFailure("invalid_response");
-  }
-  if (revision !== null) {
-    if (
-      revision.repositoryId !== run.source.repositoryId ||
-      revision.sourceIdentity !== run.source.identity ||
-      revision.featureId !== run.featureId
-    )
-      throw new ExecutionFailure("source_changed");
-    const workspace = await openFeatureWorkspace(config, revision, {
-      signal,
-      documents: { planMarkdown: run.planMarkdown, specMarkdown: run.specMarkdown },
-    });
-    await assertFeatureWorkspaceSnapshot(workspace, revision, { signal });
-    return { workspace, revision };
-  }
-  const repository = await resolveRepository(config, run.source.repositoryId);
-  const inspected = await inspectRepository(config, repository, signal);
-  if (inspected.sourceIdentity !== run.source.identity)
-    throw new ExecutionFailure("source_changed");
-  const baseCommitId =
-    run.context?.commitId ??
-    (await listRepositoryReferences(config, repository)).references.find(
-      (reference) => reference.kind === "head",
-    )?.commitObjectId;
-  signal.throwIfAborted();
-  if (baseCommitId === undefined) throw new ExecutionFailure("source_unavailable");
-  const identity = {
-    projectId: run.projectId,
-    featureId: run.featureId,
-    repositoryId: run.source.repositoryId,
-    sourceIdentity: run.source.identity,
-    baseCommitId,
-    objectFormat: inspected.objectFormat,
-    branch: `refs/heads/kestrel/feature/${run.featureId}`,
-  };
-  const workspace = await openFeatureWorkspace(config, identity, {
-    signal,
-    documents: { planMarkdown: run.planMarkdown, specMarkdown: run.specMarkdown },
-  });
-  const snapshot = await snapshotFeatureWorkspace(workspace, {
-    expectedHead: baseCommitId,
-    signal,
-  });
-  signal.throwIfAborted();
-  revision = await initializeFactoryFeatureWorkspace(pool, run, { ...identity, ...snapshot });
-  return { workspace, revision };
-}
-
-function failureFor(error: unknown, signal: AbortSignal, verifying: boolean): ExecutionFailure {
-  if (error instanceof CodexExecutionError && error.code === "stop_unconfirmed")
-    return new ExecutionFailure("stop_unconfirmed");
-  if (signal.aborted)
-    return signal.reason instanceof ExecutionFailure
-      ? signal.reason
-      : new ExecutionFailure("interrupted");
-  if (error instanceof ExecutionFailure) return error;
-  if (error instanceof CodexExecutionError)
-    return new ExecutionFailure(error.code, error.question ?? null);
-  if (error instanceof FeatureWorkspaceError) {
-    if (
-      [
-        "workspace_changed",
-        "workspace_invalid",
-        "workspace_identity_mismatch",
-        "workspace_checkpoint_conflict",
-      ].includes(error.code)
-    )
-      return new ExecutionFailure(verifying ? "revision_changed" : "source_changed");
-    return new ExecutionFailure("source_unavailable");
-  }
-  if (error instanceof LocalSourceError) return new ExecutionFailure("source_unavailable");
-  return new ExecutionFailure("unavailable");
-}
-
 const recovery: Partial<Record<FactoryExecutionFailure, string>> = {
   authentication: "Connect Codex with a ChatGPT account in Settings before retrying.",
   usage_limit: "Codex usage is unavailable. Wait for the usage reset before retrying.",
@@ -375,72 +226,13 @@ async function execute(
     pulses.add(polling);
   }, 1000);
   heartbeat.unref();
-  const pending = new Set<string>();
-  const hasPending = () => pending.size > 0;
+  const sandbox = createFactorySandbox({ ...options, run, signal, deadline });
+  const publicText = sandbox.publicText;
   let verifying = false;
   let verified = false;
   let failure: ExecutionFailure | null = null;
-  let paths = [homedir()];
-  const publicText = (text: string, limit = 4000) =>
-    boundedText(
-      paths.reduce((value, path) => value.replaceAll(path, "[private workspace]"), text),
-      limit,
-    );
-  let runtimeState: NonNullable<FactoryExecutionRun["runtime"]> = {
-    kind: "codex",
-    model: "unknown",
-    threadId: null,
-    turnId: null,
-    containerId: null,
-  };
-  const lifecycle = (phase: "implementation" | "verification") => {
-    const proof: { name: string | null; id: string | null; stopped: boolean } = {
-      name: null,
-      id: null,
-      stopped: false,
-    };
-    const callbacks: CodexExecutionLifecycle = {
-      beforeContainerCreate: async (name, daemonId) => {
-        if (proof.name !== null) throw new ExecutionFailure("stop_unconfirmed");
-        signal.throwIfAborted();
-        await reserveFactoryExecutionContainer(pool, run, name, phase, daemonId);
-        proof.name = name;
-        pending.add(name);
-        signal.throwIfAborted();
-      },
-      onContainer: async (container) => {
-        if (proof.name !== container.name) throw new ExecutionFailure("stop_unconfirmed");
-        proof.id = container.id;
-        await identifyFactoryExecutionContainer(pool, run, container);
-        if (phase === "implementation") {
-          runtimeState = { ...runtimeState, containerId: container.id };
-          await saveFactoryExecutionRuntime(pool, run, runtimeState);
-        }
-      },
-      onStopped: async (container) => {
-        if (proof.name !== container.name || (proof.id !== null && proof.id !== container.id))
-          throw new ExecutionFailure("stop_unconfirmed");
-        await stopFactoryExecutionContainer(pool, run, container);
-        pending.delete(container.name);
-        proof.stopped = true;
-      },
-    };
-    return {
-      callbacks,
-      assertStopped: () => {
-        if (proof.name === null || proof.id === null || !proof.stopped || hasPending())
-          throw new ExecutionFailure("stop_unconfirmed");
-      },
-    };
-  };
   try {
     signal.throwIfAborted();
-    const config = await options.readSourceConfig();
-    paths = [
-      config.artifactRoot,
-      ...config.repositoryRoots.map((root) => root.path),
-      homedir(),
-    ].sort((left, right) => right.length - left.length);
     const final = run.purpose === "feature_verification";
     const featureLevel = final || run.purpose === "correction";
     let model: string | undefined;
@@ -472,53 +264,18 @@ async function execute(
       return selected;
     };
     if (!final) await selectModel();
-    if (options.runtime === undefined && !options.containerImage?.trim())
-      throw new ExecutionFailure("sandbox_unavailable");
-    const runtime =
-      options.runtime ??
-      createCodexExecutionRuntime({
-        containerImage: options.containerImage ?? "",
-        timeoutMs: run.plan.limits.attemptTimeoutSeconds * 1000,
-        ...(options.dockerExecutable === undefined
-          ? {}
-          : { dockerExecutable: options.dockerExecutable }),
-      });
-    const prepared = await prepareWorkspace(pool, run, config, signal);
-    const { workspace } = prepared;
-    let revision = prepared.revision;
+    await sandbox.open();
     let previousChecks: VerificationFeedback[] = [];
     for (let round = 1; round <= 3; round++) {
       verifying = false;
       signal.throwIfAborted();
-      let committed = { headCommitId: revision.headCommitId, treeId: revision.treeId };
       if (!final || round > 1) {
         const selectedModel = await selectModel();
-        runtimeState = {
-          ...runtimeState,
+        const result = await sandbox.implement({
+          round,
           model: selectedModel,
-          threadId: null,
-          turnId: null,
-          containerId: null,
-        };
-        await saveFactoryExecutionRuntime(pool, run, runtimeState);
-        const implementation = lifecycle("implementation");
-        const result = await runtime.runTurn({
-          ...implementation.callbacks,
-          cwd: workspace.workspacePath,
-          gitDirectory: workspace.gitDirectory,
-          model: selectedModel,
-          prompt: promptFor(run, revision, previousChecks),
-          requestId: `${run.id}:implementation:${String(round)}`,
+          prompt: promptFor(run, sandbox.revision, previousChecks),
           outputSchema: z.toJSONSchema(completionSchema, { target: "draft-7" }),
-          signal,
-          onThread: async (threadId) => {
-            runtimeState = { ...runtimeState, threadId, turnId: null };
-            await saveFactoryExecutionRuntime(pool, run, runtimeState);
-          },
-          onTurn: async (turnId) => {
-            runtimeState = { ...runtimeState, turnId };
-            await saveFactoryExecutionRuntime(pool, run, runtimeState);
-          },
           onActivity: (activity) =>
             recordFactoryExecutionActivity(
               pool,
@@ -532,7 +289,6 @@ async function execute(
             abort.abort(new ExecutionFailure(question.code, text));
           },
         });
-        implementation.assertStopped();
         signal.throwIfAborted();
         const completion = readCompletion(result.text);
         if (completion.status === "input_required")
@@ -543,23 +299,7 @@ async function execute(
           "runtime",
           publicText(completion.summary, 2000),
         );
-        const candidate = await snapshotFeatureWorkspace(workspace, {
-          expectedHead: revision.headCommitId,
-          signal,
-        });
-        committed = await checkpointFeatureWorkspace(workspace, {
-          expectedHead: revision.headCommitId,
-          expectedTree: candidate.treeId,
-          checkpointId: checkpointId(run.id, round),
-          message: `${run.key}: approved implementation (round ${String(round)})`,
-          signal,
-        });
-        signal.throwIfAborted();
-        const checkpoint = await recordFactoryExecutionCheckpoint(pool, run, {
-          expectedHead: revision.headCommitId,
-          ...committed,
-        });
-        revision = { ...revision, ...checkpoint };
+        await sandbox.checkpoint(round);
       }
       verifying = true;
       const commands = featureLevel
@@ -568,69 +308,10 @@ async function execute(
       if (commands === undefined || commands.length === 0)
         throw new ExecutionFailure("invalid_response");
       previousChecks = [];
-      for (const [index, command] of commands.entries()) {
-        signal.throwIfAborted();
-        const started = performance.now();
-        let checked: CodexVerificationResult | undefined;
-        let checkFailure: ExecutionFailure | null = null;
-        const processId = `${run.id}:verification:${String(round)}:${String(index + 1)}`;
-        const verification = lifecycle("verification");
-        try {
-          checked = await runtime.runVerification({
-            ...verification.callbacks,
-            workspaceCwd: workspace.workspacePath,
-            gitDirectory: workspace.gitDirectory,
-            cwd: command.cwd,
-            command: [command.program, ...command.args],
-            processId,
-            timeoutMs: Math.max(1, Math.min(command.timeoutSeconds * 1000, deadline - Date.now())),
-            signal,
-          });
-          verification.assertStopped();
-          if (checked.processId !== processId) throw new ExecutionFailure("invalid_response");
-          await assertFeatureWorkspaceSnapshot(workspace, committed, { signal });
-        } catch (error) {
-          checkFailure = failureFor(error, signal, true);
-        }
-        const outcome =
-          checkFailure?.code === "timeout"
-            ? "timeout"
-            : checkFailure?.code === "cancelled" || checkFailure?.code === "interrupted"
-              ? "cancelled"
-              : checkFailure?.code === "revision_changed"
-                ? "failed"
-                : checkFailure !== null
-                  ? "unavailable"
-                  : checked?.exitCode === 0
-                    ? "passed"
-                    : "failed";
-        const stdout = publicText(checked?.stdout ?? "", 8192);
-        const stderr = publicText(checked?.stderr ?? "", 8192);
-        await saveFactoryVerification(pool, run, {
-          round,
-          position: index + 1,
-          command,
-          ...committed,
-          outcome,
-          exitCode: checked?.exitCode ?? null,
-          stdout,
-          stderr,
-          stdoutTruncated:
-            checked?.stdoutTruncated === true || Buffer.byteLength(checked?.stdout ?? "") > 8192,
-          stderrTruncated:
-            checked?.stderrTruncated === true || Buffer.byteLength(checked?.stderr ?? "") > 8192,
-          durationMs: checked?.durationMs ?? Math.round(performance.now() - started),
-        });
-        if (checkFailure !== null) throw checkFailure;
-        previousChecks.push({
-          position: index + 1,
-          outcome,
-          exitCode: checked?.exitCode ?? null,
-          stdout: boundedText(stdout, 2048),
-          stderr: boundedText(stderr, 2048),
-        });
+      for (let position = 1; position <= commands.length; position++) {
+        previousChecks.push(await sandbox.verify(round, position));
       }
-      await assertFeatureWorkspaceSnapshot(workspace, committed, { signal });
+      await sandbox.assertRevision();
       signal.throwIfAborted();
       if (previousChecks.every((check) => check.outcome === "passed")) {
         verified = true;
@@ -668,13 +349,13 @@ async function execute(
     verified = false;
     failure ??= failureFor(signal.reason, signal, verifying);
   }
-  if (pending.size > 0) {
+  if (!sandbox.writerStopped) {
     verified = false;
     failure = new ExecutionFailure("stop_unconfirmed");
   }
   await finishFactoryExecution(pool, run, {
     verified,
-    writerStopped: pending.size === 0 && failure?.code !== "stop_unconfirmed",
+    writerStopped: sandbox.writerStopped,
     failure: failure?.code ?? null,
     question: verified
       ? null
