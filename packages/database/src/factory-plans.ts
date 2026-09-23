@@ -7,6 +7,7 @@ import {
   PlanningContextSchema,
   PlanningTurnSchema,
   validateFeaturePlan,
+  projectFeaturePlan,
   type FeaturePlanDocument,
   type FeaturePlanVersion,
   type FeaturePlans,
@@ -105,52 +106,29 @@ async function boardFor(client: PoolClient, feature: FeatureRow): Promise<Factor
           )
         ).rows[0]
       : undefined;
+  const graph =
+    approved === null
+      ? null
+      : projectFeaturePlan(approved, {
+          featureState: feature.state,
+          items: rows.rows.map((row) => ({
+            key: row.key,
+            column: row.board_column,
+            published: row.published_at !== null,
+          })),
+          ...(gate === undefined ? {} : { gate }),
+        });
+  const projections = new Map(graph?.workItems.map((item) => [item.definition.key, item]));
   const items = rows.rows.map((row) => {
-    const definition = approved?.workItems.find(({ key }) => key === row.key);
-    if (definition === undefined) throw new Error("An approved Work Item definition is missing");
-    const dependencies = definition.dependsOn.filter(
-      (key) =>
-        !rows.rows.some(
-          (item) => item.key === key && ["in_review", "completed"].includes(item.board_column),
-        ),
-    );
+    const item = projections.get(row.key);
+    if (item === undefined) throw new Error("An approved Work Item definition is missing");
     return {
-      ...definition,
+      ...item.definition,
       id: row.id,
       featureId: feature.id,
       order: row.position,
-      column: row.board_column,
-      blocking:
-        feature.state === "cancelled"
-          ? {
-              kind: "cancelled",
-              explanation: "This feature was cancelled. Its work is preserved for inspection.",
-            }
-          : row.board_column !== "todo"
-            ? null
-            : feature.state === "gated"
-              ? {
-                  kind: "human_gate",
-                  explanation: (gate?.decision === "requires_plan_change"
-                    ? "The approved plan must change. Execution remains paused. "
-                    : "Your decision is needed: "
-                  )
-                    .concat(gate?.question ?? "Open execution to inspect the retained attempt.")
-                    .slice(0, 2000),
-                }
-              : dependencies.length > 0
-                ? {
-                    kind: "dependency",
-                    explanation:
-                      `Waiting for verified Work Items: ${dependencies.join(", ")}`.slice(0, 2000),
-                  }
-                : row.published_at === null
-                  ? {
-                      kind: "publication",
-                      explanation:
-                        "GitHub issue publication must be confirmed before this Work Item can run.",
-                    }
-                  : null,
+      column: item.column,
+      blocking: item.blocking,
       providerUrl: row.provider_issue?.url ?? null,
       activity: events
         .filter(({ workItemId }) => workItemId === row.id)

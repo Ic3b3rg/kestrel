@@ -357,6 +357,19 @@ describe("Factory Human Gates over HTTP and PostgreSQL", () => {
       );
       expect(details.acceptedCommands).toEqual(verification);
       await verify(successor);
+      const board = FactoryBoardSchema.parse(
+        await (await stack.fetchApi(`${path(projects.kestrel, first)}/board`)).json(),
+      );
+      expect(
+        board.columns.find(({ id }) => id === "in_review")?.items.map(({ key }) => key),
+      ).toEqual(["order"]);
+      expect(board.columns.find(({ id }) => id === "completed")?.items).toEqual([]);
+      expect(
+        board.columns
+          .find(({ id }) => id === "todo")
+          ?.items.filter(({ blocking }) => blocking === null)
+          .map(({ key }) => key),
+      ).toEqual(["consumer"]);
       const dependent = await claim([first, queued]);
       expect(dependent).toHaveLength(1);
       expect(dependent[0]).toMatchObject({
