@@ -32,11 +32,13 @@ export interface FactoryGitHubCatalog {
   issues: FactoryGitHubIssue[];
   limited: boolean;
   failure: FactoryProviderFailure | null;
+  retryAt?: string;
 }
 type Dependencies = NonNullable<FactoryGitHubIssue["dependencies"]>;
 type Unsupported = { state: "unsupported" };
 type WriteFailure = Exclude<WriteResult<never>, { state: "confirmed" }>;
 export interface FactoryGitHubAdapter {
+  readIssueDiscussion(identity: FactoryGitHubIdentity, number: number, page: number, signal?: AbortSignal): Promise<{issue: FactoryGitHubIssue; comments: Array<FactoryGitHubComment & {author: string | null}>; nextPage: number | null}>;
   readIssueCatalog(
     coordinates: Pick<FactoryGitHubRepository, "owner" | "name">,
     signal?: AbortSignal,
@@ -134,12 +136,14 @@ const IssueSchema = z.strictObject({
   state: z.enum(["open", "closed"]),
   html_url: z.string().max(512),
   repository_url: z.string().max(512),
+  labels: FactoryGitHubIssueSchema.shape.labels,
+  comments: z.int().nonnegative().optional(),
   isPullRequest: z.boolean(),
   author: z.string().max(100).nullable(),
 });
 type ProviderIssue = z.infer<typeof IssueSchema>;
 const ISSUE_FIELDS =
-  '{id:(.id|tostring),number,title,body,state,html_url,repository_url,isPullRequest:has("pull_request"),author:.user.login}';
+  '{id:(.id|tostring),number,title,body,state,html_url,repository_url,labels:[(.labels // [])[] | {name,color}],comments:(.comments // 0),isPullRequest:has("pull_request"),author:.user.login}';
 const issueProjection = `if type == "array" then map(${ISSUE_FIELDS}) elif has("message") then {message} else ${ISSUE_FIELDS} end`;
 const DependencySchema = IssueSchema.pick({
   id: true,
@@ -295,6 +299,8 @@ function issue(repository: FactoryGitHubRepository, value: ProviderIssue): Facto
     body: value.body ?? "",
     state: value.state,
     dependencies: null,
+    labels: value.labels ?? [],
+    commentCount: value.comments ?? 0,
   });
 }
 
@@ -599,12 +605,27 @@ export function createFactoryGitHubAdapter(
   };
   return {
     identify,
+    async readIssueDiscussion(identity, number, page, signal) {
+      parse(numberSchema, number);
+      parse(z.int().min(1).max(1000), page);
+      await verify(identity, signal);
+      const selected = parse(IssueSchema, (await get(`${base(identity.repository)}/issues/${String(number)}`, issueProjection, signal)).body);
+      if (selected.number !== number) throw new FactoryGitHubError("invalid_response");
+      const result = await get(`${base(identity.repository)}/issues/${String(number)}/comments?per_page=100&page=${String(page)}`, commentProjection, signal);
+      const comments = parse(z.array(CommentSchema).max(100), result.body).map(value => ({...comment(identity.repository, number, value), author: value.author}));
+      // Never follow provider-supplied URLs; advance our own validated endpoint.
+      const more = result.headers.link?.includes('rel="next"') ?? false;
+      if (more && page === 1000) throw new FactoryGitHubError("reconciliation_limit");
+      await verify(identity, signal);
+      return {issue: issue(identity.repository, selected), comments, nextPage: more ? page + 1 : null};
+    },
     async readIssueCatalog(coordinates, signal) {
       const issues: FactoryGitHubIssue[] = [];
       let limited = false;
       try {
         const identity = await identify(coordinates, signal);
         let failure: FactoryProviderFailure | null = null;
+        let retryAt: string | undefined;
         try {
           let page: number | null = 1;
           for (let count = 0; page !== null && count < 5; count++) {
@@ -621,16 +642,18 @@ export function createFactoryGitHubAdapter(
         } catch (error) {
           if (!(error instanceof FactoryGitHubError) || signal?.aborted) throw error;
           failure = error.failure;
+          retryAt = error.retryAt;
           limited = true;
         }
         await verify(identity, signal);
-        return { issues, limited, failure };
+        return { issues, limited, failure, ...(retryAt === undefined ? {} : {retryAt}) };
       } catch (error) {
         if (!(error instanceof FactoryGitHubError) || signal?.aborted) throw error;
         return {
           issues: [],
           limited: true,
           failure: error.failure,
+          ...(error.retryAt === undefined ? {} : {retryAt: error.retryAt}),
         };
       }
     },

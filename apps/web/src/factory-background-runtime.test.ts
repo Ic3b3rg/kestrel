@@ -1,3 +1,4 @@
+vi.mock("./project-issue-dispatch.js", () => ({createProjectIssueDispatcher:()=>vi.fn().mockResolvedValue(undefined)}));
 import type * as changeOverviewRendererModule from "./change-overview-renderer.js";
 import type * as publicationProcessorModule from "./factory-publication.js";
 import type * as planningProcessorModule from "./factory-planning.js";
@@ -127,7 +128,7 @@ it("repairs durable state before intake and registers each consumer only once", 
   expect(new Set(f.work.mock.calls.map(([queue]) => queue)).size).toBe(8);
   expect(f.work).toHaveBeenCalledTimes(8);
   for (const repair of repairs) expect(repair).toHaveBeenCalledTimes(1);
-  expect(vi.getTimerCount()).toBe(6);
+  expect(vi.getTimerCount()).toBe(7);
   await f.runtime.stop();
   expect(f.offWork).toHaveBeenCalledTimes(8);
   expect(vi.getTimerCount()).toBe(0);

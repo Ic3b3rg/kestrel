@@ -738,3 +738,11 @@ describe("Factory GitHub subprocess boundary", () => {
     expect(await adapter.addDependency(identity, 1, "500")).toEqual({ state: "unsupported" });
   });
 });
+
+ it("retains labels and comment counts from issue lists without per-card requests", async () => {
+  const { adapter, state, setState } = await fixture();
+  const current = await state();
+  await setState({ issues: current.issues.map(issue => ({ ...issue, labels: [{name: "ready-for-agent", color: "008800"}], comments: 3 })) });
+  const catalog = await adapter.readIssueCatalog({owner: "owner", name: "notes"});
+  expect(catalog.issues[0]).toMatchObject({labels: [{name: "ready-for-agent", color: "008800"}], commentCount: 3});
+});

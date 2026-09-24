@@ -1,3 +1,4 @@
+import { createProjectIssueDispatcher } from "./project-issue-dispatch.js";
 import { createCodexExecutionContainerRecovery } from "./codex-execution-runtime.js";
 import { reconcileFactorySandboxes } from "./factory-sandbox.js";
 import {
@@ -164,7 +165,9 @@ export function createFactoryBackgroundRuntime({
     reconcileFactoryConceptualReviewWorkflows(pool, boss, recoverExecutionContainer, (attemptId) =>
       disposeConceptualReviewAttemptResources(localSourceConfig, attemptId),
     );
+  const dispatchIssues = createProjectIssueDispatcher(pool, boss);
   const repairs = [
+    {run: () => dispatchIssues(lifecycle.signal), interval: 2_000, event: "factory.issue_dispatch_failed"},
     {
       run: () => reconcileFactoryPublications(pool, boss),
       interval: 5_000,

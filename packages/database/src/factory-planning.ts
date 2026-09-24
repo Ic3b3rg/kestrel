@@ -4,6 +4,7 @@ import {
   savePlanningAttachments,
   planningAttachmentSummaries,
 } from "./planning-attachments.js";
+import { readIssueExecutionContext } from "./project-issue-dispatch.js";
 import { freezeLifecycleProfile } from "./lifecycle-profiles.js";
 import {
   lifecycleProfileEvidence,
@@ -79,6 +80,7 @@ export interface FeatureRow {
 }
 
 export interface ClaimedPlanningTurn {
+  issueExecutionContext?: unknown;
   lifecycleProfile?: FrozenLifecycleProfile | null;
   id: string;
   featureId: string;
@@ -188,6 +190,7 @@ export async function claimPlanningTurn(
         : FeaturePlanDocumentSchema.parse(previous.rows[0].document),
     messages: chat.messages,
     imports: await factoryImportsFor(pool, featureId),
+    issueExecutionContext: await readIssueExecutionContext(pool, featureId),
     source:
       attached === undefined
         ? null
