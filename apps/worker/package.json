@@ -6,7 +6,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "dev": "node ../../scripts/watch-service.mjs src/main.ts"
   },
   "dependencies": {
     "@kestrel/contracts": "0.0.0",
