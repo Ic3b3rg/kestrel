@@ -215,3 +215,29 @@ it("sends a selected conversation model from the compact composer", async () => 
   );
   expect(container.textContent).not.toContain("Planning profile");
 });
+
+it("keeps an attached text file through an uncertain first-message retry", async () => {
+  api.start.mockRejectedValueOnce(new TypeError("Lost response")).mockResolvedValue(started);
+  await render();
+  await type("Use the attached requirements");
+  const picker = container.querySelector<HTMLInputElement>('input[type="file"]');
+  expect(picker).not.toBeNull();
+  await act(async () => {
+    if (picker === null) throw new Error("Missing attachment picker");
+    Object.defineProperty(picker, "files", {
+      value: [new File(["Keep exports"], "notes.txt", { type: "text/plain" })],
+    });
+    picker.dispatchEvent(new Event("change", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+  expect(container.textContent).toContain("notes.txt");
+  await submit();
+  await submit();
+  expect(api.start.mock.calls[0]).toEqual(api.start.mock.calls[1]);
+  expect(api.start).toHaveBeenCalledWith(
+    projectId,
+    expect.objectContaining({
+      attachments: [{ kind: "text", name: "notes.txt", text: "Keep exports" }],
+    }),
+  );
+});

@@ -43,6 +43,33 @@ afterEach(async () => {
 });
 
 describe("Codex planning runtime", () => {
+  it("sends retained image bytes and text content as native inputs", async () => {
+    const { cwd, logPath, runtime } = await fixture();
+    await runtime.runTurn({
+      cwd,
+      model: "gpt-5.6-sol",
+      prompt: "Read the attachments",
+      requestId: "attachments",
+      onThread: () => Promise.resolve(),
+      attachments: [
+        {
+          messageId: "message-1",
+          file: { kind: "image", name: "sample.png", mediaType: "image/png", data: "aW1hZ2U=" },
+        },
+        {
+          messageId: "message-1",
+          file: { kind: "text", name: "notes.txt", text: "Keep the export button" },
+        },
+      ],
+    });
+    const recorded = await messages(logPath);
+    expect(recorded.find((message) => message.method === "turn/start")?.params).toMatchObject({
+      input: expect.arrayContaining([
+        { type: "image", url: "data:image/png;base64,aW1hZ2U=" },
+        { type: "text", text: expect.stringContaining("Keep the export button") },
+      ]),
+    });
+  });
   it("sends the frozen effort and explicit standard speed without inheriting an old thread tier", async () => {
     const { cwd, logPath, runtime } = await fixture();
     await runtime.runTurn({

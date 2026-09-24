@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import {
   ApiErrorSchema,
+  PLANNING_BODY_LIMIT,
   CreateFeatureCommandSchema,
   FeatureChatSchema,
   FeatureListSchema,
@@ -22,6 +23,7 @@ import {
 } from "@kestrel/contracts";
 import {
   createFactoryFeature,
+  readPlanningAttachment,
   acceptPlanningMessage,
   cancelPlanningTurn,
   retryPlanningTurn,
@@ -98,6 +100,38 @@ export function registerFactoryPlanningRoutes(
   runtime: CodexAgentRuntimePort,
 ): void {
   registerFactoryStartRoutes(app, pool, boss, runtime);
+  app.get(
+    "/api/v1/projects/:projectId/features/:featureId/messages/:messageId/attachments/:attachmentId",
+    {
+      schema: {
+        params: jsonSchema(
+          featureParams.extend({ messageId: KestrelIdSchema, attachmentId: KestrelIdSchema }),
+        ),
+      },
+    },
+    async (request, reply) => {
+      const params = featureParams
+        .extend({ messageId: KestrelIdSchema, attachmentId: KestrelIdSchema })
+        .parse(request.params);
+      try {
+        const file = await readPlanningAttachment(
+          pool,
+          params.projectId,
+          params.featureId,
+          params.messageId,
+          params.attachmentId,
+        );
+        return reply
+          .header("Cache-Control", "no-store")
+          .header("X-Content-Type-Options", "nosniff")
+          .type(file.kind === "image" ? file.mediaType : "text/plain; charset=utf-8")
+          .send(file.kind === "image" ? Buffer.from(file.data, "base64") : file.text);
+      } catch (error) {
+        const failure = factoryError(request, error);
+        return reply.code(failure.status).send(failure.body);
+      }
+    },
+  );
   app.post(
     "/api/v1/projects/:projectId/features/:featureId/plans/generate",
     {
@@ -356,7 +390,7 @@ export function registerFactoryPlanningRoutes(
   app.post(
     "/api/v1/projects/:projectId/features/:featureId/messages",
     {
-      bodyLimit: 96_000,
+      bodyLimit: PLANNING_BODY_LIMIT,
       config: AUTHENTICATED_MUTATION_ROUTE_CONFIG,
       schema: {
         params: jsonSchema(featureParams),

@@ -1,3 +1,5 @@
+import { usePlanningAttachments } from "./usePlanningAttachments.js";
+import { PlanningMessageAttachments } from "./PlanningAttachments.js";
 import { FormFeedback } from "./components/FormFeedback.js";
 import { PlanningModelControls } from "./PlanningModelControls.js";
 import { useCallback, useEffect, useRef, useState, type SyntheticEvent } from "react";
@@ -217,6 +219,7 @@ export function FeatureChatPanel({
   const [reading, setReading] = useState(true);
   const [readError, setReadError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const attachments = usePlanningAttachments();
   const [planningSettings, setPlanningSettings] = useState<PlanningComposerSettings | undefined>();
   const [importsRevision, setImportsRevision] = useState(0);
   const [commandPending, setCommandPending] = useState(false);
@@ -304,7 +307,10 @@ export function FeatureChatPanel({
       else await cancelTurn(projectId, featureId, current.turnId);
       if (!alive.current) return;
       attempt.current = null;
-      if (current.kind === "send") setDraft("");
+      if (current.kind === "send") {
+        setDraft("");
+        attachments.clear();
+      }
       await refresh();
     } catch (failure) {
       if (alive.current && !onAuthenticationError(failure)) {
@@ -330,6 +336,7 @@ export function FeatureChatPanel({
   const submit = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (
+      attachments.busy ||
       !profileReady ||
       chat?.feature.state !== "planning" ||
       draft.trim() === "" ||
@@ -342,6 +349,7 @@ export function FeatureChatPanel({
       command: {
         requestId: crypto.randomUUID(),
         text: draft.trim(),
+        ...(attachments.files.length === 0 ? {} : { attachments: attachments.files }),
         ...(planningSettings === undefined ? {} : { planningSettings }),
         ...(chat.skills === undefined ? {} : { skillSelectionVersion: chat.skills.version }),
       },
@@ -526,6 +534,12 @@ export function FeatureChatPanel({
                       </time>
                     </header>
                     <div className="planning-message-content">{message.content}</div>
+                    <PlanningMessageAttachments
+                      files={message.attachments ?? []}
+                      projectId={projectId}
+                      featureId={featureId}
+                      messageId={message.id}
+                    />
                     {turn === undefined ? null : (
                       <LifecycleProfileRecord
                         profile={turn.lifecycleProfile}
@@ -650,6 +664,7 @@ export function FeatureChatPanel({
               Message
             </Label>
             <PlanningComposer
+              attachments={attachments}
               project={projectName}
               controls={
                 <PlanningModelControls

@@ -1,3 +1,5 @@
+import type { PlanningAttachment } from "@kestrel/contracts";
+import { usePlanningAttachments } from "./usePlanningAttachments.js";
 import { FormFeedback } from "./components/FormFeedback.js";
 import { useEffect, useId, useRef, useState, type ReactNode, type SyntheticEvent } from "react";
 import { ArrowLeft } from "lucide-react";
@@ -15,9 +17,9 @@ export interface NewPlanningChatPanelProps {
   error: string | null;
   locked?: boolean;
   pendingMessage?: string;
-  onDraftChange?: (text: string) => void;
+  onDraftChange?: (text: string, hasAttachments?: boolean) => void;
   onAuthenticationError: (error: unknown) => boolean;
-  onSubmit: (text: string) => void;
+  onSubmit: (text: string, attachments: PlanningAttachment[]) => void;
   onBack: () => void;
 }
 
@@ -37,6 +39,7 @@ export function NewPlanningChatPanel({
   onBack,
 }: NewPlanningChatPanelProps) {
   const [draft, setDraft] = useState("");
+  const attachments = usePlanningAttachments((files) => onDraftChange?.(draft, files.length > 0));
   const composer = useRef<HTMLTextAreaElement>(null);
   const composerId = useId();
   const titleId = useId();
@@ -48,8 +51,8 @@ export function NewPlanningChatPanel({
   const submit = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
     const text = draft.trim();
-    if (!online || !readyToSubmit || pending || text === "") return;
-    onSubmit(text);
+    if (!online || !readyToSubmit || pending || attachments.busy || text === "") return;
+    onSubmit(text, attachments.files);
   };
   return (
     <section className="flex min-h-96 min-w-0 flex-1 flex-col" aria-labelledby={titleId}>
@@ -73,6 +76,7 @@ export function NewPlanningChatPanel({
             Describe the change
           </Label>
           <PlanningComposer
+            attachments={attachments}
             project={projectControl ?? projectName}
             controls={controls}
             sendLabel={pending ? "Starting…" : error === null ? "Start plan" : "Retry"}
@@ -92,7 +96,7 @@ export function NewPlanningChatPanel({
               placeholder: "A feature, a problem, or an idea…",
               onValueChange: (text) => {
                 setDraft(text);
-                onDraftChange?.(text);
+                onDraftChange?.(text, attachments.files.length > 0);
               },
             }}
           />

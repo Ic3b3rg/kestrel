@@ -1,6 +1,11 @@
+import {
+  validatePlanningAttachments,
+  planningAttachmentFingerprint,
+} from "./planning-attachments.js";
 import type { CodexSubscriptionConnection } from "@kestrel/contracts";
 import {
   PlanningFeatureRequestSchema,
+  PlanningComposerSettingsSchema,
   PlanningFeatureStartedSchema,
   RenameFactoryFeatureCommandSchema,
   StartPlanningFeatureCommandSchema,
@@ -27,6 +32,7 @@ const featureFamily =
 interface StartRow extends FeatureRow {
   requested_planning_settings?: unknown;
   first_prompt: string;
+  attachment_fingerprint?: string | null;
   skill_digests: string[];
   message_id: string;
   turn_id: string;
@@ -59,6 +65,7 @@ export function startPlanningFeature(
   connection?: CodexSubscriptionConnection,
 ): Promise<PlanningFeatureStarted> {
   const command = StartPlanningFeatureCommandSchema.parse(input);
+  const attachments = validatePlanningAttachments(command.attachments);
   return transaction(pool, async (client) => {
     const projects = await client.query<{ id: string }>(
       `SELECT id FROM projects WHERE id = (${projectFamily}) FOR UPDATE`,
@@ -67,16 +74,21 @@ export function startPlanningFeature(
     const canonicalProjectId = projects.rows[0]?.id;
     if (canonicalProjectId === undefined) throw new FactoryError("not_found");
     const starts = await client.query<StartRow>(
-      `SELECT feature.*, (${featureFamily}) AS project_id, start.first_prompt, start.requested_planning_settings, start.skill_digests, start.message_id, start.turn_id
+      `SELECT feature.*, (${featureFamily}) AS project_id, start.first_prompt, message.attachment_fingerprint, start.requested_planning_settings, start.skill_digests, start.message_id, start.turn_id
        FROM factory_planning_starts start JOIN factory_features feature ON feature.id = start.feature_id
+       JOIN factory_planning_messages message ON message.id = start.message_id
        WHERE start.actor_id = $1 AND start.request_id = $2`,
       [actorId, command.requestId],
     );
     const existing = starts.rows[0];
     if (existing !== undefined) {
       if (
-        JSON.stringify(existing.requested_planning_settings ?? null) !==
-          JSON.stringify(command.planningSettings ?? null) ||
+        JSON.stringify(
+          existing.requested_planning_settings == null
+            ? null
+            : PlanningComposerSettingsSchema.parse(existing.requested_planning_settings),
+        ) !== JSON.stringify(command.planningSettings ?? null) ||
+        (existing.attachment_fingerprint ?? null) !== planningAttachmentFingerprint(attachments) ||
         existing.project_id !== canonicalProjectId ||
         existing.first_prompt !== command.text ||
         JSON.stringify(existing.skill_digests) !== JSON.stringify(command.skillDigests)
@@ -111,6 +123,7 @@ export function startPlanningFeature(
       {
         requestId: command.requestId,
         text: command.text,
+        attachments,
         ...(command.planningSettings === undefined
           ? {}
           : { planningSettings: command.planningSettings }),

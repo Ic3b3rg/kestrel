@@ -251,6 +251,10 @@ export const CodexSubscriptionAccountSchema = z.strictObject({
 });
 
 export const CodexSubscriptionModelSchema = z.strictObject({
+  inputModalities: z
+    .array(z.enum(["text", "image", "audio"]))
+    .max(3)
+    .optional(),
   model: z.string().min(1).max(128).optional(),
   defaultReasoningEffort: z.string().min(1).max(128).optional(),
   supportedReasoningEfforts: z

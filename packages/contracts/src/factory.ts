@@ -1,4 +1,8 @@
 import {
+  PlanningAttachmentsSchema,
+  PlanningAttachmentSummarySchema,
+} from "./planning-attachments.js";
+import {
   PlanningComposerSettingsSchema,
   LifecycleProfileEvidenceSchema,
 } from "./lifecycle-profile.js";
@@ -55,6 +59,7 @@ export const FeatureListSchema = z.strictObject({
 });
 
 export const SendPlanningMessageCommandSchema = z.strictObject({
+  attachments: PlanningAttachmentsSchema.optional(),
   planningSettings: PlanningComposerSettingsSchema.optional(),
   requestId: z.uuid(),
   text: z.string().trim().min(1).max(16_000),
@@ -63,6 +68,7 @@ export const SendPlanningMessageCommandSchema = z.strictObject({
 export type SendPlanningMessageCommand = z.infer<typeof SendPlanningMessageCommandSchema>;
 
 export const PlanningMessageSchema = z.strictObject({
+  attachments: z.array(PlanningAttachmentSummarySchema).max(4).optional(),
   id: KestrelIdSchema,
   role: z.enum(["user", "assistant"]),
   content: z.string().min(1).max(32_000),

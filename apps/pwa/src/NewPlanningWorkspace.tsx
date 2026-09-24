@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   Feature,
   PlanningComposerSettings,
+  PlanningAttachment,
   StartPlanningFeatureCommand,
 } from "@kestrel/contracts";
 import { ApiClientError } from "./api.js";
@@ -103,7 +104,7 @@ export function NewPlanningWorkspace({
     return () => activeRead.current?.abort();
   }, [online, lookup]);
 
-  const submit = async (text: string) => {
+  const submit = async (text: string, attachments: PlanningAttachment[]) => {
     if (
       !online ||
       (!profileReady && attempt.current === null) ||
@@ -122,6 +123,7 @@ export function NewPlanningWorkspace({
         requestId,
         text: text.trim(),
         skillDigests: [],
+        ...(attachments.length === 0 ? {} : { attachments }),
         ...(planningSettings === undefined ? {} : { planningSettings }),
       };
       // Accepted work belongs to the workstation; navigation cannot abort this command.
@@ -204,10 +206,10 @@ export function NewPlanningWorkspace({
         pendingMessage={
           checking ? "Checking for your saved conversation…" : "Saving your first message…"
         }
-        onSubmit={(text) => void submit(text)}
+        onSubmit={(text, attachments) => void submit(text, attachments)}
         onBack={() => onNavigate({ kind: "project", projectId })}
-        onDraftChange={(text) => {
-          hasDraft.current = text.trim() !== "";
+        onDraftChange={(text, hasAttachments) => {
+          hasDraft.current = text.trim() !== "" || hasAttachments === true;
           onDraftDirtyChange(hasDraft.current);
         }}
       />
