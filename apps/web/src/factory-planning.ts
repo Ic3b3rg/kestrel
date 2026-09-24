@@ -14,6 +14,7 @@ import {
 } from "@kestrel/contracts";
 import {
   claimPlanningTurn,
+  readPlanningInputAttachments,
   completeGeneratedFactoryPlan,
   completePlanningTurn,
   isPlanningTurnRunning,
@@ -249,7 +250,21 @@ export function createFactoryPlanningProcessor({
           );
         const model = profile.model;
         cwd = await planningDirectory(config, turn.featureId);
+        const attachmentMessages = (
+          turn.purpose === "plan" || turn.threadId === null
+            ? turn.messages
+            : turn.messages.slice(-1)
+        ).filter((message) => (message.attachments?.length ?? 0) > 0);
+        const attachments =
+          attachmentMessages.length === 0
+            ? []
+            : await readPlanningInputAttachments(
+                pool,
+                turn.featureId,
+                attachmentMessages.map((message) => message.id),
+              );
         const result = await runtime.runTurn({
+          attachments,
           cwd,
           model,
           effort: profile.effort,

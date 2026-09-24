@@ -9,6 +9,8 @@ import { AxeBuilder } from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 import {
   bootstrapOperator,
+  claimPlanningTurn,
+  completePlanningTurn,
   createPool,
   createPgBoss,
   migrate,
@@ -58,7 +60,11 @@ test("authorizes folders, recovers a clone and freezes a Project profile through
   try {
     await mkdir(repository, { recursive: true });
     await mkdir(env.ARTIFACT_ROOT, { recursive: true, mode: 0o700 });
-    await mkdir(join(directory, "skills"));
+    await mkdir(join(directory, "skills", "research"), { recursive: true });
+    await writeFile(
+      join(directory, "skills", "research", "SKILL.md"),
+      "---\nname: research\ndescription: Check the source.\n---\nAsk which source supports the requirement.\n",
+    );
     process.env.KESTREL_PLANNING_SKILL_ROOT = join(directory, "skills");
     await run("/usr/bin/git", ["init", "--initial-branch=main", repository]);
     await writeFile(join(repository, "README.md"), "# Disposable notes\n");
@@ -205,6 +211,23 @@ test("authorizes folders, recovers a clone and freezes a Project profile through
     await dialog.getByRole("button", { name: "Open selected Project", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     const projectUrl = page.url();
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.getByRole("button", { name: "Open Project", exact: true }).click();
+    const otherSource = await dialog
+      .getByRole("option")
+      .filter({ hasText: "remote-notes" })
+      .getAttribute("value");
+    if (!otherSource) throw new Error("Second fixture source missing");
+    await dialog.getByLabel("Repository", { exact: true }).selectOption(otherSource);
+    await dialog.getByRole("button", { name: "Open selected Project", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    const otherProjectId = new URL(page.url()).pathname.split("/")[2];
+    if (!otherProjectId) throw new Error("Second Project missing");
+    await page.goto(`${origin}/settings/skills`);
+    await page.getByLabel("Host Skill to import").selectOption({ label: "research" });
+    await page.getByRole("button", { name: "Import Skill", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Inspect research" })).toBeVisible();
+    await page.goto(projectUrl);
     const projectId = new URL(projectUrl).pathname.split("/")[2];
     if (!projectId) throw new Error("Opened Project URL has no Project identifier");
     await page.setViewportSize({ width: 1280, height: 900 });
@@ -220,10 +243,49 @@ test("authorizes folders, recovers a clone and freezes a Project profile through
     await page.getByRole("button", { name: "New plan", exact: true }).click();
     await page
       .getByLabel("Describe the change", { exact: true })
-      .fill("Export all notes without changing them.");
+      .fill("/research Export all notes without changing them.");
+    const draftUrl = page.url();
+    await page.getByLabel("Project", { exact: true }).selectOption(otherProjectId);
+    await expect(page).toHaveURL(draftUrl.replace(projectId, otherProjectId));
+    await expect(page.getByLabel("Describe the change", { exact: true })).toHaveValue(
+      "/research Export all notes without changing them.",
+    );
     await expect(
-      page.getByText("gpt-6-astra · Effort: high · Speed: Standard", { exact: true }),
-    ).toBeVisible();
+      page.getByRole("main").getByRole("button", { name: "Start plan", exact: true }),
+    ).toBeEnabled();
+    await page.getByLabel("Project", { exact: true }).selectOption(projectId);
+    await expect(page).toHaveURL(draftUrl);
+    await expect(page.getByLabel("Model", { exact: true })).toHaveValue("gpt-6-astra");
+    await page.getByLabel("Model", { exact: true }).selectOption("gpt-5.6-sol");
+    await page.getByLabel("Reasoning effort", { exact: true }).selectOption("low");
+    await expect(page.locator("mark")).toHaveText("/research");
+    const image = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAb0lEQVR4nO3PAQkAAAyEwO9feoshgnABdLep8QUNyPEFDcjxBQ3I8QUNyPEFDcjxBQ3I8QUNyPEFDcjxBQ3I8QUNyPEFDcjxBQ3I8QUNyPEFDcjxBQ3I8QUNyPEFDcjxBQ3I8QUNyPEFDcjxBQ3IPanc8OLDQitxAAAAAElFTkSuQmCC",
+      "base64",
+    );
+    await page.getByLabel("Attach files", { exact: true }).setInputFiles([
+      { name: "layout.png", mimeType: "image/png", buffer: image },
+      {
+        name: "requirements.md",
+        mimeType: "text/plain",
+        buffer: Buffer.from("Preserve the existing export behavior."),
+      },
+    ]);
+    await expect(page.getByRole("img", { name: "Preview of layout.png" })).toBeVisible();
+    await page.setViewportSize({ width: 375, height: 812 });
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    await page.screenshot({
+      path: test.info().outputPath("composer-draft-narrow.png"),
+      animations: "disabled",
+    });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.screenshot({
+      path: test.info().outputPath("composer-draft-desktop.png"),
+      animations: "disabled",
+    });
     await page.getByRole("main").getByRole("button", { name: "Start plan", exact: true }).click();
     await expect(
       page.getByRole("heading", { name: "New plan", exact: true, level: 1 }),
@@ -236,8 +298,8 @@ test("authorizes folders, recovers a clone and freezes a Project profile through
     );
     expect(frozen.rows).toHaveLength(1);
     expect(frozen.rows[0]?.lifecycle_profile).toMatchObject({
-      modelId: "gpt-6-astra",
-      effort: "high",
+      modelId: "gpt-5.6-sol",
+      effort: "low",
       serviceTier: "default",
     });
     await app.close();
@@ -245,8 +307,61 @@ test("authorizes folders, recovers a clone and freezes a Project profile through
     await app.listen({ host: "127.0.0.1", port: Number(new URL(origin).port) });
     await page.reload();
     await expect(
-      page.getByText("Export all notes without changing them.", { exact: true }),
+      page.getByText("/research Export all notes without changing them.", { exact: true }),
     ).toBeVisible();
+    await expect(page.getByLabel("Model", { exact: true })).toHaveValue("gpt-5.6-sol");
+    await expect(page.getByLabel("Reasoning effort", { exact: true })).toHaveValue("low");
+    const retainedImage = page
+      .getByRole("list", { name: "Message attachments" })
+      .getByRole("img", { name: "layout.png" });
+    await expect(retainedImage).toBeVisible();
+    const imagePath = await retainedImage.getAttribute("src");
+    if (!imagePath) throw new Error("Retained image link missing");
+    await expect(retainedImage).toHaveJSProperty("naturalWidth", 64);
+    const response = await page.evaluate(async (url) => {
+      const response = await fetch(url, { credentials: "same-origin" });
+      return {
+        status: response.status,
+        bytes: Array.from(new Uint8Array(await response.arrayBuffer())),
+        cache: response.headers.get("cache-control"),
+      };
+    }, imagePath);
+    expect(response.status).toBe(200);
+    expect(Buffer.from(response.bytes)).toEqual(image);
+    expect(response.cache).toBe("no-store");
+    expect((await app.inject({ method: "GET", url: imagePath })).statusCode).toBe(401);
+    const queued = await owner.query<{ id: string }>(
+      "SELECT id FROM factory_planning_turns WHERE state = 'queued'",
+    );
+    const queuedId = queued.rows[0]?.id;
+    if (!queuedId) throw new Error("No queued fixture turn");
+    const turn = await claimPlanningTurn(pool, queuedId);
+    if (!turn) throw new Error("Accepted turn missing");
+    await completePlanningTurn(pool, turn, { text: "Which export format?", title: "Export notes" });
+    await page.reload();
+    await expect(page.getByRole("region", { name: "Active Planning Skills" })).toContainText(
+      "research",
+    );
+    await page.getByLabel("Message", { exact: true }).fill("Use Markdown and keep the same model.");
+    await expect(page.getByRole("button", { name: "Send message", exact: true })).toBeEnabled();
+    await page.getByLabel("Message", { exact: true }).press("Control+Enter");
+    await expect(
+      page
+        .getByRole("list", { name: "Conversation" })
+        .getByText("Use Markdown and keep the same model.", { exact: true }),
+    ).toBeVisible();
+    const profiles = await owner.query<{ lifecycle_profile: { modelId: string; effort: string } }>(
+      "SELECT lifecycle_profile FROM factory_planning_turns WHERE feature_id = $1 ORDER BY created_at",
+      [turn.featureId],
+    );
+    expect(profiles.rows).toHaveLength(2);
+    expect(profiles.rows[1]?.lifecycle_profile).toMatchObject({
+      modelId: "gpt-5.6-sol",
+      effort: "low",
+    });
+    await page.goto(`${origin}/projects/${projectId}/settings`);
+    await expect(page.getByLabel("Model", { exact: true })).toHaveValue("value:gpt-6-astra");
+    await expect(page.getByLabel("Reasoning effort", { exact: true })).toHaveValue("value:high");
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   } finally {
     await app?.close();

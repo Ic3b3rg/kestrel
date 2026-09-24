@@ -1,6 +1,11 @@
+import {
+  validatePlanningAttachments,
+  planningAttachmentFingerprint,
+} from "./planning-attachments.js";
 import type { CodexSubscriptionConnection } from "@kestrel/contracts";
 import {
   PlanningFeatureRequestSchema,
+  PlanningComposerSettingsSchema,
   PlanningFeatureStartedSchema,
   RenameFactoryFeatureCommandSchema,
   StartPlanningFeatureCommandSchema,
@@ -25,7 +30,9 @@ const featureFamily =
   "SELECT COALESCE(canonical_project_id, id) FROM projects WHERE id = feature.project_id";
 
 interface StartRow extends FeatureRow {
+  requested_planning_settings?: unknown;
   first_prompt: string;
+  attachment_fingerprint?: string | null;
   skill_digests: string[];
   message_id: string;
   turn_id: string;
@@ -49,7 +56,7 @@ async function transaction<T>(
   }
 }
 
-export function startPlanningFeature(
+export async function startPlanningFeature(
   pool: DatabasePool,
   boss: DiagnosticJobSender,
   projectId: string,
@@ -58,6 +65,7 @@ export function startPlanningFeature(
   connection?: CodexSubscriptionConnection,
 ): Promise<PlanningFeatureStarted> {
   const command = StartPlanningFeatureCommandSchema.parse(input);
+  const attachments = await validatePlanningAttachments(command.attachments);
   return transaction(pool, async (client) => {
     const projects = await client.query<{ id: string }>(
       `SELECT id FROM projects WHERE id = (${projectFamily}) FOR UPDATE`,
@@ -66,14 +74,21 @@ export function startPlanningFeature(
     const canonicalProjectId = projects.rows[0]?.id;
     if (canonicalProjectId === undefined) throw new FactoryError("not_found");
     const starts = await client.query<StartRow>(
-      `SELECT feature.*, (${featureFamily}) AS project_id, start.first_prompt, start.skill_digests, start.message_id, start.turn_id
+      `SELECT feature.*, (${featureFamily}) AS project_id, start.first_prompt, message.attachment_fingerprint, start.requested_planning_settings, start.skill_digests, start.message_id, start.turn_id
        FROM factory_planning_starts start JOIN factory_features feature ON feature.id = start.feature_id
+       JOIN factory_planning_messages message ON message.id = start.message_id
        WHERE start.actor_id = $1 AND start.request_id = $2`,
       [actorId, command.requestId],
     );
     const existing = starts.rows[0];
     if (existing !== undefined) {
       if (
+        JSON.stringify(
+          existing.requested_planning_settings == null
+            ? null
+            : PlanningComposerSettingsSchema.parse(existing.requested_planning_settings),
+        ) !== JSON.stringify(command.planningSettings ?? null) ||
+        (existing.attachment_fingerprint ?? null) !== planningAttachmentFingerprint(attachments) ||
         existing.project_id !== canonicalProjectId ||
         existing.first_prompt !== command.text ||
         JSON.stringify(existing.skill_digests) !== JSON.stringify(command.skillDigests)
@@ -105,14 +120,21 @@ export function startPlanningFeature(
       client,
       boss,
       feature,
-      { requestId: command.requestId, text: command.text },
+      {
+        requestId: command.requestId,
+        text: command.text,
+        attachments,
+        ...(command.planningSettings === undefined
+          ? {}
+          : { planningSettings: command.planningSettings }),
+      },
       undefined,
       command.skillDigests,
       connection,
     );
     await client.query(
-      `INSERT INTO factory_planning_starts (feature_id,actor_id,request_id,first_prompt,skill_digests,message_id,turn_id)
-       VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7)`,
+      `INSERT INTO factory_planning_starts (feature_id,actor_id,request_id,first_prompt,skill_digests,message_id,turn_id,requested_planning_settings)
+       VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8::jsonb)`,
       [
         feature.id,
         actorId,
@@ -121,6 +143,7 @@ export function startPlanningFeature(
         JSON.stringify(command.skillDigests),
         accepted.messageId,
         accepted.turnId,
+        JSON.stringify(command.planningSettings ?? null),
       ],
     );
     return PlanningFeatureStartedSchema.parse({ ...accepted, feature: mapFactoryFeature(feature) });

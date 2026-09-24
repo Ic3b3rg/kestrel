@@ -1,8 +1,12 @@
+import { PlanningAttachmentsSchema } from "./planning-attachments.js";
+import { PlanningComposerSettingsSchema } from "./lifecycle-profile.js";
 import { z } from "zod";
 import { FeatureSchema, PlanningTurnAcceptedSchema } from "./factory.js";
 import { PlanningSkillDigestsSchema } from "./factory-skills.js";
 
 export const StartPlanningFeatureCommandSchema = z.strictObject({
+  attachments: PlanningAttachmentsSchema.optional(),
+  planningSettings: PlanningComposerSettingsSchema.optional(),
   requestId: z.uuid(),
   text: z.string().trim().min(1).max(16_000).regex(/\S/u),
   skillDigests: PlanningSkillDigestsSchema.default([]),

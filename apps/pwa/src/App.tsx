@@ -228,9 +228,14 @@ export function App() {
         nextRoute.kind === "feature" &&
         route.projectId === nextRoute.projectId &&
         route.featureId === nextRoute.featureId;
+      const samePlanningDraft =
+        route.kind === "planning" &&
+        nextRoute.kind === "planning" &&
+        route.requestId === nextRoute.requestId;
       if (
         planDirty &&
         !sameFeature &&
+        !samePlanningDraft &&
         !window.confirm(
           route.kind === "planning"
             ? "Discard this unsent prompt and leave planning?"
@@ -240,8 +245,12 @@ export function App() {
         return;
       const path = appPath(nextRoute);
       if (`${window.location.pathname}${window.location.search}` !== path) {
-        historyPosition.current += 1;
-        window.history.pushState({ kestrelPosition: historyPosition.current }, "", path);
+        if (samePlanningDraft) {
+          window.history.replaceState({ kestrelPosition: historyPosition.current }, "", path);
+        } else {
+          historyPosition.current += 1;
+          window.history.pushState({ kestrelPosition: historyPosition.current }, "", path);
+        }
       }
 
       setRoute(nextRoute);
@@ -777,7 +786,11 @@ export function App() {
       case "planning":
         return (
           <NewPlanningWorkspace
-            key={`${route.projectId}/${route.requestId}`}
+            projects={(projectInbox?.projects ?? []).map((project) => ({
+              id: project.id,
+              name: projectLabel(project),
+            }))}
+            key={route.requestId}
             projectId={route.projectId}
             projectName={
               navigationProject === undefined ? "Project" : projectLabel(navigationProject)

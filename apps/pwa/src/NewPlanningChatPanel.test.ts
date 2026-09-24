@@ -67,7 +67,7 @@ describe("blank planning conversation", () => {
     await render({ onSubmit });
     expect(document.activeElement).toBe(textarea());
     expect(container.querySelector("label")?.htmlFor).toBe(textarea().id);
-    expect(container.querySelectorAll("input")).toHaveLength(0);
+    expect(container.querySelectorAll('input:not([type="file"])')).toHaveLength(0);
     expect(container.textContent).toContain("Reports");
     expect(container.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(
       true,
@@ -82,7 +82,7 @@ describe("blank planning conversation", () => {
     await render({ onSubmit });
     await type("  Let people search saved reports.  ");
     await submit();
-    expect(onSubmit).toHaveBeenCalledExactlyOnceWith("Let people search saved reports.");
+    expect(onSubmit).toHaveBeenCalledExactlyOnceWith("Let people search saved reports.", []);
     await render({ onSubmit, pending: true });
     expect(textarea().value).toBe("  Let people search saved reports.  ");
     expect(textarea().disabled).toBe(true);
@@ -95,7 +95,7 @@ describe("blank planning conversation", () => {
     expect(textarea().value).toBe("  Let people search saved reports.  ");
     await submit();
     expect(onSubmit).toHaveBeenCalledTimes(2);
-    expect(onSubmit.mock.calls[1]).toEqual(["Let people search saved reports."]);
+    expect(onSubmit.mock.calls[1]).toEqual(["Let people search saved reports.", []]);
   });
 
   it("focuses the composer after its saved-request check without stealing focus from another control", async () => {
@@ -119,7 +119,7 @@ describe("blank planning conversation", () => {
     expect(container.textContent).toContain("Reconnect to start");
     await render({ onSubmit });
     await submit();
-    expect(onSubmit).toHaveBeenCalledExactlyOnceWith("Search archived reports too.");
+    expect(onSubmit).toHaveBeenCalledExactlyOnceWith("Search archived reports too.", []);
   });
 
   it("supports modified Enter without intercepting multiline input or composition", async () => {
@@ -150,7 +150,7 @@ describe("blank planning conversation", () => {
       );
       await Promise.resolve();
     });
-    expect(onSubmit).toHaveBeenCalledExactlyOnceWith("Search saved reports.");
+    expect(onSubmit).toHaveBeenCalledExactlyOnceWith("Search saved reports.", []);
   });
 
   it("returns to the board through a native button", async () => {

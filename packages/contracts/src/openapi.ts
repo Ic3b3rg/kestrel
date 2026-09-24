@@ -1854,6 +1854,34 @@ export const openApiDocument = sortJson({
         },
       },
     },
+    "/api/v1/projects/{projectId}/features/{featureId}/messages/{messageId}/attachments/{attachmentId}":
+      {
+        parameters: [
+          ...factoryParameters(),
+          ...["messageId", "attachmentId"].map((name) => ({
+            name,
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          })),
+        ],
+        get: {
+          operationId: "readPlanningAttachment",
+          responses: {
+            ...factoryErrors,
+            "200": {
+              description:
+                "Retained attachment bytes. Authenticated, Project-scoped and never cached.",
+              content: Object.fromEntries(
+                ["image/png", "image/jpeg", "image/webp", "text/plain"].map((type) => [
+                  type,
+                  { schema: { type: "string", format: "binary" } },
+                ]),
+              ),
+            },
+          },
+        },
+      },
     "/api/v1/projects/{projectId}/features/{featureId}/messages": {
       parameters: factoryParameters(),
       post: factoryTurnMutation("sendPlanningMessage", "SendPlanningMessageCommand"),

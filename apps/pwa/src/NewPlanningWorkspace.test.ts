@@ -194,3 +194,74 @@ it("preserves the private draft during session suspension and resolves accepted 
   expect(props.onStarted).toHaveBeenCalledExactlyOnceWith(started.feature);
   expect(api.start).toHaveBeenCalledOnce();
 });
+
+it("sends a selected conversation model from the compact composer", async () => {
+  api.start.mockResolvedValue(started);
+  await render();
+  await type("Plan the new dashboard");
+  const selector = container.querySelector<HTMLSelectElement>('select[aria-label="Model"]');
+  expect(selector).not.toBeNull();
+  await act(async () => {
+    if (selector === null) throw new Error("Missing model selector");
+    selector.value = "fixture-model";
+    selector.dispatchEvent(new Event("change", { bubbles: true }));
+    await Promise.resolve();
+  });
+  await submit();
+  expect(api.start).toHaveBeenCalledWith(
+    projectId,
+    expect.objectContaining({
+      planningSettings: { model: { kind: "explicit", value: "fixture-model" } },
+    }),
+  );
+  expect(container.textContent).not.toContain("Planning profile");
+});
+
+it("keeps an attached text file through an uncertain first-message retry", async () => {
+  api.start.mockRejectedValueOnce(new TypeError("Lost response")).mockResolvedValue(started);
+  await render();
+  await type("Use the attached requirements");
+  const picker = container.querySelector<HTMLInputElement>('input[type="file"]');
+  expect(picker).not.toBeNull();
+  await act(async () => {
+    if (picker === null) throw new Error("Missing attachment picker");
+    Object.defineProperty(picker, "files", {
+      value: [new File(["Keep exports"], "notes.txt", { type: "text/plain" })],
+    });
+    picker.dispatchEvent(new Event("change", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+  expect(container.textContent).toContain("notes.txt");
+  await submit();
+  await submit();
+  expect(api.start.mock.calls[0]).toEqual(api.start.mock.calls[1]);
+  expect(api.start).toHaveBeenCalledWith(
+    projectId,
+    expect.objectContaining({
+      attachments: [{ kind: "text", name: "notes.txt", text: "Keep exports" }],
+    }),
+  );
+});
+
+it("updates the recovery route when changing Project and retains the draft", async () => {
+  const other = { id: "01991c36-7f90-7000-8000-000000000009", name: "Notes" };
+  props.projects = [{ id: projectId, name: "Reports" }, other];
+  await render();
+  await type("Keep this unsent prompt");
+  await act(async () => {
+    const select = container.querySelector<HTMLSelectElement>('select[aria-label="Project"]');
+    if (!select) throw new Error("Missing Project picker");
+    select.value = other.id;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    await Promise.resolve();
+  });
+  expect(props.onNavigate).toHaveBeenCalledWith({
+    kind: "planning",
+    projectId: other.id,
+    requestId: props.requestId,
+  });
+  props = { ...props, projectId: other.id, projectName: other.name };
+  await render();
+  expect(container.querySelector("textarea")?.value).toBe("Keep this unsent prompt");
+  expect(api.lookup).toHaveBeenLastCalledWith(other.id, props.requestId, expect.any(AbortSignal));
+});

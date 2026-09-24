@@ -1,26 +1,32 @@
+import type { PlanningAttachment } from "@kestrel/contracts";
+import { usePlanningAttachments } from "./usePlanningAttachments.js";
 import { FormFeedback } from "./components/FormFeedback.js";
-import { useEffect, useId, useRef, useState, type SyntheticEvent } from "react";
-import { ArrowLeft, ArrowUp } from "lucide-react";
+import { useEffect, useId, useRef, useState, type ReactNode, type SyntheticEvent } from "react";
+import { ArrowLeft } from "lucide-react";
 import { Button } from "./components/ui/button.js";
 import { Label } from "./components/ui/label.js";
-import { PlanningSkillComposer } from "./PlanningSkillComposer.js";
+import { PlanningComposer } from "./PlanningComposer.js";
 
 export interface NewPlanningChatPanelProps {
   projectName: string;
+  controls?: ReactNode;
+  projectControl?: ReactNode;
   online: boolean;
   readyToSubmit?: boolean;
   pending: boolean;
   error: string | null;
   locked?: boolean;
   pendingMessage?: string;
-  onDraftChange?: (text: string) => void;
+  onDraftChange?: (text: string, hasAttachments?: boolean) => void;
   onAuthenticationError: (error: unknown) => boolean;
-  onSubmit: (text: string) => void;
+  onSubmit: (text: string, attachments: PlanningAttachment[]) => void;
   onBack: () => void;
 }
 
 export function NewPlanningChatPanel({
   projectName,
+  controls,
+  projectControl,
   online,
   readyToSubmit = true,
   pending,
@@ -33,6 +39,7 @@ export function NewPlanningChatPanel({
   onBack,
 }: NewPlanningChatPanelProps) {
   const [draft, setDraft] = useState("");
+  const attachments = usePlanningAttachments((files) => onDraftChange?.(draft, files.length > 0));
   const composer = useRef<HTMLTextAreaElement>(null);
   const composerId = useId();
   const titleId = useId();
@@ -44,8 +51,8 @@ export function NewPlanningChatPanel({
   const submit = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
     const text = draft.trim();
-    if (!online || !readyToSubmit || pending || text === "") return;
-    onSubmit(text);
+    if (!online || !readyToSubmit || pending || attachments.busy || text === "") return;
+    onSubmit(text, attachments.files);
   };
   return (
     <section className="flex min-h-96 min-w-0 flex-1 flex-col" aria-labelledby={titleId}>
@@ -65,52 +72,34 @@ export function NewPlanningChatPanel({
           </p>
         </header>
         <form onSubmit={submit} className="space-y-3" aria-busy={pending}>
-          <div className="rounded-xl border border-border bg-card p-3 focus-within:border-ring focus-within:ring-1 focus-within:ring-ring/50 sm:p-4">
-            <Label htmlFor={composerId} className="sr-only">
-              Describe the change
-            </Label>
-            <PlanningSkillComposer
-              textareaRef={composer}
-              id={composerId}
-              online={online}
-              onAuthenticationError={onAuthenticationError}
-              autoFocus
-              name="prompt"
-              rows={5}
-              maxLength={16_000}
-              value={draft}
-              disabled={pending || locked}
-              describedBy={helpId}
-              placeholder="A feature, a problem, or an idea…"
-              className="max-h-80 min-h-32 resize-y border-0 bg-transparent p-1 shadow-none focus-visible:ring-0 dark:bg-transparent"
-              onValueChange={(text) => {
+          <Label htmlFor={composerId} className="sr-only">
+            Describe the change
+          </Label>
+          <PlanningComposer
+            attachments={attachments}
+            project={projectControl ?? projectName}
+            controls={controls}
+            sendLabel={pending ? "Starting…" : error === null ? "Start plan" : "Retry"}
+            canSend={online && readyToSubmit && !pending && draft.trim() !== ""}
+            input={{
+              textareaRef: composer,
+              id: composerId,
+              online,
+              onAuthenticationError,
+              autoFocus: true,
+              name: "prompt",
+              rows: 5,
+              maxLength: 16_000,
+              value: draft,
+              disabled: pending || locked,
+              describedBy: helpId,
+              placeholder: "A feature, a problem, or an idea…",
+              onValueChange: (text) => {
                 setDraft(text);
-                onDraftChange?.(text);
-              }}
-              onKeyDown={(event) => {
-                if (
-                  event.key === "Enter" &&
-                  (event.ctrlKey || event.metaKey) &&
-                  !event.nativeEvent.isComposing
-                ) {
-                  event.preventDefault();
-                  event.currentTarget.form?.requestSubmit();
-                }
-              }}
-            />
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-3">
-                <p className="text-xs text-muted-foreground">Ctrl or ⌘ + Enter to send</p>
-              </div>
-              <Button
-                type="submit"
-                disabled={!online || !readyToSubmit || pending || draft.trim() === ""}
-              >
-                {pending ? "Starting…" : error === null ? "Start plan" : "Retry"}
-                <ArrowUp aria-hidden="true" />
-              </Button>
-            </div>
-          </div>
+                onDraftChange?.(text, attachments.files.length > 0);
+              },
+            }}
+          />
           {pending ? (
             <FormFeedback id={helpId} kind="pending">
               {pendingMessage}

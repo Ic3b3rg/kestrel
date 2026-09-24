@@ -184,6 +184,7 @@ it("accepts the first message, merged Skill selection and queue job in one trans
     JSON.stringify([selected]),
     messageId,
     turnId,
+    "null",
   ]);
   const statements = fixture.query.mock.calls.map(([sql]) => sql);
   expect(statements[0]).toBe("BEGIN");
@@ -320,4 +321,70 @@ it("freezes the concrete profile in the same transaction as the accepted first m
   if (model === undefined) throw new Error("Fixture model missing");
   model.defaultReasoningEffort = "changed";
   expect(frozen.effort).toBe("balanced");
+});
+
+it("uses conversation model and effort without changing Project defaults", async () => {
+  const fixture = startFixture();
+  const connection = CodexSubscriptionConnectionSchema.parse({
+    schemaVersion: 1,
+    state: "ready",
+    reason: null,
+    cli: { version: "0.152.1", supported: true, protocol: "app_server_v2" },
+    account: { authentication: "chatgpt", email: "operator@example.test", plan: "plus" },
+    models: [
+      {
+        id: "example",
+        model: "wire-example",
+        displayName: "Example",
+        isDefault: true,
+        defaultReasoningEffort: "balanced",
+        supportedReasoningEfforts: [
+          { reasoningEffort: "balanced", description: "Balanced" },
+          { reasoningEffort: "deep", description: "Deep" },
+        ],
+        serviceTiers: [],
+        defaultServiceTier: null,
+      },
+    ],
+    usage: { availability: "available", primary: null, secondary: null },
+    checkedAt: "2026-09-23T10:00:00.000Z",
+  });
+  await startPlanningFeature(
+    fixture.pool,
+    fixture.boss,
+    projectId,
+    actorId,
+    {
+      ...command,
+      planningSettings: {
+        model: { kind: "explicit", value: "example" },
+        effort: { kind: "explicit", value: "deep" },
+      },
+    },
+    connection,
+  );
+  const write = fixture.query.mock.calls.find(([sql]) =>
+    sql.startsWith("INSERT INTO factory_planning_turns"),
+  );
+  const frozen = FrozenLifecycleProfileSchema.parse(JSON.parse(String(write?.[1]?.[7])));
+  expect(frozen).toMatchObject({
+    phase: "planning",
+    runtimeId: "codex_subscription",
+    modelId: "example",
+    model: "wire-example",
+    effort: "deep",
+    serviceTier: "default",
+    skills: [],
+    versions: { installation: 0, project: 0 },
+  });
+  expect(fixture.query.mock.calls.at(-1)?.[0]).toBe("COMMIT");
+  const model = connection.models[0];
+  if (model === undefined) throw new Error("Fixture model missing");
+  model.defaultReasoningEffort = "changed";
+  expect(frozen.effort).toBe("deep");
+  expect(
+    fixture.query.mock.calls.some(([sql]) =>
+      sql.startsWith("INSERT INTO lifecycle_phase_profiles"),
+    ),
+  ).toBe(false);
 });

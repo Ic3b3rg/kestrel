@@ -1,7 +1,13 @@
 import { FormFeedback } from "./components/FormFeedback.js";
-import { LifecycleProfileSummary } from "./LifecycleProfilePanel.js";
+import { PlanningModelControls } from "./PlanningModelControls.js";
+import { NativeSelect } from "./components/ui/native-select.js";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Feature, StartPlanningFeatureCommand } from "@kestrel/contracts";
+import type {
+  Feature,
+  PlanningComposerSettings,
+  PlanningAttachment,
+  StartPlanningFeatureCommand,
+} from "@kestrel/contracts";
 import { ApiClientError } from "./api.js";
 import { fetchPlanningFeatureRequest, startPlanningFeature } from "./factory-start-api.js";
 import { planningRequestError } from "./FeatureNavigation.js";
@@ -12,6 +18,7 @@ import type { AppRoute } from "./app-route.js";
 export interface NewPlanningWorkspaceProps {
   projectId: string;
   projectName: string;
+  projects?: { id: string; name: string }[];
   requestId: string;
   online: boolean;
   onStarted: (feature: Feature) => void;
@@ -23,6 +30,7 @@ export interface NewPlanningWorkspaceProps {
 export function NewPlanningWorkspace({
   projectId,
   projectName,
+  projects,
   requestId,
   online,
   onStarted,
@@ -30,6 +38,7 @@ export function NewPlanningWorkspace({
   onAuthenticationError,
   onDraftDirtyChange,
 }: NewPlanningWorkspaceProps) {
+  const [planningSettings, setPlanningSettings] = useState<PlanningComposerSettings | undefined>();
   const [profileReady, setProfileReady] = useState(false);
   const [checking, setChecking] = useState(false);
   const [readError, setReadError] = useState<string | null>(null);
@@ -92,7 +101,7 @@ export function NewPlanningWorkspace({
     return () => activeRead.current?.abort();
   }, [online, lookup]);
 
-  const submit = async (text: string) => {
+  const submit = async (text: string, attachments: PlanningAttachment[]) => {
     if (
       !online ||
       (!profileReady && attempt.current === null) ||
@@ -111,6 +120,8 @@ export function NewPlanningWorkspace({
         requestId,
         text: text.trim(),
         skillDigests: [],
+        ...(attachments.length === 0 ? {} : { attachments }),
+        ...(planningSettings === undefined ? {} : { planningSettings }),
       };
       // Accepted work belongs to the workstation; navigation cannot abort this command.
       const result = await startPlanningFeature(projectId, attempt.current);
@@ -146,13 +157,42 @@ export function NewPlanningWorkspace({
           </Button>
         </FormFeedback>
       )}
-      <LifecycleProfileSummary
-        phase="planning"
-        projectId={projectId}
-        online={online}
-        onReady={setProfileReady}
-      />
       <NewPlanningChatPanel
+        controls={
+          <PlanningModelControls
+            key={projectId}
+            projectId={projectId}
+            online={online}
+            disabled={pending || checking || attempt.current !== null}
+            onReady={setProfileReady}
+            onSettingsChange={setPlanningSettings}
+          />
+        }
+        projectControl={
+          projects === undefined ? (
+            projectName
+          ) : (
+            <NativeSelect
+              aria-label="Project"
+              value={projectId}
+              disabled={pending || checking || attempt.current !== null || !online}
+              onChange={(event) => {
+                const project = projects.find((item) => item.id === event.target.value);
+                if (project !== undefined) {
+                  onNavigate({ kind: "planning", projectId: project.id, requestId });
+                  setPlanningSettings(undefined);
+                  setProfileReady(false);
+                }
+              }}
+            >
+              {projects.map((project) => (
+                <option value={project.id} key={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </NativeSelect>
+          )
+        }
         projectName={projectName}
         onAuthenticationError={onAuthenticationError}
         online={online}
@@ -163,10 +203,10 @@ export function NewPlanningWorkspace({
         pendingMessage={
           checking ? "Checking for your saved conversation…" : "Saving your first message…"
         }
-        onSubmit={(text) => void submit(text)}
+        onSubmit={(text, attachments) => void submit(text, attachments)}
         onBack={() => onNavigate({ kind: "project", projectId })}
-        onDraftChange={(text) => {
-          hasDraft.current = text.trim() !== "";
+        onDraftChange={(text, hasAttachments) => {
+          hasDraft.current = text.trim() !== "" || hasAttachments === true;
           onDraftDirtyChange(hasDraft.current);
         }}
       />

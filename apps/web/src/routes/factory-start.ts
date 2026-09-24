@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import {
   ApiErrorSchema,
+  PLANNING_BODY_LIMIT,
   FeatureSchema,
   KestrelIdSchema,
   PlanningFeatureRequestSchema,
@@ -67,7 +68,7 @@ export function registerFactoryStartRoutes(
     "/api/v1/projects/:projectId/planning",
     {
       config: AUTHENTICATED_MUTATION_ROUTE_CONFIG,
-      bodyLimit: 100_000,
+      bodyLimit: PLANNING_BODY_LIMIT,
       schema: {
         params: schema(projectParams),
         body: schema(StartPlanningFeatureCommandSchema),

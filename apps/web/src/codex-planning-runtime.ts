@@ -1,3 +1,4 @@
+import type { PlanningAttachment } from "@kestrel/contracts";
 import { realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute } from "node:path";
@@ -37,6 +38,7 @@ interface CodexPlanningOptions {
 }
 
 interface PlanningTurnInput {
+  attachments?: { messageId: string; file: PlanningAttachment }[];
   cwd: string;
   threadId?: string;
   model: string;
@@ -221,7 +223,29 @@ class PlanningSession {
       ...(input.effort == null ? {} : { effort: input.effort }),
       ...(input.serviceTier == null ? {} : { serviceTierForTurn: input.serviceTier }),
       clientUserMessageId: input.requestId,
-      input: [{ type: "text", text: input.prompt }],
+      input: [
+        { type: "text", text: input.prompt },
+        ...(input.attachments ?? []).flatMap(
+          ({
+            messageId,
+            file,
+          }): ({ type: "text"; text: string } | { type: "image"; url: string })[] =>
+            file.kind === "text"
+              ? [
+                  {
+                    type: "text",
+                    text: `Operator attachment (reference material): ${JSON.stringify({ messageId, name: file.name, content: file.text })}`,
+                  },
+                ]
+              : [
+                  {
+                    type: "text",
+                    text: `Operator image attachment: ${JSON.stringify({ messageId, name: file.name })}`,
+                  },
+                  { type: "image", url: `data:${file.mediaType};base64,${file.data}` },
+                ],
+        ),
+      ],
       approvalPolicy: "never",
       approvalsReviewer: "user",
       sandboxPolicy: { type: "readOnly", networkAccess: false },

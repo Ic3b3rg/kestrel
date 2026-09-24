@@ -77,3 +77,61 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX_PLANNING === "1")(
     }, 150_000);
   },
 );
+
+describe.runIf(process.env.KESTREL_LIVE_CODEX_ATTACHMENTS === "1")(
+  "Codex attachment live conformance",
+  () => {
+    it("reads actual image pixels and retained text in one planning turn", async () => {
+      const { stdout } = await execFileAsync("/usr/bin/which", ["codex"], {
+        encoding: "utf8",
+        timeout: 5000,
+      });
+      const executable = await realpath(process.env.KESTREL_CODEX_EXECUTABLE ?? stdout.trim());
+      const connection = await createCodexAppServerAgentRuntime({ executable }).readConnection();
+      expect(connection.state).toBe("ready");
+      const model =
+        connection.models.find((model) => model.isDefault)?.model ??
+        connection.models.find((model) => model.isDefault)?.id;
+      if (!model) throw new Error("No available Codex model");
+      const cwd = await realpath(await mkdtemp(join(tmpdir(), "kestrel-live-composer-")));
+      try {
+        const result = await createCodexPlanningRuntime({ executable, timeoutMs: 90000 }).runTurn({
+          cwd,
+          model,
+          requestId: "kestrel-composer-attachment-fixture",
+          onThread: async () => {},
+          prompt:
+            "Disposable verification fixture. Read the attached image and text. Return JSON with color (the image dominant color in English, lowercase) and keyword (the exact code in the text file). Do not use tools.",
+          outputSchema: {
+            type: "object",
+            properties: { color: { type: "string" }, keyword: { type: "string" } },
+            required: ["color", "keyword"],
+            additionalProperties: false,
+          },
+          attachments: [
+            {
+              messageId: "fixture",
+              file: {
+                kind: "image",
+                name: "sample.png",
+                mediaType: "image/png",
+                data: "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAb0lEQVR4nO3PAQkAAAyEwO9feoshgnABdLep8QUNyPEFDcjxBQ3I8QUNyPEFDcjxBQ3I8QUNyPEFDcjxBQ3I8QUNyPEFDcjxBQ3I8QUNyPEFDcjxBQ3I8QUNyPEFDcjxBQ3I8QUNyPEFDcjxBQ3IPanc8OLDQitxAAAAAElFTkSuQmCC",
+              },
+            },
+            {
+              messageId: "fixture",
+              file: {
+                kind: "text",
+                name: "code.txt",
+                text: "Verification code: NORTHERN-OTTER-47",
+              },
+            },
+          ],
+        });
+        expect(JSON.parse(result.text)).toEqual({ color: "red", keyword: "NORTHERN-OTTER-47" });
+      } finally {
+        await rm(cwd, { recursive: true, force: true });
+      }
+    }, 120000);
+  },
+);
