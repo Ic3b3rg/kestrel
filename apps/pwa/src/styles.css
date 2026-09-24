@@ -885,8 +885,13 @@
     margin: 0;
     padding: 1rem;
     border: 1px solid var(--border);
-    border-left: 1px solid var(--warning);
-    background: var(--warning-surface);
+    background: var(--muted);
+  }
+
+  .repository-loading {
+    margin: 0;
+    color: var(--muted-foreground);
+    font-size: 0.875rem;
   }
 
   .repository-setup-state h3,
@@ -906,10 +911,29 @@
   }
 
   .repository-setup-action {
+    font-size: 0.8125rem;
+  }
+
+  .repository-setup-action summary {
+    width: fit-content;
+    padding-block: 0.25rem;
+    color: var(--muted-foreground);
+    cursor: pointer;
+  }
+
+  .repository-setup-action summary:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 3px;
+  }
+
+  .repository-setup-action > div {
     display: grid;
     gap: 0.5rem;
-    padding-top: 0.75rem;
-    border-top: 1px solid var(--border);
+    padding-top: 0.5rem;
+  }
+
+  .repository-setup-action p {
+    margin: 0;
   }
 
   .repository-setup-action code {
@@ -1213,9 +1237,8 @@
     overflow-wrap: anywhere;
   }
 
-  .repository-access > .repository-setup-action {
-    padding: 1rem;
-    border: 1px solid var(--border);
+  .repository-access .repository-setup-action {
+    margin-top: 0.75rem;
   }
 
   .repository-access-offline {

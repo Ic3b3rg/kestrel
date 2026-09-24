@@ -445,7 +445,7 @@ test.describe("local-first Project flow", () => {
       const option = openProjectDialog.getByRole("option", { name: /^kestrel/u });
       const repositoryId = await option.getAttribute("value");
       if (repositoryId === null) throw new Error("Kestrel repository identity is missing");
-      await openProjectDialog.getByLabel("Repository").selectOption(repositoryId);
+      await openProjectDialog.getByLabel("Repository", { exact: true }).selectOption(repositoryId);
       await openProjectDialog.getByRole("button", { name: "Open selected Project" }).click();
     } else {
       await kestrelLink.click();
@@ -457,12 +457,21 @@ test.describe("local-first Project flow", () => {
     const inventoryUrl = "**/api/v1/local-repository-sources";
     const trigger = page.getByRole("button", { name: "Open Project", exact: true });
     await expect(trigger).toBeEnabled();
-    const trustedHostCommand =
-      "npm run authorize-repository-root -- /absolute/path/to/authorized-parent";
+    const trustedHostCommand = "kestrel authorize";
     const assertGuidedState = async (title: string) => {
       const dialog = page.getByRole("dialog", { name: "Open an authorized repository" });
       await expect(dialog.getByRole("heading", { name: title })).toBeVisible();
-      await expect(dialog.getByText(trustedHostCommand, { exact: true })).toBeVisible();
+      const command = dialog.getByText(trustedHostCommand, { exact: true });
+      await expect(command).toBeHidden();
+      await dialog.getByText("Authorize a folder", { exact: true }).focus();
+      await page.keyboard.press("Enter");
+      await expect(command).toBeVisible();
+      if (page.viewportSize()?.width === 320) {
+        expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+          true,
+        );
+        await page.screenshot({ path: test.info().outputPath("folder-help-mobile.png") });
+      }
       await expect(dialog.locator("form")).toBeHidden();
       await expect(dialog.locator('input[type="text"], input[type="file"]')).toHaveCount(0);
       const accessibility = await new AxeBuilder({ page })
@@ -475,7 +484,10 @@ test.describe("local-first Project flow", () => {
     await trigger.focus();
     await page.keyboard.press("Enter");
     await loading.observed;
-    await assertGuidedState("Checking repository setup");
+    const pendingDialog = page.getByRole("dialog", { name: "Open an authorized repository" });
+    await expect(pendingDialog.getByRole("status")).toHaveText("Reading repositories…");
+    await expect(pendingDialog.locator(".repository-setup-state, details")).toHaveCount(0);
+    await page.screenshot({ path: test.info().outputPath("repository-loading.png") });
     await page.keyboard.press("Escape");
     await expect(trigger).toBeFocused();
     loading.release();
@@ -500,7 +512,7 @@ test.describe("local-first Project flow", () => {
       await page.unroute(inventoryUrl, handler);
     };
 
-    await verifyInventoryState("no_configured_roots", "No repository roots are configured");
+    await verifyInventoryState("no_configured_roots", "No folders authorized yet");
     await verifyInventoryState("no_repositories_found", "No Git repositories were found");
 
     const failDiscovery = async (route: Route) => {
@@ -525,18 +537,38 @@ test.describe("local-first Project flow", () => {
     await page.unroute(inventoryUrl, failDiscovery);
 
     await trigger.click();
-    await expect(page.getByLabel("Repository")).toBeVisible();
+    await expect(page.getByLabel("Repository", { exact: true })).toBeVisible();
     await expect(
-      page.getByLabel("Repository").getByRole("option", { name: "kestrel" }),
+      page.getByLabel("Repository", { exact: true }).getByRole("option", { name: "kestrel" }),
     ).toHaveCount(1);
     await expect(
       page.getByRole("dialog").getByText(trustedHostCommand, { exact: true }),
     ).toHaveCount(0);
     await page.getByRole("dialog").getByRole("button", { name: "Close" }).click();
 
+    await page.getByRole("link", { name: "Settings", exact: true }).click();
+    await page.getByRole("link", { name: "Projects", exact: true }).click();
+    const settings = page.locator(".repository-access");
+    const settingsCommand = settings.getByText(trustedHostCommand, { exact: true });
+    await expect(settingsCommand).toBeHidden();
+    await settings.getByText("Authorize a folder", { exact: true }).focus();
+    await page.keyboard.press("Enter");
+    await expect(settingsCommand).toBeVisible();
+    const refresh = await holdNextInventoryResponse(page);
+    await settings.getByRole("button", { name: "Refresh repositories" }).click();
+    await refresh.observed;
+    await expect(settings.getByRole("status")).toHaveText("Reading repositories…");
+    await expect(settings.locator(".repository-setup-state, details")).toHaveCount(0);
+    refresh.release();
+    await refresh.completed;
+    await page.unroute(inventoryUrl, refresh.handler);
+    await expect(settingsCommand).toBeHidden();
+    await expect(settings.getByText("Authorize a folder", { exact: true })).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath("folder-help-settings.png") });
+
     await page.setViewportSize({ width: 320, height: 800 });
     await page.getByRole("button", { name: "Open navigation", exact: true }).click();
-    await verifyInventoryState("no_configured_roots", "No repository roots are configured");
+    await verifyInventoryState("no_configured_roots", "No folders authorized yet");
     const width = await page.evaluate(() => ({
       client: document.documentElement.clientWidth,
       scroll: document.documentElement.scrollWidth,

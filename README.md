@@ -33,7 +33,11 @@ Install the pinned workspace dependencies once:
 
 ```sh
 npm ci
+npm link
 ```
+
+`npm link` registers the `kestrel` command once for this Node.js installation. Keep it linked to the
+canonical Kestrel checkout, which supplies its dependencies and default Installation state.
 
 Then start PostgreSQL, prepare the database, and supervise the Fastify web process, pg-boss worker,
 and Vite PWA with one command:
@@ -307,20 +311,24 @@ unavailable; it does not expose or silently replace the key.
 Use **Local folder** in **Open Project** or **Settings → Projects** to choose a folder on the macOS
 workstation. Kestrel previews the selected repository, or only the readable direct-child
 repositories of a container. **Authorize repositories** saves exactly that preview and refreshes the
-inventory. Cancellation does not authorize anything. Other hosts can use the trusted-host command:
+inventory. Cancellation does not authorize anything.
+
+From a terminal inside the repository you want to authorize, run:
 
 ```sh
-npm run authorize-repository-root -- /absolute/path/to/repository-or-parent
-# From the repository to authorize, with Kestrel installed elsewhere:
-npm --prefix /path/to/kestrel run authorize-repository-root
+kestrel authorize
 ```
 
-An omitted path uses the caller's current directory. Each successful command stores the selected
-repositories in the owner-only `repository-roots.json` file beneath the absolute
-`KESTREL_STATE_ROOT`. Missing, unreadable, relative explicit, duplicate, nested, symlinked, or
-storage-overlapping selections fail without replacing the previous valid file. A container
-authorizes only its current direct-child repositories, not future additions or recursively nested
-repositories. A stale UI preview must be selected again. Host paths never reach the browser.
+No path argument is needed or accepted. The command uses the terminal's current folder. If that
+folder is a container, it authorizes only its current direct-child repositories, not future
+additions or recursively nested repositories. The command is registered by `npm link` during Kestrel
+setup; it does not require a `package.json` in the selected project.
+
+Configuration is saved to the linked Kestrel Installation, never inside the selected project. If the
+running Installation uses a custom `KESTREL_STATE_ROOT`, export the same value in your terminal.
+Each successful command stores the selected repositories in the owner-only `repository-roots.json`
+file. Unreadable, duplicate, nested, or storage-overlapping selections fail without replacing the
+previous valid file. A stale UI preview must be selected again. Host paths never reach the browser.
 
 Choose **Refresh repositories** after terminal authorization; no restart is needed. A restart reads
 the same persisted configuration. `LOCAL_REPOSITORY_ROOTS` remains an explicit JSON-array override
@@ -359,10 +367,10 @@ loads only its attached repository. Select two enumerated committed refs and wri
 copy a commit-subject suggestion into Change Intent. Kestrel re-resolves both refs to exact object
 IDs before acquisition; later branch movement cannot retarget the Review Revision.
 
-Until that inventory is ready, the dialog names the current state: checking configuration, no
-configured roots, configured roots with no discoverable repository, or discovery failure. It shows
-the trusted-host command above instead of an unexplained empty selector; host filesystem paths are
-never returned to the browser.
+While reading the inventory, the dialog shows a neutral loading message. Empty and failed discovery
+states explain what happened, with terminal instructions under **Authorize a folder**. Settings
+keeps the same help collapsed when repositories are available. Host filesystem paths are never
+returned to the browser.
 
 The retained closure contains the selected base/head commit objects and all trees and blobs needed
 to materialize those two exact source trees. It deliberately excludes ancestor history, unrelated

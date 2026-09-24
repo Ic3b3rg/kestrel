@@ -1,7 +1,6 @@
 import type { LocalRepositoryInventory } from "@kestrel/contracts";
 
-export const TRUSTED_HOST_REPOSITORY_COMMAND =
-  "npm run authorize-repository-root -- /absolute/path/to/authorized-parent";
+const AUTHORIZE_FOLDER_COMMAND = "kestrel authorize";
 
 type RepositorySetupState =
   Exclude<LocalRepositoryInventory["inventoryState"], "ready"> | "discovery_failed" | "loading";
@@ -12,33 +11,29 @@ interface RepositorySetupStateProps {
   state: RepositorySetupState;
 }
 
-export function TrustedHostRepositoryAction() {
+export function AuthorizeFolderHelp() {
   return (
-    <div className="repository-setup-action">
-      <strong>Trusted-host action</strong>
-      <p>Authorize an explicit parent directory from a trusted-host terminal:</p>
-      <code>{TRUSTED_HOST_REPOSITORY_COMMAND}</code>
-      <p>Then refresh repositories here or restart Kestrel. The browser never receives the path.</p>
-    </div>
+    <details className="repository-setup-action">
+      <summary>Authorize a folder</summary>
+      <div>
+        <p>Open a terminal in the folder you want to authorize and run:</p>
+        <code>{AUTHORIZE_FOLDER_COMMAND}</code>
+        <p>Then refresh the repository list.</p>
+      </div>
+    </details>
   );
 }
 
 const stateContent: Record<
-  Exclude<RepositorySetupState, "discovery_failed">,
+  Exclude<RepositorySetupState, "discovery_failed" | "loading">,
   { description: string; title: string }
 > = {
-  loading: {
-    description: "Reading repositories… Kestrel is checking trusted-host configuration.",
-    title: "Checking repository setup",
-  },
   no_configured_roots: {
-    description:
-      "Kestrel has not been authorized to inspect any local parent directory. Local discovery remains disabled.",
-    title: "No repository roots are configured",
+    description: "Authorize a folder on your computer to make its repositories available here.",
+    title: "No folders authorized yet",
   },
   no_repositories_found: {
-    description:
-      "The configured roots were loaded successfully, but they do not contain a discoverable Git repository.",
+    description: "The authorized folders do not contain any Git repositories.",
     title: "No Git repositories were found",
   },
 };
@@ -48,13 +43,19 @@ export function RepositorySetupState({
   headingLevel = 4,
   state,
 }: RepositorySetupStateProps) {
+  if (state === "loading") {
+    return (
+      <p className="repository-loading" role="status" aria-busy="true">
+        Reading repositories…
+      </p>
+    );
+  }
+
   const Heading = headingLevel === 3 ? "h3" : "h4";
   const failed = state === "discovery_failed";
   const content = failed
     ? {
-        description:
-          error ??
-          "Kestrel could not inspect the authorized roots. Check the trusted-host runtime.",
+        description: error ?? "Kestrel could not read your repositories. Try refreshing the list.",
         title: "Repository discovery failed",
       }
     : stateContent[state];
@@ -63,11 +64,10 @@ export function RepositorySetupState({
     <section
       className={`repository-setup-state${failed ? " repository-setup-failed" : ""}`}
       role={failed ? "alert" : "status"}
-      aria-busy={state === "loading" || undefined}
     >
       <Heading>{content.title}</Heading>
       <p>{content.description}</p>
-      <TrustedHostRepositoryAction />
+      <AuthorizeFolderHelp />
     </section>
   );
 }
