@@ -9,6 +9,7 @@ import {
   type CodexSubscriptionConnection,
   type FrozenLifecycleProfile,
   type LifecyclePhase,
+  type PlanningComposerSettings,
   type LifecycleProfileView,
 } from "@kestrel/contracts";
 import type { DatabasePool } from "./pool.js";
@@ -32,6 +33,7 @@ export async function readLifecycleProfile(
   phase: LifecyclePhase,
   projectId: string | null,
   connection: CodexSubscriptionConnection,
+  conversationSettings: PlanningComposerSettings = {},
 ): Promise<LifecycleProfileView> {
   const canonical = await canonicalProject(reader, projectId);
   const result = await reader.query<{
@@ -58,7 +60,11 @@ export async function readLifecycleProfile(
       throw new Error(
         "Connect the Codex runtime and resolve its authentication or usage limit before starting new work.",
       );
-    const profile = resolveLifecycleProfile(defaults, overrides, connection.models);
+    const profile = resolveLifecycleProfile(
+      defaults,
+      { ...overrides, ...conversationSettings },
+      connection.models,
+    );
     await requireInstalledPlanningSkills(reader, profile.requested.skillDigests);
     const skills = await readPlanningSkills(reader, profile.requested.skillDigests);
     resolved = FrozenLifecycleProfileSchema.parse({ ...profile, phase, versions, skills });
@@ -87,12 +93,19 @@ export async function freezeLifecycleProfile(
   phase: LifecyclePhase,
   projectId: string,
   connection: CodexSubscriptionConnection,
+  conversationSettings: PlanningComposerSettings = {},
 ): Promise<FrozenLifecycleProfile> {
   // Settings writes take the same lock. The profile and accepted action share one transaction.
   await client.query(
     "SELECT pg_advisory_xact_lock(hashtextextended('kestrel.lifecycle-profiles', 0))",
   );
-  const view = await readLifecycleProfile(client, phase, projectId, connection);
+  const view = await readLifecycleProfile(
+    client,
+    phase,
+    projectId,
+    connection,
+    conversationSettings,
+  );
   if (view.resolved === null)
     throw new FactoryError(
       "conflict",

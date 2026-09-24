@@ -777,6 +777,10 @@ export function App() {
       case "planning":
         return (
           <NewPlanningWorkspace
+            projects={(projectInbox?.projects ?? []).map((project) => ({
+              id: project.id,
+              name: projectLabel(project),
+            }))}
             key={`${route.projectId}/${route.requestId}`}
             projectId={route.projectId}
             projectName={

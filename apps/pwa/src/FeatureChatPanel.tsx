@@ -1,9 +1,10 @@
 import { FormFeedback } from "./components/FormFeedback.js";
-import { LifecycleProfileSummary } from "./LifecycleProfilePanel.js";
+import { PlanningModelControls } from "./PlanningModelControls.js";
 import { useCallback, useEffect, useRef, useState, type SyntheticEvent } from "react";
-import { Pencil, RefreshCw, Send, Square } from "lucide-react";
+import { Pencil, RefreshCw, Square } from "lucide-react";
 import type {
   Feature,
+  PlanningComposerSettings,
   FeatureChat,
   RenameFactoryFeatureCommand,
   SendPlanningMessageCommand,
@@ -31,7 +32,7 @@ import { PlanningSkillChips } from "./PlanningSkillChips.js";
 import { FeatureGitHubIssuesPanel } from "./FeatureGitHubIssuesPanel.js";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs.js";
 import { Label } from "./components/ui/label.js";
-import { PlanningSkillComposer } from "./PlanningSkillComposer.js";
+import { PlanningComposer } from "./PlanningComposer.js";
 import { Input } from "./components/ui/input.js";
 import {
   Dialog,
@@ -216,6 +217,7 @@ export function FeatureChatPanel({
   const [reading, setReading] = useState(true);
   const [readError, setReadError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [planningSettings, setPlanningSettings] = useState<PlanningComposerSettings | undefined>();
   const [importsRevision, setImportsRevision] = useState(0);
   const [commandPending, setCommandPending] = useState(false);
   const [commandError, setCommandError] = useState<string | null>(null);
@@ -340,6 +342,7 @@ export function FeatureChatPanel({
       command: {
         requestId: crypto.randomUUID(),
         text: draft.trim(),
+        ...(planningSettings === undefined ? {} : { planningSettings }),
         ...(chat.skills === undefined ? {} : { skillSelectionVersion: chat.skills.version }),
       },
     });
@@ -642,66 +645,79 @@ export function FeatureChatPanel({
               ) : null}
             </FormFeedback>
           )}
-          <LifecycleProfileSummary
-            phase="planning"
-            projectId={projectId}
-            online={online}
-            onReady={setProfileReady}
-          />
           <form className="planning-composer" onSubmit={submit}>
-            <Label htmlFor="planning-message">Message</Label>
-            <PlanningSkillChips
-              projectId={projectId}
-              featureId={featureId}
-              online={online}
-              editable={editable && activeTurn === undefined && !commandPending}
-              selection={chat.skills ?? { schemaVersion: 1, version: 0, skills: [] }}
-              onChanged={refresh}
-              onAuthenticationError={onAuthenticationError}
-            />
-            <PlanningSkillComposer
-              id="planning-message"
-              rows={3}
-              maxLength={16_000}
-              value={draft}
-              online={online}
-              onAuthenticationError={onAuthenticationError}
-              disabled={
-                !online ||
-                !editable ||
-                commandPending ||
-                activeTurn !== undefined ||
-                (commandError !== null && attempt.current !== null)
+            <Label htmlFor="planning-message" className="sr-only">
+              Message
+            </Label>
+            <PlanningComposer
+              project={projectName}
+              controls={
+                <PlanningModelControls
+                  projectId={projectId}
+                  online={online}
+                  {...(chat.planningSettings === undefined
+                    ? {}
+                    : { savedSettings: chat.planningSettings })}
+                  disabled={
+                    !editable ||
+                    commandPending ||
+                    activeTurn !== undefined ||
+                    attempt.current !== null
+                  }
+                  onReady={setProfileReady}
+                  onSettingsChange={(settings) => {
+                    setPlanningSettings(settings);
+                    if (attempt.current === null) setCommandError(null);
+                  }}
+                />
               }
-              onValueChange={(text) => {
-                setDraft(text);
-                if (attempt.current === null) setCommandError(null);
-              }}
-              placeholder="Describe the change or answer Kestrel’s question…"
-              describedBy="planning-message-help"
-            />
-            <div className="planning-composer-footer">
-              <p id="planning-message-help">
-                {editable
-                  ? "Planning only. Implementation starts after you approve a plan."
-                  : "This conversation is read-only. Its saved messages remain available."}
-              </p>
-              <Button
-                type="submit"
-                disabled={
+              skills={
+                <PlanningSkillChips
+                  projectId={projectId}
+                  featureId={featureId}
+                  online={online}
+                  editable={editable && activeTurn === undefined && !commandPending}
+                  selection={chat.skills ?? { schemaVersion: 1, version: 0, skills: [] }}
+                  onChanged={refresh}
+                  onAuthenticationError={onAuthenticationError}
+                />
+              }
+              input={{
+                id: "planning-message",
+                rows: 3,
+                maxLength: 16_000,
+                value: draft,
+                online,
+                onAuthenticationError,
+                disabled:
                   !online ||
                   !editable ||
                   commandPending ||
                   activeTurn !== undefined ||
-                  commandError !== null ||
-                  !profileReady ||
-                  draft.trim() === ""
-                }
-              >
-                <Send aria-hidden="true" />
-                {commandPending && attemptKind === "send" ? "Sending…" : "Send message"}
-              </Button>
-            </div>
+                  (commandError !== null && attempt.current !== null),
+                onValueChange: (text) => {
+                  setDraft(text);
+                  if (attempt.current === null) setCommandError(null);
+                },
+                placeholder: "Describe the change or answer Kestrel’s question…",
+                describedBy: "planning-message-help",
+              }}
+              sendLabel={commandPending && attemptKind === "send" ? "Sending…" : "Send message"}
+              canSend={
+                online &&
+                editable &&
+                !commandPending &&
+                activeTurn === undefined &&
+                commandError === null &&
+                profileReady &&
+                draft.trim() !== ""
+              }
+            />
+            <p id="planning-message-help" className="text-xs text-muted-foreground">
+              {editable
+                ? "⌘/Ctrl + Enter to send. Implementation starts after you approve a plan."
+                : "This conversation is read-only. Its saved messages remain available."}
+            </p>
           </form>
         </TabsContent>
         <TabsContent value="plan" forceMount className="data-[state=inactive]:hidden">

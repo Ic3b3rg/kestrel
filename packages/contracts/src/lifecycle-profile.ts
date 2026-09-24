@@ -27,6 +27,12 @@ export const LifecycleSettingsSchema = z.strictObject({
   skillDigests: PlanningSkillDigestsSchema,
 });
 export const LifecycleOverridesSchema = LifecycleSettingsSchema.partial();
+export const PlanningComposerSettingsSchema = LifecycleSettingsSchema.pick({
+  runtimeId: true,
+  model: true,
+  effort: true,
+}).partial();
+export type PlanningComposerSettings = z.infer<typeof PlanningComposerSettingsSchema>;
 export type LifecycleSettings = z.infer<typeof LifecycleSettingsSchema>;
 export type LifecycleOverrides = z.infer<typeof LifecycleOverridesSchema>;
 export const defaultLifecycleSettings: LifecycleSettings = {

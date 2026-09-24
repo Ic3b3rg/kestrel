@@ -194,3 +194,24 @@ it("preserves the private draft during session suspension and resolves accepted 
   expect(props.onStarted).toHaveBeenCalledExactlyOnceWith(started.feature);
   expect(api.start).toHaveBeenCalledOnce();
 });
+
+it("sends a selected conversation model from the compact composer", async () => {
+  api.start.mockResolvedValue(started);
+  await render();
+  await type("Plan the new dashboard");
+  const selector = container.querySelector<HTMLSelectElement>('select[aria-label="Model"]');
+  expect(selector).not.toBeNull();
+  await act(async () => {
+    if (selector === null) throw new Error("Missing model selector");
+    selector.value = "fixture-model";
+    selector.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await submit();
+  expect(api.start).toHaveBeenCalledWith(
+    projectId,
+    expect.objectContaining({
+      planningSettings: { model: { kind: "explicit", value: "fixture-model" } },
+    }),
+  );
+  expect(container.textContent).not.toContain("Planning profile");
+});

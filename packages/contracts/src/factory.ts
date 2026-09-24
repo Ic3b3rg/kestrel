@@ -1,4 +1,7 @@
-import { LifecycleProfileEvidenceSchema } from "./lifecycle-profile.js";
+import {
+  PlanningComposerSettingsSchema,
+  LifecycleProfileEvidenceSchema,
+} from "./lifecycle-profile.js";
 import { z } from "zod";
 
 import { GitObjectIdSchema, KestrelIdSchema } from "./v1.js";
@@ -52,6 +55,7 @@ export const FeatureListSchema = z.strictObject({
 });
 
 export const SendPlanningMessageCommandSchema = z.strictObject({
+  planningSettings: PlanningComposerSettingsSchema.optional(),
   requestId: z.uuid(),
   text: z.string().trim().min(1).max(16_000),
   skillSelectionVersion: z.number().int().min(0).max(1_000).optional(),
@@ -112,6 +116,7 @@ export type PlanningTurnAccepted = z.infer<typeof PlanningTurnAcceptedSchema>;
 export const RetryPlanningTurnCommandSchema = z.strictObject({ requestId: z.uuid() });
 
 export const FeatureChatSchema = z.strictObject({
+  planningSettings: PlanningComposerSettingsSchema.optional(),
   schemaVersion: z.literal(1),
   feature: FeatureSchema,
   messages: z.array(PlanningMessageSchema).max(200),
