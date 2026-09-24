@@ -205,6 +205,7 @@ it("sends a selected conversation model from the compact composer", async () => 
     if (selector === null) throw new Error("Missing model selector");
     selector.value = "fixture-model";
     selector.dispatchEvent(new Event("change", { bubbles: true }));
+    await Promise.resolve();
   });
   await submit();
   expect(api.start).toHaveBeenCalledWith(

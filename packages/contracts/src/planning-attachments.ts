@@ -8,6 +8,7 @@ const name = z
   .string()
   .min(1)
   .max(200)
+  // eslint-disable-next-line no-control-regex -- Reject unsafe filename control bytes.
   .regex(/^[^\x00-\x1f\x7f/\\]+$/u);
 export const PlanningAttachmentSchema = z.discriminatedUnion("kind", [
   z.strictObject({
@@ -26,6 +27,7 @@ export const PlanningAttachmentSchema = z.discriminatedUnion("kind", [
     text: z
       .string()
       .max(PLANNING_TEXT_MAX_BYTES)
+      // eslint-disable-next-line no-control-regex -- Only printable UTF-8 text and whitespace are accepted.
       .regex(/^[^\x00-\x08\x0b\x0c\x0e-\x1f\x7f]*$/u),
   }),
 ]);

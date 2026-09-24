@@ -1,3 +1,4 @@
+import { cn } from "cn";
 import {
   useEffect,
   useId,
@@ -5,6 +6,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type ReactNode,
   type RefObject,
 } from "react";
 import type { PlanningSkillSummary } from "@kestrel/contracts";
@@ -54,6 +56,7 @@ export function PlanningSkillComposer({
   autoFocus,
 }: PlanningSkillComposerProps) {
   const listId = useId();
+  const highlightRef = useRef<HTMLDivElement | null>(null);
   const localRef = useRef<HTMLTextAreaElement | null>(null);
   const pendingCaret = useRef<number | null>(null);
   const [catalog, setCatalog] = useState<PlanningSkillSummary[]>([]);
@@ -63,9 +66,10 @@ export function PlanningSkillComposer({
   const [query, setQuery] = useState<SlashSkillQuery | null>(null);
   const [active, setActive] = useState(0);
   const searching = query !== null;
+  const hasReferences = /(?:^|\s)[/$][a-z0-9-]+/u.test(value);
 
   useEffect(() => {
-    if (!online || !searching || catalogLoaded) return;
+    if (!online || (!searching && !hasReferences) || catalogLoaded) return;
     const controller = new AbortController();
     setLoading(true);
     setError(null);
@@ -84,7 +88,7 @@ export function PlanningSkillComposer({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [online, onAuthenticationError, searching, catalogLoaded]);
+  }, [online, onAuthenticationError, searching, hasReferences, catalogLoaded]);
 
   useLayoutEffect(() => {
     if (pendingCaret.current === null) return;
@@ -108,67 +112,106 @@ export function PlanningSkillComposer({
     setQuery(null);
   };
 
+  const highlighted: ReactNode[] = [];
+  let previous = 0;
+  for (const match of value.matchAll(/(?:^|\s)([/$]([a-z0-9][a-z0-9-]{0,63}))(?=\s|$|[.,!?])/gu)) {
+    const token = match[1];
+    if (token === undefined || !catalog.some((skill) => skill.name === match[2])) continue;
+    const start = match.index + match[0].length - token.length;
+    highlighted.push(
+      value.slice(previous, start),
+      <mark
+        key={start}
+        className="rounded-sm bg-primary/15 text-transparent outline-1 outline-primary/40"
+      >
+        {token}
+      </mark>,
+    );
+    previous = start + token.length;
+  }
+  highlighted.push(value.slice(previous));
   return (
     <div className="relative min-w-0">
-      <Textarea
-        ref={(node) => {
-          localRef.current = node;
-          if (textareaRef !== undefined) textareaRef.current = node;
-        }}
-        id={id}
-        name={name}
-        rows={rows}
-        maxLength={maxLength}
-        value={value}
-        disabled={disabled}
-        placeholder={placeholder}
-        className={className}
-        aria-describedby={describedBy}
-        autoFocus={autoFocus}
-        aria-autocomplete="list"
-        aria-controls={open && matches.length > 0 ? listId : undefined}
-        aria-activedescendant={
-          open && matches.length > 0 ? `${listId}-${String(active)}` : undefined
-        }
-        onChange={(event) => {
-          onValueChange(event.currentTarget.value);
-          updateQuery(event.currentTarget.value, event.currentTarget.selectionStart);
-        }}
-        onClick={(event) => updateQuery(value, event.currentTarget.selectionStart)}
-        onKeyUp={(event) => {
-          if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
-            updateQuery(value, event.currentTarget.selectionStart);
-        }}
-        onKeyDown={(event) => {
-          if (open && !event.ctrlKey && !event.metaKey && !event.altKey) {
-            if (event.key === "ArrowDown" && matches.length > 0) {
-              event.preventDefault();
-              setActive((index) => (index + 1) % matches.length);
-              return;
+      <div className="relative">
+        <div
+          ref={highlightRef}
+          data-skill-highlight
+          aria-hidden="true"
+          className={cn(
+            "pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words rounded-lg border border-transparent px-2.5 py-2 text-base text-transparent md:text-sm",
+            className,
+          )}
+        >
+          {highlighted}
+          {"\n"}
+        </div>
+        <Textarea
+          ref={(node) => {
+            localRef.current = node;
+            if (textareaRef !== undefined) textareaRef.current = node;
+          }}
+          id={id}
+          name={name}
+          rows={rows}
+          maxLength={maxLength}
+          value={value}
+          disabled={disabled}
+          placeholder={placeholder}
+          className={`relative ${className ?? ""}`}
+          spellCheck={false}
+          onScroll={(event) => {
+            if (highlightRef.current !== null) {
+              highlightRef.current.scrollTop = event.currentTarget.scrollTop;
+              highlightRef.current.scrollLeft = event.currentTarget.scrollLeft;
             }
-            if (event.key === "ArrowUp" && matches.length > 0) {
-              event.preventDefault();
-              setActive((index) => (index - 1 + matches.length) % matches.length);
-              return;
-            }
-            if (
-              event.key === "Enter" &&
-              matches[active] !== undefined &&
-              !event.nativeEvent.isComposing
-            ) {
-              event.preventDefault();
-              choose(matches[active]);
-              return;
-            }
-            if (event.key === "Escape") {
-              event.preventDefault();
-              setQuery(null);
-              return;
-            }
+          }}
+          aria-describedby={describedBy}
+          autoFocus={autoFocus}
+          aria-autocomplete="list"
+          aria-controls={open && matches.length > 0 ? listId : undefined}
+          aria-activedescendant={
+            open && matches.length > 0 ? `${listId}-${String(active)}` : undefined
           }
-          onKeyDown?.(event);
-        }}
-      />
+          onChange={(event) => {
+            onValueChange(event.currentTarget.value);
+            updateQuery(event.currentTarget.value, event.currentTarget.selectionStart);
+          }}
+          onClick={(event) => updateQuery(value, event.currentTarget.selectionStart)}
+          onKeyUp={(event) => {
+            if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
+              updateQuery(value, event.currentTarget.selectionStart);
+          }}
+          onKeyDown={(event) => {
+            if (open && !event.ctrlKey && !event.metaKey && !event.altKey) {
+              if (event.key === "ArrowDown" && matches.length > 0) {
+                event.preventDefault();
+                setActive((index) => (index + 1) % matches.length);
+                return;
+              }
+              if (event.key === "ArrowUp" && matches.length > 0) {
+                event.preventDefault();
+                setActive((index) => (index - 1 + matches.length) % matches.length);
+                return;
+              }
+              if (
+                event.key === "Enter" &&
+                matches[active] !== undefined &&
+                !event.nativeEvent.isComposing
+              ) {
+                event.preventDefault();
+                choose(matches[active]);
+                return;
+              }
+              if (event.key === "Escape") {
+                event.preventDefault();
+                setQuery(null);
+                return;
+              }
+            }
+            onKeyDown?.(event);
+          }}
+        />
+      </div>
       {open ? (
         <div className="mt-2 grid max-h-56 gap-1 overflow-y-auto rounded-md border bg-popover p-2 text-sm shadow-md">
           {loading ? <FormFeedback kind="pending">Loading installed Skills…</FormFeedback> : null}

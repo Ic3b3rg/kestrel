@@ -88,10 +88,10 @@ export function PlanningModelControls({
       className="flex min-w-0 flex-1 flex-wrap items-center gap-2"
       aria-label="Conversation model"
     >
-      <span className="text-xs text-muted-foreground">Codex</span>
+      <span className="hidden text-xs text-muted-foreground sm:inline">Codex</span>
       <NativeSelect
         aria-label="Model"
-        className="w-auto max-w-full flex-1 sm:flex-none"
+        className="w-auto min-w-36 max-w-full flex-1 sm:flex-none"
         disabled={disabled || !online || view === null}
         value={modelId}
         onChange={(event) =>
@@ -134,9 +134,27 @@ export function PlanningModelControls({
           </option>
         ))}
       </NativeSelect>
+      {(view?.resolved?.skills.length ?? 0) === 0 ? null : (
+        <div className="flex basis-full flex-wrap gap-1" aria-label="Default Planning Skills">
+          {view?.resolved?.skills.map((skill) => (
+            <span
+              key={skill.contentDigest}
+              className="rounded-full border bg-muted px-2 py-1 text-xs"
+              title="From Project planning settings"
+            >
+              ${skill.name}
+            </span>
+          ))}
+        </div>
+      )}
       {blocked === null ? null : (
         <div className="basis-full">
-          <FormFeedback kind="error">{blocked}</FormFeedback>
+          <FormFeedback kind="error">
+            {blocked}{" "}
+            <a className="underline" href={`/projects/${encodeURIComponent(projectId)}/settings`}>
+              Project model settings
+            </a>
+          </FormFeedback>
           <Button
             type="button"
             variant="ghost"
