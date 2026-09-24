@@ -3,13 +3,13 @@
 Status: Accepted — 2026-09-24, by explicit Operator confirmation in conversation.
 
 An explicit Start action or To do → In progress drop authorizes development of an open issue
-carrying the Project's configured ready label (default `ready-for-agent`). It is a Run Trigger,
-not a cosmetic column edit. It records the Operator and an idempotent request before work begins.
+carrying the Project's configured ready label (default `ready-for-agent`). It is a Run Trigger, not
+a cosmetic column edit. It records the Operator and an idempotent request before work begins.
 
 Queued work reads the current issue description and conversation at dispatch and retains that
 observation. Kestrel derives a bounded operational plan and enters the existing execution and review
-workflow without another approval dialog. Missing consequential requirements remain a human decision.
-Provider polling, labels alone and later comments never grant new execution authority.
+workflow without another approval dialog. Missing consequential requirements remain a human
+decision. Provider polling, labels alone and later comments never grant new execution authority.
 
 There is one writable implementation per Project, rather than one Feature throughout its entire
 lifecycle. Entering In review releases the next queued issue without waiting for merge. Existing

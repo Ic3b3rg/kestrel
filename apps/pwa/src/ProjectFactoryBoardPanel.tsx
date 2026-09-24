@@ -132,12 +132,14 @@ function GitHubIssueCard({
 function WorkItemCard({
   feature,
   item,
-  onOpenFeature, onOpenIssue, queued,
+  onOpenFeature,
+  onOpenIssue,
+  queued,
 }: {
   feature: ProjectBoardWorkItem["feature"];
   item: ProjectBoardWorkItem["item"];
   onOpenFeature: ProjectFactoryBoardPanelProps["onOpenFeature"];
-  onOpenIssue?: ((number:number)=>void)|undefined;
+  onOpenIssue?: ((number: number) => void) | undefined;
   queued?: boolean | undefined;
 }) {
   const contextId = useId();
@@ -159,7 +161,9 @@ function WorkItemCard({
         <span className="text-xs font-normal text-muted-foreground">
           {item.order} · {item.key}
         </span>
-        {queued?<span className="text-xs text-muted-foreground">Waiting for development</span>:null}
+        {queued ? (
+          <span className="text-xs text-muted-foreground">Waiting for development</span>
+        ) : null}
         {hasContext ? (
           <span id={contextId} className="flex max-w-full flex-col gap-2 text-xs font-normal">
             {item.dependsOn.length === 0 ? null : (
@@ -180,7 +184,18 @@ function WorkItemCard({
           <Button asChild variant="ghost" size="sm" className="text-muted-foreground">
             <a
               href={item.providerUrl}
-              onClick={event=>{const number=Number(item.providerUrl?.split("/").at(-1));if(onOpenIssue && Number.isSafeInteger(number) && !event.metaKey && !event.ctrlKey){event.preventDefault();onOpenIssue(number);}}}
+              onClick={(event) => {
+                const number = Number(item.providerUrl?.split("/").at(-1));
+                if (
+                  onOpenIssue &&
+                  Number.isSafeInteger(number) &&
+                  !event.metaKey &&
+                  !event.ctrlKey
+                ) {
+                  event.preventDefault();
+                  onOpenIssue(number);
+                }
+              }}
               target="_blank"
               rel="noreferrer"
               aria-label={"Open linked issue for " + item.title}

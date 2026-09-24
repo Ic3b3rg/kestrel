@@ -167,7 +167,11 @@ export function createFactoryBackgroundRuntime({
     );
   const dispatchIssues = createProjectIssueDispatcher(pool, boss);
   const repairs = [
-    {run: () => dispatchIssues(lifecycle.signal), interval: 2_000, event: "factory.issue_dispatch_failed"},
+    {
+      run: () => dispatchIssues(lifecycle.signal),
+      interval: 2_000,
+      event: "factory.issue_dispatch_failed",
+    },
     {
       run: () => reconcileFactoryPublications(pool, boss),
       interval: 5_000,

@@ -7,7 +7,10 @@ import {
   type DatabasePool,
 } from "@kestrel/database";
 import { FactoryGitHubError, type FactoryGitHubAdapter } from "./factory-github.js";
-import { readProjectGitHubThrottle, retainProjectGitHubThrottle } from "./project-github-throttle.js";
+import {
+  readProjectGitHubThrottle,
+  retainProjectGitHubThrottle,
+} from "./project-github-throttle.js";
 
 export function createProjectIssueReader(pool: DatabasePool, github: FactoryGitHubAdapter) {
   const pending = new Map<string, Promise<ProjectIssueDiscussion>>();
@@ -25,13 +28,17 @@ export function createProjectIssueReader(pool: DatabasePool, github: FactoryGitH
       await readProjectIssueObservation(pool, id, key),
     );
     const previous = parsed.success ? parsed.data : null;
-    const repository=`${coordinates.owner}/${coordinates.repository}`;
-    const retryAt=await readProjectGitHubThrottle(pool,id,repository);
-    if(retryAt!==null) {
-      if(previous!==null&&!fresh)return {...previous,failure:"rate_limited"};
-      throw new FactoryGitHubError("rate_limited",retryAt);
+    const repository = `${coordinates.owner}/${coordinates.repository}`;
+    const retryAt = await readProjectGitHubThrottle(pool, id, repository);
+    if (retryAt !== null) {
+      if (previous !== null && !fresh) return { ...previous, failure: "rate_limited" };
+      throw new FactoryGitHubError("rate_limited", retryAt);
     }
-    if (!fresh && previous !== null && Date.parse(previous.fetchedAt) + 60_000 > Date.now())
+    if (
+      !fresh &&
+      previous !== null &&
+      Date.parse(previous.checkedAt ?? previous.fetchedAt) + 60_000 > Date.now()
+    )
       return previous;
     const taskKey = `${id}:${key}`;
     let task = pending.get(taskKey);
@@ -47,26 +54,32 @@ export function createProjectIssueReader(pool: DatabasePool, github: FactoryGitH
           const value = ProjectIssueDiscussionSchema.parse({
             ...discussion,
             fetchedAt: new Date().toISOString(),
+            checkedAt: new Date().toISOString(),
+            refreshing: false,
             failure: null,
           });
           await saveProjectIssueObservation(pool, id, key, value);
           return value;
         } catch (error) {
-          if(error instanceof FactoryGitHubError && error.failure==="rate_limited")
-            await retainProjectGitHubThrottle(pool,id,repository,error.retryAt);
+          if (error instanceof FactoryGitHubError && error.failure === "rate_limited")
+            await retainProjectGitHubThrottle(pool, id, repository, error.retryAt);
           if (previous === null || fresh) throw error;
-          const value:ProjectIssueDiscussion = {
+          const value: ProjectIssueDiscussion = {
             ...previous,
+            checkedAt: new Date().toISOString(),
+            refreshing: false,
             failure: error instanceof FactoryGitHubError ? error.failure : "unavailable",
           };
-          await saveProjectIssueObservation(pool,id,key,value);
+          await saveProjectIssueObservation(pool, id, key, value);
           return value;
         }
       })();
       pending.set(taskKey, task);
       void task.finally(() => pending.delete(taskKey)).catch(() => undefined);
     }
-    if (!fresh && previous !== null) return previous;
-    return task;
+    if (!fresh && previous !== null) return { ...previous, refreshing: true };
+    const result = await task;
+    if (fresh && result.failure !== null) throw new FactoryGitHubError(result.failure);
+    return result;
   };
 }

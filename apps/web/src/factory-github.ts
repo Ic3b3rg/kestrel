@@ -38,7 +38,16 @@ type Dependencies = NonNullable<FactoryGitHubIssue["dependencies"]>;
 type Unsupported = { state: "unsupported" };
 type WriteFailure = Exclude<WriteResult<never>, { state: "confirmed" }>;
 export interface FactoryGitHubAdapter {
-  readIssueDiscussion(identity: FactoryGitHubIdentity, number: number, page: number, signal?: AbortSignal): Promise<{issue: FactoryGitHubIssue; comments: Array<FactoryGitHubComment & {author: string | null}>; nextPage: number | null}>;
+  readIssueDiscussion(
+    identity: FactoryGitHubIdentity,
+    number: number,
+    page: number,
+    signal?: AbortSignal,
+  ): Promise<{
+    issue: FactoryGitHubIssue;
+    comments: Array<FactoryGitHubComment & { author: string | null }>;
+    nextPage: number | null;
+  }>;
   readIssueCatalog(
     coordinates: Pick<FactoryGitHubRepository, "owner" | "name">,
     signal?: AbortSignal,
@@ -609,15 +618,35 @@ export function createFactoryGitHubAdapter(
       parse(numberSchema, number);
       parse(z.int().min(1).max(1000), page);
       await verify(identity, signal);
-      const selected = parse(IssueSchema, (await get(`${base(identity.repository)}/issues/${String(number)}`, issueProjection, signal)).body);
+      const selected = parse(
+        IssueSchema,
+        (
+          await get(
+            `${base(identity.repository)}/issues/${String(number)}`,
+            issueProjection,
+            signal,
+          )
+        ).body,
+      );
       if (selected.number !== number) throw new FactoryGitHubError("invalid_response");
-      const result = await get(`${base(identity.repository)}/issues/${String(number)}/comments?per_page=100&page=${String(page)}`, commentProjection, signal);
-      const comments = parse(z.array(CommentSchema).max(100), result.body).map(value => ({...comment(identity.repository, number, value), author: value.author}));
+      const result = await get(
+        `${base(identity.repository)}/issues/${String(number)}/comments?per_page=100&page=${String(page)}`,
+        commentProjection,
+        signal,
+      );
+      const comments = parse(z.array(CommentSchema).max(100), result.body).map((value) => ({
+        ...comment(identity.repository, number, value),
+        author: value.author,
+      }));
       // Never follow provider-supplied URLs; advance our own validated endpoint.
       const more = result.headers.link?.includes('rel="next"') ?? false;
       if (more && page === 1000) throw new FactoryGitHubError("reconciliation_limit");
       await verify(identity, signal);
-      return {issue: issue(identity.repository, selected), comments, nextPage: more ? page + 1 : null};
+      return {
+        issue: issue(identity.repository, selected),
+        comments,
+        nextPage: more ? page + 1 : null,
+      };
     },
     async readIssueCatalog(coordinates, signal) {
       const issues: FactoryGitHubIssue[] = [];
@@ -646,14 +675,14 @@ export function createFactoryGitHubAdapter(
           limited = true;
         }
         await verify(identity, signal);
-        return { issues, limited, failure, ...(retryAt === undefined ? {} : {retryAt}) };
+        return { issues, limited, failure, ...(retryAt === undefined ? {} : { retryAt }) };
       } catch (error) {
         if (!(error instanceof FactoryGitHubError) || signal?.aborted) throw error;
         return {
           issues: [],
           limited: true,
           failure: error.failure,
-          ...(error.retryAt === undefined ? {} : {retryAt: error.retryAt}),
+          ...(error.retryAt === undefined ? {} : { retryAt: error.retryAt }),
         };
       }
     },

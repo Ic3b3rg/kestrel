@@ -1,4 +1,6 @@
-vi.mock("./project-issue-dispatch.js", () => ({createProjectIssueDispatcher:()=>vi.fn().mockResolvedValue(undefined)}));
+vi.mock("./project-issue-dispatch.js", () => ({
+  createProjectIssueDispatcher: () => vi.fn().mockResolvedValue(undefined),
+}));
 import type * as changeOverviewRendererModule from "./change-overview-renderer.js";
 import type * as publicationProcessorModule from "./factory-publication.js";
 import type * as planningProcessorModule from "./factory-planning.js";

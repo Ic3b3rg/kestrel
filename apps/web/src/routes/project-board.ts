@@ -9,14 +9,19 @@ import {
   StartProjectIssueCommandSchema,
 } from "@kestrel/contracts";
 import {
-  changeIssueDispatch, FactoryError,
+  changeIssueDispatch,
+  FactoryError,
   readProjectBoardSettings,
   saveProjectBoardSettings,
   findProjectIssueStart,
   enqueueProjectIssue,
   type DatabasePool,
 } from "@kestrel/database";
-import { FactoryGitHubError, createFactoryGitHubAdapter, type FactoryGitHubAdapter } from "../factory-github.js";
+import {
+  FactoryGitHubError,
+  createFactoryGitHubAdapter,
+  type FactoryGitHubAdapter,
+} from "../factory-github.js";
 import { AUTHENTICATED_MUTATION_ROUTE_CONFIG } from "../authentication.js";
 import { createProjectIssueReader } from "../project-issue-reader.js";
 import { createProjectBoardService } from "../project-board.js";
@@ -43,7 +48,15 @@ export function registerProjectBoardRoutes(
   const service = createProjectBoardService(pool, github);
   const readIssue = createProjectIssueReader(pool, github);
   const failureReply = (request: Parameters<typeof factoryError>[0], error: unknown) =>
-    factoryError(request, error instanceof FactoryGitHubError ? new FactoryError("unavailable", `GitHub issue access is unavailable (${error.failure.replaceAll("_", " ")}). Retry after access is restored.`) : error);
+    factoryError(
+      request,
+      error instanceof FactoryGitHubError
+        ? new FactoryError(
+            "unavailable",
+            `GitHub issue access is unavailable (${error.failure.replaceAll("_", " ")}). Retry after access is restored.`,
+          )
+        : error,
+    );
   app.get(
     "/api/v1/projects/:projectId/board/settings",
     {

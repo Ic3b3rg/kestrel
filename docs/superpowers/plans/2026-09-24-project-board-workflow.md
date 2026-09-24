@@ -1,11 +1,12 @@
 # Project board workflow implementation plan
 
-> Execute inline using `superpowers:executing-plans`; the user approved the specification and implementation.
+> Execute inline using `superpowers:executing-plans`; the user approved the specification and
+> implementation.
 
-**Goal:** Retain readable issues and start their sequential development directly from the Project board.
-**Architecture:** Persist provider observations independently from workflow authority. A durable issue-start
-request bridges the drop to the existing planning, publication, execution and review lifecycle.
-**Tech stack:** TypeScript, React, Fastify, Zod, PostgreSQL, pg-boss, gh CLI.
+**Goal:** Retain readable issues and start their sequential development directly from the Project
+board. **Architecture:** Persist provider observations independently from workflow authority. A
+durable issue-start request bridges the drop to the existing planning, publication, execution and
+review lifecycle. **Tech stack:** TypeScript, React, Fastify, Zod, PostgreSQL, pg-boss, gh CLI.
 **Spec:** `docs/factory-v01/project-board-workflow.md`.
 
 ## Constraints and ownership
@@ -17,15 +18,17 @@ Use existing API/service/DB/component test boundaries; tests precede behavior ch
 ## Delivery slices
 
 - [ ] Durable reading: adapter labels/comments, database observations/settings, stale-while-refresh
-  board and detail routes; tests prove restart retention, refresh coalescing and throttle backoff.
+      board and detail routes; tests prove restart retention, refresh coalescing and throttle
+      backoff.
 - [ ] Direct start: idempotent authorization and issue queue, current context at dispatch, reuse
-  generated plans and execution; tests prove eligibility, duplicate suppression and retained context.
+      generated plans and execution; tests prove eligibility, duplicate suppression and retained
+      context.
 - [ ] Review releases queue: scheduler excludes reviews from implementation serialization while
-  retaining active reservation and gate protection; regression proves next issue can proceed.
+      retaining active reservation and gate protection; regression proves next issue can proceed.
 - [ ] Board interaction: stable refresh, labels/count, internal reader, drag/drop and equivalent
-  Start button; project label settings; component and browser acceptance.
+      Start button; project label settings; component and browser acceptance.
 - [ ] Integration: typecheck, contracts drift, relevant boundary suites, full unit suite once,
-  isolated browser acceptance, two-axis code review, repair concrete findings, local commit.
+      isolated browser acceptance, two-axis code review, repair concrete findings, local commit.
 
 ## Review focus
 

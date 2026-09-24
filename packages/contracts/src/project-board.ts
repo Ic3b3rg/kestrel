@@ -50,6 +50,8 @@ export const ProjectIssueDiscussionSchema = z.strictObject({
     .max(100),
   nextPage: z.int().positive().nullable(),
   fetchedAt: z.iso.datetime(),
+  checkedAt: z.iso.datetime().optional(),
+  refreshing: z.boolean().optional(),
   failure: FactoryProviderFailureSchema.nullable(),
 });
 export type ProjectIssueDiscussion = z.infer<typeof ProjectIssueDiscussionSchema>;

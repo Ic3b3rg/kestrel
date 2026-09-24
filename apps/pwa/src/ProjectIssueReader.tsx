@@ -29,12 +29,20 @@ export function ProjectIssueReader({
   const [retry, setRetry] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
     setLoading(true);
     setError(null);
     void fetchProjectIssue(projectId, number, page, controller.signal)
       .then((result) => {
-        if (!controller.signal.aborted)
-          setPages((current) => [...current.filter((_, index) => index < page - 1), result]);
+        if (!controller.signal.aborted) {
+          setPages((current) => {
+            const updated = [...current];
+            updated[page - 1] = result;
+            return updated;
+          });
+          if (result.refreshing)
+            refreshTimer = setTimeout(() => setRetry((value) => value + 1), 1000);
+        }
       })
       .catch((failure: unknown) => {
         if (!controller.signal.aborted && !onAuthenticationError(failure))
@@ -48,7 +56,10 @@ export function ProjectIssueReader({
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      clearTimeout(refreshTimer);
+    };
   }, [projectId, number, page, retry, onAuthenticationError]);
   const issue = pages[0]?.issue;
   const next = pages.at(-1)?.nextPage;
@@ -89,7 +100,9 @@ export function ProjectIssueReader({
               <a className="text-sm underline" href={issue.url} target="_blank" rel="noreferrer">
                 Open on GitHub
               </a>
-              <h2 className="text-base font-semibold">Comments ({issue.commentCount ?? comments.length})</h2>
+              <h2 className="text-base font-semibold">
+                Comments ({issue.commentCount ?? comments.length})
+              </h2>
               {comments.map((comment) => (
                 <article key={comment.id} className="space-y-2 border-t pt-4">
                   <a
@@ -118,7 +131,7 @@ export function ProjectIssueReader({
               </p>
             </>
           )}
-          {loading ? (
+          {loading && pages.length === 0 ? (
             <p role="status">Reading issue…</p>
           ) : next != null ? (
             <Button onClick={() => setPage(next)}>Load more comments</Button>

@@ -11,6 +11,7 @@ import {
   createFactoryFeature,
   importFactoryIssues,
   readFactoryPlans,
+  readFactoryIssueImports,
   approveFactoryPlan,
   acceptPlanningMessage,
   FactoryError,
@@ -109,7 +110,7 @@ export function createProjectIssueDispatcher(
     await withProjectIssueDispatchLock(pool, async () => {
       const projects = new Set<string>();
       for (const start of await readIssueDispatches(pool)) {
-        if(signal?.aborted)return;
+        if (signal?.aborted) return;
         if (
           start.feature_state !== null &&
           ["in_review", "completed", "cancelled"].includes(start.feature_state)
@@ -151,7 +152,17 @@ export function createProjectIssueDispatcher(
                 "Planning needs attention. Open the work to resolve the question or retry.",
             );
           const items = plans.current.document.workItems;
-          if (items.length !== 1 || items[0]?.importedIssueId == null)
+          const imports = await readFactoryIssueImports(pool, start.project_id, start.feature_id);
+          const selected = imports.issues.find(
+            (entry) =>
+              entry.issue.id === start.issue_id &&
+              entry.issue.repository.id === start.repository_id,
+          );
+          if (
+            items.length !== 1 ||
+            selected === undefined ||
+            items[0]?.importedIssueId !== selected.id
+          )
             throw new FactoryError(
               "conflict",
               "The generated plan must implement only the selected issue. Open the work to resolve its scope.",

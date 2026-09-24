@@ -2003,6 +2003,11 @@
       ],
       "type": "object"
     },
+    "EmptyBoardCommand": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
     "FactoryBoard": {
       "additionalProperties": false,
       "properties": {
@@ -24796,6 +24801,20 @@
         }
       ]
     },
+    "ProjectBoardSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "readyLabel": {
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "readyLabel"
+      ],
+      "type": "object"
+    },
     "ProjectBoardSnapshot": {
       "additionalProperties": false,
       "properties": {
@@ -29560,6 +29579,262 @@
       "required": [
         "schemaVersion",
         "projects"
+      ],
+      "type": "object"
+    },
+    "ProjectIssueDiscussion": {
+      "additionalProperties": false,
+      "properties": {
+        "checkedAt": {
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+          "type": "string"
+        },
+        "comments": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "author": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "body": {
+                "maxLength": 65536,
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "url": {
+                "format": "uri",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "body",
+              "url",
+              "author"
+            ],
+            "type": "object"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "failure": {
+          "anyOf": [
+            {
+              "enum": [
+                "unavailable",
+                "needs_authentication",
+                "access_denied",
+                "rate_limited",
+                "invalid_response",
+                "timeout",
+                "cancelled",
+                "project_not_supported",
+                "repository_changed",
+                "uncertain_write",
+                "issue_already_bound",
+                "reconciliation_limit"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fetchedAt": {
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+          "type": "string"
+        },
+        "issue": {
+          "additionalProperties": false,
+          "properties": {
+            "body": {
+              "maxLength": 65536,
+              "type": "string"
+            },
+            "commentCount": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "dependencies": {
+              "anyOf": [
+                {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "maxLength": 32,
+                        "pattern": "^[1-9][0-9]*$",
+                        "type": "string"
+                      },
+                      "number": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 2147483647,
+                        "type": "integer"
+                      },
+                      "title": {
+                        "maxLength": 512,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "url": {
+                        "maxLength": 512,
+                        "pattern": "^https:\\/\\/github\\.com\\/[^/]+\\/[^/]+\\/issues\\/[1-9][0-9]*$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "number",
+                      "url",
+                      "title"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 100,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "maxLength": 32,
+              "pattern": "^[1-9][0-9]*$",
+              "type": "string"
+            },
+            "labels": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "color": {
+                    "pattern": "^[a-fA-F0-9]{6}$",
+                    "type": "string"
+                  },
+                  "name": {
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "color"
+                ],
+                "type": "object"
+              },
+              "maxItems": 100,
+              "type": "array"
+            },
+            "number": {
+              "exclusiveMinimum": 0,
+              "maximum": 2147483647,
+              "type": "integer"
+            },
+            "repository": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 32,
+                  "pattern": "^[1-9][0-9]*$",
+                  "type": "string"
+                },
+                "name": {
+                  "pattern": "^[a-zA-Z0-9_.-]{1,100}$",
+                  "type": "string"
+                },
+                "owner": {
+                  "pattern": "^[a-zA-Z0-9][a-zA-Z0-9-]{0,99}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "owner",
+                "name"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "enum": [
+                "open",
+                "closed"
+              ],
+              "type": "string"
+            },
+            "title": {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            },
+            "url": {
+              "maxLength": 512,
+              "pattern": "^https:\\/\\/github\\.com\\/[^/]+\\/[^/]+\\/issues\\/[1-9][0-9]*$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "repository",
+            "id",
+            "number",
+            "url",
+            "title",
+            "body",
+            "state",
+            "dependencies"
+          ],
+          "type": "object"
+        },
+        "nextPage": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "refreshing": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "issue",
+        "comments",
+        "nextPage",
+        "fetchedAt",
+        "failure"
+      ],
+      "type": "object"
+    },
+    "ProjectIssueStartAccepted": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
       ],
       "type": "object"
     },
@@ -45181,6 +45456,26 @@
         "requestId",
         "text",
         "skillDigests"
+      ],
+      "type": "object"
+    },
+    "StartProjectIssueCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "issueNumber": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "requestId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "requestId",
+        "issueNumber"
       ],
       "type": "object"
     },

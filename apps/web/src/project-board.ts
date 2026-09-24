@@ -13,7 +13,10 @@ import {
   type DatabasePool,
 } from "@kestrel/database";
 import { FactoryGitHubError, type FactoryGitHubAdapter } from "./factory-github.js";
-import { readProjectGitHubThrottle, retainProjectGitHubThrottle } from "./project-github-throttle.js";
+import {
+  readProjectGitHubThrottle,
+  retainProjectGitHubThrottle,
+} from "./project-github-throttle.js";
 
 type Catalog = ProjectBoardSnapshot["github"];
 const catalogLifetimeMs = 60_000;
@@ -45,10 +48,23 @@ export function createProjectBoardService(
     const parsed = ProjectBoardSnapshotSchema.shape.github.safeParse(previousValue);
     const previous = parsed.success ? parsed.data : null;
     const now = Date.now();
-    const throttle=await readProjectGitHubThrottle(pool,projectId,`${coordinates?.owner??""}/${coordinates?.repository??""}`);
-    if(throttle!==null) return previous === null
-      ? {issues:[],checkedAt:new Date().toISOString(),fetchedAt:null,failure:"rate_limited",limited:false,retained:false,retryAt:throttle}
-      : {...previous,failure:"rate_limited",retained:true,retryAt:throttle};
+    const throttle = await readProjectGitHubThrottle(
+      pool,
+      projectId,
+      `${coordinates?.owner ?? ""}/${coordinates?.repository ?? ""}`,
+    );
+    if (throttle !== null)
+      return previous === null
+        ? {
+            issues: [],
+            checkedAt: new Date().toISOString(),
+            fetchedAt: null,
+            failure: "rate_limited",
+            limited: false,
+            retained: false,
+            retryAt: throttle,
+          }
+        : { ...previous, failure: "rate_limited", retained: true, retryAt: throttle };
     // Explicit refresh cannot bypass a provider's throttle deadline.
     if (
       previous !== null &&
@@ -65,11 +81,14 @@ export function createProjectBoardService(
     }
     if (previous !== null && !refresh) return { ...previous, refreshing: true };
     const waiting = task;
-    return new Promise<Catalog>((resolve,reject)=>{
-      const abort=()=>reject(new FactoryGitHubError("cancelled"));
-      if(signal.aborted){abort();return;}
-      signal.addEventListener("abort",abort,{once:true});
-      void waiting.then(resolve,reject).finally(()=>signal.removeEventListener("abort",abort));
+    return new Promise<Catalog>((resolve, reject) => {
+      const abort = () => reject(new FactoryGitHubError("cancelled"));
+      if (signal.aborted) {
+        abort();
+        return;
+      }
+      signal.addEventListener("abort", abort, { once: true });
+      void waiting.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
     });
   }
 
@@ -82,9 +101,9 @@ export function createProjectBoardService(
     let observed: Awaited<ReturnType<FactoryGitHubAdapter["readIssueCatalog"]>> | undefined;
     let failure: Catalog["failure"] = null;
     let retryAt: string | null = null;
-    const controller=new AbortController();
-    const signal=controller.signal;
-    const timer=setTimeout(()=>controller.abort(),providerDeadlineMs);
+    const controller = new AbortController();
+    const signal = controller.signal;
+    const timer = setTimeout(() => controller.abort(), providerDeadlineMs);
     try {
       if (coordinates === null) throw new FactoryGitHubError("project_not_supported");
       observed = await Promise.race([
@@ -103,7 +122,12 @@ export function createProjectBoardService(
     }
     clearTimeout(timer);
     if (failure === "rate_limited")
-      retryAt = await retainProjectGitHubThrottle(pool,projectId,`${coordinates?.owner??""}/${coordinates?.repository??""}`,retryAt);
+      retryAt = await retainProjectGitHubThrottle(
+        pool,
+        projectId,
+        `${coordinates?.owner ?? ""}/${coordinates?.repository ?? ""}`,
+        retryAt,
+      );
     const retained = failure !== null && previous !== null;
     const issues = observed?.issues ?? [];
     const value: Catalog = {
@@ -148,7 +172,9 @@ export function createProjectBoardService(
         board.columns.flatMap((column) =>
           column.items.map((item) =>
             ProjectBoardWorkItemSchema.parse({
-              queued: item.column === "todo" && starts.some(start=>start.featureId===board.feature.id),
+              queued:
+                item.column === "todo" &&
+                starts.some((start) => start.featureId === board.feature.id),
               feature: {
                 id: board.feature.id,
                 projectId: board.feature.projectId,
@@ -161,7 +187,11 @@ export function createProjectBoardService(
                 order: item.order,
                 title: item.title,
                 dependsOn: item.dependsOn,
-                column: item.column === "todo" && starts.some(start=>start.featureId===board.feature.id) ? "in_progress" : item.column,
+                column:
+                  item.column === "todo" &&
+                  starts.some((start) => start.featureId === board.feature.id)
+                    ? "in_progress"
+                    : item.column,
                 blocking: item.blocking,
                 providerUrl: item.providerUrl,
               },

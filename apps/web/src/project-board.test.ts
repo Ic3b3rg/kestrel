@@ -1,10 +1,22 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { DatabasePool } from "@kestrel/database";
-import { ProjectBoardSnapshotSchema, type FactoryBoard, type FactoryGitHubIssue, type Feature } from "@kestrel/contracts";
+import {
+  ProjectBoardSnapshotSchema,
+  type FactoryBoard,
+  type FactoryGitHubIssue,
+  type Feature,
+} from "@kestrel/contracts";
 import { FactoryGitHubError, type FactoryGitHubAdapter } from "./factory-github.js";
 import { createProjectBoardService } from "./project-board.js";
 
-const database = vi.hoisted(() => ({ local: vi.fn(), coordinates: vi.fn(), read: vi.fn(), save: vi.fn(), settings: vi.fn(), starts: vi.fn() }));
+const database = vi.hoisted(() => ({
+  local: vi.fn(),
+  coordinates: vi.fn(),
+  read: vi.fn(),
+  save: vi.fn(),
+  settings: vi.fn(),
+  starts: vi.fn(),
+}));
 vi.mock("@kestrel/database", async (original) => ({
   ...(await original<object>()),
   readProjectFactoryBoards: database.local,
@@ -45,24 +57,29 @@ beforeEach(() => {
   database.local.mockReset().mockResolvedValue({ projectId, features: [feature], boards: [] });
   database.coordinates.mockReset().mockResolvedValue({ owner: "example", repository: "reports" });
   const observations = new Map<string, unknown>();
-  database.read.mockReset().mockImplementation(async (_pool, _project, key) => observations.get(key) ?? null);
-  database.save.mockReset().mockImplementation(async (_pool, _project, key, value) => { observations.set(key, value); });
-  database.settings.mockReset().mockResolvedValue({readyLabel: "ready-for-agent"});
+  database.read
+    .mockReset()
+    .mockImplementation(async (_pool, _project, key) => observations.get(key) ?? null);
+  database.save.mockReset().mockImplementation(async (_pool, _project, key, value) => {
+    observations.set(key, value);
+  });
+  database.settings.mockReset().mockResolvedValue({ readyLabel: "ready-for-agent" });
   database.starts.mockReset().mockResolvedValue([]);
   readCatalog.mockReset().mockResolvedValue({ issues: [issue], limited: false, failure: null });
 });
 afterEach(() => vi.useRealTimers());
 
 it("coalesces concurrent reads so an older response cannot overwrite a newer catalog", async () => {
-  const pending=Promise.withResolvers<Awaited<ReturnType<FactoryGitHubAdapter["readIssueCatalog"]>>>();
+  const pending =
+    Promise.withResolvers<Awaited<ReturnType<FactoryGitHubAdapter["readIssueCatalog"]>>>();
   readCatalog.mockReturnValueOnce(pending.promise);
-  const service=createProjectBoardService(pool,github);
-  const signal=new AbortController().signal;
-  const first=service.read(projectId,signal);
-  const second=service.read(projectId,signal);
+  const service = createProjectBoardService(pool, github);
+  const signal = new AbortController().signal;
+  const first = service.read(projectId, signal);
+  const second = service.read(projectId, signal);
   await vi.advanceTimersByTimeAsync(0);
   expect(readCatalog).toHaveBeenCalledOnce();
-  pending.resolve({issues:[issue],limited:false,failure:null});
+  pending.resolve({ issues: [issue], limited: false, failure: null });
   expect((await first).github).toEqual((await second).github);
 });
 
@@ -194,31 +211,42 @@ it("cancels navigation reads while retaining a shared refresh for subsequent vis
 });
 
 it("returns a persisted catalog after restart while one stale refresh runs in the background", async () => {
- const signal = new AbortController().signal;
- await createProjectBoardService(pool, github).read(projectId, signal);
- expect(database.save).toHaveBeenCalledOnce();
- ProjectBoardSnapshotSchema.shape.github.parse(database.save.mock.calls[0]?.[3]);
- vi.advanceTimersByTime(61_000);
- const pending = Promise.withResolvers<Awaited<ReturnType<FactoryGitHubAdapter["readIssueCatalog"]>>>();
- readCatalog.mockReturnValueOnce(pending.promise);
- const restarted = createProjectBoardService(pool, github);
- const [first, second] = await Promise.all([restarted.read(projectId, signal), restarted.read(projectId, signal)]);
- expect(first.github.issues).toHaveLength(1);
- expect(second.github.fetchedAt).toBe(at);
- expect(readCatalog).toHaveBeenCalledTimes(2);
- pending.resolve({issues: [], limited:false, failure:null});
- await vi.advanceTimersByTimeAsync(0);
- expect((await restarted.read(projectId, signal)).github.issues).toEqual([]);
+  const signal = new AbortController().signal;
+  await createProjectBoardService(pool, github).read(projectId, signal);
+  expect(database.save).toHaveBeenCalledOnce();
+  ProjectBoardSnapshotSchema.shape.github.parse(database.save.mock.calls[0]?.[3]);
+  vi.advanceTimersByTime(61_000);
+  const pending =
+    Promise.withResolvers<Awaited<ReturnType<FactoryGitHubAdapter["readIssueCatalog"]>>>();
+  readCatalog.mockReturnValueOnce(pending.promise);
+  const restarted = createProjectBoardService(pool, github);
+  const [first, second] = await Promise.all([
+    restarted.read(projectId, signal),
+    restarted.read(projectId, signal),
+  ]);
+  expect(first.github.issues).toHaveLength(1);
+  expect(second.github.fetchedAt).toBe(at);
+  expect(readCatalog).toHaveBeenCalledTimes(2);
+  pending.resolve({ issues: [], limited: false, failure: null });
+  await vi.advanceTimersByTimeAsync(0);
+  expect((await restarted.read(projectId, signal)).github.issues).toEqual([]);
 });
 
-it("honors a rate-limit deadline even across restart and manual refresh",async()=>{
-  const signal=new AbortController().signal;
-  const retryAt="2026-09-23T13:00:00.000Z";
-  const service=createProjectBoardService(pool,github);
-  await service.read(projectId,signal);
-  readCatalog.mockResolvedValueOnce({issues:[],limited:true,failure:"rate_limited",retryAt});
-  await service.read(projectId,signal,true);
+it("honors a rate-limit deadline even across restart and manual refresh", async () => {
+  const signal = new AbortController().signal;
+  const retryAt = "2026-09-23T13:00:00.000Z";
+  const service = createProjectBoardService(pool, github);
+  await service.read(projectId, signal);
+  readCatalog.mockResolvedValueOnce({
+    issues: [],
+    limited: true,
+    failure: "rate_limited",
+    retryAt,
+  });
+  await service.read(projectId, signal, true);
   vi.advanceTimersByTime(61_000);
-  expect((await createProjectBoardService(pool,github).read(projectId,signal,true)).github).toMatchObject({retryAt,retained:true});
+  expect(
+    (await createProjectBoardService(pool, github).read(projectId, signal, true)).github,
+  ).toMatchObject({ retryAt, retained: true });
   expect(readCatalog).toHaveBeenCalledTimes(2);
 });
