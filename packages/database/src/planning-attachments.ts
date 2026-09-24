@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import sharp from "sharp";
 import {
   PlanningAttachmentSchema,
   PlanningAttachmentsSchema,
@@ -11,7 +12,7 @@ import type { PoolClient } from "pg";
 import type { DatabasePool } from "./pool.js";
 import { FactoryError, withFactoryFeature } from "./factory-planning.js";
 
-export function validatePlanningAttachments(input: unknown) {
+export async function validatePlanningAttachments(input: unknown) {
   const attachments = PlanningAttachmentsSchema.parse(input ?? []);
   for (const file of attachments) {
     if (file.kind === "text") {
@@ -35,6 +36,14 @@ export function validatePlanningAttachments(input: unknown) {
           "conflict",
           "Choose a valid PNG, JPEG or WebP image of at most 2 MB.",
         );
+      try {
+        await sharp(bytes, { failOn: "warning", limitInputPixels: 16_000_000 }).stats();
+      } catch {
+        throw new FactoryError(
+          "conflict",
+          "Choose a complete PNG, JPEG or WebP image of at most 16 megapixels.",
+        );
+      }
     }
   }
   return attachments;

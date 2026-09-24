@@ -60,6 +60,7 @@ it("links generated replies to their own immutable plan version and leaves ordin
       expect(parameters).toEqual([featureId]);
       return { rowCount: messages.length, rows: messages };
     }
+    if (sql.includes("FROM factory_planning_attachments")) return { rowCount: 0, rows: [] };
     if (sql.includes("FROM factory_planning_turns")) return { rowCount: 0, rows: [] };
     throw new Error(`Unexpected read: ${sql}`);
   });

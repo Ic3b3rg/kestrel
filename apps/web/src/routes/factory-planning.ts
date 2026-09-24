@@ -121,7 +121,7 @@ export function registerFactoryPlanningRoutes(
           params.messageId,
           params.attachmentId,
         );
-        return reply
+        return await reply
           .header("Cache-Control", "no-store")
           .header("X-Content-Type-Options", "nosniff")
           .type(file.kind === "image" ? file.mediaType : "text/plain; charset=utf-8")

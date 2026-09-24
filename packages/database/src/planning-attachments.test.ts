@@ -3,7 +3,7 @@ import {
   validatePlanningAttachments,
   planningAttachmentFingerprint,
 } from "./planning-attachments.js";
-it("refuses binary text, mismatched image bytes and oversized Unicode text", () => {
+it("refuses binary text, mismatched image bytes and oversized Unicode text", async () => {
   for (const files of [
     [{ kind: "text", name: "binary.txt", text: "a\u0000b" }],
     [{ kind: "text", name: "big.txt", text: "é".repeat(40000) }],
@@ -16,12 +16,33 @@ it("refuses binary text, mismatched image bytes and oversized Unicode text", () 
       },
     ],
   ])
-    expect(() => validatePlanningAttachments(files)).toThrow();
+    await expect(validatePlanningAttachments(files)).rejects.toThrow();
 });
-it("binds retries to filenames and exact retained content", () => {
-  const first = validatePlanningAttachments([{ kind: "text", name: "note.txt", text: "First" }]);
+it("binds retries to filenames and exact retained content", async () => {
+  const first = await validatePlanningAttachments([
+    { kind: "text", name: "note.txt", text: "First" },
+  ]);
   expect(planningAttachmentFingerprint(first)).toBe(planningAttachmentFingerprint([...first]));
   expect(planningAttachmentFingerprint(first)).not.toBe(
     planningAttachmentFingerprint([{ kind: "text", name: "note.txt", text: "Changed" }]),
   );
+});
+
+it.each([
+  ["image/png", "89504e470d0a1a0a"],
+  ["image/jpeg", "ffd8ffffd9"],
+  ["image/webp", "524946460400000057454250"],
+])("rejects a truncated %s before retention", async (mediaType, hex) => {
+  await expect(
+    Promise.resolve().then(() =>
+      validatePlanningAttachments([
+        {
+          kind: "image",
+          name: "broken.png",
+          mediaType,
+          data: Buffer.from(hex, "hex").toString("base64"),
+        },
+      ]),
+    ),
+  ).rejects.toThrow();
 });

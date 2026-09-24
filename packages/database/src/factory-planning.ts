@@ -504,7 +504,7 @@ export async function acceptPlanningMessageForFeature(
   initialSkillDigests?: string[],
   connection?: CodexSubscriptionConnection,
 ): Promise<PlanningTurnAccepted> {
-  const attachments = validatePlanningAttachments(command.attachments);
+  const attachments = await validatePlanningAttachments(command.attachments);
   const fingerprint = planningAttachmentFingerprint(attachments);
   const featureId = row.id;
   const purpose = planIntent === undefined ? "conversation" : "plan";

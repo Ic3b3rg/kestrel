@@ -219,13 +219,15 @@ export function FeatureChatPanel({
   const [reading, setReading] = useState(true);
   const [readError, setReadError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
-  const attachments = usePlanningAttachments();
   const [planningSettings, setPlanningSettings] = useState<PlanningComposerSettings | undefined>();
   const [importsRevision, setImportsRevision] = useState(0);
   const [commandPending, setCommandPending] = useState(false);
   const [commandError, setCommandError] = useState<string | null>(null);
   const [attemptKind, setAttemptKind] = useState<Attempt["kind"] | null>(null);
   const attempt = useRef<Attempt | null>(null);
+  const attachments = usePlanningAttachments(() => {
+    if (attempt.current === null) setCommandError(null);
+  });
   const activeRead = useRef<AbortController | null>(null);
   const alive = useRef(true);
   const [profileReady, setProfileReady] = useState(false);

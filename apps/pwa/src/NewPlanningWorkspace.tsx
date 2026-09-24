@@ -28,8 +28,8 @@ export interface NewPlanningWorkspaceProps {
 }
 
 export function NewPlanningWorkspace({
-  projectId: initialProjectId,
-  projectName: initialProjectName,
+  projectId,
+  projectName,
   projects,
   requestId,
   online,
@@ -38,9 +38,6 @@ export function NewPlanningWorkspace({
   onAuthenticationError,
   onDraftDirtyChange,
 }: NewPlanningWorkspaceProps) {
-  const [selectedProject, setSelectedProject] = useState<{ id: string; name: string } | null>(null);
-  const projectId = selectedProject?.id ?? initialProjectId;
-  const projectName = selectedProject?.name ?? initialProjectName;
   const [planningSettings, setPlanningSettings] = useState<PlanningComposerSettings | undefined>();
   const [profileReady, setProfileReady] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -182,7 +179,7 @@ export function NewPlanningWorkspace({
               onChange={(event) => {
                 const project = projects.find((item) => item.id === event.target.value);
                 if (project !== undefined) {
-                  setSelectedProject(project);
+                  onNavigate({ kind: "planning", projectId: project.id, requestId });
                   setPlanningSettings(undefined);
                   setProfileReady(false);
                 }

@@ -211,6 +211,18 @@ test("authorizes folders, recovers a clone and freezes a Project profile through
     await dialog.getByRole("button", { name: "Open selected Project", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     const projectUrl = page.url();
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.getByRole("button", { name: "Open Project", exact: true }).click();
+    const otherSource = await dialog
+      .getByRole("option")
+      .filter({ hasText: "remote-notes" })
+      .getAttribute("value");
+    if (!otherSource) throw new Error("Second fixture source missing");
+    await dialog.getByLabel("Repository", { exact: true }).selectOption(otherSource);
+    await dialog.getByRole("button", { name: "Open selected Project", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    const otherProjectId = new URL(page.url()).pathname.split("/")[2];
+    if (!otherProjectId) throw new Error("Second Project missing");
     await page.goto(`${origin}/settings/skills`);
     await page.getByLabel("Host Skill to import").selectOption({ label: "research" });
     await page.getByRole("button", { name: "Import Skill", exact: true }).click();
@@ -232,12 +244,23 @@ test("authorizes folders, recovers a clone and freezes a Project profile through
     await page
       .getByLabel("Describe the change", { exact: true })
       .fill("/research Export all notes without changing them.");
+    const draftUrl = page.url();
+    await page.getByLabel("Project", { exact: true }).selectOption(otherProjectId);
+    await expect(page).toHaveURL(draftUrl.replace(projectId, otherProjectId));
+    await expect(page.getByLabel("Describe the change", { exact: true })).toHaveValue(
+      "/research Export all notes without changing them.",
+    );
+    await expect(
+      page.getByRole("main").getByRole("button", { name: "Start plan", exact: true }),
+    ).toBeEnabled();
+    await page.getByLabel("Project", { exact: true }).selectOption(projectId);
+    await expect(page).toHaveURL(draftUrl);
     await expect(page.getByLabel("Model", { exact: true })).toHaveValue("gpt-6-astra");
     await page.getByLabel("Model", { exact: true }).selectOption("gpt-5.6-sol");
     await page.getByLabel("Reasoning effort", { exact: true }).selectOption("low");
     await expect(page.locator("mark")).toHaveText("/research");
     const image = Buffer.from(
-      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWZkAAAAASUVORK5CYII=",
+      "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAb0lEQVR4nO3PAQkAAAyEwO9feoshgnABdLep8QUNyPEFDcjxBQ3I8QUNyPEFDcjxBQ3I8QUNyPEFDcjxBQ3I8QUNyPEFDcjxBQ3I8QUNyPEFDcjxBQ3I8QUNyPEFDcjxBQ3I8QUNyPEFDcjxBQ3IPanc8OLDQitxAAAAAElFTkSuQmCC",
       "base64",
     );
     await page.getByLabel("Attach files", { exact: true }).setInputFiles([
@@ -294,7 +317,7 @@ test("authorizes folders, recovers a clone and freezes a Project profile through
     await expect(retainedImage).toBeVisible();
     const imagePath = await retainedImage.getAttribute("src");
     if (!imagePath) throw new Error("Retained image link missing");
-    await expect(retainedImage).toHaveJSProperty("naturalWidth", 1);
+    await expect(retainedImage).toHaveJSProperty("naturalWidth", 64);
     const response = await page.evaluate(async (url) => {
       const response = await fetch(url, { credentials: "same-origin" });
       return {

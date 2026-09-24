@@ -56,7 +56,7 @@ async function transaction<T>(
   }
 }
 
-export function startPlanningFeature(
+export async function startPlanningFeature(
   pool: DatabasePool,
   boss: DiagnosticJobSender,
   projectId: string,
@@ -65,7 +65,7 @@ export function startPlanningFeature(
   connection?: CodexSubscriptionConnection,
 ): Promise<PlanningFeatureStarted> {
   const command = StartPlanningFeatureCommandSchema.parse(input);
-  const attachments = validatePlanningAttachments(command.attachments);
+  const attachments = await validatePlanningAttachments(command.attachments);
   return transaction(pool, async (client) => {
     const projects = await client.query<{ id: string }>(
       `SELECT id FROM projects WHERE id = (${projectFamily}) FOR UPDATE`,

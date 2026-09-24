@@ -135,6 +135,49 @@ describe("persistent planning conversation", () => {
     });
   }
 
+  it("allows sending after removing a server-rejected attachment without editing the message", async () => {
+    const sendMessage = vi.fn().mockRejectedValueOnce(
+      new ApiClientError(409, {
+        schemaVersion: 1,
+        code: "REQUEST_REJECTED",
+        message: "Attachment not accepted",
+        correlationId: "01991c36-7f90-7000-8000-000000000003",
+      }),
+    );
+    await render({ loadChat: () => Promise.resolve({ ...initial, turns: [] }), sendMessage });
+    const field = container.querySelector<HTMLTextAreaElement>("#planning-message");
+    await act(async () => {
+      if (!field) throw new Error("Missing composer");
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
+        field,
+        "Keep the message",
+      );
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      const picker = container.querySelector<HTMLInputElement>('input[type="file"]');
+      if (!picker) throw new Error("Missing file picker");
+      Object.defineProperty(picker, "files", {
+        value: [new File(["notes"], "notes.txt", { type: "text/plain" })],
+      });
+      picker.dispatchEvent(new Event("change", { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    await act(async () => {
+      field?.form?.requestSubmit();
+      await Promise.resolve();
+    });
+    expect(sendMessage).toHaveBeenCalledOnce();
+    const submit = container.querySelector<HTMLButtonElement>('button[aria-label="Send message"]');
+    expect(submit?.disabled).toBe(true);
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="Remove attachment notes.txt"]')
+        ?.click();
+      await Promise.resolve();
+    });
+    expect(submit?.disabled).toBe(false);
+    expect(field?.value).toBe("Keep the message");
+  });
+
   it("keeps a rejected inline Skill message editable and links to the global Library", async () => {
     const sendMessage = vi.fn().mockRejectedValueOnce(
       new ApiClientError(409, {

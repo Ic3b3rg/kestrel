@@ -242,3 +242,26 @@ it("keeps an attached text file through an uncertain first-message retry", async
     }),
   );
 });
+
+it("updates the recovery route when changing Project and retains the draft", async () => {
+  const other = { id: "01991c36-7f90-7000-8000-000000000009", name: "Notes" };
+  props.projects = [{ id: projectId, name: "Reports" }, other];
+  await render();
+  await type("Keep this unsent prompt");
+  await act(async () => {
+    const select = container.querySelector<HTMLSelectElement>('select[aria-label="Project"]');
+    if (!select) throw new Error("Missing Project picker");
+    select.value = other.id;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    await Promise.resolve();
+  });
+  expect(props.onNavigate).toHaveBeenCalledWith({
+    kind: "planning",
+    projectId: other.id,
+    requestId: props.requestId,
+  });
+  props = { ...props, projectId: other.id, projectName: other.name };
+  await render();
+  expect(container.querySelector("textarea")?.value).toBe("Keep this unsent prompt");
+  expect(api.lookup).toHaveBeenLastCalledWith(other.id, props.requestId, expect.any(AbortSignal));
+});
