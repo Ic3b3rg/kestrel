@@ -1,6 +1,6 @@
 import type { LocalRepositoryInventory } from "@kestrel/contracts";
 
-const AUTHORIZE_FOLDER_COMMAND = "npm run authorize -- /path/to/folder";
+const AUTHORIZE_FOLDER_COMMAND = "kestrel authorize";
 
 type RepositorySetupState =
   Exclude<LocalRepositoryInventory["inventoryState"], "ready"> | "discovery_failed" | "loading";
@@ -16,9 +16,9 @@ export function AuthorizeFolderHelp() {
     <details className="repository-setup-action">
       <summary>Authorize a folder</summary>
       <div>
-        <p>From the Kestrel directory on your computer, run:</p>
+        <p>Open a terminal in the folder you want to authorize and run:</p>
         <code>{AUTHORIZE_FOLDER_COMMAND}</code>
-        <p>Use the full path to a repository or its parent folder, then refresh the list.</p>
+        <p>Then refresh the repository list.</p>
       </div>
     </details>
   );

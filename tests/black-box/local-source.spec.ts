@@ -457,7 +457,7 @@ test.describe("local-first Project flow", () => {
     const inventoryUrl = "**/api/v1/local-repository-sources";
     const trigger = page.getByRole("button", { name: "Open Project", exact: true });
     await expect(trigger).toBeEnabled();
-    const trustedHostCommand = "npm run authorize -- /path/to/folder";
+    const trustedHostCommand = "kestrel authorize";
     const assertGuidedState = async (title: string) => {
       const dialog = page.getByRole("dialog", { name: "Open an authorized repository" });
       await expect(dialog.getByRole("heading", { name: title })).toBeVisible();

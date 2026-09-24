@@ -192,14 +192,11 @@ async function waitForProcessOutput(observed, expected, timeoutMs) {
 async function main() {
   const environment = process.env;
   const action = process.argv[2] ?? "start";
-  const actionArgument = process.argv[3];
-  const validAction = ["start", "bootstrap", "reset-password"].includes(action)
-    ? actionArgument === undefined && process.argv.length <= 3
-    : action === "authorize-repository-root" && process.argv.length <= 4;
+  const validAction =
+    ["start", "bootstrap", "reset-password", "authorize"].includes(action) &&
+    process.argv.length <= 3;
   if (!validAction) {
-    throw new Error(
-      "Usage: local-development.mjs [start|bootstrap|reset-password|authorize-repository-root [absolute-path]]",
-    );
+    throw new Error("Usage: local-development.mjs [start|bootstrap|reset-password|authorize]");
   }
   const databasePort = readPositiveInteger(
     environment,
@@ -279,17 +276,13 @@ async function main() {
   console.log(
     `[kestrel] Host tools: git=${git} gh=${gh ?? "unavailable"} codex=${codex ?? "unavailable"}`,
   );
-  if (action === "authorize-repository-root") {
+  if (action === "authorize") {
     const authorizationEnvironment = { ...webEnvironment };
     delete authorizationEnvironment.LOCAL_REPOSITORY_ROOTS;
     authorizationEnvironment.LOCAL_REPOSITORY_ROOTS_FILE = repositoryRootsConfiguration;
     await run(
       process.execPath,
-      [
-        "--import=tsx",
-        "scripts/authorize-repository-root.ts",
-        actionArgument ?? environment.INIT_CWD ?? process.cwd(),
-      ],
+      ["--import=tsx", "scripts/authorize-folder.ts", environment.INIT_CWD ?? process.cwd()],
       authorizationEnvironment,
     );
     return;

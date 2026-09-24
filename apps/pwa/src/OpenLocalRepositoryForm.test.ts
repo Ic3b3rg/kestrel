@@ -46,7 +46,7 @@ const repositories: LocalRepositoryInventory = {
   inventoryState: "ready",
   repositories: [{ repositoryId, displayName: "kestrel", attachmentState: "unattached" }],
 };
-const trustedHostCommand = "npm run authorize -- /path/to/folder";
+const trustedHostCommand = "kestrel authorize";
 
 interface Deferred<T> {
   promise: Promise<T>;

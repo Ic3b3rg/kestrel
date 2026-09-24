@@ -146,7 +146,7 @@ describe("Open Project form", () => {
     await click(findButton(document.body, "Open Project"));
 
     expect(document.body.textContent).toContain("No folders authorized yet");
-    expect(document.body.textContent).toContain("npm run authorize --");
+    expect(document.body.textContent).toContain("kestrel authorize");
   });
   it("keeps the selected repository and focuses a local failure without submitting twice", async () => {
     const pending = Promise.withResolvers<ProjectUpserted>();

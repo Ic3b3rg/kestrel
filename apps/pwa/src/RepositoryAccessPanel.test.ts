@@ -77,7 +77,7 @@ describe("Repository access Settings", () => {
       const help = container.querySelector("details");
       expect(help?.open).toBe(false);
       expect(help?.querySelector("summary")?.textContent).toBe("Authorize a folder");
-      expect(help?.textContent).toContain("npm run authorize -- /path/to/folder");
+      expect(help?.textContent).toContain("kestrel authorize");
       expect(container.textContent).not.toContain("Trusted-host action");
       if (request === 0)
         await act(async () => {

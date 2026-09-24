@@ -4,9 +4,7 @@ import {
 } from "../packages/local-source/src/index.js";
 
 async function main(): Promise<void> {
-  const preview = await previewSourceAuthorization(
-    process.argv[2] ?? process.env.INIT_CWD ?? process.cwd(),
-  );
+  const preview = await previewSourceAuthorization(process.argv[2] ?? process.cwd());
   for (const repository of preview.repositories)
     process.stdout.write(`Repository: ${repository.displayName}\n`);
   await confirmSourceAuthorization(preview);
