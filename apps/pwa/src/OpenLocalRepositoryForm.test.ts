@@ -46,8 +46,7 @@ const repositories: LocalRepositoryInventory = {
   inventoryState: "ready",
   repositories: [{ repositoryId, displayName: "kestrel", attachmentState: "unattached" }],
 };
-const trustedHostCommand =
-  "npm run authorize-repository-root -- /absolute/path/to/authorized-parent";
+const trustedHostCommand = "npm run authorize -- /path/to/folder";
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -342,7 +341,8 @@ describe("Compare committed refs form", () => {
     await click(findButton(document.body, "Compare committed refs"));
     expect(document.body.textContent).toContain("Reading repositories…");
     expect(document.body.querySelector("form")?.hidden).toBe(true);
-    expect(document.body.textContent).toContain(trustedHostCommand);
+    expect(document.body.textContent).not.toContain(trustedHostCommand);
+    expect(document.body.querySelector(".repository-setup-action")).toBeNull();
     await click(findButton(document.body, "Close"));
     await click(findButton(document.body, "Compare committed refs"));
     await act(async () => {
@@ -366,7 +366,7 @@ describe("Compare committed refs form", () => {
     });
 
     expect(loadRepositories).toHaveBeenCalledTimes(2);
-    expect(document.body.textContent).toContain("No repository roots are configured");
+    expect(document.body.textContent).toContain("No folders authorized yet");
     expect(document.body.textContent).toContain(trustedHostCommand);
     expect(document.body.querySelector("form")?.hidden).toBe(true);
   });
@@ -384,7 +384,9 @@ describe("Compare committed refs form", () => {
     await click(findButton(document.body, "Compare committed refs"));
 
     expect(document.body.textContent).toContain("No Git repositories were found");
-    expect(document.body.textContent).toContain("The configured roots were loaded successfully");
+    expect(document.body.textContent).toContain(
+      "The authorized folders do not contain any Git repositories.",
+    );
     expect(document.body.textContent).toContain(trustedHostCommand);
     expect(document.body.querySelector("form")?.hidden).toBe(true);
   });
@@ -401,7 +403,7 @@ describe("Compare committed refs form", () => {
     await renderForm({ loadRepositories });
 
     await click(findButton(document.body, "Compare committed refs"));
-    expect(document.body.textContent).toContain("No repository roots are configured");
+    expect(document.body.textContent).toContain("No folders authorized yet");
 
     await click(findButton(document.body, "Refresh repositories"));
 

@@ -13,6 +13,7 @@
     "tests/*"
   ],
   "scripts": {
+    "authorize": "node scripts/local-development.mjs authorize-repository-root",
     "authorize-repository-root": "node scripts/local-development.mjs authorize-repository-root",
     "bootstrap": "node scripts/local-development.mjs bootstrap",
     "reset-password": "node scripts/local-development.mjs reset-password",

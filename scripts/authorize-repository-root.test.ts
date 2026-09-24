@@ -20,40 +20,43 @@ afterEach(async () => {
 });
 
 describe("trusted-host repository root authorization", () => {
-  it("validates and persists one canonical repository root without echoing its path", async () => {
-    if (npmCli === undefined) {
-      throw new Error("npm did not expose its CLI path to the test process");
-    }
-    const fixture = await mkdtemp(join(tmpdir(), "kestrel-authorize-repository-root-"));
-    temporaryDirectories.push(fixture);
-    const authorizedRoot = join(fixture, "repositories");
-    const stateRoot = join(fixture, "state");
-    const git = "/usr/bin/git";
-    await mkdir(authorizedRoot);
-    await execFileAsync(git, ["init", "--quiet", authorizedRoot]);
+  it.each(["authorize", "authorize-repository-root"])(
+    "%s validates and persists one canonical repository root without echoing its path",
+    async (command) => {
+      if (npmCli === undefined) {
+        throw new Error("npm did not expose its CLI path to the test process");
+      }
+      const fixture = await mkdtemp(join(tmpdir(), "kestrel-authorize-repository-root-"));
+      temporaryDirectories.push(fixture);
+      const authorizedRoot = join(fixture, "repositories");
+      const stateRoot = join(fixture, "state");
+      const git = "/usr/bin/git";
+      await mkdir(authorizedRoot);
+      await execFileAsync(git, ["init", "--quiet", authorizedRoot]);
 
-    const result = await execFileAsync(
-      process.execPath,
-      [npmCli, "run", "authorize-repository-root", "--", authorizedRoot],
-      {
-        cwd: repositoryRoot,
-        env: {
-          ...process.env,
-          KESTREL_STATE_ROOT: stateRoot,
-          LOCAL_GIT_EXECUTABLE: git,
+      const result = await execFileAsync(
+        process.execPath,
+        [npmCli, "run", command, "--", authorizedRoot],
+        {
+          cwd: repositoryRoot,
+          env: {
+            ...process.env,
+            KESTREL_STATE_ROOT: stateRoot,
+            LOCAL_GIT_EXECUTABLE: git,
+          },
         },
-      },
-    );
+      );
 
-    const configurationPath = join(stateRoot, "repository-roots.json");
-    await expect(readFile(configurationPath, "utf8").then(JSON.parse)).resolves.toEqual({
-      schemaVersion: 1,
-      repositoryRoots: [await realpath(authorizedRoot)],
-    });
-    expect((await stat(configurationPath)).mode & 0o777).toBe(0o600);
-    expect(result.stdout).toContain("Authorized repositories (1 added).");
-    expect(`${result.stdout}${result.stderr}`).not.toContain(await realpath(authorizedRoot));
-  });
+      const configurationPath = join(stateRoot, "repository-roots.json");
+      await expect(readFile(configurationPath, "utf8").then(JSON.parse)).resolves.toEqual({
+        schemaVersion: 1,
+        repositoryRoots: [await realpath(authorizedRoot)],
+      });
+      expect((await stat(configurationPath)).mode & 0o777).toBe(0o600);
+      expect(result.stdout).toContain("Authorized repositories (1 added).");
+      expect(`${result.stdout}${result.stderr}`).not.toContain(await realpath(authorizedRoot));
+    },
+  );
 
   it("defaults to the caller's current repository when no path is supplied", async () => {
     if (npmCli === undefined) throw new Error("npm CLI is required");
@@ -65,7 +68,7 @@ describe("trusted-host repository root authorization", () => {
     const stateRoot = join(fixture, "state");
     await execFileAsync(
       process.execPath,
-      [npmCli, "--prefix", repositoryRoot, "run", "authorize-repository-root"],
+      [npmCli, "--prefix", repositoryRoot, "run", "authorize"],
       {
         cwd: selected,
         env: {
@@ -102,14 +105,10 @@ describe("trusted-host repository root authorization", () => {
       LOCAL_GIT_EXECUTABLE: git,
     };
     const runAuthorization = (candidate: string) =>
-      execFileAsync(
-        process.execPath,
-        [npmCli, "run", "authorize-repository-root", "--", candidate],
-        {
-          cwd: repositoryRoot,
-          env: environment,
-        },
-      );
+      execFileAsync(process.execPath, [npmCli, "run", "authorize", "--", candidate], {
+        cwd: repositoryRoot,
+        env: environment,
+      });
 
     await runAuthorization(authorizedRoot);
     const configurationPath = join(stateRoot, "repository-roots.json");

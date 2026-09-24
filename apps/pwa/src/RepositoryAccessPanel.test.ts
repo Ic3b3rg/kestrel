@@ -52,6 +52,41 @@ describe("Repository access Settings", () => {
     });
   }
 
+  it("offers collapsed folder help only after discovery and hides it during refresh", async () => {
+    let release: (inventory: LocalRepositoryInventory) => void = () => undefined;
+    const loadRepositories = vi.fn().mockImplementation(
+      () =>
+        new Promise<LocalRepositoryInventory>((resolve) => {
+          release = resolve;
+        }),
+    );
+    await renderPanel({ loadRepositories });
+    for (let request = 0; request < 2; request += 1) {
+      expect(container.querySelector('[role="status"]')?.textContent).toBe("Reading repositories…");
+      expect(container.querySelector(".repository-setup-action")).toBeNull();
+      await act(async () => {
+        release({
+          schemaVersion: 1,
+          inventoryState: "ready",
+          repositories: [
+            { repositoryId, displayName: "team/kestrel", attachmentState: "unattached" },
+          ],
+        });
+        await Promise.resolve();
+      });
+      const help = container.querySelector("details");
+      expect(help?.open).toBe(false);
+      expect(help?.querySelector("summary")?.textContent).toBe("Authorize a folder");
+      expect(help?.textContent).toContain("npm run authorize -- /path/to/folder");
+      expect(container.textContent).not.toContain("Trusted-host action");
+      if (request === 0)
+        await act(async () => {
+          findButton(container, "Refresh repositories").click();
+          await Promise.resolve();
+        });
+    }
+  });
+
   it("refreshes from guided setup to bounded labels and opaque repository identities", async () => {
     const ready: LocalRepositoryInventory = {
       schemaVersion: 1,
@@ -69,7 +104,7 @@ describe("Repository access Settings", () => {
     await renderPanel({ loadRepositories });
 
     expect(container.textContent).toContain("Authorized repositories");
-    expect(container.textContent).toContain("No repository roots are configured");
+    expect(container.textContent).toContain("No folders authorized yet");
     expect(container.querySelector('input[type="text"], input[type="file"]')).toBeNull();
 
     await act(async () => {

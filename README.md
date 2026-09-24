@@ -310,17 +310,18 @@ repositories of a container. **Authorize repositories** saves exactly that previ
 inventory. Cancellation does not authorize anything. Other hosts can use the trusted-host command:
 
 ```sh
-npm run authorize-repository-root -- /absolute/path/to/repository-or-parent
+npm run authorize -- /path/to/folder
 # From the repository to authorize, with Kestrel installed elsewhere:
-npm --prefix /path/to/kestrel run authorize-repository-root
+npm --prefix /path/to/kestrel run authorize
 ```
 
-An omitted path uses the caller's current directory. Each successful command stores the selected
-repositories in the owner-only `repository-roots.json` file beneath the absolute
-`KESTREL_STATE_ROOT`. Missing, unreadable, relative explicit, duplicate, nested, symlinked, or
-storage-overlapping selections fail without replacing the previous valid file. A container
-authorizes only its current direct-child repositories, not future additions or recursively nested
-repositories. A stale UI preview must be selected again. Host paths never reach the browser.
+The previous `npm run authorize-repository-root` command remains supported. An omitted path uses the
+caller's current directory. Each successful command stores the selected repositories in the
+owner-only `repository-roots.json` file beneath the absolute `KESTREL_STATE_ROOT`. Missing,
+unreadable, relative explicit, duplicate, nested, symlinked, or storage-overlapping selections fail
+without replacing the previous valid file. A container authorizes only its current direct-child
+repositories, not future additions or recursively nested repositories. A stale UI preview must be
+selected again. Host paths never reach the browser.
 
 Choose **Refresh repositories** after terminal authorization; no restart is needed. A restart reads
 the same persisted configuration. `LOCAL_REPOSITORY_ROOTS` remains an explicit JSON-array override
@@ -359,10 +360,10 @@ loads only its attached repository. Select two enumerated committed refs and wri
 copy a commit-subject suggestion into Change Intent. Kestrel re-resolves both refs to exact object
 IDs before acquisition; later branch movement cannot retarget the Review Revision.
 
-Until that inventory is ready, the dialog names the current state: checking configuration, no
-configured roots, configured roots with no discoverable repository, or discovery failure. It shows
-the trusted-host command above instead of an unexplained empty selector; host filesystem paths are
-never returned to the browser.
+While reading the inventory, the dialog shows a neutral loading message. Empty and failed discovery
+states explain what happened, with terminal instructions under **Authorize a folder**. Settings
+keeps the same help collapsed when repositories are available. Host filesystem paths are never
+returned to the browser.
 
 The retained closure contains the selected base/head commit objects and all trees and blobs needed
 to materialize those two exact source trees. It deliberately excludes ancestor history, unrelated

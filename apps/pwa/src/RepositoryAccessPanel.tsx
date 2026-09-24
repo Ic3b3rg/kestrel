@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { LocalRepositoryInventory } from "@kestrel/contracts";
 
 import { ApiClientError, fetchLocalRepositories } from "./api.js";
-import { RepositorySetupState, TrustedHostRepositoryAction } from "./RepositorySetupState.js";
+import { RepositorySetupState, AuthorizeFolderHelp } from "./RepositorySetupState.js";
 
 export interface RepositoryAccessPanelProps {
   loadRepositories?: (signal?: AbortSignal) => Promise<LocalRepositoryInventory>;
@@ -126,7 +126,7 @@ export function RepositoryAccessPanel({
                 </li>
               ))}
             </ul>
-            <TrustedHostRepositoryAction />
+            <AuthorizeFolderHelp />
           </>
         ) : null
       ) : (

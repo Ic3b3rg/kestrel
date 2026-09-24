@@ -110,6 +110,30 @@ describe("Open Project form", () => {
     expect(document.body.querySelector('[role="dialog"]')).toBeNull();
   });
 
+  it("keeps initial discovery and refresh free of authorization warnings", async () => {
+    let release: (inventory: LocalRepositoryInventory) => void = () => undefined;
+    const pendingInventory = () =>
+      new Promise<LocalRepositoryInventory>((resolve) => {
+        release = resolve;
+      });
+    render({ loadRepositories: vi.fn().mockImplementation(pendingInventory) });
+    await click(findButton(document.body, "Open Project"));
+
+    for (let request = 0; request < 2; request += 1) {
+      expect(document.body.querySelector('[role="status"]')?.textContent).toBe(
+        "Reading repositories…",
+      );
+      expect(document.body.querySelector(".repository-setup-action")).toBeNull();
+      expect(document.body.querySelector(".repository-setup-state")).toBeNull();
+      await act(async () => {
+        release(readyInventory);
+        await Promise.resolve();
+      });
+      expect(document.body.querySelector("select")).not.toBeNull();
+      if (request === 0) await click(findButton(document.body, "Refresh repositories"));
+    }
+  });
+
   it("shows the honest empty trusted-host state", async () => {
     render({
       loadRepositories: vi.fn().mockResolvedValue({
@@ -121,8 +145,8 @@ describe("Open Project form", () => {
 
     await click(findButton(document.body, "Open Project"));
 
-    expect(document.body.textContent).toContain("No repository roots are configured");
-    expect(document.body.textContent).toContain("authorize-repository-root");
+    expect(document.body.textContent).toContain("No folders authorized yet");
+    expect(document.body.textContent).toContain("npm run authorize --");
   });
   it("keeps the selected repository and focuses a local failure without submitting twice", async () => {
     const pending = Promise.withResolvers<ProjectUpserted>();
