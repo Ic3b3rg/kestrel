@@ -59,10 +59,15 @@ beforeEach(() => {
   const observations = new Map<string, unknown>();
   database.read
     .mockReset()
-    .mockImplementation(async (_pool, _project, key) => observations.get(key) ?? null);
-  database.save.mockReset().mockImplementation(async (_pool, _project, key, value) => {
-    observations.set(key, value);
-  });
+    .mockImplementation((_pool: unknown, _project: unknown, key: string) =>
+      Promise.resolve(observations.get(key) ?? null),
+    );
+  database.save
+    .mockReset()
+    .mockImplementation((_pool: unknown, _project: unknown, key: string, value: unknown) => {
+      observations.set(key, value);
+      return Promise.resolve();
+    });
   database.settings.mockReset().mockResolvedValue({ readyLabel: "ready-for-agent" });
   database.starts.mockReset().mockResolvedValue([]);
   readCatalog.mockReset().mockResolvedValue({ issues: [issue], limited: false, failure: null });

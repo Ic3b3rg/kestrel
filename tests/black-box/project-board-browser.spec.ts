@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { expect, test } from "@playwright/test";
 import { AxeBuilder } from "@axe-core/playwright";
 import { createServer, type ViteDevServer } from "vite";
@@ -29,6 +30,7 @@ test("reads issues in-app, starts by drop, retains queued work, and supports nar
   };
   const starts: Array<unknown> = [];
   let commands = 0;
+  const requestIds: string[] = [];
   let reads = 0;
   try {
     await writeFile(
@@ -107,8 +109,11 @@ const auth=()=>false;createRoot(document.getElementById('root')).render(createEl
       }
       if (url.pathname.endsWith("/start")) {
         commands++;
-        const body = route.request().postDataJSON();
+        const body = z
+          .object({ issueNumber: z.number(), requestId: z.uuid() })
+          .parse(route.request().postDataJSON());
         expect(body.issueNumber).toBe(42);
+        requestIds.push(body.requestId);
         starts.push({
           id: projectId,
           issueNumber: 42,
@@ -121,9 +126,14 @@ const auth=()=>false;createRoot(document.getElementById('root')).render(createEl
         await route.fulfill({ status: 202, json: { id: projectId } });
         return;
       }
+      if (url.pathname.endsWith("/cancel")) {
+        starts.length = 0;
+        await route.fulfill({ json: { id: projectId } });
+        return;
+      }
       await route.abort();
     });
-    await page.goto(`http://127.0.0.1:${address.port}/board-acceptance.html`);
+    await page.goto(`http://127.0.0.1:${String(address.port)}/board-acceptance.html`);
     await page.evaluate(() => {
       document.cookie = `__Host-kestrel-csrf=${"a".repeat(43)}.${"b".repeat(43)}; path=/; Secure; SameSite=Strict`;
     });
@@ -147,6 +157,14 @@ const auth=()=>false;createRoot(document.getElementById('root')).render(createEl
       "Waiting for development",
     );
     expect(commands).toBe(1);
+    await page.getByRole("button", { name: "Cancel queued work", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Start issue #42", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Start issue #42", exact: true }).click();
+    await expect(page.getByRole("region", { name: "In progress", exact: true })).toContainText(
+      "Waiting for development",
+    );
+    expect(requestIds).toHaveLength(2);
+    expect(requestIds[1]).not.toBe(requestIds[0]);
     await page.reload();
     await expect(page.getByRole("region", { name: "In progress", exact: true })).toContainText(
       "Export saved reports",

@@ -99,8 +99,8 @@ export function createProjectBoardService(
     previous: Catalog | null,
   ): Promise<Catalog> {
     let observed: Awaited<ReturnType<FactoryGitHubAdapter["readIssueCatalog"]>> | undefined;
-    let failure: Catalog["failure"] = null;
-    let retryAt: string | null = null;
+    let failure: Catalog["failure"];
+    let retryAt: string | null;
     const controller = new AbortController();
     const signal = controller.signal;
     const timer = setTimeout(() => controller.abort(), providerDeadlineMs);

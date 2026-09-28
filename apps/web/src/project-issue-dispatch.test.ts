@@ -71,7 +71,7 @@ const dispatch = () =>
     pool,
     {} as DiagnosticJobSender,
     {} as FactoryGitHubAdapter,
-    { readConnection: async () => ({}) } as CodexAgentRuntimePort,
+    { readConnection: () => Promise.resolve({}) } as CodexAgentRuntimePort,
   )();
 beforeEach(() => {
   vi.clearAllMocks();
@@ -79,20 +79,18 @@ beforeEach(() => {
   db.busy.mockResolvedValue(false);
   db.create.mockResolvedValue({ id: feature });
   db.imports.mockResolvedValue({ issues: [{ id: project }] });
-  read
-    .mockReset()
-    .mockResolvedValue({
-      issue,
-      comments: [
-        {
-          id: "71",
-          body: "Latest comment",
-          url: issue.url + "#issuecomment-71",
-          author: "operator",
-        },
-      ],
-      nextPage: null,
-    });
+  read.mockReset().mockResolvedValue({
+    issue,
+    comments: [
+      {
+        id: "71",
+        body: "Latest comment",
+        url: issue.url + "#issuecomment-71",
+        author: "operator",
+      },
+    ],
+    nextPage: null,
+  });
 });
 
 it("reads and retains the current complete conversation when queued work starts", async () => {
@@ -111,7 +109,10 @@ it("reads and retains the current complete conversation when queued work starts"
     expect.anything(),
     project,
     feature,
-    expect.objectContaining({ requestId: feature, text: expect.stringContaining(issue.url) }),
+    expect.objectContaining({
+      requestId: feature,
+      text: expect.stringContaining(issue.url) as unknown,
+    }),
     { expectedVersion: null },
     {},
   );

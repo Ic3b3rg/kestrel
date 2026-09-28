@@ -295,9 +295,9 @@ describe("Project Factory board", () => {
     const onOpenIssue = vi.fn();
     await render({ snapshot: board, onStartIssue, onOpenIssue });
     expect(container.textContent).toContain("7 comments");
-    await act(async () => button("Open issue #43: Queued export").click());
+    await act(() => button("Open issue #43: Queued export").click());
     expect(onOpenIssue).toHaveBeenCalledWith(43);
-    await act(async () => button("Start issue #43").click());
+    await act(() => button("Start issue #43").click());
     expect(onStartIssue).toHaveBeenCalledWith(43);
     board.settings = { readyLabel: "ready-for-agent" };
     await render({ snapshot: board, onStartIssue, onOpenIssue });

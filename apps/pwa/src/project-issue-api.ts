@@ -14,7 +14,7 @@ export async function fetchProjectIssue(
   signal?: AbortSignal,
 ) {
   return requireJson(
-    await fetch(`${path(projectId)}/issues/${number}?page=${page}`, {
+    await fetch(`${path(projectId)}/issues/${String(number)}?page=${String(page)}`, {
       credentials: "same-origin",
       signal: signal ?? null,
     }),

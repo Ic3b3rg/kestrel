@@ -42,7 +42,7 @@ export async function readProjectIssueObservation(
   pool: DatabasePool,
   projectId: string,
   key: string,
-): Promise<unknown | null> {
+): Promise<unknown> {
   const result = await pool.query<{ value: unknown }>(
     "SELECT value FROM project_issue_observations WHERE project_id=$1 AND observation_key=$2",
     [projectId, key],
@@ -162,7 +162,9 @@ export async function enqueueProjectIssue(
       ],
     );
     await client.query("COMMIT");
-    return result.rows[0]!.id;
+    const inserted = result.rows[0];
+    if (inserted === undefined) throw new Error("Issue start was not persisted");
+    return inserted.id;
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;

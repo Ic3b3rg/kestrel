@@ -82,7 +82,7 @@ function GitHubIssueCard({
       <Button
         variant="ghost"
         className="h-auto w-full min-w-0 flex-col items-start gap-2 p-3 text-left"
-        aria-label={`Open issue #${issue.number}: ${issue.title}`}
+        aria-label={`Open issue #${String(issue.number)}: ${issue.title}`}
         onClick={() => onOpen?.(issue.number)}
       >
         <span className="text-xs font-normal text-muted-foreground">
@@ -108,7 +108,7 @@ function GitHubIssueCard({
           size="sm"
           variant="ghost"
           disabled={!eligible || onStart === undefined}
-          aria-label={`Start issue #${issue.number}`}
+          aria-label={`Start issue #${String(issue.number)}`}
           onClick={() => onStart?.(issue.number)}
         >
           {starting ? "Starting…" : "Start"}
@@ -421,7 +421,9 @@ export function ProjectFactoryBoardPanel({
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={() => onOpenFeature(start.featureId!, "chat")}
+                          onClick={() => {
+                            if (start.featureId !== null) onOpenFeature(start.featureId, "chat");
+                          }}
                         >
                           Open work
                         </Button>

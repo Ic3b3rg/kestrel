@@ -1,4 +1,4 @@
-import Fastify from "fastify";
+import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { DatabasePool } from "@kestrel/database";
 import { registerProjectBoardRoutes } from "./project-board.js";
@@ -22,7 +22,7 @@ vi.mock("@kestrel/database", async (original) => ({
 const id = "01991c36-7f90-7000-8000-000000000001";
 const root = `/api/v1/projects/${id}/board`;
 const pool = {} as DatabasePool;
-let app: ReturnType<typeof Fastify>;
+let app: FastifyInstance;
 let configs: unknown[];
 beforeEach(() => {
   vi.resetAllMocks();
@@ -31,9 +31,18 @@ beforeEach(() => {
   db.settings.mockResolvedValue({ readyLabel: "ready-for-agent" });
   configs = [];
   app = Fastify({ ajv: { customOptions: { removeAdditional: false } } });
+  app.setErrorHandler((error, request, reply) =>
+    reply.code(error instanceof Error && "validation" in error ? 400 : 500).send({
+      schemaVersion: 1,
+      code: error instanceof Error && "validation" in error ? "INVALID_REQUEST" : "INTERNAL_ERROR",
+      message: "Request failed",
+      correlationId: "01991c36-7f90-7000-8000-000000000007",
+    }),
+  );
   app.decorateRequest("operatorSession", null);
-  app.addHook("onRequest", async (request) => {
+  app.addHook("onRequest", (request, _reply, done) => {
     request.operatorSession = { operator: { id } } as never;
+    done();
   });
   app.addHook("onRoute", (route) => {
     if (route.method === "POST") configs.push(route.config);

@@ -5,17 +5,23 @@ import { FactoryGitHubError, type FactoryGitHubAdapter } from "./factory-github.
 const db = vi.hoisted(() => ({ read: vi.fn(), save: vi.fn() }));
 vi.mock("@kestrel/database", async (original) => ({
   ...(await original<object>()),
-  boardProjectId: async () => "project",
-  readProjectGitHubCoordinates: async () => ({ owner: "example", repository: "reports" }),
+  boardProjectId: () => Promise.resolve("project"),
+  readProjectGitHubCoordinates: () => Promise.resolve({ owner: "example", repository: "reports" }),
   readProjectIssueObservation: db.read,
   saveProjectIssueObservation: db.save,
 }));
 beforeEach(() => {
   const values = new Map<string, unknown>();
-  db.read.mockReset().mockImplementation(async (_pool, _project, key) => values.get(key) ?? null);
+  db.read
+    .mockReset()
+    .mockImplementation((_pool: unknown, _project: unknown, key: string) =>
+      Promise.resolve(values.get(key) ?? null),
+    );
   db.save
     .mockReset()
-    .mockImplementation(async (_pool, _project, key, value) => values.set(key, value));
+    .mockImplementation((_pool: unknown, _project: unknown, key: string, value: unknown) =>
+      Promise.resolve(values.set(key, value)),
+    );
 });
 it("persists a provider throttle deadline even with no previous issue to display", async () => {
   const identify = vi
@@ -56,9 +62,10 @@ it("shows saved content immediately and exposes a completed refresh without repe
   const discussion = new Promise((resolve) => {
     complete = resolve;
   });
+  const readDiscussion = vi.fn().mockReturnValue(discussion);
   const adapter = {
     identify: vi.fn().mockResolvedValue({}),
-    readIssueDiscussion: vi.fn().mockReturnValue(discussion),
+    readIssueDiscussion: readDiscussion,
   } as unknown as FactoryGitHubAdapter;
   const read = createProjectIssueReader({} as DatabasePool, adapter);
   expect(await read("project", 42)).toMatchObject({ refreshing: true, issue: { title: "Old" } });
@@ -68,9 +75,9 @@ it("shows saved content immediately and exposes a completed refresh without repe
       expect.anything(),
       "project",
       "discussion:example/reports:42:1",
-      expect.objectContaining({ issue: expect.objectContaining({ title: "Current" }) }),
+      expect.objectContaining({ issue: expect.objectContaining({ title: "Current" }) as unknown }),
     ),
   );
   expect(await read("project", 42)).toMatchObject({ issue: { title: "Current" } });
-  expect(adapter.readIssueDiscussion).toHaveBeenCalledOnce();
+  expect(readDiscussion).toHaveBeenCalledOnce();
 });

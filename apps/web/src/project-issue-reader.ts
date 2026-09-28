@@ -23,7 +23,7 @@ export function createProjectIssueReader(pool: DatabasePool, github: FactoryGitH
     const id = await boardProjectId(pool, projectId);
     const coordinates = await readProjectGitHubCoordinates(pool, id);
     if (coordinates === null) throw new FactoryGitHubError("project_not_supported");
-    const key = `discussion:${coordinates.owner}/${coordinates.repository}:${number}:${page}`;
+    const key = `discussion:${coordinates.owner}/${coordinates.repository}:${String(number)}:${String(page)}`;
     const parsed = ProjectIssueDiscussionSchema.safeParse(
       await readProjectIssueObservation(pool, id, key),
     );

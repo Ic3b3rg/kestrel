@@ -15,7 +15,7 @@ export interface IssueDispatch {
   plan_request_id: string;
   state: "queued" | "preparing" | "running" | "blocked";
   feature_id: string | null;
-  snapshot: unknown | null;
+  snapshot: unknown;
   feature_state: string | null;
 }
 
@@ -93,7 +93,16 @@ export async function changeIssueDispatch(
 
 export async function readIssueDispatches(pool: DatabasePool) {
   const result = await pool.query<IssueDispatch>(
-    `SELECT start.*,feature.state AS feature_state FROM project_issue_starts start LEFT JOIN factory_features feature ON feature.id=start.feature_id WHERE start.state <> 'done' ORDER BY start.created_at,start.id LIMIT 200`,
+    `WITH active AS (
+       SELECT start.*,feature.state AS feature_state FROM project_issue_starts start
+       LEFT JOIN factory_features feature ON feature.id=start.feature_id WHERE start.state <> 'done'
+     ), heads AS (
+       SELECT DISTINCT ON (project_id) id FROM active
+       WHERE feature_state IS NULL OR feature_state NOT IN ('in_review','completed','cancelled')
+       ORDER BY project_id,created_at,id
+     )
+     SELECT active.* FROM active WHERE id IN (SELECT id FROM heads)
+       OR feature_state IN ('in_review','completed','cancelled') ORDER BY created_at,id`,
   );
   return result.rows;
 }
@@ -143,7 +152,7 @@ export async function attachIssueDispatchFeature(
 export async function readIssueExecutionContext(
   pool: Pick<DatabasePool, "query">,
   featureId: string,
-): Promise<unknown | null> {
+): Promise<unknown> {
   const result = await pool.query<{ snapshot: unknown }>(
     "SELECT snapshot FROM project_issue_starts WHERE feature_id=$1",
     [featureId],

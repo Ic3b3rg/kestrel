@@ -90,6 +90,9 @@ export function createProjectIssueDispatcher(
       { requestId: start.id, issueNumbers: [start.issue_number] },
       [context.issue],
     );
+    const imported = imports.issues[0];
+    if (imported === undefined)
+      throw new FactoryError("conflict", "The selected issue was not imported.");
     await attachIssueDispatchFeature(pool, start.id, feature.id);
     await acceptPlanningMessage(
       pool,
@@ -98,7 +101,7 @@ export function createProjectIssueDispatcher(
       feature.id,
       {
         requestId: start.plan_request_id,
-        text: `The Operator explicitly authorized development of ${context.issue.url} by starting it from the Project board. Prepare exactly one Work Item bound to imported issue ${imports.issues[0]!.id}. Read the complete retained issue and conversation provided in issueExecutionContext, including its acceptance requirements. Derive the operational plan and concrete verification from the committed repository context. Do not create additional tracker issues or broaden the request. If consequential requirements or verification are unresolved, request input; never invent them. This command already authorizes execution under the Project implementation profile, without another approval dialog. Use limits ${JSON.stringify(DEFAULT_FACTORY_LIMITS)}.`,
+        text: `The Operator explicitly authorized development of ${context.issue.url} by starting it from the Project board. Prepare exactly one Work Item bound to imported issue ${imported.id}. Read the complete retained issue and conversation provided in issueExecutionContext, including its acceptance requirements. Derive the operational plan and concrete verification from the committed repository context. Do not create additional tracker issues or broaden the request. If consequential requirements or verification are unresolved, request input; never invent them. This command already authorizes execution under the Project implementation profile, without another approval dialog. Use limits ${JSON.stringify(DEFAULT_FACTORY_LIMITS)}.`,
       },
       { expectedVersion },
       await runtime.readConnection(),

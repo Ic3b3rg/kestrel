@@ -44,6 +44,7 @@ function ProjectFactoryWorkspaceContent({
     requests.current.set(number, requestId);
     try {
       await startProjectIssue(projectId, number, requestId);
+      requests.current.delete(number);
       setSnapshot(await fetchProjectBoard(projectId));
     } catch (failure) {
       if (!onAuthenticationError(failure))

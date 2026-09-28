@@ -146,7 +146,7 @@ export function registerProjectBoardRoutes(
             command,
             (await readIssue(projectId, command.issueNumber, 1, true)).issue,
           ));
-        return reply.code(202).send({ id });
+        return await reply.code(202).send({ id });
       } catch (error) {
         const f = failureReply(request, error);
         return reply.code(f.status).send(f.body);

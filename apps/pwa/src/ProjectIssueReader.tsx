@@ -73,7 +73,7 @@ export function ProjectIssueReader({
     >
       <SheetContent className="w-full! overflow-y-auto sm:max-w-2xl!">
         <SheetHeader>
-          <SheetTitle>{issue?.title ?? `Issue #${number}`}</SheetTitle>
+          <SheetTitle>{issue?.title ?? `Issue #${String(number)}`}</SheetTitle>
           <SheetDescription>
             Issue #{number} · {issue?.repository.owner}/{issue?.repository.name}
           </SheetDescription>
@@ -127,7 +127,7 @@ export function ProjectIssueReader({
                 </p>
               ) : null}
               <p className="text-xs text-muted-foreground">
-                Read {new Date(pages[0]!.fetchedAt).toLocaleString()}
+                Read {new Date(pages[0]?.fetchedAt ?? Date.now()).toLocaleString()}
               </p>
             </>
           )}
