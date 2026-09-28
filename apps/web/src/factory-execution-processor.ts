@@ -108,6 +108,7 @@ function promptFor(
         skills: run.lifecycleProfile?.skills ?? [],
       },
       feature: run.title,
+      issueExecutionContext: run.issueExecutionContext ?? null,
       approvedVersion: run.version,
       objective: run.plan.objective,
       scope: run.plan.scope,

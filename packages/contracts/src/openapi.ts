@@ -62,7 +62,12 @@ import {
   FactoryIssuePublicationSchema,
   RetryFactoryPublicationCommandSchema,
 } from "./factory-issues.js";
-import { ProjectBoardSnapshotSchema } from "./project-board.js";
+import {
+  ProjectBoardSnapshotSchema,
+  ProjectBoardSettingsSchema,
+  ProjectIssueDiscussionSchema,
+  StartProjectIssueCommandSchema,
+} from "./project-board.js";
 
 import {
   FeaturePlanDocumentSchema,
@@ -240,6 +245,16 @@ const factoryComponents = {
   ResolveFactoryGateCommand: asComponentSchema(asJsonSchema(ResolveFactoryGateCommandSchema)),
   FactoryGitHubIssues: asComponentSchema(asJsonSchema(FactoryGitHubIssuesSchema)),
   ProjectBoardSnapshot: asComponentSchema(asJsonSchema(ProjectBoardSnapshotSchema)),
+  ProjectBoardSettings: asComponentSchema(asJsonSchema(ProjectBoardSettingsSchema)),
+  ProjectIssueDiscussion: asComponentSchema(asJsonSchema(ProjectIssueDiscussionSchema)),
+  StartProjectIssueCommand: asComponentSchema(asJsonSchema(StartProjectIssueCommandSchema)),
+  ProjectIssueStartAccepted: {
+    type: "object",
+    properties: { id: asJsonSchema(KestrelIdSchema) },
+    required: ["id"],
+    additionalProperties: false,
+  },
+  EmptyBoardCommand: { type: "object", properties: {}, additionalProperties: false },
   FactoryIssueImports: asComponentSchema(asJsonSchema(FactoryIssueImportsSchema)),
   ImportFactoryIssuesCommand: asComponentSchema(asJsonSchema(ImportFactoryIssuesCommandSchema)),
   FactoryIssuePublication: asComponentSchema(asJsonSchema(FactoryIssuePublicationSchema)),
@@ -1310,6 +1325,66 @@ export const openApiDocument = sortJson({
       ],
       get: factoryRead("readProjectBoard", "ProjectBoardSnapshot"),
     },
+    "/api/v1/projects/{projectId}/board/settings": {
+      parameters: [
+        { in: "path", name: "projectId", required: true, schema: asJsonSchema(KestrelIdSchema) },
+      ],
+      get: factoryRead("readProjectBoardSettings", "ProjectBoardSettings"),
+      post: factoryTurnMutation(
+        "saveProjectBoardSettings",
+        "ProjectBoardSettings",
+        "ProjectBoardSettings",
+        200,
+      ),
+    },
+    "/api/v1/projects/{projectId}/board/issues/{number}": {
+      parameters: [
+        { in: "path", name: "projectId", required: true, schema: asJsonSchema(KestrelIdSchema) },
+        {
+          in: "path",
+          name: "number",
+          required: true,
+          schema: { type: "integer", minimum: 1, maximum: 2147483647 },
+        },
+        {
+          in: "query",
+          name: "page",
+          required: false,
+          schema: { type: "integer", minimum: 1, maximum: 1000, default: 1 },
+        },
+      ],
+      get: factoryRead("readProjectIssueDiscussion", "ProjectIssueDiscussion"),
+    },
+    "/api/v1/projects/{projectId}/board/start": {
+      parameters: [
+        { in: "path", name: "projectId", required: true, schema: asJsonSchema(KestrelIdSchema) },
+      ],
+      post: factoryTurnMutation(
+        "startProjectIssue",
+        "StartProjectIssueCommand",
+        "ProjectIssueStartAccepted",
+        202,
+      ),
+    },
+    ...Object.fromEntries(
+      ["cancel", "retry"].map((action) => [
+        `/api/v1/projects/{projectId}/board/starts/{id}/${action}`,
+        {
+          parameters: ["projectId", "id"].map((name) => ({
+            in: "path",
+            name,
+            required: true,
+            schema: asJsonSchema(KestrelIdSchema),
+          })),
+          post: factoryTurnMutation(
+            `${action}ProjectIssueStart`,
+            "EmptyBoardCommand",
+            "ProjectIssueStartAccepted",
+            200,
+          ),
+        },
+      ]),
+    ),
     "/api/v1/projects/{projectId}/features/{featureId}/imports": {
       parameters: factoryParameters(),
       get: factoryRead("readFactoryIssueImports", "FactoryIssueImports"),

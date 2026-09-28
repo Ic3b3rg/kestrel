@@ -94,7 +94,7 @@ export function readFactoryImportRequest(
 
 export async function assertFactoryIssueAvailable(
   client: PoolClient,
-  featureId: string,
+  featureId: string | null,
   repositoryId: string,
   issueId: string,
 ) {
@@ -105,7 +105,7 @@ export async function assertFactoryIssueAvailable(
   ]);
   const result = await client.query(
     `
-    SELECT 1 FROM factory_features feature WHERE feature.id <> $1
+    SELECT 1 FROM factory_features feature WHERE feature.id IS DISTINCT FROM $1
       AND feature.state NOT IN ('cancelled', 'completed') AND (
         EXISTS (SELECT 1 FROM factory_issue_imports imported WHERE imported.feature_id = feature.id
           AND imported.repository_provider_id = $2 AND imported.issue_provider_id = $3)

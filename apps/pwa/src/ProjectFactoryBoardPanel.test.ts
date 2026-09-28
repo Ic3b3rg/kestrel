@@ -270,4 +270,37 @@ describe("Project Factory board", () => {
     expect(container.querySelectorAll("li")).toHaveLength(0);
     expect(container.textContent).toContain("Start a plan");
   });
+  it("keeps empty column text visible during a background refresh", async () => {
+    await render({ loading: true });
+    expect(container.querySelector('[aria-label="Completed"]')?.textContent).toContain(
+      "Work appears here as it progresses.",
+    );
+  });
+  it("shows issue metadata and provides a keyboard start only for the configured ready label", async () => {
+    const board = snapshot();
+    board.github.issues = [
+      {
+        repository: { id: "901", owner: "owner", name: "reports" },
+        id: "43",
+        number: 43,
+        url: "https://github.com/owner/reports/issues/43",
+        title: "Queued export",
+        state: "open",
+        labels: [{ name: "ship", color: "008800" }],
+        commentCount: 7,
+      },
+    ];
+    board.settings = { readyLabel: "ship" };
+    const onStartIssue = vi.fn();
+    const onOpenIssue = vi.fn();
+    await render({ snapshot: board, onStartIssue, onOpenIssue });
+    expect(container.textContent).toContain("7 comments");
+    await act(() => button("Open issue #43: Queued export").click());
+    expect(onOpenIssue).toHaveBeenCalledWith(43);
+    await act(() => button("Start issue #43").click());
+    expect(onStartIssue).toHaveBeenCalledWith(43);
+    board.settings = { readyLabel: "ready-for-agent" };
+    await render({ snapshot: board, onStartIssue, onOpenIssue });
+    expect(button("Start issue #43").disabled).toBe(true);
+  });
 });
