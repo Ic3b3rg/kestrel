@@ -1,60 +1,60 @@
 @reference "./styles.css";
 
-.issue-markdown {
+.markdown-content {
   @apply min-w-0 text-sm leading-7 text-foreground;
   overflow-wrap: anywhere;
 }
-.issue-markdown > * + * {
+.markdown-content > * + * {
   @apply mt-4;
 }
-.issue-markdown :is(h1, h2) {
+.markdown-content :is(h1, h2) {
   @apply border-b border-border pb-2 text-xl font-semibold leading-snug;
 }
-.issue-markdown :is(h3, h4, h5, h6) {
+.markdown-content :is(h3, h4, h5, h6) {
   @apply text-base font-semibold leading-snug;
 }
-.issue-markdown :is(ul, ol) {
+.markdown-content :is(ul, ol) {
   @apply space-y-1 pl-6;
 }
-.issue-markdown ul {
+.markdown-content ul {
   @apply list-disc;
 }
-.issue-markdown ol {
+.markdown-content ol {
   @apply list-decimal;
 }
-.issue-markdown .contains-task-list {
+.markdown-content .contains-task-list {
   @apply list-none pl-0;
 }
-.issue-markdown input[type="checkbox"] {
+.markdown-content input[type="checkbox"] {
   @apply mr-2;
 }
-.issue-markdown a {
+.markdown-content a {
   @apply text-primary underline underline-offset-2;
 }
-.issue-markdown blockquote {
+.markdown-content blockquote {
   @apply border-l-4 border-border pl-4 text-muted-foreground;
 }
-.issue-markdown pre {
+.markdown-content pre {
   @apply max-w-full overflow-x-auto rounded-md bg-muted p-4 text-xs leading-6;
 }
-.issue-markdown code {
+.markdown-content code {
   @apply rounded bg-muted px-1 py-0.5 font-mono text-xs;
 }
-.issue-markdown pre code {
+.markdown-content pre code {
   @apply bg-transparent p-0;
 }
-.issue-markdown table {
+.markdown-content table {
   @apply w-full border-collapse text-left;
 }
-.issue-markdown :is(th, td) {
+.markdown-content :is(th, td) {
   @apply border border-border px-3 py-2;
 }
-.issue-markdown th {
+.markdown-content th {
   @apply bg-muted font-semibold;
 }
-.issue-markdown img {
+.markdown-content img {
   @apply max-w-full rounded-md;
 }
-.issue-markdown hr {
+.markdown-content hr {
   @apply border-border;
 }

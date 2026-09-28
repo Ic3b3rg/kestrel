@@ -1,19 +1,20 @@
 import Markdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import "./issue-markdown.css";
+import "./markdown-content.css";
 
-/** Provider text remains untrusted: no raw HTML or executable URL schemes. */
-export function IssueMarkdown({ body, issueUrl }: { body: string; issueUrl: string }) {
+/** Markdown remains untrusted: no raw HTML or executable URL schemes. */
+export function MarkdownContent({ body, baseUrl }: { body: string; baseUrl?: string }) {
   return (
-    <div className="issue-markdown">
+    <div className="markdown-content">
       <Markdown
         remarkPlugins={[remarkGfm]}
         skipHtml
         urlTransform={(url) => {
           const safe = defaultUrlTransform(url);
           if (!safe) return "";
+          if (baseUrl === undefined) return safe;
           try {
-            return new URL(safe, `${issueUrl}/`).href;
+            return new URL(safe, baseUrl).href;
           } catch {
             return "";
           }
