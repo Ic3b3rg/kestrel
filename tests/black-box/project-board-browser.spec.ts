@@ -32,6 +32,8 @@ test("reads issues in-app, starts by drop, retains queued work, and supports nar
   let commands = 0;
   const requestIds: string[] = [];
   let reads = 0;
+  const firstBoard = Promise.withResolvers<undefined>();
+  const firstIssue = Promise.withResolvers<undefined>();
   try {
     await writeFile(
       entry,
@@ -57,6 +59,7 @@ const auth=()=>false;createRoot(document.getElementById('root')).render(createEl
       const at = new Date().toISOString();
       if (url.pathname.endsWith("/board")) {
         reads++;
+        if (reads === 1) await firstBoard.promise;
         await route.fulfill({
           json: {
             schemaVersion: 1,
@@ -79,17 +82,18 @@ const auth=()=>false;createRoot(document.getElementById('root')).render(createEl
         return;
       }
       if (url.pathname.endsWith("/issues/42")) {
+        await firstIssue.promise;
         await route.fulfill({
           json: {
             issue: {
               ...issue,
-              body: "Export every selected report.\n<script>window.unsafeIssue = true</script>",
+              body: "## Export requirements\n\nExport **every selected report**.\n\n- [x] Keep names\n- [ ] Export files\n\n| Format | Supported |\n| --- | --- |\n| CSV | Yes |\n\n```ts\nconst format = 'csv';\n```\n\n[Related](../43) [Malformed](http://[)\n\n[Unsafe](javascript:alert(1))\n\n<script>window.unsafeIssue = true</script>",
               dependencies: [],
             },
             comments: [
               {
                 id: "71",
-                body: "Keep Unicode intact.",
+                body: "Keep **Unicode** intact.",
                 author: "operator",
                 url: issue.url + "#issuecomment-71",
               },
@@ -133,7 +137,19 @@ const auth=()=>false;createRoot(document.getElementById('root')).render(createEl
       }
       await route.abort();
     });
+    await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto(`http://127.0.0.1:${String(address.port)}/board-acceptance.html`);
+    await expect(page.getByRole("status")).toHaveText("Loading board…");
+    for (const column of ["To do", "In progress", "In review", "Completed"]) {
+      await expect(
+        page
+          .getByRole("region", { name: column, exact: true })
+          .locator('[data-slot="skeleton"]')
+          .first(),
+      ).toBeVisible();
+    }
+    await page.screenshot({ path: testInfo.outputPath("board-loading.png"), fullPage: true });
+    firstBoard.resolve(undefined);
     await page.evaluate(() => {
       document.cookie = `__Host-kestrel-csrf=${"a".repeat(43)}.${"b".repeat(43)}; path=/; Secure; SameSite=Strict`;
     });
@@ -145,8 +161,27 @@ const auth=()=>false;createRoot(document.getElementById('root')).render(createEl
       .getByRole("button", { name: "Open issue #42: Export saved reports", exact: true })
       .click();
     const reader = page.getByRole("dialog");
+    await expect(reader.getByRole("status")).toHaveText("Reading issue…");
+    await expect(reader.locator('[data-slot="skeleton"]').first()).toBeVisible();
+    firstIssue.resolve(undefined);
     await expect(reader.getByText("Keep Unicode intact.", { exact: true })).toBeVisible();
+    await expect(reader.getByRole("heading", { name: "Export requirements" })).toBeVisible();
+    await expect(reader.locator("strong", { hasText: "Unicode" })).toBeVisible();
+    await expect(reader.getByRole("link", { name: "Related", exact: true })).toHaveAttribute(
+      "href",
+      "https://github.com/example/reports/issues/43",
+    );
+    await expect(reader.getByText("Malformed", { exact: true })).toHaveAttribute("href", "");
+    await expect(reader.getByRole("table")).toContainText("CSV");
+    await expect(reader.getByRole("checkbox")).toHaveCount(2);
+    await expect(reader.getByRole("checkbox").first()).toBeChecked();
+    await expect(reader.getByRole("checkbox").first()).toBeDisabled();
+    await expect(reader.locator("pre code")).toContainText("const format = 'csv';");
+    expect(await reader.getByText("Unsafe", { exact: true }).getAttribute("href")).not.toMatch(
+      /^javascript:/,
+    );
     expect(await page.evaluate(() => "unsafeIssue" in window)).toBe(false);
+    await page.screenshot({ path: testInfo.outputPath("issue-desktop.png"), fullPage: true });
     await page.keyboard.press("Escape");
     await expect(reader).toHaveCount(0);
     const card = page
@@ -170,7 +205,7 @@ const auth=()=>false;createRoot(document.getElementById('root')).render(createEl
       "Export saved reports",
     );
     await page.screenshot({ path: testInfo.outputPath("board-desktop.png"), fullPage: true });
-    await page.setViewportSize({ width: 375, height: 812 });
+    await page.setViewportSize({ width: 320, height: 812 });
     await expect(page.getByRole("region", { name: "Completed", exact: true })).toContainText(
       "Work appears here as it progresses.",
     );
@@ -180,10 +215,15 @@ const auth=()=>false;createRoot(document.getElementById('root')).render(createEl
     await page.getByRole("button", { name: "#42 Export saved reports", exact: true }).focus();
     await page.keyboard.press("Enter");
     await expect(page.getByRole("dialog")).toContainText("Include the report title.");
+    expect(await reader.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+      true,
+    );
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
     await page.screenshot({ path: testInfo.outputPath("issue-narrow.png"), fullPage: true });
     expect(reads).toBeGreaterThanOrEqual(2);
   } finally {
+    firstBoard.resolve(undefined);
+    firstIssue.resolve(undefined);
     await server?.close();
     await rm(entry, { force: true });
     await rm(cache, { recursive: true, force: true });
