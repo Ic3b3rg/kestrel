@@ -49,7 +49,7 @@ import { renameFactoryFeature } from "./factory-start-api.js";
 
 const ignoreDirtyChange = () => undefined;
 const featureStatus: Record<Feature["state"], string> = {
-  planning: "Planning · Define the outcome before implementation.",
+  planning: "Interview · Define the outcome before implementation.",
   queued: "Issues published · Start an issue from the project board.",
   implementing: "In progress · Approved work is running on the workstation.",
   gated: "Decision needed · Review the blocked work on the board.",
@@ -500,14 +500,6 @@ export function FeatureChatPanel({
           )}
           {chat.context?.notice === null || chat.context?.notice === undefined ? null : (
             <p className="planning-notice">{chat.context.notice}</p>
-          )}
-          {(chat.skills?.skills.length ?? 0) === 0 ? null : (
-            <p
-              className="text-xs text-muted-foreground"
-              aria-label="Skills guiding the next message"
-            >
-              Next message: {chat.skills?.skills.map((skill) => `$${skill.name}`).join(", ")}
-            </p>
           )}
           {chat.messages.length === 0 && editable ? (
             <div className="planning-empty">

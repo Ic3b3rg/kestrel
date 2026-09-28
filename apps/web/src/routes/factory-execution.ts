@@ -1,3 +1,5 @@
+import { readLocalSourceConfig } from "@kestrel/local-source";
+import { readIssueStartContext } from "../factory-planning-source.js";
 import { renderFeaturePlanArtifacts } from "../factory-plan-artifacts.js";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -64,6 +66,8 @@ export function registerFactoryExecutionRoutes(app: FastifyInstance, pool: Datab
           actorId,
           StartFactoryWorkItemCommandSchema.parse(request.body),
           renderFeaturePlanArtifacts,
+          async (source, requiredCommits) =>
+            readIssueStartContext(await readLocalSourceConfig(), source, requiredCommits),
         );
       } catch (error) {
         const failure = factoryError(request, error);

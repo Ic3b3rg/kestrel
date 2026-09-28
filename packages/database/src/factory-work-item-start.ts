@@ -2,6 +2,7 @@ import {
   FeaturePlanDocumentSchema,
   PlanningContextSchema,
   type FeaturePlanDocument,
+  type PlanningContext,
   type StartFactoryWorkItemCommand,
   type FactoryWorkItemStart,
 } from "@kestrel/contracts";
@@ -15,8 +16,8 @@ export function isolateWorkItemPlan(plan: FeaturePlanDocument, key: string): Fea
   if (item === undefined) throw new FactoryError("not_found");
   return FeaturePlanDocumentSchema.parse({
     ...plan,
-    objective: item.description,
-    scope: { includes: [item.description], excludes: plan.scope.excludes },
+    objective: item.title,
+    scope: { includes: [item.title], excludes: plan.scope.excludes },
     proposedDocuments: (plan.proposedDocuments ?? []).filter(
       (document) => document.workItemKey === key,
     ),
@@ -36,6 +37,10 @@ export function startFactoryWorkItem(
   actorId: string,
   command: StartFactoryWorkItemCommand,
   render: FactoryPlanArtifactRenderer,
+  readContext: (
+    source: { repositoryId: string; identity: string },
+    requiredCommits: readonly string[],
+  ) => Promise<PlanningContext>,
 ): Promise<FactoryWorkItemStart> {
   return withFactoryFeature(pool, projectId, featureId, async (client, feature) => {
     const existing = await client.query<{
@@ -118,10 +123,47 @@ export function startFactoryWorkItem(
     if (executionFeatureId === undefined || executionWorkItemId === undefined)
       throw new Error("Execution identities were not allocated");
     const isolated = isolateWorkItemPlan(plan, item.key);
-    const context =
-      original.source_context === null
-        ? null
-        : PlanningContextSchema.parse(original.source_context);
+    const sources = await client.query<{ repository_id: string; source_identity: string }>(
+      `SELECT source.repository_id, source.source_identity FROM local_repository_sources source JOIN projects owner ON owner.id = source.project_id
+       WHERE COALESCE(owner.canonical_project_id, owner.id) = $1 AND source.attachment_state = 'attached' ORDER BY source.project_id LIMIT 1`,
+      [feature.project_id],
+    );
+    const attached = sources.rows[0];
+    if (attached === undefined)
+      throw new FactoryError(
+        "conflict",
+        "Attach the authorized repository before starting this issue.",
+      );
+    const executionSource = {
+      repositoryId: attached.repository_id,
+      identity: attached.source_identity,
+    };
+    const dependencies = await client.query<{ merge_commit_id: string }>(
+      `SELECT merged.merge_commit_id FROM factory_work_items item
+       JOIN factory_work_item_starts start ON start.work_item_id = item.id
+       JOIN factory_feature_merges merged ON merged.feature_id = start.execution_feature_id AND merged.state = 'completed'
+       WHERE item.feature_id = $1 AND item.key = ANY($2::text[])`,
+      [featureId, definition.dependsOn],
+    );
+    if (dependencies.rows.length !== definition.dependsOn.length)
+      throw new FactoryError(
+        "conflict",
+        "Dependency merge evidence is unavailable. Refresh the board.",
+      );
+    let context: PlanningContext;
+    try {
+      context = PlanningContextSchema.parse(
+        await readContext(
+          executionSource,
+          dependencies.rows.map((row) => row.merge_commit_id),
+        ),
+      );
+    } catch {
+      throw new FactoryError(
+        "conflict",
+        "Update the authorized repository to include merged dependencies, then retry this issue. Its committed source must be readable.",
+      );
+    }
     const artifacts = render({ title: definition.title, version: 1, plan: isolated, context });
     await client.query(
       `INSERT INTO factory_features (id, project_id, created_by, request_id, title, initial_title, state, latest_plan_version, approved_plan_version, execution_mode)
@@ -162,8 +204,8 @@ export function startFactoryWorkItem(
       [executionWorkItemId, executionFeatureId, JSON.stringify(item.issue), item.published_at],
     );
     await client.query(
-      `INSERT INTO factory_work_item_starts (work_item_id, feature_id, plan_version, execution_feature_id, execution_work_item_id, request_id, operator_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      `INSERT INTO factory_work_item_starts (work_item_id, feature_id, plan_version, execution_feature_id, execution_work_item_id, request_id, operator_id, execution_source)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)`,
       [
         workItemId,
         featureId,
@@ -172,6 +214,7 @@ export function startFactoryWorkItem(
         executionWorkItemId,
         command.requestId,
         actorId,
+        JSON.stringify(executionSource),
       ],
     );
     await client.query(

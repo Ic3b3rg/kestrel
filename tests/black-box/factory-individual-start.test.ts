@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  LifecycleProfileViewSchema,
   PlanningSkillCatalogSchema,
   FactoryIssueImportsSchema,
   FactoryIssuePublicationSchema,
@@ -70,6 +71,22 @@ describe("Individual issue execution authority", () => {
       "brainstorming",
       "grill-with-docs",
     ]);
+    const profilePath = "/api/v1/lifecycle-profiles/planning";
+    const profile = LifecycleProfileViewSchema.parse(
+      await (await stack.fetchApi(profilePath)).json(),
+    );
+    expect(profile.resolved?.skills.map(({ name }) => name)).toEqual(["grill-with-docs"]);
+    const chosen = catalog.skills.find(({ name }) => name === "brainstorming");
+    if (chosen === undefined) throw new Error("Bundled brainstorming missing");
+    const saved = await stack.fetchApi(profilePath, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        expectedVersion: profile.versions.installation,
+        settings: { skillDigests: [chosen.contentDigest] },
+      }),
+    });
+    expect(saved.status).toBe(200);
     await stack.executeWebModule(`
       import { createPool, bootstrapPlanningSkills } from '@kestrel/database';
       import { readBundledPlanningSkills } from './apps/web/dist/factory-bundled-skills.js';
@@ -80,6 +97,33 @@ describe("Individual issue execution authority", () => {
       await (await stack.fetchApi("/api/v1/planning-skills")).json(),
     );
     expect(repeated).toEqual(catalog);
+    const preserved = LifecycleProfileViewSchema.parse(
+      await (await stack.fetchApi(profilePath)).json(),
+    );
+    expect(preserved.resolved?.skills.map(({ name }) => name)).toEqual(["brainstorming"]);
+  });
+
+  it("keeps a configured bundled version usable after an explicit library update", async () => {
+    const result = await stack.executeWebModule(`
+      import { createHash, randomUUID } from 'node:crypto';
+      import { createPool, retainGitHubPlanningSkill, installGitHubPlanningSkill, bootstrapPlanningSkills } from '@kestrel/database';
+      import { requireInstalledPlanningSkills } from './packages/database/dist/factory-skills.js';
+      import { readBundledPlanningSkills } from './apps/web/dist/factory-bundled-skills.js';
+      const pool=createPool(process.env.DATABASE_URL);
+      try {
+        const bundles=await readBundledPlanningSkills(); const original=bundles.find(bundle=>bundle.name==='brainstorming');
+        const files=original.files.map(file=>file.path==='SKILL.md'?{...file,content:file.content+'\\nUpdated procedure.\\n'}:file);
+        const updated={...original,files,contentDigest:createHash('sha256').update(JSON.stringify(files)).digest('hex')};
+        await retainGitHubPlanningSkill(pool,updated);
+        const actor=(await pool.query('SELECT id FROM operators LIMIT 1')).rows[0].id;
+        await installGitHubPlanningSkill(pool,actor,{requestId:randomUUID(),digest:updated.contentDigest});
+        await requireInstalledPlanningSkills(pool,[original.contentDigest]);
+        await bootstrapPlanningSkills(pool,bundles);
+        const current=(await pool.query('SELECT digest FROM factory_planning_skill_catalog WHERE name=$1',['brainstorming'])).rows[0];
+        console.log(JSON.stringify({preserved:current.digest===updated.contentDigest}));
+      } finally {await pool.end();}
+    `);
+    expect(JSON.parse(result)).toEqual({ preserved: true });
   });
 
   it("reuses an existing GitHub issue for clarification without replacement or execution", async () => {

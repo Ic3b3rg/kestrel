@@ -331,7 +331,7 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX === "1")(
         expect(creation.status).toBe(202);
         const started = PlanningFeatureStartedSchema.parse(await creation.json());
         const feature = started.feature;
-        expect(feature.title).toBe("New plan");
+        expect(feature.title).toBe("New interview");
         const path = `${collection}/${feature.id}`;
         const readChat = async () => FeatureChatSchema.parse(await (await request(path)).json());
         for (const text of [
@@ -383,7 +383,7 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX === "1")(
             throw new Error("Accepted planning turn did not reach a durable terminal state");
         }
         const chat = await readChat();
-        expect(chat.feature.title).not.toBe("New plan");
+        expect(chat.feature.title).not.toBe("New interview");
         expect(chat.feature.title.length).toBeLessThanOrEqual(80);
         expect(chat.feature.title).toMatch(/not|esport|markdown/iu);
         expect(chat.messages.map(({ role }) => role)).toEqual([

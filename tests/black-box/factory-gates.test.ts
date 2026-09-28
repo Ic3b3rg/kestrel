@@ -78,6 +78,9 @@ describe("Factory Human Gates over HTTP and PostgreSQL", () => {
         await post(`/api/v1/projects/${project}/features`, { requestId: randomUUID(), title })
       ).json(),
     );
+    await stack.executeSql(
+      `UPDATE factory_features SET execution_mode='authorized' WHERE id='${feature.id}'`,
+    );
     const endpoint = path(project, feature.id);
     expect(
       (

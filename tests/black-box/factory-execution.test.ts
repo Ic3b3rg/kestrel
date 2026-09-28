@@ -107,6 +107,9 @@ describe("Factory execution authority", () => {
       (await post(`${path}/plans`, { requestId: randomUUID(), expectedVersion: null, plan }))
         .status,
     ).toBe(201);
+    await stack.executeSql(
+      `UPDATE factory_features SET execution_mode='authorized' WHERE id='${path.split("/").at(-1) ?? ""}'`,
+    );
     expect((await post(`${path}/plans/1/approve`, { requestId: randomUUID() })).status).toBe(200);
     await expect
       .poll(
@@ -240,6 +243,9 @@ describe("Factory execution authority", () => {
       (await post(`${path}/plans`, { requestId: randomUUID(), expectedVersion: null, plan }))
         .status,
     ).toBe(201);
+    await stack.executeSql(
+      `UPDATE factory_features SET execution_mode='authorized' WHERE id='${path.split("/").at(-1) ?? ""}'`,
+    );
     expect((await post(`${path}/plans/1/approve`, { requestId: randomUUID() })).status).toBe(200);
     await expect
       .poll(

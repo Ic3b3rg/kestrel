@@ -27,7 +27,7 @@ it("freezes only the selected issue's requirements and checks for its independen
   expect(selected.acceptance).toEqual([{ key: "b", outcome: "Second outcome" }]);
   expect(selected.workItems[0]?.verification).toEqual(plan.workItems[1]?.verification);
   expect(selected.limits).toEqual(plan.limits);
-  expect(selected.scope).toEqual({ includes: ["Deliver b"], excludes: plan.scope.excludes });
+  expect(selected.scope).toEqual({ includes: ["b"], excludes: plan.scope.excludes });
   expect(plan.workItems).toHaveLength(2);
 });
 it("rejects an unknown item rather than authorizing the interview", () => {
@@ -49,4 +49,16 @@ it("does not carry a sibling's proposed document into the selected issue", () =>
     ],
   };
   expect(validateFeaturePlan(isolateWorkItemPlan(withDocuments, "b"))).toEqual([]);
+});
+
+it("retains long valid issue descriptions without copying them into smaller summary fields", () => {
+  const selected = isolateWorkItemPlan(
+    {
+      ...plan,
+      workItems: plan.workItems.map((item) => ({ ...item, description: "d".repeat(8000) })),
+    },
+    "b",
+  );
+  expect(selected.workItems[0]?.description).toHaveLength(8000);
+  expect(validateFeaturePlan(selected)).toEqual([]);
 });

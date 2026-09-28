@@ -89,10 +89,15 @@ function GitHubIssueCard({
           size="sm"
           disabled={disabled}
           onClick={() => onStart(issue)}
-          aria-label={`Start issue: ${issue.title}`}
+          aria-label={`Review requirements: ${issue.title}`}
         >
-          Start issue
+          Review requirements
         </Button>
+      )}
+      {onStart === undefined ? null : (
+        <p className="px-3 pb-2 text-xs text-muted-foreground">
+          Review this issue's requirements before starting execution.
+        </p>
       )}
     </li>
   );
@@ -157,7 +162,7 @@ function WorkItemCard({
           </span>
         ) : null}
       </Button>
-      {item.column === "todo" && item.executionFeatureId != null ? (
+      {item.column === "todo" && item.executionFeatureId != null && item.blocking === null ? (
         <p className="px-3 pb-2 text-xs" role="status">
           Start requested · waiting for capacity
         </p>

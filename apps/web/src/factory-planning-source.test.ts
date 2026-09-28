@@ -8,7 +8,11 @@ import { afterEach, expect, it } from "vitest";
 
 import { discoverRepositories, readLocalSourceConfig } from "@kestrel/local-source";
 
-import { readPlanningDocuments, readPlanningRepository } from "./factory-planning-source.js";
+import {
+  readPlanningDocuments,
+  readPlanningRepository,
+  readIssueStartContext,
+} from "./factory-planning-source.js";
 
 const exec = promisify(execFile);
 let fixtureRoot: string | undefined;
@@ -70,5 +74,14 @@ it("grounds planning in committed Markdown and discloses missing context without
     }),
   ).rejects.toThrow();
 
+  await git("restore", "CONTEXT.md");
+  await git("commit", "--allow-empty", "-m", "Merged prerequisite");
+  const mergedCommit = await git("rev-parse", "HEAD");
+  const started = await readIssueStartContext(config, { repositoryId }, [commitId]);
+  expect(started.commitId).toBe(mergedCommit);
+  await git("checkout", "--detach", commitId);
+  await expect(readIssueStartContext(config, { repositoryId }, [mergedCommit])).rejects.toThrow(
+    "merged dependencies",
+  );
   expect(JSON.stringify(result)).not.toMatch(/PRIVATE TEXT|kestrel-planning-source-/u);
 });

@@ -307,7 +307,7 @@ export async function requireInstalledPlanningSkills(
 ): Promise<void> {
   if (digests.length === 0) return;
   const installed = await client.query<{ digest: string }>(
-    "SELECT DISTINCT digest FROM factory_planning_skill_installs WHERE digest = ANY($1::text[]) UNION SELECT digest FROM factory_planning_skill_catalog WHERE digest = ANY($1::text[])",
+    "SELECT DISTINCT digest FROM factory_planning_skill_installs WHERE digest = ANY($1::text[]) UNION SELECT digest FROM factory_planning_skill_catalog WHERE digest = ANY($1::text[]) UNION SELECT digest FROM factory_bundled_skill_versions WHERE digest = ANY($1::text[])",
     [digests],
   );
   if (installed.rows.length !== digests.length)
@@ -369,6 +369,10 @@ export async function bootstrapPlanningSkills(
       "SELECT pg_advisory_xact_lock(hashtextextended('factory-planning-skills-v1', 0))",
     );
     for (const bundle of bundles) {
+      await client.query(
+        "INSERT INTO factory_bundled_skill_versions (digest) VALUES ($1) ON CONFLICT DO NOTHING",
+        [bundle.contentDigest],
+      );
       await client.query(
         `INSERT INTO factory_planning_skill_catalog (name, digest, source_candidate_id) VALUES ($1,$2,$3)
          ON CONFLICT (name) DO NOTHING`,

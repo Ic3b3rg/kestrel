@@ -211,9 +211,12 @@ export async function queueFactoryExecutions(
       let source = prior?.source ?? null;
       if (prior === undefined) {
         const sources = await client.query<{ repository_id: string; source_identity: string }>(
-          `SELECT source.repository_id, source.source_identity FROM local_repository_sources source JOIN projects owner ON owner.id = source.project_id
-         WHERE COALESCE(owner.canonical_project_id, owner.id) = $1 AND source.attachment_state = 'attached' ORDER BY source.project_id LIMIT 1`,
-          [candidate.project_id],
+          `SELECT execution_source->>'repositoryId' AS repository_id, execution_source->>'identity' AS source_identity FROM factory_work_item_starts WHERE execution_feature_id = $2
+         UNION ALL
+         SELECT source.repository_id::text, source.source_identity FROM local_repository_sources source JOIN projects owner ON owner.id = source.project_id
+         WHERE COALESCE(owner.canonical_project_id, owner.id) = $1 AND source.attachment_state = 'attached'
+           AND NOT EXISTS (SELECT 1 FROM factory_work_item_starts WHERE execution_feature_id = $2) LIMIT 1`,
+          [candidate.project_id, candidate.id],
         );
         const attached = sources.rows[0];
         if (attached !== undefined)

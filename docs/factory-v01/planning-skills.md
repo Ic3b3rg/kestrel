@@ -107,8 +107,9 @@ documents, and a proposal does not create an extra issue outside the approved Wo
 The runtime receives the retained instruction/reference contents along with committed Project
 Markdown. Skills can guide the grilling procedure, proposed specifications, and ordered Work Items.
 Instructions to write files, open provider issues, run tools, or change authority are translated to
-planning proposals. Actual publication and execution continue to require the Operator's approval of
-an exact Feature Plan. Browser closure does not cancel an accepted planning turn.
+planning proposals. Publication requires the Operator's approval of an exact Feature Plan and leaves
+its issues in To do. Execution requires a separate explicit start of the chosen issue. Browser
+closure does not cancel an accepted planning turn.
 
 ## Included collections and explicit updates
 
@@ -123,7 +124,9 @@ requirements. This is a supported text adaptation, not universal plugin support.
 The library previews the bundled revision by default. Entering an explicit collection ref previews a
 different pinned commit before installation. The same bounded file and provenance checks apply; Matt
 Pocock dependency drift rejects the preview. Installation updates the catalog only; bootstrap does
-not roll it back, and historical turn and plan digests remain readable.
+not roll it back, and historical turn and plan digests remain readable. Release-included versions
+remain usable by configured defaults and conversations after catalog updates; a preview alone does
+not authorize a version for use.
 
 ## Bounded interview reads
 

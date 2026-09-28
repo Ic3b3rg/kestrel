@@ -25,11 +25,14 @@ async function openProject(page: Page, name: string): Promise<void> {
 }
 
 async function createFeature(page: Page, title: string): Promise<void> {
-  await page.getByRole("button", { name: "New plan", exact: true }).click();
+  await page.getByRole("main").getByRole("button", { name: "New interview", exact: true }).click();
   await page.getByLabel("Describe the change", { exact: true }).fill(title);
-  await page.getByRole("main").getByRole("button", { name: "Start plan", exact: true }).click();
+  await page
+    .getByRole("main")
+    .getByRole("button", { name: "Start interview", exact: true })
+    .click();
   await expect(
-    page.getByRole("heading", { level: 1, name: "New plan", exact: true }),
+    page.getByRole("heading", { level: 1, name: "New interview", exact: true }),
   ).toBeVisible();
   await renameFeature(page, title);
 }
@@ -103,7 +106,10 @@ test.describe("Factory planning chat", () => {
     });
     for (const column of ["To do", "In progress", "In review", "Completed"])
       await expect(page.getByRole("region", { name: column, exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "New plan", exact: true }).click();
+    await page
+      .getByRole("main")
+      .getByRole("button", { name: "New interview", exact: true })
+      .click();
     const draftUrl = page.url();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await page.reload();
@@ -123,7 +129,7 @@ test.describe("Factory planning chat", () => {
     await expect(page.getByLabel("Describe the change", { exact: true })).toHaveValue(requestText);
     await page.getByRole("button", { name: "Retry", exact: true }).click();
     await expect(
-      page.getByRole("heading", { level: 1, name: "New plan", exact: true }),
+      page.getByRole("heading", { level: 1, name: "New interview", exact: true }),
     ).toBeVisible();
     await page.setViewportSize({ width: 1280, height: 900 });
     await renameFeature(page, featureTitle);

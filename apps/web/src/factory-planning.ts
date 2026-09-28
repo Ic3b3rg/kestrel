@@ -90,8 +90,8 @@ function promptFor(turn: ClaimedPlanningTurn, context: PlanningContext): string 
     longest.bodyTruncated = true;
   }
   const generatingPlan = turn.purpose === "plan";
-  const conversation =
-    generatingPlan || turn.threadId === null ? turn.messages : turn.messages.slice(-1);
+  // Dynamic tools require a fresh runtime thread; replay the retained conversation.
+  const conversation = turn.messages;
   const retained: Array<{ role: "user" | "assistant"; content: string }> = [];
   for (const { role, content } of conversation.toReversed()) {
     const candidate = [{ role, content }, ...retained];
@@ -273,11 +273,9 @@ export function createFactoryPlanningProcessor({
           );
         const model = profile.model;
         cwd = await planningDirectory(config, turn.featureId);
-        const attachmentMessages = (
-          turn.purpose === "plan" || turn.threadId === null
-            ? turn.messages
-            : turn.messages.slice(-1)
-        ).filter((message) => (message.attachments?.length ?? 0) > 0);
+        const attachmentMessages = turn.messages.filter(
+          (message) => (message.attachments?.length ?? 0) > 0,
+        );
         const attachments =
           attachmentMessages.length === 0
             ? []

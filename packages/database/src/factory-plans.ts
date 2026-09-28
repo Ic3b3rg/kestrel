@@ -75,12 +75,14 @@ async function boardFor(
     provider_issue: { url: string } | null;
     published_at: Date | null;
     execution_feature_id: string | null;
+    execution_state: string | null;
   }>(
     `SELECT item.*, COALESCE(execution.board_column, item.board_column) AS board_column,
-       start.execution_feature_id, publication.issue AS provider_issue, publication.published_at
+       start.execution_feature_id, execution_feature.state AS execution_state, publication.issue AS provider_issue, publication.published_at
      FROM factory_work_items item LEFT JOIN factory_issue_publications publication ON publication.work_item_id = item.id
      LEFT JOIN factory_work_item_starts start ON start.work_item_id = item.id
      LEFT JOIN factory_work_items execution ON execution.id = start.execution_work_item_id
+     LEFT JOIN factory_features execution_feature ON execution_feature.id = start.execution_feature_id
      WHERE item.feature_id = $1 AND item.plan_version = $2 ORDER BY item.position`,
     [feature.id, feature.approved_plan_version],
   );
@@ -141,19 +143,27 @@ async function boardFor(
       order: row.position,
       column: item.column,
       blocking:
-        feature.execution_mode === "individual" &&
-        item.column === "todo" &&
-        item.definition.dependsOn.some(
-          (key) =>
-            !rows.rows.some(
-              (candidate) => candidate.key === key && candidate.board_column === "completed",
-            ),
-        )
+        row.execution_state === "gated" || row.execution_state === "cancelled"
           ? {
-              kind: "dependency",
-              explanation: `Complete and merge dependencies first: ${item.definition.dependsOn.filter((key) => !rows.rows.some((candidate) => candidate.key === key && candidate.board_column === "completed")).join(", ")}`,
+              kind: row.execution_state === "gated" ? "human_gate" : "cancelled",
+              explanation:
+                row.execution_state === "gated"
+                  ? "Execution needs your decision. Open this issue to inspect the saved attempt."
+                  : "This issue execution was cancelled. Open it to inspect the saved work.",
             }
-          : item.blocking,
+          : feature.execution_mode === "individual" &&
+              item.column === "todo" &&
+              item.definition.dependsOn.some(
+                (key) =>
+                  !rows.rows.some(
+                    (candidate) => candidate.key === key && candidate.board_column === "completed",
+                  ),
+              )
+            ? {
+                kind: "dependency",
+                explanation: `Complete and merge dependencies first: ${item.definition.dependsOn.filter((key) => !rows.rows.some((candidate) => candidate.key === key && candidate.board_column === "completed")).join(", ")}`,
+              }
+            : item.blocking,
       providerUrl: row.provider_issue?.url ?? null,
       executionFeatureId: row.execution_feature_id ?? null,
       approvedVersion: feature.approved_plan_version,

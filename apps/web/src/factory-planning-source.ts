@@ -173,3 +173,51 @@ export async function readPlanningRepository(
     },
   );
 }
+
+/** Freeze the current committed source at the explicit start, including merged prerequisites. */
+export async function readIssueStartContext(
+  config: LocalSourceConfig,
+  source: { repositoryId: string; identity?: string },
+  requiredCommits: readonly string[],
+): Promise<PlanningContext> {
+  const context = await readPlanningDocuments(config, source.repositoryId, source.identity);
+  const commitId = context.commitId;
+  if (commitId === null) throw new Error("No committed execution source");
+  if (requiredCommits.length === 0) return context;
+  const repository = await resolveRepository(config, source.repositoryId);
+  const inspection = await inspectRepository(config, repository);
+  if (source.identity !== undefined && inspection.sourceIdentity !== source.identity)
+    throw new Error("Execution source changed");
+  await withGitObjectReader(
+    config,
+    repository,
+    inspection.objectFormat,
+    inspection.objectDirectories,
+    async (readObject) => {
+      const pending = [commitId];
+      const visited = new Set<string>();
+      const missing = new Set(requiredCommits);
+      let bytes = 0;
+      for (let cursor = 0; cursor < pending.length && missing.size > 0; cursor++) {
+        const id = pending[cursor];
+        if (id === undefined || visited.has(id)) continue;
+        if (visited.size >= Math.min(config.maxObjects, 10_000)) break;
+        visited.add(id);
+        const commit = await readObject(id);
+        bytes += commit.content.length;
+        if (commit.type !== "commit" || bytes > Math.min(config.maxBytes, 8_000_000)) break;
+        missing.delete(id);
+        const headers = commit.content.toString("utf8").split("\n\n", 1)[0] ?? "";
+        for (const match of headers.matchAll(/^parent ([a-f0-9]{40}(?:[a-f0-9]{24})?)$/gm)) {
+          const parent = match[1];
+          if (parent !== undefined && !visited.has(parent)) pending.push(parent);
+        }
+      }
+      if (missing.size > 0)
+        throw new Error(
+          "Update the authorized repository to include the merged dependencies before starting this issue.",
+        );
+    },
+  );
+  return context;
+}

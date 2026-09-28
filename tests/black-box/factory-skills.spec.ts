@@ -90,7 +90,13 @@ test.describe("Planning Skills in the chat", () => {
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
     await page.keyboard.press("Escape");
     await page.goto(projectUrl);
-    await page.getByRole("button", { name: "New plan", exact: true }).click();
+    await page
+      .getByRole("main")
+      .getByRole("button", { name: "New interview", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Choose interview skill" }).click();
+    await page.getByLabel("Search skills or collections").fill("recovery-checklist");
+    await page.getByRole("button", { name: /^recovery-checklist/ }).click();
     await expect(page.getByRole("button", { name: "Skills", exact: true })).toHaveCount(0);
     expect(
       FeatureListSchema.parse(
@@ -103,7 +109,10 @@ test.describe("Planning Skills in the chat", () => {
     await page
       .getByLabel("Describe the change", { exact: true })
       .fill("$recovery-checklist Help me specify recovering saved reports.");
-    await page.getByRole("main").getByRole("button", { name: "Start plan", exact: true }).click();
+    await page
+      .getByRole("main")
+      .getByRole("button", { name: "Start interview", exact: true })
+      .click();
     await expect(page.getByText("Codex is unavailable", { exact: true })).toBeVisible();
     const path = `/api/v1${new URL(page.url()).pathname}`;
     const chat = async () =>
@@ -120,7 +129,7 @@ test.describe("Planning Skills in the chat", () => {
     const sections = page.getByRole("navigation", { name: "Settings sections" });
     await sections.getByRole("link", { name: "Skills" }).click();
     await expect(page).toHaveURL(/\/settings\/skills$/u);
-    await expect(library).toContainText("$recovery-checklist");
+    await expect(library).toContainText("recovery-checklist");
     await expect(library).toContainText("Clarify recovery requirements.");
     await expect(library).toContainText(original.contentDigest.slice(0, 12));
     await page.reload();
@@ -181,16 +190,19 @@ test.describe("Planning Skills in the chat", () => {
     ).toContainText("Updated procedure for future turns.");
     await page.keyboard.press("Escape");
     await page.goto(featureUrl);
-    const activeSkills = page.getByRole("region", { name: "Active Planning Skills" });
-    await expect(activeSkills).toContainText("$recovery-checklist");
-    await activeSkills.getByRole("button", { name: "Remove recovery-checklist" }).click();
-    await expect(activeSkills).toHaveCount(0);
+    const activeSkills = page.getByRole("region", { name: "Active interview skill" });
+    await expect(activeSkills).toContainText("recovery-checklist");
+    await activeSkills.getByRole("button", { name: "Choose interview skill" }).click();
+    await page.getByLabel("Search skills or collections").fill("recovery-checklist");
+    await page.getByRole("button", { name: /^recovery-checklist/ }).click();
     await page
       .getByLabel("Message", { exact: true })
       .fill("/recovery-checklist Continue planning with the updated procedure.");
     await page.getByRole("button", { name: "Send message", exact: true }).click();
     await expect(
-      page.getByText("/recovery-checklist Continue planning with the updated procedure."),
+      page
+        .getByRole("article", { name: "Your message", exact: true })
+        .getByText("/recovery-checklist Continue planning with the updated procedure."),
     ).toBeVisible();
     await page.reload();
     await page
@@ -270,10 +282,19 @@ test.describe("Planning Skills in the chat", () => {
       );
     }
     await page.goto(projectUrl);
-    await page.getByRole("button", { name: "New plan", exact: true }).click();
+    await page
+      .getByRole("main")
+      .getByRole("button", { name: "New interview", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Choose interview skill" }).click();
+    await page.getByLabel("Search skills or collections").fill("recovery-checklist");
+    await page.getByRole("button", { name: /^recovery-checklist/ }).click();
     const prompt = page.getByLabel("Describe the change", { exact: true });
     await prompt.fill("/missing Help plan reports");
-    await page.getByRole("main").getByRole("button", { name: "Start plan", exact: true }).click();
+    await page
+      .getByRole("main")
+      .getByRole("button", { name: "Start interview", exact: true })
+      .click();
     await expect(page.getByRole("alert")).toContainText("not installed");
     await expect(
       page.getByRole("alert").getByRole("link", { name: "Open Settings → Skills" }),
@@ -316,15 +337,17 @@ test.describe("Planning Skills in the chat", () => {
       "research",
     ]);
     await page.reload();
-    const activeSkills = page.getByRole("region", { name: "Active Planning Skills" });
-    await expect(activeSkills).toContainText("$recovery-checklist");
-    await expect(activeSkills).toContainText("$research");
-    await activeSkills.getByRole("button", { name: "Remove research" }).focus();
+    const activeSkills = page.getByRole("region", { name: "Active interview skill" });
+    await expect(activeSkills).toContainText("recovery-checklist");
+    await expect(activeSkills).toContainText("research");
+    await activeSkills.getByRole("button", { name: "Choose interview skill" }).focus();
     await page.keyboard.press("Enter");
-    await expect(activeSkills).not.toContainText("$research");
+    await page.getByLabel("Search skills or collections").fill("recovery-checklist");
+    await page.getByRole("button", { name: /^recovery-checklist/ }).click();
+    await expect(activeSkills).not.toContainText("research");
     await page.reload();
-    await expect(activeSkills).toContainText("$recovery-checklist");
-    await expect(activeSkills).not.toContainText("$research");
+    await expect(activeSkills).toContainText("recovery-checklist");
+    await expect(activeSkills).not.toContainText("research");
     expect((await readChat()).turns[0]?.skills?.map((skill) => skill.name).sort()).toEqual([
       "recovery-checklist",
       "research",
@@ -332,7 +355,11 @@ test.describe("Planning Skills in the chat", () => {
     const followup = page.getByLabel("Message", { exact: true });
     await followup.fill("Continue with /recovery-checklist.");
     await page.getByRole("button", { name: "Send message", exact: true }).click();
-    await expect(page.getByText("Continue with /recovery-checklist.")).toBeVisible();
+    await expect(
+      page
+        .getByRole("article", { name: "Your message", exact: true })
+        .getByText("Continue with /recovery-checklist."),
+    ).toBeVisible();
     await page.reload();
     chat = await readChat();
     expect(chat.messages.at(-1)?.content).toBe("Continue with /recovery-checklist.");

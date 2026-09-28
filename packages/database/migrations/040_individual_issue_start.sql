@@ -11,6 +11,7 @@ CREATE TABLE factory_work_item_starts (
   plan_version integer NOT NULL,
   execution_feature_id uuid NOT NULL UNIQUE REFERENCES factory_features(id),
   execution_work_item_id uuid NOT NULL UNIQUE REFERENCES factory_work_items(id),
+  execution_source jsonb NOT NULL CHECK (jsonb_typeof(execution_source) = 'object'),
   request_id uuid NOT NULL,
   operator_id uuid NOT NULL REFERENCES operators(id),
   created_at timestamptz NOT NULL DEFAULT clock_timestamp(),

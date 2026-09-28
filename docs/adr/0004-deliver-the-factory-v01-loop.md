@@ -37,3 +37,9 @@ Item identity and links to the execution Feature. Scope, checks and proposed doc
 to that issue; the parent conversation remains inspectable. This deliberately retains one active
 execution per Project. Migration marks already approved Features as authorized, preserving their
 cumulative behavior; unapproved and new Features use individual starts.
+
+The explicit issue start freezes the then-current committed local source and its identity. It proves
+every prerequisite's confirmed merge commit is an ancestor before granting execution. If the local
+source is stale or ancestry exceeds the bounded read budget, the board returns an actionable block;
+Kestrel never silently runs the old interview snapshot or fetches/changes the Operator checkout. The
+original requirements retain their interview provenance separately.
