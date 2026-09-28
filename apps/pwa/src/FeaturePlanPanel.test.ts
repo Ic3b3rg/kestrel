@@ -176,7 +176,8 @@ describe("displayed plan authority", () => {
 
   it("requires every imported issue to be assigned before approving the displayed plan", async () => {
     await render({ loadImports: () => Promise.resolve(imported) });
-    expect(button("Approve version 1").disabled).toBe(true);
+    await click("Review issue drafts");
+    expect(button("Publish issues").disabled).toBe(true);
     expect(container.textContent).toContain("Assign #42 · Search archived reports to a Work Item");
   });
 
@@ -260,7 +261,8 @@ describe("displayed plan authority", () => {
 
   it("explains why a running conversation prevents plan approval", async () => {
     await render({ conversationPending: true });
-    expect(button("Approve version 1").disabled).toBe(true);
+    await click("Review issue drafts");
+    expect(button("Publish issues").disabled).toBe(true);
     expect(container.textContent).toContain("The conversation is still running");
     expect(container.textContent).toContain("stop planning in Chat");
   });
@@ -284,15 +286,16 @@ describe("displayed plan authority", () => {
       );
     });
     await render({ loadPlans: () => Promise.resolve(current), approvePlan, onApproved });
-    await click("Approve version 1");
+    await click("Review issue drafts");
+    await click("Publish issues");
     expect(approvePlan).toHaveBeenCalledTimes(1);
     expect(approvePlan.mock.calls[0]?.slice(0, 3)).toEqual([projectId, featureId, 1]);
-    expect(container.textContent).toContain("Plan · version 1");
+    expect(container.querySelector<HTMLSelectElement>("#plan-version")?.value).toBe("1");
     expect(container.textContent).toContain("The plan has changed; load the latest version");
-    expect(button("Approve version 1").disabled).toBe(true);
+    expect(button("Publish issues").disabled).toBe(true);
     expect(onApproved).not.toHaveBeenCalled();
     await click("Load latest version");
-    expect(container.textContent).toContain("Plan · version 2");
+    expect(container.querySelector<HTMLSelectElement>("#plan-version")?.value).toBe("2");
   });
 
   it("retains edits and request identity after an uncertain save instead of appending another version", async () => {
@@ -327,7 +330,7 @@ describe("displayed plan authority", () => {
     expect(savePlan).toHaveBeenCalledTimes(2);
     expect(savePlan.mock.calls[1]).toEqual(savePlan.mock.calls[0]);
     expect(savePlan.mock.calls[0]?.[2]).toMatchObject({ expectedVersion: 1, plan: next.document });
-    expect(container.textContent).toContain("Plan · version 2");
+    expect(container.querySelector<HTMLSelectElement>("#plan-version")?.value).toBe("2");
     expect(onDirtyChange).toHaveBeenLastCalledWith(false);
   });
 

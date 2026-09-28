@@ -1,3 +1,5 @@
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { usePlanningAttachments } from "./usePlanningAttachments.js";
 import { PlanningMessageAttachments } from "./PlanningAttachments.js";
 import { FormFeedback } from "./components/FormFeedback.js";
@@ -48,7 +50,7 @@ import { renameFactoryFeature } from "./factory-start-api.js";
 const ignoreDirtyChange = () => undefined;
 const featureStatus: Record<Feature["state"], string> = {
   planning: "Planning · Define the outcome before implementation.",
-  queued: "Queued · Approved work is waiting to run.",
+  queued: "Issues published · Start an issue from the project board.",
   implementing: "In progress · Approved work is running on the workstation.",
   gated: "Decision needed · Review the blocked work on the board.",
   in_review: "In review · Inspect the work and its verification results.",
@@ -438,50 +440,58 @@ export function FeatureChatPanel({
         </div>
       </header>
       <Tabs value={view} onValueChange={selectView} className="feature-tabs">
-        <TabsList aria-label="Feature views" className="feature-tab-list">
-          {(["chat", "plan", "board", "review"] as const).map((value) => {
-            const route = {
-              kind: "feature" as const,
-              projectId,
-              featureId,
-              ...(value === "chat" ? {} : { view: value }),
-            };
-            return (
-              <TabsTrigger
-                asChild
-                value={value}
-                key={value}
-                onMouseDown={(event) => {
-                  if (
-                    event.button !== 0 ||
-                    event.altKey ||
-                    event.ctrlKey ||
-                    event.metaKey ||
-                    event.shiftKey
-                  )
-                    event.preventDefault();
-                }}
-              >
-                <a
-                  href={appPath(route)}
-                  onClick={(event) =>
-                    handleFeatureLink(event, route, (next) => {
-                      if (view !== value) onNavigate(next);
-                    })
-                  }
+        {editable && view === "chat" ? (
+          <div className="flex justify-end">
+            <Button variant="ghost" onClick={() => selectView("plan")}>
+              Review requirements
+            </Button>
+          </div>
+        ) : (
+          <TabsList aria-label="Feature views" className="feature-tab-list">
+            {(["chat", "plan", "board", "review"] as const).map((value) => {
+              const route = {
+                kind: "feature" as const,
+                projectId,
+                featureId,
+                ...(value === "chat" ? {} : { view: value }),
+              };
+              return (
+                <TabsTrigger
+                  asChild
+                  value={value}
+                  key={value}
+                  onMouseDown={(event) => {
+                    if (
+                      event.button !== 0 ||
+                      event.altKey ||
+                      event.ctrlKey ||
+                      event.metaKey ||
+                      event.shiftKey
+                    )
+                      event.preventDefault();
+                  }}
                 >
-                  {value === "chat"
-                    ? "Chat"
-                    : value === "plan"
-                      ? "Plan"
-                      : value === "board"
-                        ? "Board"
-                        : "Review"}
-                </a>
-              </TabsTrigger>
-            );
-          })}
-        </TabsList>
+                  <a
+                    href={appPath(route)}
+                    onClick={(event) =>
+                      handleFeatureLink(event, route, (next) => {
+                        if (view !== value) onNavigate(next);
+                      })
+                    }
+                  >
+                    {value === "chat"
+                      ? "Chat"
+                      : value === "plan"
+                        ? "Plan"
+                        : value === "board"
+                          ? "Board"
+                          : "Review"}
+                  </a>
+                </TabsTrigger>
+              );
+            })}
+          </TabsList>
+        )}
         <TabsContent value="chat" className="feature-chat-content">
           {readError === null ? null : (
             <FormFeedback className="planning-error" kind="error">
@@ -535,7 +545,11 @@ export function FeatureChatPanel({
                         })}
                       </time>
                     </header>
-                    <div className="planning-message-content">{message.content}</div>
+                    <div className="planning-message-content space-y-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_pre]:overflow-x-auto [&_pre]:rounded [&_pre]:bg-muted [&_pre]:p-3 [&_a]:underline">
+                      <Markdown remarkPlugins={[remarkGfm]} skipHtml disallowedElements={["img"]}>
+                        {message.content}
+                      </Markdown>
+                    </div>
                     <PlanningMessageAttachments
                       files={message.attachments ?? []}
                       projectId={projectId}
@@ -717,7 +731,7 @@ export function FeatureChatPanel({
                   if (attempt.current === null) setCommandError(null);
                 },
                 placeholder: "Describe the change or answer Kestrel’s question…",
-                describedBy: "planning-message-help",
+                ...(editable ? {} : { describedBy: "planning-message-help" }),
               }}
               sendLabel={commandPending && attemptKind === "send" ? "Sending…" : "Send message"}
               canSend={
@@ -730,11 +744,11 @@ export function FeatureChatPanel({
                 draft.trim() !== ""
               }
             />
-            <p id="planning-message-help" className="text-xs text-muted-foreground">
-              {editable
-                ? "⌘/Ctrl + Enter to send. Implementation starts after you approve a plan."
-                : "This conversation is read-only. Its saved messages remain available."}
-            </p>
+            {editable ? null : (
+              <p id="planning-message-help" className="text-xs text-muted-foreground">
+                This conversation is read-only. Its saved messages remain available.
+              </p>
+            )}
           </form>
         </TabsContent>
         <TabsContent value="plan" forceMount className="data-[state=inactive]:hidden">

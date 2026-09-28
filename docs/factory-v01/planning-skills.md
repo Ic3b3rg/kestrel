@@ -1,8 +1,15 @@
 # Planning Skill imports
 
-The Operator imports Skills in **Settings → Skills** and invokes them with `/name` in either
-Planning composer. Before the first prompt, tokens are only part of the draft; accepting that prompt
-freezes the resolved selection together with the new Feature and first turn. A Skill supplies
+Kestrel bootstraps the Matt Pocock `grill-with-docs` and Superpowers `brainstorming` text
+adaptations on startup, without provider access. Existing catalog choices and configured defaults
+are preserved. The initial planning default is `grill-with-docs` only when no default has been
+configured. The composer resolves Installation/Project lifecycle settings and shows the effective
+procedure before the first message. Its compact picker searches name or collection, replaces the
+conversation selection, and retains the draft. Accepted turns freeze those exact versions.
+
+The Operator imports or updates Skills in **Settings → Skills** and can invoke them with `/name` in
+either Planning composer. Before the first prompt, tokens are only part of the draft; accepting that
+prompt freezes the resolved selection together with the new Feature and first turn. A Skill supplies
 planning instructions; it does not acquire the runtime authority described by those instructions.
 The global Library offers the grilling starter or an explicit GitHub repository, Markdown entry path
 and ref. An optional host configuration also authorizes one absolute directory through
@@ -102,3 +109,29 @@ Markdown. Skills can guide the grilling procedure, proposed specifications, and 
 Instructions to write files, open provider issues, run tools, or change authority are translated to
 planning proposals. Actual publication and execution continue to require the Operator's approval of
 an exact Feature Plan. Browser closure does not cancel an accepted planning turn.
+
+## Included collections and explicit updates
+
+Matt Pocock includes the five procedures and references listed above. Superpowers pins
+`obra/superpowers@8ca22dba9a94f28898bbce59f2537ff4d87c747d`: brainstorming, writing-plans, the
+spec-review prompt, companion guide and MIT license. Each collection exposes one usable interview
+entry point; phase-specific procedures are included only for the appropriate turn. The root
+adaptation declares that scripts, installers, hooks, visual servers and delegation are unavailable.
+It preserves original upstream text separately and converts file-writing instructions into proposed
+requirements. This is a supported text adaptation, not universal plugin support.
+
+The library previews the bundled revision by default. Entering an explicit collection ref previews a
+different pinned commit before installation. The same bounded file and provenance checks apply; Matt
+Pocock dependency drift rejects the preview. Installation updates the catalog only; bootstrap does
+not roll it back, and historical turn and plan digests remain readable.
+
+## Bounded interview reads
+
+The planning model has a single host tool, `read_project`, with four operations: find committed
+paths, read a paginated file, list issue summaries, and read a linked issue with comments. Reads use
+the captured source identity and commit, or the Project's linked GitHub repository and host
+authentication. Dirty worktree files, traversal, symlinks, arbitrary repositories, shell execution
+and provider writes are unavailable. The host enforces 16 calls and 128,000 response bytes per turn;
+files paginate at 12,000 characters, issues at provider pages, comments at 20 per page with an
+explicit 4,000-character/per-comment and ten-page limit. Failures return bounded source-unavailable
+messages. Tool results are untrusted reference material and never execution authority.

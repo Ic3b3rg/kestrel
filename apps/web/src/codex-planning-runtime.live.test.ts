@@ -135,3 +135,98 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX_ATTACHMENTS === "1")(
     }, 120000);
   },
 );
+
+describe.runIf(process.env.KESTREL_LIVE_CODEX_READS === "1")(
+  "Bounded interview reads live conformance",
+  () => {
+    it("uses the actual repository and host GitHub reader before continuing the interview", async () => {
+      const { discoverRepositories, readLocalSourceConfig } = await import("@kestrel/local-source");
+      const { createPlanningReader } = await import("./factory-planning-reads.js");
+      const { readPlanningDocuments } = await import("./factory-planning-source.js");
+      const executable = await realpath(
+        process.env.KESTREL_CODEX_EXECUTABLE ??
+          (await execFileAsync("/usr/bin/which", ["codex"])).stdout.trim(),
+      );
+      const connection = await createCodexAppServerAgentRuntime({ executable }).readConnection();
+      expect(connection.state).toBe("ready");
+      const model = connection.models.find((candidate) => candidate.isDefault);
+      if (model === undefined) throw new Error("No default model");
+      const root = await realpath(await mkdtemp(join(tmpdir(), "kestrel-live-reads-")));
+      const repository = join(root, "repository");
+      const artifacts = join(root, "artifacts");
+      const { mkdir } = await import("node:fs/promises");
+      const marker = `read-proof-${String(Date.now())}`;
+      try {
+        await mkdir(repository);
+        await mkdir(artifacts, { mode: 0o700 });
+        const git = async (...args: string[]) => execFileAsync("git", ["-C", repository, ...args]);
+        await git("init", "--initial-branch=main");
+        await git("config", "user.email", "fixture@example.invalid");
+        await git("config", "user.name", "Fixture");
+        await writeFile(join(repository, "answer.txt"), marker);
+        await git("add", "answer.txt");
+        await git("commit", "-m", "Retain live read fixture");
+        const config = await readLocalSourceConfig({
+          ARTIFACT_ROOT: artifacts,
+          LOCAL_GIT_EXECUTABLE: (await execFileAsync("/usr/bin/which", ["git"])).stdout.trim(),
+          LOCAL_REPOSITORY_ROOTS: JSON.stringify([repository]),
+          REVIEW_REVISION_MAX_BYTES: "1048576",
+          REVIEW_REVISION_MAX_OBJECTS: "1000",
+        });
+        const inventory = await discoverRepositories(config);
+        const source = inventory[0];
+        if (!source) throw new Error("Missing fixture source");
+        const context = await readPlanningDocuments(config, source.repositoryId);
+        const { inspectRepository, resolveRepository } = await import("@kestrel/local-source");
+        const inspection = await inspectRepository(
+          config,
+          await resolveRepository(config, source.repositoryId),
+        );
+        const read = createPlanningReader({
+          pool: {
+            query: () =>
+              Promise.resolve({
+                rows: [
+                  {
+                    github_owner_snapshot: "Ic3b3rg",
+                    github_name_snapshot: "kestrel",
+                    repository_id: source.repositoryId,
+                    installation_id: "fixture",
+                  },
+                ],
+              }),
+          } as never,
+          projectId: "fixture",
+          config,
+          source: { repositoryId: source.repositoryId, identity: inspection.sourceIdentity },
+          commitId: context.commitId,
+          signal: AbortSignal.timeout(90_000),
+        });
+        const calls: unknown[] = [];
+        const result = await createCodexPlanningRuntime({ executable, timeoutMs: 90_000 }).runTurn({
+          cwd: artifacts,
+          model: model.model ?? model.id,
+          requestId: "bounded-live-read",
+          onThread: async () => {},
+          prompt:
+            "Use read_project twice: read_file answer.txt offset 0 and read_issue number 305 page 1. Return a short reply quoting the exact answer.txt content and the issue title. These are authorized read-only integration fixtures. Never use any other tool. If either source fails, report the failure honestly.",
+          readProject: async (request) => {
+            calls.push(request);
+            return read(request);
+          },
+        });
+        expect(calls).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ operation: "read_file", path: "answer.txt" }),
+            expect.objectContaining({ operation: "read_issue", number: 305 }),
+          ]),
+        );
+        expect(result.text).toContain(marker);
+        expect(result.text.toLowerCase()).toMatch(/watch|local|development/u);
+        expect(await readFile(join(repository, "answer.txt"), "utf8")).toBe(marker);
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    }, 120_000);
+  },
+);

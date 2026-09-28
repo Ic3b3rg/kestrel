@@ -1,7 +1,10 @@
+import type { DiagnosticJobSender } from "@kestrel/database";
+import type { CodexAgentRuntimePort } from "../codex-app-server.js";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import {
   ApiErrorSchema,
+  FeatureSchema,
   KestrelIdSchema,
   FactoryGitHubIssuesSchema,
   FactoryIssueImportsSchema,
@@ -11,6 +14,7 @@ import {
 } from "@kestrel/contracts";
 import {
   FactoryError,
+  prepareFactoryIssueInterview,
   readProjectGitHubCoordinates,
   readFactoryIssueImports,
   readFactoryImportRequest,
@@ -48,7 +52,51 @@ export function registerFactoryIssueRoutes(
   app: FastifyInstance,
   pool: DatabasePool,
   github: FactoryGitHubAdapter = createFactoryGitHubAdapter(),
+  interview?: { boss: DiagnosticJobSender; runtime: CodexAgentRuntimePort },
 ) {
+  const issueParams = projectParams.extend({ number: z.coerce.number().int().positive() });
+  const startCommand = z.strictObject({ requestId: z.uuid() });
+  app.post(
+    "/api/v1/projects/:projectId/github-issues/:number/start",
+    {
+      config: AUTHENTICATED_MUTATION_ROUTE_CONFIG,
+      schema: {
+        params: json(issueParams),
+        body: json(startCommand),
+        response: { ...errors, 200: json(FeatureSchema) },
+      },
+    },
+    async (request, reply) => {
+      try {
+        if (interview === undefined)
+          throw new FactoryError("conflict", "The interview runtime is unavailable.");
+        const { projectId, number } = issueParams.parse(request.params);
+        const { requestId } = startCommand.parse(request.body);
+        const actorId = request.operatorSession?.operator.id;
+        if (actorId === undefined) throw new Error("Authenticated start has no Operator");
+        const coordinates = await readProjectGitHubCoordinates(pool, projectId);
+        if (coordinates === null) throw new FactoryGitHubError("project_not_supported");
+        const signal = AbortSignal.timeout(30_000);
+        const identity = await github.identify(
+          { owner: coordinates.owner, name: coordinates.repository },
+          signal,
+        );
+        const issue = await github.readIssue(identity, number, signal);
+        return await prepareFactoryIssueInterview(
+          pool,
+          interview.boss,
+          projectId,
+          actorId,
+          requestId,
+          issue,
+          await interview.runtime.readConnection(),
+        );
+      } catch (error) {
+        const failure = factoryError(request, error);
+        return reply.code(failure.status).send(failure.body);
+      }
+    },
+  );
   app.get(
     "/api/v1/projects/:projectId/github-issues",
     {

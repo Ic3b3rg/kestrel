@@ -19,7 +19,7 @@ import { FactoryGatePanel, GateAnswer } from "./FactoryGatePanel.js";
 type FactoryVerificationCommand = FactoryExecutionRun["acceptedCommands"][number];
 
 const phaseLabels: Record<FactoryExecution["state"], string> = {
-  not_approved: "Execution starts after plan approval",
+  not_approved: "No execution has been authorized",
   pending: "Waiting to start execution",
   running: "Implementing the approved plan",
   stopping: "Stopping execution",

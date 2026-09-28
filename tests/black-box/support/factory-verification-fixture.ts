@@ -155,7 +155,11 @@ export async function createVerificationFixture(
           await source.close();
         }
       },
-      async approve(title: string, plan = verificationPlan()) {
+      async approve(
+        title: string,
+        plan = verificationPlan(),
+        executionMode: "authorized" | "individual" = "authorized",
+      ) {
         const feature = FeatureSchema.parse(
           await (
             await post(`/api/v1/projects/${project.id}/features`, {
@@ -164,6 +168,12 @@ export async function createVerificationFixture(
             })
           ).json(),
         );
+        // Legacy lifecycle tests explicitly retain their pre-upgrade group authority.
+        // New individual-start acceptance passes "individual" and uses the public board command.
+        if (executionMode === "authorized")
+          await stack.executeSql(
+            `UPDATE factory_features SET execution_mode = 'authorized' WHERE id = '${feature.id}'`,
+          );
         const saved = await post(`${path(feature.id)}/plans`, {
           requestId: randomUUID(),
           expectedVersion: null,

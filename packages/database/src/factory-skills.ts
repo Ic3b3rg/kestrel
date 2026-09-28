@@ -307,7 +307,7 @@ export async function requireInstalledPlanningSkills(
 ): Promise<void> {
   if (digests.length === 0) return;
   const installed = await client.query<{ digest: string }>(
-    "SELECT DISTINCT digest FROM factory_planning_skill_installs WHERE digest = ANY($1::text[])",
+    "SELECT DISTINCT digest FROM factory_planning_skill_installs WHERE digest = ANY($1::text[]) UNION SELECT digest FROM factory_planning_skill_catalog WHERE digest = ANY($1::text[])",
     [digests],
   );
   if (installed.rows.length !== digests.length)
@@ -354,4 +354,45 @@ export async function resolvePlanningSkillInvocation(
   await requireInstalledPlanningSkills(client, digests);
   await readPlanningSkills(client, digests);
   return digests;
+}
+
+/** Release-bundled procedures are available offline; user versions/preferences always win. */
+export async function bootstrapPlanningSkills(
+  pool: DatabasePool,
+  bundles: GitHubPlanningSkillBundle[],
+) {
+  for (const bundle of bundles) await retainGitHubPlanningSkill(pool, bundle);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      "SELECT pg_advisory_xact_lock(hashtextextended('factory-planning-skills-v1', 0))",
+    );
+    for (const bundle of bundles) {
+      await client.query(
+        `INSERT INTO factory_planning_skill_catalog (name, digest, source_candidate_id) VALUES ($1,$2,$3)
+         ON CONFLICT (name) DO NOTHING`,
+        [bundle.name, bundle.contentDigest, bundle.source.candidateId],
+      );
+    }
+    const initial = bundles.find((bundle) => bundle.name === "grill-with-docs");
+    if (initial !== undefined) {
+      await client.query(
+        `INSERT INTO lifecycle_phase_profiles (project_id, phase, version, settings)
+         SELECT NULL, 'planning', 1, jsonb_build_object('skillDigests', jsonb_build_array(digest))
+         FROM factory_planning_skill_catalog WHERE name = $1
+         ON CONFLICT (project_id, phase) DO UPDATE
+           SET settings = lifecycle_phase_profiles.settings || EXCLUDED.settings,
+               version = lifecycle_phase_profiles.version + 1, updated_at = clock_timestamp()
+           WHERE NOT (lifecycle_phase_profiles.settings ? 'skillDigests')`,
+        [initial.name],
+      );
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }

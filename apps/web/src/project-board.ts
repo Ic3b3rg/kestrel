@@ -141,6 +141,8 @@ export function createProjectBoardService(
                 column: item.column,
                 blocking: item.blocking,
                 providerUrl: item.providerUrl,
+                executionFeatureId: item.executionFeatureId,
+                approvedVersion: item.approvedVersion,
               },
             }),
           ),

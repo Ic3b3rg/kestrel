@@ -31,7 +31,10 @@ export function GitHubPlanningSkillImport({
   const id = useId();
   const suspended = useContext(WorkspaceSuspendedContext);
   const active = online && !suspended;
-  const [kind, setKind] = useState<"starter" | "github">("starter");
+  const [kind, setKind] = useState<"starter" | "github" | "matt-pocock" | "superpowers">(
+    "matt-pocock",
+  );
+  const [collectionRef, setCollectionRef] = useState("");
   const [fields, setFields] = useState({
     owner: "",
     repository: "",
@@ -75,13 +78,19 @@ export function GitHubPlanningSkillImport({
     const command = PreviewGitHubPlanningSkillCommandSchema.safeParse(
       kind === "starter"
         ? { kind, starter: "grilling-starter" }
-        : {
-            kind,
-            owner: fields.owner.trim(),
-            repository: fields.repository.trim(),
-            path: fields.path.trim(),
-            ref: fields.ref.trim(),
-          },
+        : kind === "matt-pocock" || kind === "superpowers"
+          ? {
+              kind: "collection",
+              collection: kind,
+              ...(collectionRef.trim() ? { ref: collectionRef.trim() } : {}),
+            }
+          : {
+              kind,
+              owner: fields.owner.trim(),
+              repository: fields.repository.trim(),
+              path: fields.path.trim(),
+              ref: fields.ref.trim(),
+            },
     );
     if (!command.success) {
       setError("Enter a GitHub owner, repository, relative SKILL.md path and explicit ref.");
@@ -175,18 +184,43 @@ export function GitHubPlanningSkillImport({
             disabled={!active || locked}
             onChange={(event) => {
               resetPreview();
-              setKind(event.currentTarget.value === "github" ? "github" : "starter");
+              const value = event.currentTarget.value;
+              if (
+                value === "github" ||
+                value === "starter" ||
+                value === "matt-pocock" ||
+                value === "superpowers"
+              )
+                setKind(value);
             }}
           >
-            <option value="starter">Grilling starter</option>
+            <option value="matt-pocock">Matt Pocock · included collection</option>
+            <option value="superpowers">Superpowers · included collection</option>
+            <option value="starter">Grilling starter (legacy)</option>
             <option value="github">GitHub Skill path</option>
           </NativeSelect>
         </div>
-        {kind === "starter" ? (
+        {kind === "matt-pocock" || kind === "superpowers" ? (
+          <div className="grid gap-1.5">
+            <Label htmlFor={`${id}-collection-ref`}>Collection ref (optional)</Label>
+            <Input
+              id={`${id}-collection-ref`}
+              value={collectionRef}
+              placeholder="Bundled revision; enter a tag or commit to update"
+              disabled={!active || locked}
+              maxLength={255}
+              onChange={(event) => {
+                resetPreview();
+                setCollectionRef(event.target.value);
+              }}
+            />
+          </div>
+        ) : null}
+        {kind !== "github" ? (
           <p className="text-sm text-muted-foreground">
-            A fixed set of Matt Pocock’s procedures for questions grounded in Project documents,
-            specifications and ordered Work Items. The preview includes the original sources,
-            license and Kestrel adaptation.
+            Included interview and requirements procedures. Preview the retained originals,
+            references, license and capability adaptation before explicitly updating. Installers,
+            hooks, visual companion scripts and delegation are not enabled.
           </p>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">

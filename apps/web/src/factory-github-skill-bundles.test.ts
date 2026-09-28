@@ -5,6 +5,7 @@ import { expect, it, vi } from "vitest";
 
 import {
   loadGitHubPlanningStarter,
+  loadSupportedPlanningCollection,
   loadGitHubSkillBundle,
 } from "./factory-github-skill-bundles.js";
 import type { runFactoryGitHubCli } from "./factory-github-cli.js";
@@ -589,4 +590,27 @@ it("enforces one aggregate source budget across all starter dependencies", async
   await expect(loadGitHubPlanningStarter({ run: provider.run })).rejects.toMatchObject({
     code: "bundle_limit",
   });
+});
+
+it("updates the supported Matt Pocock collection only from an explicit ref with complete retained dependencies", async () => {
+  const original = await starterFixture();
+  const request = { ...starterSource, ref: "reviewed-update" };
+  const files = {
+    ...original.files,
+    "skills/productivity/grilling/SKILL.md":
+      (original.files["skills/productivity/grilling/SKILL.md"] ?? "") +
+      "\nClarify the verification outcome.\n",
+  };
+  const provider = fixture(files, request, "b".repeat(40));
+  const bundle = await loadSupportedPlanningCollection("matt-pocock", {
+    ref: request.ref,
+    run: provider.run,
+  });
+  expect(bundle.name).toBe("grill-with-docs");
+  expect(bundle.source.requestedRef).toBe(request.ref);
+  expect(bundle.source.commitId).toBe("b".repeat(40));
+  expect(
+    bundle.files.some((file) => file.content.includes("Clarify the verification outcome.")),
+  ).toBe(true);
+  expect(bundle.files).toHaveLength(10);
 });

@@ -121,6 +121,21 @@ describe("Project Factory board", () => {
     return found;
   }
 
+  it("offers an equivalent keyboard action for starting exactly one issue", async () => {
+    const onStartIssue = vi.fn();
+    const board = snapshot();
+    board.workItems = [
+      { feature: approved, item: { ...firstItem, column: "todo", approvedVersion: 1 } },
+    ];
+    await render({ snapshot: board, onStartIssue });
+    await act(async () => {
+      button("Start issue: " + firstItem.title).click();
+      await Promise.resolve();
+    });
+    expect(onStartIssue).toHaveBeenCalledExactlyOnceWith(board.workItems[0]);
+    expect(container.querySelector('[draggable="true"]')).not.toBeNull();
+  });
+
   it("combines planning Features and approved Work Items without inventing completion or issue links", async () => {
     await render();
     const todo = container.querySelector('[aria-label="To do"]');
@@ -197,7 +212,7 @@ describe("Project Factory board", () => {
     const onOpenSettings = vi.fn();
     await render({ onStartPlan, onOpenFeature, onRefresh, onOpenPullRequests, onOpenSettings });
     await act(async () => {
-      button("New plan").click();
+      button("New interview").click();
       button("Open planning chat: " + planning.title).click();
       button("Open Work Item: " + firstItem.title + " · " + approved.title).click();
       button("Refresh board").click();
@@ -264,10 +279,10 @@ describe("Project Factory board", () => {
   it("shows an empty four-column board with New in To do", async () => {
     await render({ snapshot: null });
     expect(container.querySelectorAll("h2")).toHaveLength(4);
-    expect(container.querySelector('[aria-label="To do"]')?.contains(button("New plan"))).toBe(
+    expect(container.querySelector('[aria-label="To do"]')?.contains(button("New interview"))).toBe(
       true,
     );
     expect(container.querySelectorAll("li")).toHaveLength(0);
-    expect(container.textContent).toContain("Start a plan");
+    expect(container.textContent).toContain("Start an interview");
   });
 });

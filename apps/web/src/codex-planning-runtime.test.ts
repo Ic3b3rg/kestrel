@@ -43,6 +43,23 @@ afterEach(async () => {
 });
 
 describe("Codex planning runtime", () => {
+  it("uses the configured host executable for planning as well as connection discovery", async () => {
+    const { cwd, logPath } = await fixture();
+    vi.stubEnv("KESTREL_CODEX_EXECUTABLE", process.execPath);
+    const runtime = createCodexPlanningRuntime({
+      arguments: [fixturePath, "happy", logPath],
+      timeoutMs: 5_000,
+    });
+    const result = await runtime.runTurn({
+      cwd,
+      model: "gpt-5.6-sol",
+      prompt: "Plan only",
+      requestId: "configured-host",
+      onThread: () => Promise.resolve(),
+    });
+    expect(result.threadId).toBe("thread-planning");
+  });
+
   it("sends retained image bytes and text content as native inputs", async () => {
     const { cwd, logPath, runtime } = await fixture();
     await runtime.runTurn({
@@ -400,4 +417,21 @@ describe("Codex planning runtime", () => {
     expect(onThread).toHaveBeenCalledOnce();
     expect(recorded.at(-1)).toMatchObject({ cleanedUp: true });
   });
+});
+
+it("answers a bounded project read and resumes the same model turn", async () => {
+  const { cwd, runtime } = await fixture("project_read");
+  const read = vi
+    .fn()
+    .mockResolvedValue({ path: "src/export.ts", content: "export const format = 'csv';" });
+  const result = await runtime.runTurn({
+    cwd,
+    model: "gpt-5.6-sol",
+    prompt: "Check the export format",
+    requestId: "read-project",
+    onThread: async () => {},
+    readProject: read,
+  });
+  expect(read).toHaveBeenCalledWith({ operation: "read_file", path: "src/export.ts", offset: 0 });
+  expect(result.text).toContain("csv");
 });

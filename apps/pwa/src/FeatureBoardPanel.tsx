@@ -411,7 +411,11 @@ export function FeatureBoardPanel({
       {board === null ? null : (
         <>
           {board.approvedVersion === null ? (
-            <p className="planning-notice">Approve a saved plan to queue its Work Items.</p>
+            <p className="planning-notice">Review requirements and publish the issue drafts.</p>
+          ) : board.executionReadiness.reason === "individual_start" ? (
+            <p className="planning-notice">
+              Choose an issue on the project board to start it. Other issues stay in To do.
+            </p>
           ) : (
             <FeatureExecutionPanel
               projectId={projectId}
@@ -424,7 +428,8 @@ export function FeatureBoardPanel({
               }}
             />
           )}
-          {board.approvedVersion === null ? null : (
+          {board.approvedVersion === null ||
+          board.executionReadiness.reason === "individual_start" ? null : (
             <FeaturePublicationPanel
               projectId={projectId}
               featureId={featureId}

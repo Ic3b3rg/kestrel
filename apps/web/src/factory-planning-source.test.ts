@@ -8,7 +8,7 @@ import { afterEach, expect, it } from "vitest";
 
 import { discoverRepositories, readLocalSourceConfig } from "@kestrel/local-source";
 
-import { readPlanningDocuments } from "./factory-planning-source.js";
+import { readPlanningDocuments, readPlanningRepository } from "./factory-planning-source.js";
 
 const exec = promisify(execFile);
 let fixtureRoot: string | undefined;
@@ -53,5 +53,22 @@ it("grounds planning in committed Markdown and discloses missing context without
     }),
   ]);
   expect(result.notice).toContain("AGENTS.md");
+  const read = await readPlanningRepository(config, repositoryId, undefined, commitId, {
+    operation: "read_file",
+    path: "CONTEXT.md",
+    offset: 0,
+  });
+  expect(read).toMatchObject({
+    content: "Exports must preserve the current filter.\n",
+    nextOffset: null,
+  });
+  await expect(
+    readPlanningRepository(config, repositoryId, undefined, commitId, {
+      operation: "read_file",
+      path: "../outside",
+      offset: 0,
+    }),
+  ).rejects.toThrow();
+
   expect(JSON.stringify(result)).not.toMatch(/PRIVATE TEXT|kestrel-planning-source-/u);
 });

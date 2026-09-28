@@ -44,3 +44,9 @@ export * from "./factory-feature-merge.js";
 export * from "./lifecycle-profiles.js";
 
 export * from "./planning-attachments.js";
+
+export { startFactoryWorkItem } from "./factory-work-item-start.js";
+
+export { bootstrapPlanningSkills } from "./factory-skills.js";
+
+export { prepareFactoryIssueInterview } from "./factory-issue-interview.js";

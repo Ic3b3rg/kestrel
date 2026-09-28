@@ -273,6 +273,8 @@ export const FactoryWorkItemSchema = FactoryWorkItemDefinitionSchema.extend({
       explanation: text(2000),
     })
     .nullable(),
+  executionFeatureId: KestrelIdSchema.nullable().optional(),
+  approvedVersion: version.nullable().optional(),
   providerUrl: z.url({ protocol: /^https$/u }).nullable(),
   activity: z.array(FactoryActivitySchema).max(100),
 });
@@ -286,7 +288,10 @@ export const FactoryBoardSchema = z.strictObject({
       state: z.literal("unavailable"),
       reason: z.literal("execution_not_available"),
     }),
-    z.strictObject({ state: z.literal("enabled"), reason: z.literal("automatic_execution") }),
+    z.strictObject({
+      state: z.literal("enabled"),
+      reason: z.enum(["automatic_execution", "individual_start"]),
+    }),
   ]),
   columns: z
     .array(
@@ -299,3 +304,15 @@ export const FactoryBoardSchema = z.strictObject({
   activity: z.array(FactoryActivitySchema).max(100),
 });
 export type FactoryBoard = z.infer<typeof FactoryBoardSchema>;
+
+export const StartFactoryWorkItemCommandSchema = z.strictObject({
+  requestId: z.uuid(),
+  expectedVersion: version,
+});
+export type StartFactoryWorkItemCommand = z.infer<typeof StartFactoryWorkItemCommandSchema>;
+export const FactoryWorkItemStartSchema = z.strictObject({
+  workItemId: KestrelIdSchema,
+  executionFeatureId: KestrelIdSchema,
+  approvedVersion: version,
+});
+export type FactoryWorkItemStart = z.infer<typeof FactoryWorkItemStartSchema>;

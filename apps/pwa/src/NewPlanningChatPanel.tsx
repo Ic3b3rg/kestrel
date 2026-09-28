@@ -10,6 +10,7 @@ import { PlanningComposer } from "./PlanningComposer.js";
 export interface NewPlanningChatPanelProps {
   projectName: string;
   controls?: ReactNode;
+  skills?: ReactNode;
   projectControl?: ReactNode;
   online: boolean;
   readyToSubmit?: boolean;
@@ -26,6 +27,7 @@ export interface NewPlanningChatPanelProps {
 export function NewPlanningChatPanel({
   projectName,
   controls,
+  skills,
   projectControl,
   online,
   readyToSubmit = true,
@@ -63,12 +65,12 @@ export function NewPlanningChatPanel({
       </div>
       <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center gap-6 py-12 sm:py-20">
         <header className="space-y-2">
-          <p className="break-words text-sm text-muted-foreground">{projectName} · New plan</p>
+          <p className="break-words text-sm text-muted-foreground">{projectName} · New interview</p>
           <h1 id={titleId} className="text-2xl font-medium tracking-tight sm:text-3xl">
             What would you like to build?
           </h1>
           <p className="text-sm text-muted-foreground">
-            Describe the change. Shape the plan together.
+            Describe the change. Explore the requirements together.
           </p>
         </header>
         <form onSubmit={submit} className="space-y-3" aria-busy={pending}>
@@ -79,7 +81,8 @@ export function NewPlanningChatPanel({
             attachments={attachments}
             project={projectControl ?? projectName}
             controls={controls}
-            sendLabel={pending ? "Starting…" : error === null ? "Start plan" : "Retry"}
+            skills={skills}
+            sendLabel={pending ? "Starting…" : error === null ? "Start interview" : "Retry"}
             canSend={online && readyToSubmit && !pending && draft.trim() !== ""}
             input={{
               textareaRef: composer,
@@ -92,7 +95,7 @@ export function NewPlanningChatPanel({
               maxLength: 16_000,
               value: draft,
               disabled: pending || locked,
-              describedBy: helpId,
+              ...(pending || !online ? { describedBy: helpId } : {}),
               placeholder: "A feature, a problem, or an idea…",
               onValueChange: (text) => {
                 setDraft(text);
@@ -104,13 +107,11 @@ export function NewPlanningChatPanel({
             <FormFeedback id={helpId} kind="pending">
               {pendingMessage}
             </FormFeedback>
-          ) : (
+          ) : !online ? (
             <p id={helpId} className="text-sm text-muted-foreground">
-              {!online
-                ? "Reconnect to start this plan. Your draft stays here."
-                : "You will review and approve the plan before implementation starts."}
+              Reconnect to start this interview. Your draft stays here.
             </p>
-          )}
+          ) : null}
           {error === null ? null : (
             <FormFeedback kind="error" focus className="grid justify-items-start gap-1 text-sm">
               <p>{error}</p>

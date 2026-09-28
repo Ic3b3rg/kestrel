@@ -16,6 +16,8 @@ export const ProjectBoardWorkItemSchema = z.strictObject({
     column: true,
     blocking: true,
     providerUrl: true,
+    executionFeatureId: true,
+    approvedVersion: true,
   }),
 });
 export type ProjectBoardWorkItem = z.infer<typeof ProjectBoardWorkItemSchema>;
