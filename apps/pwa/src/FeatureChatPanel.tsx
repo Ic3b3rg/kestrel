@@ -1,3 +1,4 @@
+import { MarkdownContent } from "./MarkdownContent.js";
 import { usePlanningAttachments } from "./usePlanningAttachments.js";
 import { PlanningMessageAttachments } from "./PlanningAttachments.js";
 import { FormFeedback } from "./components/FormFeedback.js";
@@ -535,7 +536,7 @@ export function FeatureChatPanel({
                         })}
                       </time>
                     </header>
-                    <div className="planning-message-content">{message.content}</div>
+                    <MarkdownContent body={message.content} />
                     <PlanningMessageAttachments
                       files={message.attachments ?? []}
                       projectId={projectId}

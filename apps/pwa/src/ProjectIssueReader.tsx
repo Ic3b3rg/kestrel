@@ -1,5 +1,5 @@
 import { CircleDot, CircleCheck, ExternalLink, MessageSquare } from "lucide-react";
-import { IssueMarkdown } from "./IssueMarkdown.js";
+import { MarkdownContent } from "./MarkdownContent.js";
 import { useEffect, useState } from "react";
 import type { ProjectIssueDiscussion } from "@kestrel/contracts";
 import { fetchProjectIssue } from "./project-issue-api.js";
@@ -137,9 +137,9 @@ export function ProjectIssueReader({
                   Description
                 </h2>
                 <div className="p-4 sm:p-6">
-                  <IssueMarkdown
+                  <MarkdownContent
                     body={issue.body || "No description provided."}
-                    issueUrl={issue.url}
+                    baseUrl={`${issue.url}/`}
                   />
                 </div>
               </article>
@@ -170,7 +170,7 @@ export function ProjectIssueReader({
                     <span className="text-xs text-muted-foreground">commented</span>
                   </header>
                   <div className="p-4 sm:p-6">
-                    <IssueMarkdown body={comment.body} issueUrl={issue.url} />
+                    <MarkdownContent body={comment.body} baseUrl={`${issue.url}/`} />
                   </div>
                 </article>
               ))}
