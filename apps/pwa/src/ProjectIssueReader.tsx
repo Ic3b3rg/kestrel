@@ -1,3 +1,5 @@
+import { CircleDot, CircleCheck, ExternalLink, MessageSquare } from "lucide-react";
+import { IssueMarkdown } from "./IssueMarkdown.js";
 import { useEffect, useState } from "react";
 import type { ProjectIssueDiscussion } from "@kestrel/contracts";
 import { fetchProjectIssue } from "./project-issue-api.js";
@@ -8,6 +10,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from "./components/ui/sheet.js";
+import { Skeleton } from "./components/ui/skeleton.js";
 import { Button } from "./components/ui/button.js";
 import { planningRequestError } from "./FeatureNavigation.js";
 
@@ -71,14 +74,41 @@ export function ProjectIssueReader({
         if (!open) onClose();
       }}
     >
-      <SheetContent className="w-full! overflow-y-auto sm:max-w-2xl!">
-        <SheetHeader>
-          <SheetTitle>{issue?.title ?? `Issue #${String(number)}`}</SheetTitle>
+      <SheetContent className="w-full! gap-0 overflow-y-auto sm:max-w-4xl!">
+        <SheetHeader className="border-b border-border p-6 pr-12">
           <SheetDescription>
-            Issue #{number} · {issue?.repository.owner}/{issue?.repository.name}
+            {issue ? `${issue.repository.owner}/${issue.repository.name}` : "GitHub issue"}
           </SheetDescription>
+          <SheetTitle className="text-2xl leading-snug">
+            {issue?.title ?? "Issue"}{" "}
+            <span className="font-normal text-muted-foreground">#{number}</span>
+          </SheetTitle>
+          {issue ? (
+            <div className="flex flex-wrap items-center gap-3 pt-2 text-xs">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted px-3 py-1 font-medium">
+                {issue.state === "open" ? (
+                  <CircleDot className="size-4" aria-hidden="true" />
+                ) : (
+                  <CircleCheck className="size-4" aria-hidden="true" />
+                )}
+                {issue.state === "open" ? "Open" : "Closed"}
+              </span>
+              <span className="inline-flex items-center gap-1 text-muted-foreground">
+                <MessageSquare className="size-3.5" aria-hidden="true" />
+                {issue.commentCount ?? comments.length} comments
+              </span>
+              <a
+                className="inline-flex items-center gap-1 underline underline-offset-2"
+                href={issue.url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open on GitHub <ExternalLink className="size-3.5" aria-hidden="true" />
+              </a>
+            </div>
+          ) : null}
         </SheetHeader>
-        <div className="space-y-6 px-4 pb-6">
+        <div className="space-y-6 p-6">
           {error === null ? null : (
             <div role="alert" className="space-y-2">
               <p>{error}</p>
@@ -87,34 +117,60 @@ export function ProjectIssueReader({
           )}
           {issue === undefined ? null : (
             <>
-              <div className="flex flex-wrap gap-2">
-                {issue.labels?.map((label) => (
-                  <span className="rounded border px-2 py-1 text-xs" key={label.name}>
-                    {label.name}
-                  </span>
-                ))}
+              <div className="flex flex-wrap items-center gap-2" aria-label="Issue labels">
+                <span className="mr-1 text-xs font-medium text-muted-foreground">Labels</span>
+                {issue.labels?.length ? (
+                  issue.labels.map((label) => (
+                    <span
+                      className="rounded-full border border-border px-2.5 py-0.5 text-xs font-medium"
+                      key={label.name}
+                    >
+                      {label.name}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-xs text-muted-foreground">None</span>
+                )}
               </div>
-              <div className="whitespace-pre-wrap break-words leading-relaxed">
-                {issue.body || "No description provided."}
-              </div>
-              <a className="text-sm underline" href={issue.url} target="_blank" rel="noreferrer">
-                Open on GitHub
-              </a>
-              <h2 className="text-base font-semibold">
+              <article className="min-w-0 overflow-hidden rounded-lg border border-border">
+                <h2 className="border-b border-border bg-muted/50 px-4 py-3 text-sm font-medium">
+                  Description
+                </h2>
+                <div className="p-4 sm:p-6">
+                  <IssueMarkdown
+                    body={issue.body || "No description provided."}
+                    issueUrl={issue.url}
+                  />
+                </div>
+              </article>
+              <h2 className="flex items-center gap-2 text-sm font-semibold">
+                <MessageSquare className="size-4 text-muted-foreground" aria-hidden="true" />
                 Comments ({issue.commentCount ?? comments.length})
               </h2>
               {comments.map((comment) => (
-                <article key={comment.id} className="space-y-2 border-t pt-4">
-                  <a
-                    href={comment.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-sm font-medium underline"
-                  >
-                    {comment.author ?? "GitHub user"}
-                  </a>
-                  <div className="whitespace-pre-wrap break-words leading-relaxed">
-                    {comment.body}
+                <article
+                  key={comment.id}
+                  className="min-w-0 overflow-hidden rounded-lg border border-border"
+                >
+                  <header className="flex items-center gap-2 border-b border-border bg-muted/50 px-4 py-3 text-sm">
+                    <span
+                      aria-hidden="true"
+                      className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold"
+                    >
+                      {(comment.author ?? "?").slice(0, 1).toUpperCase()}
+                    </span>
+                    <a
+                      href={comment.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="break-all font-semibold hover:underline"
+                    >
+                      {comment.author ?? "GitHub user"}
+                    </a>
+                    <span className="text-xs text-muted-foreground">commented</span>
+                  </header>
+                  <div className="p-4 sm:p-6">
+                    <IssueMarkdown body={comment.body} issueUrl={issue.url} />
                   </div>
                 </article>
               ))}
@@ -132,7 +188,15 @@ export function ProjectIssueReader({
             </>
           )}
           {loading && pages.length === 0 ? (
-            <p role="status">Reading issue…</p>
+            <div role="status" className="space-y-4">
+              <span className="sr-only">Reading issue…</span>
+              <div aria-hidden="true" className="space-y-4 rounded-lg border border-border p-4">
+                <Skeleton className="h-4 w-24 motion-reduce:animate-none" />
+                <Skeleton className="h-4 w-full motion-reduce:animate-none" />
+                <Skeleton className="h-4 w-5/6 motion-reduce:animate-none" />
+                <Skeleton className="h-32 w-full motion-reduce:animate-none" />
+              </div>
+            </div>
           ) : next != null ? (
             <Button onClick={() => setPage(next)}>Load more comments</Button>
           ) : null}

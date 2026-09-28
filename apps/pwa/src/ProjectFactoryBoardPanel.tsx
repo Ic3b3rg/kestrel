@@ -1,3 +1,4 @@
+import { Skeleton } from "./components/ui/skeleton.js";
 import { FormFeedback } from "./components/FormFeedback.js";
 import { useId, type MouseEvent } from "react";
 import { ArrowUpRight, GitPullRequest, Plus, RefreshCw, Settings } from "lucide-react";
@@ -229,6 +230,7 @@ export function ProjectFactoryBoardPanel({
   onRetryStart,
 }: ProjectFactoryBoardPanelProps) {
   const titleId = useId();
+  const initialLoading = loading && snapshot === null;
   const planningFeatures = snapshot?.planningFeatures ?? [];
   const workItems = snapshot?.workItems ?? [];
   const availableGitHubIssues = snapshot?.github.issues ?? [];
@@ -295,6 +297,11 @@ export function ProjectFactoryBoardPanel({
           Showing a limited set of GitHub issues. More open GitHub issues may exist.
         </p>
       ) : null}
+      {initialLoading ? (
+        <p role="status" className="sr-only">
+          Loading board…
+        </p>
+      ) : null}
       <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {columns.map((column) => {
           const items = workItems.filter(({ item }) => item.column === column.id);
@@ -338,7 +345,10 @@ export function ProjectFactoryBoardPanel({
             >
               <header className="flex min-h-8 items-center justify-between gap-2">
                 <h2 className="text-sm font-medium">
-                  {column.label} <span className="ml-1 text-muted-foreground">{count}</span>
+                  {column.label}{" "}
+                  {!initialLoading ? (
+                    <span className="ml-1 text-muted-foreground">{count}</span>
+                  ) : null}
                 </h2>
                 {column.id === "todo" ? (
                   <Button
@@ -353,7 +363,21 @@ export function ProjectFactoryBoardPanel({
                 ) : null}
               </header>
               {count === 0 ? (
-                loading && snapshot === null ? null : (
+                initialLoading ? (
+                  <div aria-hidden="true" className="space-y-3">
+                    {[0, 1].map((index) => (
+                      <div
+                        key={index}
+                        className="space-y-3 rounded-lg border border-border bg-card p-3"
+                      >
+                        <Skeleton className="h-3 w-16 motion-reduce:animate-none" />
+                        <Skeleton className="h-4 w-full motion-reduce:animate-none" />
+                        <Skeleton className="h-4 w-2/3 motion-reduce:animate-none" />
+                        <Skeleton className="h-5 w-24 rounded-full motion-reduce:animate-none" />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
                   <p className="py-3 text-sm text-muted-foreground">
                     {column.id === "todo"
                       ? "Start a plan to add work."

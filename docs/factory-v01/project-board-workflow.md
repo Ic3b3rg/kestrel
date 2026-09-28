@@ -37,3 +37,22 @@ copy.
 Verification boundaries: GitHub adapter responses, durable board/start APIs, scheduler transitions,
 PWA interactions, and one isolated browser journey. Shared runtime and other worktrees are not test
 fixtures. Review compares against origin/master at `c63b2ed` and this specification.
+
+### Issue reading and loading presentation (2026-09-28)
+
+The Operator opens an issue from the Project board and reads its description and comments as
+GitHub-flavored Markdown (headings, emphasis, links, code, tables, and read-only task lists). The
+reader uses a GitHub-inspired hierarchy within Kestrel's own design: repository and issue number,
+title and state, labels, then separate bordered description and comment entries with comment
+authors. GitHub remains a secondary link. Raw provider HTML and executable links are not rendered as
+active content.
+
+The first board read shows card skeletons in all four columns and announces loading. Once a snapshot
+exists, refreshes retain its cards and empty states without replacing them with skeletons. The issue
+reader also shows a skeleton while its first discussion read is pending. Read failures keep the
+existing retry or saved-content message. Skeleton motion respects reduced-motion settings.
+
+Acceptance uses the actual Project workspace: delay the initial responses, inspect loading, open a
+Markdown issue, read its comments, close with Escape, start via drag/drop, reopen via keyboard, and
+check the reader at a 320px viewport. The reader remains read-only and exposes no storage or
+workflow implementation vocabulary.
