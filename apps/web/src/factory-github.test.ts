@@ -243,6 +243,20 @@ afterEach(async () => {
 });
 
 describe("Factory GitHub subprocess boundary", () => {
+  it("reads full comment bodies and exposes a continuation page", async () => {
+    const { adapter } = await fixture("comment_limited");
+    const discussion = await adapter.readIssueDiscussion(identity, 1, 1);
+    expect(discussion.issue.body).toBe("Operator body");
+    expect(discussion.comments).toHaveLength(20);
+    expect(discussion.comments[0]).toEqual({
+      id: "1000",
+      body: "Unrelated comment",
+      author: "operator",
+      url: "https://github.com/owner/notes/issues/1#issuecomment-1000",
+    });
+    expect(discussion.nextPage).toBe(2);
+  });
+
   it("bounds a Project catalog to five pages and preserves partial reads on failure", async () => {
     const bounded = await fixture("limited");
     const result = await bounded.adapter.readIssueCatalog({ owner: "owner", name: "notes" });
