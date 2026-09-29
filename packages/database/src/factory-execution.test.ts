@@ -430,3 +430,24 @@ it.each([
     ).toBe(allowed);
   },
 );
+
+it("never turns publication of an interview into execution authority", async () => {
+  const query = vi.fn<Query>((sql) => {
+    if (sql.includes("FROM factory_features feature JOIN projects"))
+      return {
+        rows: [
+          { id: featureId, project_id: projectId, state: "queued", execution_mode: "individual" },
+        ],
+      };
+    if (sql.includes("SELECT plan.version, plan.document"))
+      throw new Error("A published interview must not enter the execution path");
+    return { rows: [] };
+  });
+  const send = vi.fn();
+  expect(
+    await queueFactoryExecutions({ connect: () => ({ query, release: vi.fn() }) } as never, {
+      send,
+    }),
+  ).toEqual([]);
+  expect(send).not.toHaveBeenCalled();
+});

@@ -103,6 +103,11 @@ export type GitHubPlanningSkillBundle = z.infer<typeof GitHubPlanningSkillBundle
 export const PreviewGitHubPlanningSkillCommandSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("starter"), starter: z.literal("grilling-starter") }),
   z.strictObject({
+    kind: z.literal("collection"),
+    collection: z.enum(["matt-pocock", "superpowers"]),
+    ref: z.string().min(1).max(255).optional(),
+  }),
+  z.strictObject({
     kind: z.literal("github"),
     owner: githubOwner,
     repository: githubRepository,

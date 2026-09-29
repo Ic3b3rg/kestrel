@@ -62,6 +62,7 @@ export class FactoryError extends Error {
 }
 
 export interface FeatureRow {
+  execution_mode?: "individual" | "authorized";
   planning_settings?: unknown;
   id: string;
   project_id: string;
@@ -384,7 +385,7 @@ export async function createFactoryFeature(
       return mapFactoryFeature(duplicate);
     }
     const count = await client.query<{ count: string }>(
-      `SELECT count(*) FROM factory_features WHERE (${FEATURE_FAMILY}) = $1`,
+      `SELECT count(*) FROM factory_features WHERE (${FEATURE_FAMILY}) = $1 AND NOT EXISTS (SELECT 1 FROM factory_work_item_starts WHERE execution_feature_id = factory_features.id)`,
       [canonicalProjectId],
     );
     if (Number(count.rows[0]?.count) >= 200) throw new FactoryError("feature_limit");
@@ -406,7 +407,7 @@ export async function listFactoryFeatures(
   const project = await pool.query("SELECT id FROM projects WHERE id = $1", [projectId]);
   if (project.rowCount === 0) throw new FactoryError("not_found");
   const result = await pool.query<FeatureRow>(
-    `SELECT *, (${FEATURE_FAMILY}) AS project_id FROM factory_features WHERE (${FEATURE_FAMILY}) = (${PROJECT_FAMILY}) ORDER BY created_at, id LIMIT 200`,
+    `SELECT *, (${FEATURE_FAMILY}) AS project_id FROM factory_features WHERE (${FEATURE_FAMILY}) = (${PROJECT_FAMILY}) AND NOT EXISTS (SELECT 1 FROM factory_work_item_starts WHERE execution_feature_id = factory_features.id) ORDER BY created_at, id LIMIT 200`,
     [projectId],
   );
   return result.rows.map(mapFactoryFeature);
@@ -605,11 +606,13 @@ export async function acceptPlanningMessageForFeature(
   const invokedSkillDigests = await resolvePlanningSkillInvocation(
     client,
     command.text,
-    initialSkillDigests ?? selected,
+    initialSkillDigests !== undefined && initialSkillDigests.length > 0
+      ? initialSkillDigests
+      : row.skill_selection_version > 0
+        ? selected
+        : (lifecycleProfile?.requested.skillDigests ?? selected),
   );
-  const skillDigests = [
-    ...new Set([...(lifecycleProfile?.requested.skillDigests ?? []), ...invokedSkillDigests]),
-  ];
+  const skillDigests = invokedSkillDigests;
   if (JSON.stringify(selected) !== JSON.stringify(invokedSkillDigests)) {
     if (row.skill_selection_version >= 1000)
       throw new FactoryError("conflict", "The Skill selection limit was reached");
@@ -627,8 +630,10 @@ export async function acceptPlanningMessageForFeature(
       [featureId],
     );
   }
-  if (lifecycleProfile !== null)
+  if (lifecycleProfile !== null) {
+    lifecycleProfile.requested.skillDigests = skillDigests;
     lifecycleProfile.skills = await readPlanningSkills(client, skillDigests);
+  }
   const inserted = await client.query<{ id: string }>(
     "INSERT INTO factory_planning_messages (feature_id, role, content, attachment_fingerprint) VALUES ($1, 'user', $2, $3) RETURNING id",
     [featureId, command.text, fingerprint],

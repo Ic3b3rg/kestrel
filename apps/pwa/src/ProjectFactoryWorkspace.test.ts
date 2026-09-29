@@ -102,7 +102,7 @@ it("uses one snapshot read for local and provider cards with direct Project acti
   );
   await act(async () => {
     await Promise.resolve();
-    container.querySelector<HTMLButtonElement>('[aria-label="New plan"]')?.click();
+    container.querySelector<HTMLButtonElement>('[aria-label="New interview"]')?.click();
     [...container.querySelectorAll("button")]
       .find((button) => button.textContent.includes("Pull requests"))
       ?.click();

@@ -10,6 +10,14 @@ import { startStack, TEST_OPERATOR_CREDENTIALS, type RunningStack } from "./supp
 import { factoryGitHubFixture } from "./support/factory-github-fixture.js";
 import { createGitFixture, type GitFixture } from "./support/git-fixture.js";
 
+async function reviewIssueDrafts(page: Page) {
+  const action = page.getByRole("button", { name: "Review issue drafts", exact: true });
+  await expect(
+    action.or(page.getByRole("button", { name: "Publish issues", exact: true })),
+  ).toBeVisible();
+  if (await action.isVisible()) await action.click();
+}
+
 const plan: FeaturePlanDocument = {
   objective: "Find saved reports by their title.",
   scope: { includes: ["Search local report titles"], excludes: ["Search report contents"] },
@@ -67,11 +75,14 @@ async function openProjectBoard(page: Page, url: string): Promise<string> {
 async function createFeature(page: Page, url: string): Promise<string> {
   await openProjectBoard(page, url);
   const title = "Deliver report search from existing issues";
-  await page.getByRole("button", { name: "New plan", exact: true }).click();
+  await page.getByRole("main").getByRole("button", { name: "New interview", exact: true }).click();
   await page.getByLabel("Describe the change", { exact: true }).fill(title);
-  await page.getByRole("main").getByRole("button", { name: "Start plan", exact: true }).click();
+  await page
+    .getByRole("main")
+    .getByRole("button", { name: "Start interview", exact: true })
+    .click();
   await expect(
-    page.getByRole("heading", { level: 1, name: "New plan", exact: true }),
+    page.getByRole("heading", { level: 1, name: "New interview", exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Rename feature", exact: true }).click();
   const feature = page.getByRole("dialog", { name: "Rename feature", exact: true });
@@ -146,14 +157,20 @@ test.describe("Factory GitHub issues", () => {
     expect(requests).toContain(`/api/v1/projects/${projectId}/board`);
     expect(requests.some((path) => path.endsWith("/github-issues"))).toBe(false);
     expect(requests.some((path) => /\/features\/[^/]+\/board$/u.test(path))).toBe(false);
-    await page.getByRole("button", { name: "New plan", exact: true }).focus();
+    await page
+      .getByRole("main")
+      .getByRole("button", { name: "New interview", exact: true })
+      .focus();
     await page.keyboard.press("Enter");
     await page
       .getByLabel("Describe the change", { exact: true })
       .fill("Keep local planning visible when GitHub is unavailable");
-    await page.getByRole("main").getByRole("button", { name: "Start plan", exact: true }).click();
+    await page
+      .getByRole("main")
+      .getByRole("button", { name: "Start interview", exact: true })
+      .click();
     await expect(
-      page.getByRole("heading", { level: 1, name: "New plan", exact: true }),
+      page.getByRole("heading", { level: 1, name: "New interview", exact: true }),
     ).toBeVisible();
     await expect(page.getByRole("button", { name: "Rename feature", exact: true })).toBeVisible();
     await page.goto(new URL(`/projects/${projectId}`, stack.pwaUrl).href);
@@ -278,10 +295,12 @@ test.describe("Factory GitHub issues", () => {
     await page.setViewportSize({ width: 1024, height: 800 });
 
     await seedPlan(page, `${endpoint}/plans`);
-    await page.getByRole("tab", { name: "Plan", exact: true }).click();
-    await expect(
-      page.getByRole("button", { name: "Approve version 1", exact: true }),
-    ).toBeDisabled();
+    await page
+      .getByRole("button", { name: "Review requirements", exact: true })
+      .or(page.getByRole("tab", { name: "Plan", exact: true }))
+      .click();
+    await reviewIssueDrafts(page);
+    await expect(page.getByRole("button", { name: "Publish issues", exact: true })).toBeDisabled();
     await expect(
       page.getByText("Assign #12 · Existing issue 12 to a Work Item", { exact: true }),
     ).toBeVisible();
@@ -289,9 +308,7 @@ test.describe("Factory GitHub issues", () => {
     await page.getByLabel("GitHub issue 1", { exact: true }).selectOption(source.id);
     await expect(page.getByLabel("Objective", { exact: true })).toHaveValue(plan.objective);
     await page.getByRole("button", { name: "Save new version", exact: true }).click();
-    await expect(
-      page.getByRole("heading", { name: "Plan · version 2", exact: true }),
-    ).toBeVisible();
+    await expect(page.getByLabel("Saved version", { exact: true })).toHaveValue("2");
     const saved = FeaturePlanVersionSchema.parse(await readJson(page, `${endpoint}/plans/2`));
     expect(saved.document).toEqual({
       ...plan,
@@ -300,6 +317,7 @@ test.describe("Factory GitHub issues", () => {
         importedIssueId: index === 0 ? source.id : null,
       })),
     });
+    await reviewIssueDrafts(page);
     await page.getByRole("button", { name: "Inspect imported snapshot", exact: true }).click();
     const snapshot = page.getByRole("dialog", { name: "Imported issue #12", exact: true });
     await expect(snapshot.getByLabel("Issue #12 body", { exact: true })).toHaveText(
@@ -325,7 +343,8 @@ test.describe("Factory GitHub issues", () => {
       state.controls = { rejectCreate: true };
       await writeFile(path, JSON.stringify(state));
     `);
-    await page.getByRole("button", { name: "Approve version 2", exact: true }).click();
+    await reviewIssueDrafts(page);
+    await page.getByRole("button", { name: "Publish issues", exact: true }).click();
     await expect(page.getByRole("tab", { name: "Board", exact: true })).toHaveAttribute(
       "aria-selected",
       "true",
@@ -391,16 +410,16 @@ test.describe("Factory GitHub issues", () => {
     await expect(page.getByText("2 of 2 Work Items published", { exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: "#100", exact: true })).toBeVisible();
     const execution = page.getByRole("region", { name: "Feature execution", exact: true });
-    await expect(execution).toBeVisible();
-    // This installation deliberately has no execution image or host Codex. Its approved work
-    // must retain an inspectable blocked attempt instead of claiming successful implementation.
-    await expect(execution.getByText("Execution needs attention", { exact: true })).toBeVisible();
-    await execution.getByRole("button", { name: /^Attempt 1/ }).click();
-    const attempt = execution.getByRole("region", { name: "Attempt 1 details", exact: true });
-    await expect(attempt).toBeVisible();
+    await expect(execution).toHaveCount(0);
     await expect(
-      attempt.getByText('["npm","test","--","report-index"]', { exact: true }),
+      page.getByText(
+        "Choose an issue on the project board to start it. Other issues stay in To do.",
+        { exact: true },
+      ),
     ).toBeVisible();
+    await expect(page.getByRole("region", { name: "To do", exact: true })).toContainText(
+      "Index report titles",
+    );
     await expect(page.getByRole("region", { name: "Completed", exact: true })).toContainText(
       "No Work Items",
     );

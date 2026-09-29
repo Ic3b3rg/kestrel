@@ -46,3 +46,9 @@ export * from "./lifecycle-profiles.js";
 export * from "./planning-attachments.js";
 export * from "./project-issue-board.js";
 export * from "./project-issue-dispatch.js";
+
+export { startFactoryWorkItem } from "./factory-work-item-start.js";
+
+export { bootstrapPlanningSkills } from "./factory-skills.js";
+
+export { prepareFactoryIssueInterview } from "./factory-issue-interview.js";

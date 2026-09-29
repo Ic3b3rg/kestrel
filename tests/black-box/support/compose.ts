@@ -40,6 +40,7 @@ export const TEST_OPERATOR_CREDENTIALS: OperatorTestCredentials = {
 
 export interface StartStackOptions {
   connectedCodexFixture?: boolean;
+  planningCodexFixture?: string;
   githubFixture?: string;
   gitHubRemoteMappings?: Readonly<Record<string, string>>;
   repositoryRoot?: string;
@@ -165,7 +166,9 @@ export async function startStack(options: StartStackOptions = {}): Promise<Runni
   const gitRecorder = join(generatedGitToolsRoot, "git-recorder");
   const githubFixture = join(generatedGitToolsRoot, "factory-gh");
   const codexFixture = join(generatedGitToolsRoot, "factory-codex");
-  await writeFile(codexFixture, codexConnectionFixture, { mode: 0o755 });
+  await writeFile(codexFixture, options.planningCodexFixture ?? codexConnectionFixture, {
+    mode: 0o755,
+  });
   await writeFile(
     githubFixture,
     options.githubFixture ?? "#!/usr/local/bin/node\nprocess.exit(127);\n",

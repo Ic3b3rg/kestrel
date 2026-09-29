@@ -1,3 +1,4 @@
+import { loadSupportedPlanningCollection } from "../factory-github-skill-bundles.js";
 import { isAbsolute } from "node:path";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
@@ -132,7 +133,12 @@ export function registerPlanningSkillRoutes(app: FastifyInstance, pool: Database
         const bundle =
           command.kind === "starter"
             ? await loadGitHubPlanningStarter({ signal })
-            : await loadGitHubSkillBundle(command, { signal });
+            : command.kind === "collection"
+              ? await loadSupportedPlanningCollection(command.collection, {
+                  signal,
+                  ...(command.ref === undefined ? {} : { ref: command.ref }),
+                })
+              : await loadGitHubSkillBundle(command, { signal });
         if (signal.aborted)
           throw new FactoryGitHubSkillBundleError(deadline.aborted ? "timeout" : "cancelled");
         return await retainGitHubPlanningSkill(pool, bundle);

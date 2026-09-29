@@ -74,9 +74,15 @@ async function boardFor(
     board_column: FactoryWorkItem["column"];
     provider_issue: { url: string } | null;
     published_at: Date | null;
+    execution_feature_id: string | null;
+    execution_state: string | null;
   }>(
-    `SELECT item.*, publication.issue AS provider_issue, publication.published_at
+    `SELECT item.*, COALESCE(execution.board_column, item.board_column) AS board_column,
+       start.execution_feature_id, execution_feature.state AS execution_state, publication.issue AS provider_issue, publication.published_at
      FROM factory_work_items item LEFT JOIN factory_issue_publications publication ON publication.work_item_id = item.id
+     LEFT JOIN factory_work_item_starts start ON start.work_item_id = item.id
+     LEFT JOIN factory_work_items execution ON execution.id = start.execution_work_item_id
+     LEFT JOIN factory_features execution_feature ON execution_feature.id = start.execution_feature_id
      WHERE item.feature_id = $1 AND item.plan_version = $2 ORDER BY item.position`,
     [feature.id, feature.approved_plan_version],
   );
@@ -136,8 +142,31 @@ async function boardFor(
       featureId: feature.id,
       order: row.position,
       column: item.column,
-      blocking: item.blocking,
+      blocking:
+        row.execution_state === "gated" || row.execution_state === "cancelled"
+          ? {
+              kind: row.execution_state === "gated" ? "human_gate" : "cancelled",
+              explanation:
+                row.execution_state === "gated"
+                  ? "Execution needs your decision. Open this issue to inspect the saved attempt."
+                  : "This issue execution was cancelled. Open it to inspect the saved work.",
+            }
+          : feature.execution_mode === "individual" &&
+              item.column === "todo" &&
+              item.definition.dependsOn.some(
+                (key) =>
+                  !rows.rows.some(
+                    (candidate) => candidate.key === key && candidate.board_column === "completed",
+                  ),
+              )
+            ? {
+                kind: "dependency",
+                explanation: `Complete and merge dependencies first: ${item.definition.dependsOn.filter((key) => !rows.rows.some((candidate) => candidate.key === key && candidate.board_column === "completed")).join(", ")}`,
+              }
+            : item.blocking,
       providerUrl: row.provider_issue?.url ?? null,
+      executionFeatureId: row.execution_feature_id ?? null,
+      approvedVersion: feature.approved_plan_version,
       activity: events
         .filter(({ workItemId }) => workItemId === row.id)
         .slice(-100)
@@ -151,7 +180,11 @@ async function boardFor(
     executionReadiness:
       feature.approved_plan_version === null
         ? { state: "unavailable", reason: "execution_not_available" }
-        : { state: "enabled", reason: "automatic_execution" },
+        : {
+            state: "enabled",
+            reason:
+              feature.execution_mode === "individual" ? "individual_start" : "automatic_execution",
+          },
     columns: ["todo", "in_progress", "in_review", "completed"].map((id) => ({
       id,
       items: items.filter(({ column }) => column === id),
@@ -182,6 +215,7 @@ export async function readProjectFactoryBoards(pool: DatabasePool, projectId: st
       `SELECT feature.*, COALESCE(owner.canonical_project_id, owner.id) AS project_id
        FROM factory_features feature JOIN projects owner ON owner.id = feature.project_id
        WHERE COALESCE(owner.canonical_project_id, owner.id) = $1
+         AND NOT EXISTS (SELECT 1 FROM factory_work_item_starts start WHERE start.execution_feature_id = feature.id)
        ORDER BY feature.created_at, feature.id LIMIT 200`,
       [canonicalId],
     );

@@ -26,6 +26,26 @@ const lines = createInterface({ input: process.stdin });
 lines.on("line", async (line) => {
   const message = JSON.parse(line);
   log(message);
+  if (message.id === "read-1" && message.result) {
+    await send({
+      method: "item/completed",
+      params: {
+        threadId: "thread-planning",
+        turnId: "turn-planning",
+        item: {
+          id: "reply",
+          type: "agentMessage",
+          phase: "final_answer",
+          text: message.result.contentItems[0].text,
+        },
+      },
+    });
+    await send({
+      method: "turn/completed",
+      params: { threadId: "thread-planning", turn: { id: "turn-planning", status: "completed" } },
+    });
+    return;
+  }
   if (message.method === "initialize") {
     await send({ id: message.id, result: { userAgent: "kestrel/0.153.4" } });
   } else if (message.method === "config/read") {
@@ -110,6 +130,20 @@ lines.on("line", async (line) => {
         id: "permission-1",
         method: "item/permissions/requestApproval",
         params: { threadId, turnId, permissions: { network: { enabled: true } } },
+      });
+      return;
+    }
+    if (mode === "project_read") {
+      await send({
+        id: "read-1",
+        method: "item/tool/call",
+        params: {
+          threadId,
+          turnId,
+          callId: "read-1",
+          tool: "read_project",
+          arguments: { operation: "read_file", path: "src/export.ts", offset: 0 },
+        },
       });
       return;
     }

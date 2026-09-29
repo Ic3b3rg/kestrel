@@ -1,3 +1,4 @@
+import type { StartFactoryWorkItemCommand } from "@kestrel/contracts";
 import {
   FactoryExecutionSchema,
   FactoryExecutionRunSchema,
@@ -117,4 +118,47 @@ export async function fetchFactoryExecutionRun(
     throw new InvalidServerResponseError("The server returned a different execution attempt");
   }
   return run;
+}
+
+export async function startFactoryWorkItem(
+  projectId: string,
+  featureId: string,
+  workItemId: string,
+  command: StartFactoryWorkItemCommand,
+) {
+  const { StartFactoryWorkItemCommandSchema, FactoryWorkItemStartSchema } =
+    await import("@kestrel/contracts");
+  const result = await requireJson(
+    await fetch(
+      `${featurePath(projectId, featureId)}/work-items/${encodeURIComponent(KestrelIdSchema.parse(workItemId))}/start`,
+      {
+        method: "POST",
+        credentials: "same-origin",
+        headers: authenticatedMutationHeaders(),
+        body: JSON.stringify(StartFactoryWorkItemCommandSchema.parse(command)),
+      },
+    ),
+    FactoryWorkItemStartSchema,
+    "issue start",
+  );
+  if (result.workItemId !== workItemId || result.approvedVersion !== command.expectedVersion)
+    throw new InvalidServerResponseError("The server returned a different issue start");
+  return result;
+}
+
+export async function prepareGitHubIssue(projectId: string, number: number, requestId: string) {
+  const { FeatureSchema } = await import("@kestrel/contracts");
+  return requireJson(
+    await fetch(
+      `/api/v1/projects/${encodeURIComponent(KestrelIdSchema.parse(projectId))}/github-issues/${String(number)}/start`,
+      {
+        method: "POST",
+        credentials: "same-origin",
+        headers: authenticatedMutationHeaders(),
+        body: JSON.stringify({ requestId }),
+      },
+    ),
+    FeatureSchema,
+    "issue interview",
+  );
 }

@@ -124,6 +124,28 @@ export async function updateIssueDispatch(
   state: string,
   message: string | null = null,
 ) {
+  if (state === "running") {
+    // A retained explicit board start can authorize only its one bound issue.
+    // Ordinary interview publication has no such receipt and keeps individual authority.
+    const authorized = await pool.query(
+      `UPDATE factory_features feature SET execution_mode='authorized'
+       FROM project_issue_starts start, factory_plan_versions plan, factory_issue_imports imported
+       WHERE start.id=$1 AND start.state <> 'done' AND feature.id=start.feature_id
+         AND feature.project_id=start.project_id AND plan.feature_id=feature.id
+         AND plan.version=feature.approved_plan_version
+         AND jsonb_array_length(plan.document->'workItems')=1
+         AND imported.feature_id=feature.id
+         AND imported.id::text=plan.document->'workItems'->0->>'importedIssueId'
+         AND imported.repository_provider_id=start.repository_id
+         AND imported.issue_provider_id=start.issue_id RETURNING feature.id`,
+      [id],
+    );
+    if (authorized.rows.length !== 1)
+      throw new FactoryError(
+        "conflict",
+        "Execution must contain only the explicitly started issue.",
+      );
+  }
   await pool.query(
     "UPDATE project_issue_starts SET state=$2,message=$3,updated_at=clock_timestamp() WHERE id=$1 AND state <> 'done'",
     [id, state, message],

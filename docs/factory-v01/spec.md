@@ -4,6 +4,17 @@ Status: Approved product direction, 2026-09-07. The Operator explicitly authoriz
 publication, implementation, and replacement of the current UI after the product interview. This is
 the active delivery target.
 
+## Interview lifecycle amendment (2026-09-28)
+
+For new interviews, this amendment supersedes references below to automatic whole-Feature execution.
+New interview opens an ordinary Markdown conversation. A compact searchable skill chip uses the
+actual resolved lifecycle default and permits a conversation-only override. Requirements review
+precedes issue draft review and publication. Publication freezes content and leaves every issue in
+To do; dragging one issue to In progress or choosing Start issue authorizes only that issue.
+Dependencies block locally until merged. A durable receipt prevents duplicate starts. Verification,
+PR and review belong to the selected issue and do not await unstarted siblings. Legacy approved
+Features retain their existing authority. See ADR 0004 and `planning-skills.md` for runtime limits.
+
 ## Problem statement
 
 The Operator currently moves between chat, Markdown specifications, GitHub issues, coding agents,

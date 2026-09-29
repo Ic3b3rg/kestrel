@@ -37,7 +37,7 @@ it("opens a blank planning URL directly and creates no Feature before a prompt",
       );
     });
     const start = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent.trim() === "Start plan",
+      (button) => button.textContent.trim() === "New interview",
     );
     expect(start).toBeDefined();
     await act(async () => {

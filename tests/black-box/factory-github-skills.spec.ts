@@ -69,6 +69,7 @@ test.describe("GitHub planning Skill imports", () => {
     await page.goto(`${stack.pwaUrl}/settings/skills`);
     await expect(page).toHaveURL(/\/settings\/skills$/u);
     const importer = page.getByRole("region", { name: "Import from GitHub" });
+    await importer.getByLabel("Source", { exact: true }).selectOption("starter");
     const readChat = async () =>
       FeatureChatSchema.parse(await (await stack.fetchApi(`/api/v1${featurePath}`)).json());
     await expect(
@@ -132,22 +133,25 @@ test.describe("GitHub planning Skill imports", () => {
     expect(ledgerCount.trim()).toBe("1");
     expect((await readChat()).skills?.skills).toEqual([]);
     await expect(page.getByRole("region", { name: "Installed Skills" })).toContainText(
-      "$grilling-starter",
+      "grilling-starter",
     );
     await page.goto(`${stack.pwaUrl}${featurePath}`);
     await expect(page.getByRole("heading", { name: title, level: 1, exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Skills", exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "Choose interview skill" }).click();
+    await page.getByLabel("Search skills or collections").fill("grilling-starter");
+    await page.getByRole("button", { name: /^grilling-starter/ }).click();
     await page
       .getByLabel("Message", { exact: true })
       .fill("/grilling-starter Help plan this change.");
     await page.getByRole("button", { name: "Send message", exact: true }).click();
     await expect(page.getByText("Codex is unavailable", { exact: true })).toBeVisible();
-    await expect(page.getByRole("region", { name: "Active Planning Skills" })).toContainText(
-      "$grilling-starter",
+    await expect(page.getByRole("region", { name: "Active interview skill" })).toContainText(
+      "grilling-starter",
     );
     await page.reload();
-    await expect(page.getByRole("region", { name: "Active Planning Skills" })).toContainText(
-      "$grilling-starter",
+    await expect(page.getByRole("region", { name: "Active interview skill" })).toContainText(
+      "grilling-starter",
     );
     const retainedResponse = page.waitForResponse(
       (response) =>

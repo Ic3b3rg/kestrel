@@ -21,6 +21,10 @@ export interface ProjectFactoryBoardPanelProps {
   loading: boolean;
   error: string | null;
   onStartPlan: () => void;
+  onStartWorkItem?: (entry: ProjectBoardWorkItem) => void;
+  onStartGitHubIssue?: (issue: ProjectBoardSnapshot["github"]["issues"][number]) => void;
+  startingIssueId?: string | null;
+  startError?: string | null;
   onOpenFeature: (featureId: string, view: "chat" | "plan" | "board") => void;
   onRefresh: () => void;
   onOpenPullRequests: () => void;
@@ -54,6 +58,7 @@ function GitHubIssueCard({
   onOpen,
   onStart,
   starting,
+  onReview,
 }: {
   issue: ProjectBoardSnapshot["github"]["issues"][number];
   readyLabel: string;
@@ -61,6 +66,7 @@ function GitHubIssueCard({
   onOpen?: ((number: number) => void) | undefined;
   onStart?: ((number: number) => void) | undefined;
   starting: boolean;
+  onReview?: ProjectFactoryBoardPanelProps["onStartGitHubIssue"];
 }) {
   const eligible =
     online &&
@@ -123,6 +129,17 @@ function GitHubIssueCard({
           GitHub <ArrowUpRight className="inline size-3" aria-hidden="true" />
         </a>
       </div>
+      {!eligible && onReview !== undefined ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={!online || starting}
+          onClick={() => onReview(issue)}
+          aria-label={`Review requirements: ${issue.title}`}
+        >
+          Review requirements
+        </Button>
+      ) : null}
       {!eligible && online && !starting ? (
         <p className="px-3 pb-2 text-xs text-muted-foreground">Requires {readyLabel}</p>
       ) : null}
@@ -136,7 +153,11 @@ function WorkItemCard({
   onOpenFeature,
   onOpenIssue,
   queued,
+  onStart,
+  disabled,
 }: {
+  onStart?: ProjectFactoryBoardPanelProps["onStartWorkItem"];
+  disabled: boolean;
   feature: ProjectBoardWorkItem["feature"];
   item: ProjectBoardWorkItem["item"];
   onOpenFeature: ProjectFactoryBoardPanelProps["onOpenFeature"];
@@ -146,14 +167,26 @@ function WorkItemCard({
   const contextId = useId();
   const hasContext = item.dependsOn.length > 0 || item.blocking !== null;
   return (
-    <li className="min-w-0 rounded-lg border border-border bg-card">
+    <li
+      className="min-w-0 rounded-lg border border-border bg-card"
+      draggable={
+        !disabled &&
+        onStart !== undefined &&
+        item.column === "todo" &&
+        item.executionFeatureId == null &&
+        item.blocking === null
+      }
+      onDragStart={(event) =>
+        event.dataTransfer.setData("application/x-kestrel-work-item", item.id)
+      }
+    >
       <Button
         type="button"
         variant="ghost"
         className="h-auto w-full min-w-0 flex-col items-start gap-2 p-3 text-left"
         aria-label={"Open Work Item: " + item.title + " · " + feature.title}
         aria-describedby={hasContext ? contextId : undefined}
-        onClick={() => onOpenFeature(feature.id, "board")}
+        onClick={() => onOpenFeature(item.executionFeatureId ?? feature.id, "board")}
       >
         <span className="max-w-full break-words text-xs font-normal text-muted-foreground">
           Feature · {feature.title}
@@ -180,6 +213,32 @@ function WorkItemCard({
           </span>
         ) : null}
       </Button>
+      {item.column === "todo" && item.executionFeatureId != null && item.blocking === null ? (
+        <p className="px-3 pb-2 text-xs" role="status">
+          Start requested · waiting for capacity
+        </p>
+      ) : item.column === "todo" && onStart !== undefined ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={disabled || item.blocking !== null || item.providerUrl === null}
+          onClick={() => onStart({ feature, item })}
+          aria-label={`Start issue: ${item.title}`}
+        >
+          Start issue
+        </Button>
+      ) : null}
+      {item.executionFeatureId == null ? null : (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => onOpenFeature(feature.id, "chat")}
+        >
+          Original requirements
+        </Button>
+      )}
       {item.providerUrl === null ? null : (
         <div className="border-t border-border px-2 py-1">
           <Button asChild variant="ghost" size="sm" className="text-muted-foreground">
@@ -218,6 +277,10 @@ export function ProjectFactoryBoardPanel({
   loading,
   error,
   onStartPlan,
+  onStartWorkItem,
+  onStartGitHubIssue,
+  startingIssueId,
+  startError,
   onOpenFeature,
   onRefresh,
   onOpenPullRequests,
@@ -238,6 +301,7 @@ export function ProjectFactoryBoardPanel({
   const githubIssuesLimited = snapshot?.github.limited ?? false;
   return (
     <section className="min-w-0 space-y-6" aria-labelledby={titleId} aria-busy={loading}>
+      {startError == null ? null : <FormFeedback kind="error">{startError}</FormFeedback>}
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="mb-1 text-sm text-muted-foreground">Project board</p>
@@ -317,30 +381,39 @@ export function ProjectFactoryBoardPanel({
           return (
             <section
               key={column.id}
-              aria-label={column.label}
               onDragOver={(event) => {
                 if (
-                  column.id === "in_progress" &&
                   online &&
-                  event.dataTransfer.types.includes("application/x-kestrel-issue")
-                ) {
+                  column.id === "in_progress" &&
+                  (event.dataTransfer.types.includes("application/x-kestrel-work-item") ||
+                    event.dataTransfer.types.includes("application/x-kestrel-github-issue") ||
+                    event.dataTransfer.types.includes("application/x-kestrel-issue"))
+                )
                   event.preventDefault();
-                  event.dataTransfer.dropEffect = "move";
-                }
               }}
               onDrop={(event) => {
-                if (column.id !== "in_progress") return;
+                if (!online || startingIssueId != null || column.id !== "in_progress") return;
                 event.preventDefault();
+                const id = event.dataTransfer.getData("application/x-kestrel-work-item");
+                const entry = workItems.find(
+                  ({ item }) => item.id === id && item.column === "todo",
+                );
+                if (entry !== undefined) onStartWorkItem?.(entry);
+                const providerId = event.dataTransfer.getData("application/x-kestrel-github-issue");
+                const issue = availableGitHubIssues.find((item) => item.id === providerId);
+                if (issue !== undefined) onStartGitHubIssue?.(issue);
                 const number = Number(event.dataTransfer.getData("application/x-kestrel-issue"));
-                const issue = availableGitHubIssues.find((issue) => issue.number === number);
-                if (
-                  online &&
-                  issue?.labels?.some(
-                    (label) => label.name === (snapshot?.settings?.readyLabel ?? "ready-for-agent"),
-                  )
-                )
-                  onStartIssue?.(number);
+                const ready = availableGitHubIssues.find(
+                  (candidate) =>
+                    candidate.number === number &&
+                    candidate.labels?.some(
+                      (label) =>
+                        label.name === (snapshot?.settings?.readyLabel ?? "ready-for-agent"),
+                    ),
+                );
+                if (ready !== undefined) onStartIssue?.(ready.number);
               }}
+              aria-label={column.label}
               className="flex min-w-0 flex-col gap-3 rounded-lg border border-border/60 bg-muted/20 p-3 sm:min-h-64"
             >
               <header className="flex min-h-8 items-center justify-between gap-2">
@@ -355,7 +428,7 @@ export function ProjectFactoryBoardPanel({
                     type="button"
                     variant="ghost"
                     size="sm"
-                    aria-label="New plan"
+                    aria-label="New interview"
                     onClick={onStartPlan}
                   >
                     <Plus aria-hidden="true" /> New
@@ -380,7 +453,7 @@ export function ProjectFactoryBoardPanel({
                 ) : (
                   <p className="py-3 text-sm text-muted-foreground">
                     {column.id === "todo"
-                      ? "Start a plan to add work."
+                      ? "Start an interview to add work."
                       : "Work appears here as it progresses."}
                   </p>
                 )
@@ -413,7 +486,8 @@ export function ProjectFactoryBoardPanel({
                       online={online}
                       onOpen={onOpenIssue}
                       onStart={onStartIssue}
-                      starting={startingIssue === issue.number}
+                      starting={startingIssue === issue.number || startingIssueId === issue.id}
+                      onReview={onStartGitHubIssue}
                     />
                   ))}
                   {starts.map((start) => (
@@ -480,6 +554,8 @@ export function ProjectFactoryBoardPanel({
                       onOpenFeature={onOpenFeature}
                       onOpenIssue={onOpenIssue}
                       queued={queued}
+                      onStart={onStartWorkItem}
+                      disabled={!online || startingIssueId != null}
                     />
                   ))}
                 </ol>

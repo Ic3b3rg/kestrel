@@ -21,6 +21,7 @@ import {
   retainIssueDispatchContext,
   readIssueExecutionContext,
   issueProjectBusy,
+  updateIssueDispatch,
   type DatabasePool,
 } from "@kestrel/database";
 import type { FactoryGitHubIssue } from "@kestrel/contracts";
@@ -132,6 +133,37 @@ it("migrates a clean database, persists board state, deduplicates starts and dis
       title: "Export",
     });
     await attachIssueDispatchFeature(pool, restarted, feature.id);
+    await expect(updateIssueDispatch(pool, restarted, "running")).rejects.toMatchObject({
+      code: "conflict",
+    });
+    const imported = await pool.query<{ id: string }>(
+      "INSERT INTO factory_issue_imports(feature_id,repository_provider_id,issue_provider_id,snapshot) VALUES($1,'901','42',$2) RETURNING id",
+      [feature.id, JSON.stringify(issue)],
+    );
+    await pool.query(
+      "INSERT INTO factory_plan_versions(feature_id,version,request_id,document,plan_markdown,spec_markdown,author,created_by) VALUES($1,1,uuidv7(),$2,'Plan','Spec','operator',$3)",
+      [
+        feature.id,
+        JSON.stringify({ workItems: [{ importedIssueId: imported.rows[0]?.id }] }),
+        actor,
+      ],
+    );
+    await pool.query(
+      "INSERT INTO factory_plan_approvals(feature_id,plan_version,request_id,operator_id) VALUES($1,1,uuidv7(),$2)",
+      [feature.id, actor],
+    );
+    await pool.query("UPDATE factory_features SET approved_plan_version=1 WHERE id=$1", [
+      feature.id,
+    ]);
+    await updateIssueDispatch(pool, restarted, "running");
+    expect(
+      (
+        await pool.query<{ execution_mode: string }>(
+          "SELECT execution_mode FROM factory_features WHERE id=$1",
+          [feature.id],
+        )
+      ).rows[0]?.execution_mode,
+    ).toBe("authorized");
     const snapshot = { issue, conversation: [{ body: "Keep Unicode" }] };
     await retainIssueDispatchContext(pool, restarted, snapshot);
     expect(await readIssueExecutionContext(pool, feature.id)).toEqual(snapshot);

@@ -135,6 +135,32 @@ describe("persistent planning conversation", () => {
     });
   }
 
+  it("opens as an interview with Markdown and no premature lifecycle tabs", async () => {
+    await render({
+      loadChat: () =>
+        Promise.resolve({
+          ...initial,
+          turns: [],
+          messages: [
+            {
+              id: messageId,
+              role: "assistant",
+              content: "**One question**\n\n- First fact\n\n```ts\nconst answer = 1;\n```",
+              createdAt,
+            },
+          ],
+        }),
+    });
+    expect(container.querySelector('[role="tablist"]')).toBeNull();
+    expect(container.querySelector(".planning-message-content strong")?.textContent).toBe(
+      "One question",
+    );
+    expect(container.querySelector(".planning-message-content pre code")?.textContent).toContain(
+      "const answer",
+    );
+    expect(container.textContent).not.toContain("Implementation starts after you approve a plan");
+  });
+
   it("renders Markdown in sent messages and Kestrel replies without activating embedded HTML", async () => {
     await render({
       loadChat: () =>

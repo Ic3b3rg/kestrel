@@ -21,6 +21,7 @@ import {
   FactoryError,
   isPlanningTurnRunning,
   readCodexReviewModelPreference,
+  readPlanningInputAttachments,
   savePlanningContext,
   savePlanningThread,
   type ClaimedPlanningTurn,
@@ -42,6 +43,7 @@ vi.mock("@kestrel/database", async (importOriginal) => ({
   completeGeneratedFactoryPlan: generated,
   isPlanningTurnRunning: vi.fn(),
   readCodexReviewModelPreference: vi.fn(),
+  readPlanningInputAttachments: vi.fn(),
   savePlanningContext: vi.fn(),
   savePlanningThread: vi.fn(),
 }));
@@ -535,8 +537,25 @@ describe("structured Feature Plan processing", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("continues normal conversation turns with their existing thread and text completion", async () => {
+  it("replays prior conversation and attachments for fresh tool threads", async () => {
     turn.purpose = "conversation";
+    const first = turn.messages[0];
+    if (first === undefined) throw new Error("Initial message missing");
+    first.attachments = [
+      {
+        id: "01991c36-7f90-7000-8000-000000000099",
+        kind: "text",
+        name: "decisions.txt",
+        mediaType: "text/plain",
+        byteLength: 25,
+      },
+    ];
+    const file = {
+      kind: "text" as const,
+      name: "decisions.txt",
+      text: "Earlier accepted decision",
+    };
+    vi.mocked(readPlanningInputAttachments).mockResolvedValue([{ messageId: first.id, file }]);
     runTurn.mockResolvedValue({
       threadId: "conversation-thread",
       turnId: "runtime-turn",
@@ -547,7 +566,9 @@ describe("structured Feature Plan processing", () => {
     expect(input?.threadId).toBe("conversation-thread");
     expect(input?.outputSchema).toBeUndefined();
     expect(input?.prompt).toContain("Every saved note. Generate the plan.");
-    expect(input?.prompt).not.toContain("Use Markdown and preserve Unicode.");
+    expect(input?.prompt).toContain("Use Markdown and preserve Unicode.");
+    expect(input?.attachments?.[0]?.file).toEqual(file);
+    expect(readPlanningInputAttachments).toHaveBeenCalledWith(pool, turn.featureId, [first.id]);
     expect(generated).not.toHaveBeenCalled();
     expect(completePlanningTurn).toHaveBeenCalledExactlyOnceWith(pool, turn, {
       text: "Which filename should the download use?",

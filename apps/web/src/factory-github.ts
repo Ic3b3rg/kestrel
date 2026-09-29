@@ -71,6 +71,12 @@ export interface FactoryGitHubAdapter {
     number: number,
     signal?: AbortSignal,
   ): Promise<FactoryGitHubIssue>;
+  readIssueComments(
+    identity: FactoryGitHubIdentity,
+    number: number,
+    page: number,
+    signal?: AbortSignal,
+  ): Promise<{ comments: Array<{ body: string; url: string }>; nextPage: number | null }>;
   createIssue(
     identity: FactoryGitHubIdentity,
     input: { title: string; body: string },
@@ -717,6 +723,22 @@ export function createFactoryGitHubAdapter(
         ...result,
         dependencies: blockers.state === "supported" ? blockers.dependencies : null,
       };
+    },
+    async readIssueComments(identity, number, page, signal) {
+      parse(numberSchema, number);
+      parse(z.number().int().min(1).max(10), page);
+      await verify(identity, signal);
+      const result = await get(
+        `${base(identity.repository)}/issues/${String(number)}/comments?per_page=20&page=${String(page)}`,
+        '[.[] | {body: (.body // "" | .[0:4000]), url: .html_url}]',
+        signal,
+      );
+      const comments = parse(
+        z.array(z.object({ body: z.string().max(4000), url: z.url() })).max(20),
+        result.body,
+      );
+      await verify(identity, signal);
+      return { comments, nextPage: comments.length === 20 && page < 10 ? page + 1 : null };
     },
     async createIssue(identity, input, signal) {
       try {

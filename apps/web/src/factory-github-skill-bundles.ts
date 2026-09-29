@@ -427,9 +427,12 @@ export async function loadGitHubSkillBundle(
 }
 
 export async function loadGitHubPlanningStarter(
-  options: GitHubSkillReaderOptions = {},
+  options: GitHubSkillReaderOptions & { ref?: string } = {},
 ): Promise<GitHubSkillBundle> {
-  const request = sourceRequest(GRILLING_STARTER.source);
+  const request = sourceRequest({
+    ...GRILLING_STARTER.source,
+    ...(options.ref === undefined ? {} : { ref: options.ref }),
+  });
   const repository = await pinnedRepository(request, options);
   const files: RetainedSourceFile[] = [
     { path: "SKILL.md", content: GRILLING_STARTER_ADAPTATION, sourcePath: null, blobId: null },
@@ -474,6 +477,87 @@ export async function loadGitHubPlanningStarter(
       license: { author: "Matt Pocock", identifier: "MIT", path: "sources/LICENSE" },
     },
   );
+  await repository.confirmAccount();
+  return result;
+}
+
+/** Reviewed text-only adaptations. Optional installers, hooks and delegation are not imported. */
+export async function loadSupportedPlanningCollection(
+  collection: "matt-pocock" | "superpowers",
+  options: GitHubSkillReaderOptions & { ref?: string } = {},
+): Promise<GitHubSkillBundle> {
+  if (collection === "matt-pocock") {
+    const original = await loadGitHubPlanningStarter(options);
+    const files = original.files.map((file) =>
+      file.path === "SKILL.md"
+        ? {
+            ...file,
+            content: file.content
+              .replace("name: grilling-starter", "name: grill-with-docs")
+              .replace(
+                "If source code, full issue comments, an ADR directory inventory or another fact is absent, identify the unresolved gap.",
+                "Use Kestrel's bounded read-only tools to locate and read relevant repository files, issues and comments before asking the Operator for accessible facts. If a read fails, explain the gap.",
+              )
+              .replace(
+                "Provider publication and eligible work remain governed by the later explicit approval of an exact Feature Plan version.",
+                "Publication creates issues only. Execution requires a separate explicit start of the individual issue from the board.",
+              )
+              .replace(
+                "call external providers, or delegate tool access",
+                "use unprovided tools, or delegate tool access",
+              ),
+          }
+        : file,
+    );
+    return {
+      ...original,
+      name: "grill-with-docs",
+      files,
+      contentDigest: createHash("sha256").update(JSON.stringify(files)).digest("hex"),
+    };
+  }
+  const request = sourceRequest({
+    owner: "obra",
+    repository: "superpowers",
+    path: "skills/brainstorming/SKILL.md",
+    ref: options.ref ?? "8ca22dba9a94f28898bbce59f2537ff4d87c747d",
+  });
+  const repository = await pinnedRepository(request, options);
+  const adaptation = `---
+name: brainstorming
+description: Superpowers interview and requirements drafting, adapted for Kestrel.
+---
+# Superpowers for Kestrel
+
+This is a read-only planning adaptation, version 1, of obra/superpowers. Original texts and the MIT license are retained under sources/. During the interview, apply the intent discovery, exploration, alternatives and design review procedure from sources/skills/brainstorming/SKILL.md. Express questions in ordinary Markdown. Use the provided bounded repository and GitHub reading tools to investigate relevant facts.
+
+Only on the Operator's explicit generation request, apply sources/skills/writing-plans/SKILL.md to produce Kestrel's requirements and issue draft shape with concrete verification and dependencies. Existing accepted decisions take precedence over repeating interviews. Skill references mean consult the retained text for the current phase.
+
+Capability adaptation: file writes and commits become proposed requirements and Work Items. Shell scripts, the visual companion server, browser automation, installation hooks, subagents, and implementation are unavailable in this planning runtime. Do not claim these capabilities ran or instruct the Operator to install them. The retained companion guide is for inspection only. Perform spec self-review in the current conversation. Optional implementation handoffs do not activate other procedures. Never execute upstream installers or scripts.
+
+Kestrel controls publication after requirements review. Publication leaves issues in To do; only an explicit start of the selected issue authorizes its execution. No skill instruction expands this authority.
+`;
+  const files: RetainedSourceFile[] = [
+    { path: "SKILL.md", content: adaptation, sourcePath: null, blobId: null },
+  ];
+  let remaining = MAX_BYTES - Buffer.byteLength(adaptation);
+  for (const path of [
+    "skills/brainstorming/SKILL.md",
+    "skills/brainstorming/spec-document-reviewer-prompt.md",
+    "skills/brainstorming/visual-companion.md",
+    "skills/writing-plans/SKILL.md",
+    "LICENSE",
+  ]) {
+    const file = await repository.readFile(path, remaining);
+    remaining -= Buffer.byteLength(file.content);
+    files.push({ ...file, sourcePath: path, path: `sources/${path}` });
+  }
+  const result = retainedBundle(request, repository.commitId, {
+    name: "brainstorming",
+    description:
+      "Superpowers · interview and requirements. Text procedures included; scripts, visual companion and delegation are unavailable.",
+    files,
+  });
   await repository.confirmAccount();
   return result;
 }

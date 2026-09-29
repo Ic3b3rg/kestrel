@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { InterviewSkillPicker } from "./InterviewSkillPicker.js";
 import type { FeaturePlanningSkills, SelectPlanningSkillsCommand } from "@kestrel/contracts";
 import { ApiClientError } from "./api.js";
 import { Button } from "./components/ui/button.js";
@@ -36,15 +36,13 @@ export function PlanningSkillChips({
     attempt.current = null;
   }, [selection.version]);
 
-  const remove = async (digest?: string) => {
+  const select = async (digest?: string) => {
     if (!online || !editable || submitting.current) return;
     if (digest !== undefined) {
       attempt.current = {
         requestId: crypto.randomUUID(),
         expectedVersion: selection.version,
-        digests: selection.skills
-          .filter((skill) => skill.contentDigest !== digest)
-          .map((skill) => skill.contentDigest),
+        digests: [digest],
       };
     }
     const command = attempt.current;
@@ -61,12 +59,12 @@ export function PlanningSkillChips({
       if (failure instanceof ApiClientError && failure.status === 409) {
         attempt.current = null;
         setStale(true);
-        setError("The active Skills changed. Refresh the conversation before removing a Skill.");
+        setError("The active Skills changed. Refresh the conversation before choosing a Skill.");
       } else if (!onAuthenticationError(failure)) {
         setError(
           planningRequestError(
             failure,
-            "Removal could not be confirmed. Retry the same request safely.",
+            "Selection could not be confirmed. Retry the same request safely.",
           ),
         );
       }
@@ -76,34 +74,15 @@ export function PlanningSkillChips({
     }
   };
 
-  if (selection.skills.length === 0) return null;
   return (
-    <section aria-label="Active Planning Skills" className="grid min-w-0 gap-2">
-      <ul className="flex min-w-0 flex-wrap gap-2">
-        {selection.skills.map((skill) => (
-          <li
-            key={skill.contentDigest}
-            className="flex min-w-0 items-center gap-1 rounded-full border bg-muted px-2 py-1 text-sm"
-          >
-            <span className="break-all">${skill.name}</span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label={`Remove ${skill.name}`}
-              disabled={!online || !editable || pending || attempt.current !== null || stale}
-              onClick={() => void remove(skill.contentDigest)}
-            >
-              <X aria-hidden="true" />
-            </Button>
-          </li>
-        ))}
-      </ul>
-      {!editable ? (
-        <p className="text-xs text-muted-foreground">
-          Skills can be removed after the current reply finishes.
-        </p>
-      ) : null}
+    <section aria-label="Active interview skill" className="grid min-w-0 gap-2">
+      <InterviewSkillPicker
+        skills={selection.skills}
+        online={online}
+        disabled={!editable || pending || stale}
+        onSelect={(skill) => void select(skill.contentDigest)}
+        onAuthenticationError={onAuthenticationError}
+      />
       {pending ? (
         <FormFeedback kind="pending">Updating the Skills for the next message…</FormFeedback>
       ) : null}
@@ -121,9 +100,9 @@ export function PlanningSkillChips({
               type="button"
               variant="outline"
               disabled={!online || !editable || pending}
-              onClick={() => void remove()}
+              onClick={() => void select()}
             >
-              Retry removal
+              Retry selection
             </Button>
           ) : null}
         </div>
