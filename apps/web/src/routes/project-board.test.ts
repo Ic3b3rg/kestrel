@@ -9,6 +9,7 @@ const db = vi.hoisted(() => ({
   enqueue: vi.fn(),
   settings: vi.fn(),
   save: vi.fn(),
+  start: vi.fn(),
 }));
 const read = vi.hoisted(() => vi.fn());
 vi.mock("../project-issue-reader.js", () => ({ createProjectIssueReader: () => read }));
@@ -18,6 +19,7 @@ vi.mock("@kestrel/database", async (original) => ({
   enqueueProjectIssue: db.enqueue,
   readProjectBoardSettings: db.settings,
   saveProjectBoardSettings: db.save,
+  readProjectIssueStart: db.start,
 }));
 const id = "01991c36-7f90-7000-8000-000000000001";
 const root = `/api/v1/projects/${id}/board`;
@@ -29,6 +31,15 @@ beforeEach(() => {
   db.replay.mockResolvedValue(null);
   db.enqueue.mockResolvedValue(id);
   db.settings.mockResolvedValue({ readyLabel: "ready-for-agent" });
+  db.start.mockResolvedValue({
+    id,
+    issueNumber: 42,
+    issueUrl: "https://github.com/example/reports/issues/42",
+    title: "Export reports",
+    state: "preparing",
+    featureId: null,
+    message: null,
+  });
   configs = [];
   app = Fastify({ ajv: { customOptions: { removeAdditional: false } } });
   app.setErrorHandler((error, request, reply) =>
@@ -50,6 +61,13 @@ beforeEach(() => {
   registerProjectBoardRoutes(app, pool);
 });
 afterEach(async () => app.close());
+
+it("reads one stable issue start independently of board polling", async () => {
+  const response = await app.inject({ method: "GET", url: `${root}/starts/${id}` });
+  expect(response.statusCode).toBe(200);
+  expect(response.json()).toMatchObject({ id, issueNumber: 42, state: "preparing" });
+  expect(db.start).toHaveBeenCalledWith(pool, id, id);
+});
 
 it("registers authenticated mutations and validates board settings at the HTTP boundary", async () => {
   const result = await app.inject({ method: "GET", url: `${root}/settings` });

@@ -2,6 +2,7 @@ import { FactoryGitHubIssueSchema, DEFAULT_FACTORY_LIMITS } from "@kestrel/contr
 import { z } from "zod";
 import {
   hasIssueDispatchPlanRequest,
+  hasActiveIssuePlanningTurn,
   withProjectIssueDispatchLock,
   readIssueDispatches,
   issueProjectBusy,
@@ -140,6 +141,7 @@ export function createProjectIssueDispatcher(
             continue;
           }
           if (!(await hasIssueDispatchPlanRequest(pool, start))) {
+            if (await hasActiveIssuePlanningTurn(pool, start.feature_id)) continue;
             await prepare(start, plans.current?.version ?? null);
             continue;
           }

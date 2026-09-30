@@ -72,7 +72,7 @@ export async function readProjectIssueStarts(pool: DatabasePool, projectId: stri
     feature_id: string | null;
     message: string | null;
   }>(
-    "SELECT * FROM project_issue_starts WHERE project_id=$1 AND state <> 'done' ORDER BY created_at,id",
+    "SELECT * FROM project_issue_starts WHERE project_id=$1 ORDER BY (state='done'),created_at DESC,id DESC LIMIT 200",
     [projectId],
   );
   return result.rows.map((row) =>
@@ -86,6 +86,36 @@ export async function readProjectIssueStarts(pool: DatabasePool, projectId: stri
       message: row.message,
     }),
   );
+}
+
+export async function readProjectIssueStart(
+  pool: DatabasePool,
+  projectId: string,
+  startId: string,
+) {
+  const result = await pool.query<{
+    id: string;
+    issue_number: number;
+    issue_url: string;
+    title: string;
+    state: string;
+    feature_id: string | null;
+    message: string | null;
+  }>(
+    "SELECT id,issue_number,issue_url,title,state,feature_id,message FROM project_issue_starts WHERE project_id=$1 AND id=$2",
+    [await boardProjectId(pool, projectId), startId],
+  );
+  const row = result.rows[0];
+  if (row === undefined) throw new FactoryError("not_found");
+  return ProjectIssueStartSchema.parse({
+    id: row.id,
+    issueNumber: row.issue_number,
+    issueUrl: row.issue_url,
+    title: row.title,
+    state: row.state,
+    featureId: row.feature_id,
+    message: row.message,
+  });
 }
 
 export async function findProjectIssueStart(

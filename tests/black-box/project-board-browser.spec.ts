@@ -205,6 +205,8 @@ const auth=()=>false;createRoot(document.getElementById('root')).render(createEl
       "Export saved reports",
     );
     await page.screenshot({ path: testInfo.outputPath("board-desktop.png"), fullPage: true });
+    await page.getByRole("button", { name: "Cancel queued work", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Start issue #42", exact: true })).toBeVisible();
     await page.setViewportSize({ width: 320, height: 812 });
     await expect(page.getByRole("region", { name: "Completed", exact: true })).toContainText(
       "Work appears here as it progresses.",
@@ -212,7 +214,9 @@ const auth=()=>false;createRoot(document.getElementById('root')).render(createEl
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true);
-    await page.getByRole("button", { name: "#42 Export saved reports", exact: true }).focus();
+    await page
+      .getByRole("button", { name: "Open issue #42: Export saved reports", exact: true })
+      .focus();
     await page.keyboard.press("Enter");
     await expect(page.getByRole("dialog")).toContainText("Include the report title.");
     expect(await reader.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(

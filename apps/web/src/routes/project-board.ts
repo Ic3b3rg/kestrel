@@ -6,12 +6,14 @@ import {
   ProjectBoardSnapshotSchema,
   ProjectBoardSettingsSchema,
   ProjectIssueDiscussionSchema,
+  ProjectIssueStartSchema,
   StartProjectIssueCommandSchema,
 } from "@kestrel/contracts";
 import {
   changeIssueDispatch,
   FactoryError,
   readProjectBoardSettings,
+  readProjectIssueStart,
   saveProjectBoardSettings,
   findProjectIssueStart,
   enqueueProjectIssue,
@@ -153,8 +155,26 @@ export function registerProjectBoardRoutes(
       }
     },
   );
+  const startParams = params.extend({ id: KestrelIdSchema });
+  app.get(
+    "/api/v1/projects/:projectId/board/starts/:id",
+    {
+      schema: {
+        params: json(startParams),
+        response: { ...errors, 200: json(ProjectIssueStartSchema) },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const p = startParams.parse(request.params);
+        return await readProjectIssueStart(pool, p.projectId, p.id);
+      } catch (error) {
+        const f = failureReply(request, error);
+        return reply.code(f.status).send(f.body);
+      }
+    },
+  );
   for (const action of ["retry", "cancel"] as const) {
-    const startParams = params.extend({ id: KestrelIdSchema });
     app.post(
       `/api/v1/projects/:projectId/board/starts/:id/${action}`,
       {

@@ -9,6 +9,7 @@ export type AppRoute =
       artifactId?: string;
     }
   | { kind: "not_found" }
+  | { kind: "issue"; projectId: string; startId: string }
   | { kind: "planning"; projectId: string; requestId: string }
   | {
       kind: "project";
@@ -59,6 +60,18 @@ export function readAppRoute(pathname: string, search = "", hash = ""): AppRoute
       );
       return projectId.success
         ? { kind: "project_settings", projectId: projectId.data }
+        : { kind: "not_found" };
+    } catch {
+      return { kind: "not_found" };
+    }
+  }
+  const issueMatch = /^\/projects\/([^/]+)\/issues\/([^/]+)$/u.exec(pathname);
+  if (issueMatch !== null) {
+    try {
+      const projectId = KestrelIdSchema.safeParse(decodeURIComponent(issueMatch[1] ?? ""));
+      const startId = KestrelIdSchema.safeParse(decodeURIComponent(issueMatch[2] ?? ""));
+      return projectId.success && startId.success
+        ? { kind: "issue", projectId: projectId.data, startId: startId.data }
         : { kind: "not_found" };
     } catch {
       return { kind: "not_found" };
@@ -118,6 +131,8 @@ export function readAppRoute(pathname: string, search = "", hash = ""): AppRoute
 
 export function appPath(route: Exclude<AppRoute, { kind: "not_found" }>): string {
   switch (route.kind) {
+    case "issue":
+      return `/projects/${encodeURIComponent(route.projectId)}/issues/${encodeURIComponent(route.startId)}`;
     case "planning":
       return `/projects/${encodeURIComponent(route.projectId)}/planning/${encodeURIComponent(route.requestId)}`;
     case "feature":
