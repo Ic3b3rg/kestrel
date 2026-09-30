@@ -372,6 +372,91 @@ it("opens the running attempt and shows public reasoning and tool output while w
   );
 });
 
+it.each([
+  ["completed", "Completed"],
+  ["failed", "Failed"],
+] as const)(
+  "groups delegated work with %s outcome while the run is active",
+  async (state, label) => {
+    const delegatedRun = {
+      ...run,
+      state: "running",
+      failure: null,
+      question: null,
+      writerStopped: false,
+      completedAt: null,
+      activity: [
+        {
+          id: projectId,
+          kind: "subagent",
+          summary: "Subagent alpha started",
+          itemId: "subagent:child-thread:started",
+          itemState: "started",
+          agentPath: "/root/alpha",
+          createdAt,
+        },
+        {
+          id: featureId,
+          kind: "command",
+          summary: "cat value.mjs",
+          itemId: "child-thread:command",
+          itemState: "completed",
+          agentPath: "/root/alpha",
+          detail: "export const value = 1;\n",
+          exitCode: 0,
+          createdAt,
+        },
+        {
+          id: itemId,
+          kind: "subagent",
+          summary: `Subagent alpha ${state}`,
+          itemId: `subagent:child-thread:${state}`,
+          itemState: state,
+          agentPath: "/root/alpha",
+          createdAt,
+        },
+      ],
+    };
+    const activeExecution = {
+      ...execution,
+      state: "running",
+      failure: null,
+      question: null,
+      workItems: [
+        {
+          ...execution.workItems[0],
+          runs: [
+            {
+              ...execution.workItems[0]?.runs[0],
+              state: "running",
+              writerStopped: false,
+              completedAt: null,
+            },
+          ],
+        },
+      ],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof globalThis.fetch>((url) =>
+        Promise.resolve(
+          Response.json(
+            requestUrl(url).endsWith(`/runs/${runId}`) ? delegatedRun : activeExecution,
+          ),
+        ),
+      ),
+    );
+    await render();
+    const group = [...container.querySelectorAll("details")].find((value) =>
+      value.querySelector("summary")?.textContent.includes(`Subagent alpha · ${label}`),
+    );
+    expect(group).toBeDefined();
+    expect(group?.textContent).toContain("cat value.mjs");
+    expect(group?.textContent).toContain("export const value = 1;");
+    expect(container.textContent).not.toContain("child-thread");
+  },
+);
+
 it("reopens the final answer after a verified run and hides transient activity", async () => {
   const completed = {
     ...run,

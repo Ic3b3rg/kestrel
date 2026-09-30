@@ -644,15 +644,15 @@ export function recordFactoryExecutionActivity(
   summary: string,
   item: Pick<
     FactoryExecutionRun["activity"][number],
-    "itemId" | "itemState" | "detail" | "exitCode"
+    "itemId" | "itemState" | "agentPath" | "detail" | "exitCode"
   > = {},
 ): Promise<void> {
   return withRun(pool, run, async (client, _feature, row) => {
     if (row.reservation_released_at !== null) throw new FactoryError("conflict");
     await client.query(
       `INSERT INTO factory_execution_activity
-         (run_id, kind, summary, item_id, item_state, detail, exit_code)
-       SELECT $1,$2,$3,$4,$5,$6,$7
+         (run_id, kind, summary, item_id, item_state, agent_path, detail, exit_code)
+       SELECT $1,$2,$3,$4,$5,$6,$7,$8
        WHERE (SELECT count(*) FROM factory_execution_activity WHERE run_id = $1) < 1000`,
       [
         run.id,
@@ -660,6 +660,7 @@ export function recordFactoryExecutionActivity(
         summary.slice(0, 2000),
         item.itemId?.slice(0, 256) ?? null,
         item.itemState ?? null,
+        item.agentPath?.slice(0, 256) ?? null,
         ["running", "verifying"].includes(row.state) && item.detail?.trim()
           ? item.detail.slice(0, 8192)
           : null,

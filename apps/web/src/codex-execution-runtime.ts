@@ -43,9 +43,10 @@ export class CodexExecutionError extends Error {
 
 export interface CodexExecutionActivity {
   itemId: string;
-  kind: "message" | "reasoning" | "command" | "file_change";
-  state: "started" | "completed";
+  kind: "message" | "reasoning" | "command" | "file_change" | "subagent";
+  state: "started" | "completed" | "failed";
   summary: string;
+  agentPath?: string;
   detail?: string;
   exitCode?: number;
 }
@@ -136,8 +137,6 @@ const DISABLED = [
   "browser_use",
   "browser_use_external",
   "in_app_browser",
-  "multi_agent",
-  "multi_agent_v2",
   "code_mode",
   "code_mode_only",
   "shell_snapshot",
@@ -149,8 +148,18 @@ const DISABLED = [
 ];
 const FEATURES = {
   ...Object.fromEntries(DISABLED.map((name) => [name, false])),
+  multi_agent: true,
+  multi_agent_v2: true,
   shell_tool: true,
   skip_host_skill_discovery: true,
+};
+const MAX_SUBAGENT_THREADS = 3;
+const TURN_FEATURES = {
+  ...FEATURES,
+  multi_agent_v2: {
+    enabled: true,
+    max_concurrent_threads_per_session: MAX_SUBAGENT_THREADS,
+  },
 };
 const SAFETY_ARGUMENTS = [
   "--strict-config",
@@ -159,6 +168,12 @@ const SAFETY_ARGUMENTS = [
   "shell_tool",
   "--enable",
   "skip_host_skill_discovery",
+  "--enable",
+  "multi_agent",
+  "--enable",
+  "multi_agent_v2",
+  "-c",
+  `features.multi_agent_v2.max_concurrent_threads_per_session=${String(MAX_SUBAGENT_THREADS)}`,
   "-c",
   'web_search="disabled"',
   "-c",
@@ -946,6 +961,8 @@ class ExecutionTurn {
   #queued = 0;
   #events = 0;
   readonly #seen = new Set<string>();
+  readonly #children = new Map<string, { agentPath: string; turnId?: string }>();
+  readonly #pendingChildren = new Map<string, Record<string, unknown>[]>();
   #resolve!: (result: CodexExecutionTurnResult) => void;
   readonly #result = new Promise<CodexExecutionTurnResult>((resolve) => {
     this.#resolve = resolve;
@@ -1006,13 +1023,98 @@ class ExecutionTurn {
       throw new CodexExecutionError(code, question);
     });
   }
+  #registerChild(
+    item: Record<string, unknown>,
+    parentThreadId: string,
+    parentPath: string,
+    completed: boolean,
+  ): void {
+    if (!completed) return;
+    const id = boundedString(item.id);
+    const threadId = boundedString(item.agentThreadId, 256);
+    const agentPath = boundedString(item.agentPath, 256);
+    const kind = boundedString(item.kind, 32);
+    if (threadId === parentThreadId && agentPath === parentPath) return;
+    if (
+      threadId === this.#threadId ||
+      !agentPath.startsWith(`${parentPath}/`) ||
+      !/^\/root(?:\/[A-Za-z0-9_-]+)+$/u.test(agentPath) ||
+      !["started", "interacted", "completed", "interrupted"].includes(kind)
+    )
+      throw new CodexExecutionError("invalid_response");
+    const existing = this.#children.get(threadId);
+    if (existing !== undefined && existing.agentPath !== agentPath)
+      throw new CodexExecutionError("invalid_response");
+    if (existing === undefined) this.#children.set(threadId, { agentPath });
+    const eventKey = `${parentPath}:subagent:${id}`;
+    if (!this.#seen.has(eventKey)) {
+      this.#seen.add(eventKey);
+      this.#enqueue(() =>
+        this.#input.onActivity({
+          itemId: `subagent:${threadId}:${id}`,
+          kind: "subagent",
+          state:
+            kind === "started" || kind === "interacted"
+              ? "started"
+              : kind === "interrupted"
+                ? "failed"
+                : "completed",
+          agentPath,
+          summary: `Subagent ${agentPath.split("/").at(-1) ?? "agent"} ${kind}`,
+        }),
+      );
+    }
+    const pending = this.#pendingChildren.get(threadId) ?? [];
+    this.#pendingChildren.delete(threadId);
+    for (const message of pending) this.#receive(message);
+  }
+  #childEvent(method: string, params: Record<string, unknown>, threadId: string): void {
+    const child = this.#children.get(threadId);
+    if (child === undefined) throw new CodexExecutionError("invalid_response");
+    if (method === "turn/started" || method === "turn/completed") {
+      const turn = record(params.turn);
+      const turnId = boundedString(turn.id);
+      const status = boundedString(turn.status, 32);
+      if (child.turnId !== undefined && child.turnId !== turnId)
+        throw new CodexExecutionError("invalid_response");
+      child.turnId = turnId;
+      if (method === "turn/started") return;
+      if (Array.isArray(turn.items))
+        for (const item of turn.items) this.#item(item, true, threadId, child.agentPath);
+      if (status === "failed" || status === "interrupted")
+        this.#enqueue(() =>
+          this.#input.onActivity({
+            itemId: `subagent:${threadId}:turn`,
+            kind: "subagent",
+            state: "failed",
+            agentPath: child.agentPath,
+            summary: `Subagent ${child.agentPath.split("/").at(-1) ?? "agent"} ${status}`,
+          }),
+        );
+      else if (status !== "completed") throw new CodexExecutionError("invalid_response");
+      return;
+    }
+    if (child.turnId === undefined || params.turnId !== child.turnId)
+      throw new CodexExecutionError("invalid_response");
+    if (method === "error") {
+      const error = protocolError(params.error);
+      if (params.willRetry !== true || error.code !== "unavailable") throw error;
+    } else this.#item(params.item, method === "item/completed", threadId, child.agentPath);
+  }
   #receive(message: Record<string, unknown>): void {
     const method = boundedString(message.method);
     if ("id" in message) {
       if (typeof message.id !== "string" && typeof message.id !== "number")
         throw new CodexExecutionError("invalid_response");
       const params = record(message.params);
-      if (params.threadId !== undefined) this.#observe(params.threadId, params.turnId);
+      if (params.threadId !== undefined) {
+        if (params.threadId === this.#threadId) this.#observe(params.threadId, params.turnId);
+        else {
+          const child = this.#children.get(boundedString(params.threadId));
+          if (child === undefined || child.turnId !== params.turnId)
+            throw new CodexExecutionError("invalid_response");
+        }
+      }
       if (method === "item/tool/requestUserInput") {
         const question = inputQuestion(params);
         this.transport.send({ id: message.id, result: { answers: {} } });
@@ -1054,6 +1156,18 @@ class ExecutionTurn {
     )
       return;
     const params = record(message.params);
+    const eventThreadId = boundedString(params.threadId);
+    if (eventThreadId !== this.#threadId) {
+      if (this.#children.has(eventThreadId)) this.#childEvent(method, params, eventThreadId);
+      else {
+        const pending = this.#pendingChildren.get(eventThreadId) ?? [];
+        if (pending.length >= 64 || this.#pendingChildren.size >= 16)
+          throw new CodexExecutionError("invalid_response");
+        pending.push(message);
+        this.#pendingChildren.set(eventThreadId, pending);
+      }
+      return;
+    }
     if (method === "turn/started" || method === "turn/completed") {
       const turn = record(params.turn);
       const turnId = this.#observe(params.threadId, turn.id);
@@ -1062,11 +1176,11 @@ class ExecutionTurn {
       if (turn.status === "failed") throw protocolError(turn.error);
       if (turn.status !== "completed" || turn.error != null)
         throw new CodexExecutionError("invalid_response");
-      if (Array.isArray(turn.items)) for (const item of turn.items) this.#item(item, true);
+      if (Array.isArray(turn.items))
+        for (const item of turn.items) this.#item(item, true, eventThreadId, "/root");
       const text = this.#text ?? this.#legacyText;
-      if (text === undefined || this.#threadId === undefined)
-        throw new CodexExecutionError("invalid_response");
-      const threadId = this.#threadId;
+      if (text === undefined) throw new CodexExecutionError("invalid_response");
+      const threadId = eventThreadId;
       this.#enqueue(async () => {
         this.#completed = true;
         this.transport.completed();
@@ -1079,25 +1193,29 @@ class ExecutionTurn {
     if (method === "error") {
       const error = protocolError(params.error);
       if (params.willRetry !== true || error.code !== "unavailable") throw error;
-    } else this.#item(params.item, method === "item/completed");
+    } else this.#item(params.item, method === "item/completed", eventThreadId, "/root");
   }
-  #item(value: unknown, completed: boolean): void {
+  #item(value: unknown, completed: boolean, threadId: string, agentPath: string): void {
     const item = record(value);
     const type = boundedString(item.type);
     const id = boundedString(item.id);
-    if (["plan", "userMessage", "contextCompaction"].includes(type)) return;
+    if (type === "subAgentActivity") {
+      this.#registerChild(item, threadId, agentPath, completed);
+      return;
+    }
+    if (["plan", "userMessage", "contextCompaction", "collabAgentToolCall"].includes(type)) return;
     if (
       !["agentMessage", "reasoning", "commandExecution", "fileChange"].includes(type) ||
       (type === "fileChange" && this.#options.allowFileChanges === false)
     )
       throw new CodexExecutionError("permission_required");
-    if (type === "agentMessage" && completed) {
+    if (type === "agentMessage" && completed && threadId === this.#threadId) {
       const text = boundedString(item.text, 128 * 1024);
       if (item.phase === "final_answer") this.#text = text;
       else if (item.phase == null) this.#legacyText = text;
       else if (item.phase !== "commentary") throw new CodexExecutionError("invalid_response");
     }
-    const key = `${completed ? "completed" : "started"}:${id}`;
+    const key = `${threadId}:${completed ? "completed" : "started"}:${id}`;
     if (this.#seen.has(key)) return;
     this.#seen.add(key);
     const reasoningSummary =
@@ -1108,7 +1226,8 @@ class ExecutionTurn {
         : "";
     if (type === "reasoning" && !reasoningSummary.trim()) return;
     const activity: CodexExecutionActivity = {
-      itemId: id,
+      itemId: threadId === this.#threadId ? id : `${threadId}:${id}`,
+      ...(threadId === this.#threadId ? {} : { agentPath }),
       kind:
         type === "agentMessage"
           ? "message"
@@ -1170,7 +1289,15 @@ class ExecutionTurn {
     const mcpServers = record(config.mcp_servers ?? {});
     const modelProviders = record(config.model_providers ?? {});
     if (
-      Object.entries(FEATURES).some(([name, value]) => features[name] !== value) ||
+      Object.entries(FEATURES).some(
+        ([name, value]) => name !== "multi_agent_v2" && features[name] !== value,
+      ) ||
+      !isRecord(features.multi_agent_v2) ||
+      features.multi_agent_v2.enabled !== true ||
+      features.multi_agent_v2.max_concurrent_threads_per_session !== MAX_SUBAGENT_THREADS ||
+      Object.keys(features.multi_agent_v2).some(
+        (name) => !["enabled", "max_concurrent_threads_per_session"].includes(name),
+      ) ||
       Object.entries(features).some(
         ([name, value]) => !(name in FEATURES) && value !== false && value !== null,
       ) ||
@@ -1208,7 +1335,7 @@ class ExecutionTurn {
         environments: ENVIRONMENTS,
         config: {
           ...(this.#input.effort == null ? {} : { model_reasoning_effort: this.#input.effort }),
-          features: FEATURES,
+          features: TURN_FEATURES,
           model_provider: "openai",
           web_search: "disabled",
           allow_login_shell: false,
