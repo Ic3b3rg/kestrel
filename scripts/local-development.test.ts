@@ -178,7 +178,7 @@ writeFileSync(process.env.KESTREL_LIFECYCLE_TEST_LOG, JSON.stringify({
     },
   );
 
-  it("runs only database preparation in Compose and supervises loopback host processes", async () => {
+  it("runs only PostgreSQL in Docker and supervises host source watchers", async () => {
     if (npmCli === undefined)
       throw new Error("npm did not expose its CLI path to the test process");
     const fixture = await realpath(await mkdtemp(join(tmpdir(), "kestrel-local-development-")));
@@ -218,11 +218,12 @@ import { createServer } from "node:http";
 const args = process.argv.slice(2);
 const workspaceIndex = args.indexOf("-w");
 const workspace = workspaceIndex === -1 ? "build" : args[workspaceIndex + 1];
-const service = workspace === "@kestrel/web" ? "web" :
+const service = workspace === "@kestrel/database" ? args[args.indexOf("run") + 1] :
+  workspace === "@kestrel/web" ? "web" :
   workspace === "@kestrel/worker" ? "worker" :
   workspace === "@kestrel/pwa" ? "pwa" : "build";
 let resolvedHostTools = false;
-if (service !== "build") {
+if (["web", "worker", "pwa"].includes(service)) {
   if (service === "web") accessSync(process.env.LOCAL_GIT_EXECUTABLE, constants.X_OK);
   for (const tool of ["git", "gh", "codex"]) execFileSync(tool, ["--version"]);
   resolvedHostTools = true;
@@ -233,6 +234,7 @@ const record = (phase, signal) => appendFileSync(
     args,
     artifactRoot: process.env.ARTIFACT_ROOT,
     databaseUrl: process.env.DATABASE_URL,
+    runtimeDatabaseUrl: process.env.RUNTIME_DATABASE_URL,
     codexExecutable: process.env.KESTREL_CODEX_EXECUTABLE,
     ghExecutable: process.env.KESTREL_GH_EXECUTABLE,
     gitExecutable: process.env.LOCAL_GIT_EXECUTABLE,
@@ -250,7 +252,7 @@ const record = (phase, signal) => appendFileSync(
   }) + "\\n"
 );
 record("start");
-if (service === "build") process.exit(0);
+if (["build", "migrate", "prepare-runtime-role"].includes(service)) process.exit(0);
 if (service === "worker") {
   setTimeout(() => {
     record("ready");
@@ -359,7 +361,6 @@ setInterval(() => undefined, 1_000);
         "worker",
         "pwa",
       ],
-      ["compose", "-f", "compose.yaml", "-f", "compose.local.yaml", "build", "migrate"],
       [
         "compose",
         "-f",
@@ -370,39 +371,6 @@ setInterval(() => undefined, 1_000);
         "--detach",
         "--wait",
         "postgres",
-      ],
-      [
-        "compose",
-        "-f",
-        "compose.yaml",
-        "-f",
-        "compose.local.yaml",
-        "run",
-        "--rm",
-        "--no-deps",
-        "migrate",
-      ],
-      [
-        "compose",
-        "-f",
-        "compose.yaml",
-        "-f",
-        "compose.local.yaml",
-        "run",
-        "--rm",
-        "--no-deps",
-        "database-role",
-      ],
-      [
-        "compose",
-        "-f",
-        "compose.yaml",
-        "-f",
-        "compose.local.yaml",
-        "run",
-        "--rm",
-        "--no-deps",
-        "legacy-state-import",
       ],
     ]);
     expect(
@@ -418,7 +386,20 @@ setInterval(() => undefined, 1_000);
       .filter((entry) => entry.kind === "npm" && entry.phase === "start")
       .map((entry) => entry.service);
     expect(startedServices[0]).toBe("build");
-    expect(startedServices.slice(1).sort()).toEqual(["pwa", "web", "worker"]);
+    expect(startedServices.slice(1, 3)).toEqual(["migrate", "prepare-runtime-role"]);
+    expect(startedServices.slice(3).sort()).toEqual(["pwa", "web", "worker"]);
+    for (const service of ["web", "worker", "pwa"]) {
+      expect(
+        entries.find((entry) => entry.service === service && entry.phase === "start")?.args,
+      ).toEqual(expect.arrayContaining(["run", "dev"]));
+    }
+    for (const service of ["migrate", "prepare-runtime-role"]) {
+      expect(entries.find((entry) => entry.service === service)).toMatchObject({
+        databaseUrl: `postgres://kestrel:kestrel_dev@127.0.0.1:${String(databasePort)}/kestrel`,
+        runtimeDatabaseUrl: `postgres://kestrel_runtime:kestrel_runtime_dev@127.0.0.1:${String(databasePort)}/kestrel`,
+        hasSessionSigningKey: false,
+      });
+    }
     expect(
       entries.some(
         (entry) => entry.kind === "npm" && entry.phase === "ready" && entry.service === "worker",
@@ -427,7 +408,10 @@ setInterval(() => undefined, 1_000);
     expect(
       entries
         .filter(
-          (entry) => entry.kind === "npm" && entry.phase === "start" && entry.service !== "build",
+          (entry) =>
+            entry.kind === "npm" &&
+            entry.phase === "start" &&
+            ["web", "worker", "pwa"].includes(String(entry.service)),
         )
         .every((entry) => entry.resolvedHostTools === true),
     ).toBe(true);

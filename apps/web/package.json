@@ -8,7 +8,8 @@
     "reset-password": "node dist/reset-password.js",
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/server.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "dev": "node ../../scripts/watch-service.mjs src/server.ts"
   },
   "dependencies": {
     "@fastify/static": "10.1.3",
