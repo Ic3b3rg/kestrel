@@ -51,6 +51,14 @@ export async function hasIssueDispatchPlanRequest(pool: DatabasePool, start: Iss
   return result.rows.length > 0;
 }
 
+export async function hasActiveIssuePlanningTurn(pool: DatabasePool, featureId: string) {
+  const result = await pool.query(
+    "SELECT 1 FROM factory_planning_turns WHERE feature_id=$1 AND state IN ('queued','running') LIMIT 1",
+    [featureId],
+  );
+  return result.rows.length > 0;
+}
+
 export async function changeIssueDispatch(
   pool: DatabasePool,
   projectId: string,

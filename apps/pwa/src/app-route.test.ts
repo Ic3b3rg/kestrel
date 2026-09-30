@@ -5,6 +5,15 @@ import { appPath, readAppRoute } from "./app-route.js";
 const projectId = "018f0f89-949a-75a8-8f61-6df78a843b1e";
 
 describe("authenticated app routing", () => {
+  it("restores an issue conversation while its Feature is still being prepared", () => {
+    const startId = "018f0f89-9a21-7271-b92d-f1cb0d48bb47";
+    const route = { kind: "issue" as const, projectId, startId };
+    expect(appPath(route)).toBe(`/projects/${projectId}/issues/${startId}`);
+    expect(readAppRoute(`/projects/${projectId}/issues/${startId}`)).toEqual(route);
+    expect(readAppRoute(`/projects/${projectId}/issues/not-a-start`)).toEqual({
+      kind: "not_found",
+    });
+  });
   it("restores a blank planning request without inventing a Feature", () => {
     const requestId = "fe68a0da-b3bf-4a88-8e53-28a6af91897d";
     const route = { kind: "planning" as const, projectId, requestId };

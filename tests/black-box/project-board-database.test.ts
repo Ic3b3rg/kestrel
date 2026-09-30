@@ -11,6 +11,7 @@ import {
   enqueueProjectIssue,
   findProjectIssueStart,
   readProjectIssueStarts,
+  readProjectIssueStart,
   saveProjectBoardSettings,
   readProjectBoardSettings,
   saveProjectIssueObservation,
@@ -119,6 +120,15 @@ it("migrates a clean database, persists board state, deduplicates starts and dis
     });
     expect(await readProjectIssueStarts(pool, project)).toHaveLength(1);
     await changeIssueDispatch(pool, project, id, "cancel");
+    expect(await readProjectIssueStart(pool, project, id)).toMatchObject({
+      id,
+      state: "done",
+      issueNumber: 42,
+    });
+    expect((await readProjectIssueStarts(pool, project)).map((item) => item.id)).toContain(id);
+    await expect(readProjectIssueStart(pool, other, id)).rejects.toMatchObject({
+      code: "not_found",
+    });
     const restarted = await enqueueProjectIssue(
       pool,
       project,

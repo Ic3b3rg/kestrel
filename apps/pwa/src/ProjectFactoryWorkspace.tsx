@@ -43,9 +43,9 @@ function ProjectFactoryWorkspaceContent({
     const requestId = requests.current.get(number) ?? crypto.randomUUID();
     requests.current.set(number, requestId);
     try {
-      await startProjectIssue(projectId, number, requestId);
+      const accepted = await startProjectIssue(projectId, number, requestId);
       requests.current.delete(number);
-      setSnapshot(await fetchProjectBoard(projectId));
+      onNavigate({ kind: "issue", projectId, startId: accepted.id });
     } catch (failure) {
       if (!onAuthenticationError(failure))
         setError(
@@ -116,14 +116,20 @@ function ProjectFactoryWorkspaceContent({
         onStartPlan={() =>
           onNavigate({ kind: "planning", projectId, requestId: crypto.randomUUID() })
         }
-        onOpenFeature={(featureId, view) =>
-          onNavigate({
-            kind: "feature",
-            projectId: snapshot?.projectId ?? projectId,
-            featureId,
-            ...(view === "chat" ? {} : { view }),
-          })
-        }
+        onOpenFeature={(featureId, view) => {
+          const issue = snapshot?.starts?.find((start) => start.featureId === featureId);
+          onNavigate(
+            issue === undefined
+              ? {
+                  kind: "feature",
+                  projectId: snapshot?.projectId ?? projectId,
+                  featureId,
+                  ...(view === "chat" ? {} : { view }),
+                }
+              : { kind: "issue", projectId, startId: issue.id },
+          );
+        }}
+        onOpenStart={(startId) => onNavigate({ kind: "issue", projectId, startId })}
         onRefresh={() => {
           refreshRequested.current = true;
           setGeneration((current) => current + 1);
