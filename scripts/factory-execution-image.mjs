@@ -32,7 +32,8 @@ const assets = {
   },
 };
 
-export async function prepareFactoryExecutionImage(environment = process.env) {
+export async function prepareFactoryExecutionImage(environment = process.env, signal) {
+  signal?.throwIfAborted();
   const asset = assets[process.arch];
   if (asset === undefined) throw new Error("The Factory executor supports arm64 and x64 hosts");
   const stateRoot = environment.KESTREL_STATE_ROOT ?? resolve(".kestrel/development");
@@ -53,7 +54,12 @@ export async function prepareFactoryExecutionImage(environment = process.env) {
     const file = `codex-${asset.name}-unknown-linux-musl`;
     const response = await fetch(
       `https://github.com/openai/codex/releases/download/rust-v${VERSION}/${file}.tar.gz`,
-      { signal: AbortSignal.timeout(120_000) },
+      {
+        signal:
+          signal === undefined
+            ? AbortSignal.timeout(120_000)
+            : AbortSignal.any([signal, AbortSignal.timeout(120_000)]),
+      },
     );
     if (!response.ok || response.body === null)
       throw new Error("The official Codex executor download failed");
@@ -69,6 +75,7 @@ export async function prepareFactoryExecutionImage(environment = process.env) {
       throw new Error("The official Codex executor digest does not match");
     await writeFile(join(staging, "codex.tar.gz"), archive, { flag: "wx", mode: 0o600 });
     await exec("tar", ["-xzf", join(staging, "codex.tar.gz"), "-C", staging, file], {
+      signal,
       timeout: 30_000,
     });
     await rename(join(staging, file), join(staging, "codex"));
@@ -87,7 +94,7 @@ export async function prepareFactoryExecutionImage(environment = process.env) {
         `kestrel-factory-executor:${VERSION}`,
         staging,
       ],
-      { env, timeout: 300_000, maxBuffer: 2_000_000 },
+      { env, signal, timeout: 300_000, maxBuffer: 2_000_000 },
     );
     const imageId = (await readFile(join(staging, "image-id"), "utf8")).trim();
     if (!/^sha256:[a-f0-9]{64}$/u.test(imageId))
@@ -101,8 +108,75 @@ export async function prepareFactoryExecutionImage(environment = process.env) {
   }
 }
 
+export async function ensureFactoryExecutionImage(
+  environment = process.env,
+  prepare = prepareFactoryExecutionImage,
+  signal,
+) {
+  signal?.throwIfAborted();
+  const stateRoot = environment.KESTREL_STATE_ROOT ?? resolve(".kestrel/development");
+  if (!isAbsolute(stateRoot)) throw new Error("KESTREL_STATE_ROOT must be absolute");
+  try {
+    const directory = await lstat(stateRoot);
+    if (
+      !directory.isDirectory() ||
+      directory.isSymbolicLink() ||
+      (process.getuid !== undefined && directory.uid !== process.getuid())
+    )
+      throw new Error("KESTREL_STATE_ROOT must be an owned, non-symlink directory");
+  } catch (error) {
+    if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT") throw error;
+  }
+  const docker = await resolveDocker(environment);
+  const imageFile = join(stateRoot, "factory-execution-image");
+  let pinned = null;
+  try {
+    const file = await lstat(imageFile);
+    if (
+      !file.isFile() ||
+      file.isSymbolicLink() ||
+      (process.getuid !== undefined && file.uid !== process.getuid())
+    )
+      throw new Error("The Factory execution image file must be an owned regular file");
+    pinned = (await readFile(imageFile, "utf8")).trim();
+  } catch (error) {
+    if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT") throw error;
+  }
+  if (pinned !== null && /^sha256:[a-f0-9]{64}$/u.test(pinned)) {
+    const existing = await exec(
+      docker,
+      [
+        "image",
+        "inspect",
+        "--format",
+        '{{.Id}} {{index .Config.Labels "org.opencontainers.image.version"}}',
+        pinned,
+      ],
+      { env: environmentForDocker(docker, environment), signal, timeout: 30_000 },
+    ).catch(() => null);
+    if (existing?.stdout.trim() === `${pinned} ${VERSION}`) return { imageId: pinned, docker };
+  }
+  signal?.throwIfAborted();
+  return prepare(environment, signal);
+}
+
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  console.log("Preparing the isolated Factory executor (Codex 0.155.1, Node 24, Git)…");
-  const { imageId } = await prepareFactoryExecutionImage();
-  console.log(`Factory executor ready: ${imageId}`);
+  const controller = new AbortController();
+  const stop = () => controller.abort(new Error("Factory image preparation stopped"));
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
+  try {
+    console.log("Preparing the isolated Factory executor (Codex 0.155.1, Node 24, Git)…");
+    const { imageId } = process.argv.includes("--ensure")
+      ? await ensureFactoryExecutionImage(
+          process.env,
+          prepareFactoryExecutionImage,
+          controller.signal,
+        )
+      : await prepareFactoryExecutionImage(process.env, controller.signal);
+    console.log(`Factory executor ready: ${imageId}`);
+  } finally {
+    process.off("SIGINT", stop);
+    process.off("SIGTERM", stop);
+  }
 }

@@ -1375,6 +1375,36 @@ it("reports a missing sandbox image as a recoverable run failure", async () => {
   );
 });
 
+it("prepares a missing sandbox image before running the authorized work", async () => {
+  const prepareContainerImage = vi.fn(() => Promise.resolve(`sha256:${"a".repeat(64)}`));
+  await processor({ prepareContainerImage }).process({ runId: run.id });
+  expect(prepareContainerImage).toHaveBeenCalledTimes(1);
+  expect(runTurn).toHaveBeenCalled();
+  expect(finishFactoryExecution).toHaveBeenCalledWith(
+    pool,
+    expect.anything(),
+    expect.objectContaining({ verified: true, failure: null }),
+  );
+});
+
+it("keeps a failed automatic image preparation recoverable", async () => {
+  const prepareContainerImage = vi.fn(() => Promise.reject(new Error("Docker daemon unavailable")));
+  await processor({ prepareContainerImage }).process({ runId: run.id });
+  expect(runTurn).not.toHaveBeenCalled();
+  expect(finishFactoryExecution).toHaveBeenCalledWith(
+    pool,
+    expect.anything(),
+    expect.objectContaining({
+      verified: false,
+      writerStopped: true,
+      failure: "sandbox_unavailable",
+    }),
+  );
+  expect(vi.mocked(finishFactoryExecution).mock.calls[0]?.[2].question).toContain(
+    "retry this work",
+  );
+});
+
 it("keeps an unavailable selected model as a gate without falling back", async () => {
   if (run.lifecycleProfile == null) throw new Error("Missing approved profile");
   run.lifecycleProfile.modelId = "missing-model";

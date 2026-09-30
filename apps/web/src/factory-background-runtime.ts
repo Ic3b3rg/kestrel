@@ -1,4 +1,5 @@
 import { createProjectIssueDispatcher } from "./project-issue-dispatch.js";
+import { createFactoryImagePreparer } from "./factory-image-preparation.js";
 import { createCodexExecutionContainerRecovery } from "./codex-execution-runtime.js";
 import { reconcileFactorySandboxes } from "./factory-sandbox.js";
 import {
@@ -121,13 +122,29 @@ export function createFactoryBackgroundRuntime({
     review: factoryConceptualReviewService,
   });
   const featureMergeProcessor = createFactoryFeatureMergeProcessor({ pool, boss });
+  const lifecycle = new AbortController();
   const recoverExecutionContainer = createCodexExecutionContainerRecovery(
     factoryDockerExecutable === undefined ? {} : { dockerExecutable: factoryDockerExecutable },
   );
+  const prepareContainerImage =
+    factoryExecutionImage === undefined
+      ? createFactoryImagePreparer({
+          ...(factoryDockerExecutable === undefined
+            ? {}
+            : { dockerExecutable: factoryDockerExecutable }),
+          signal: lifecycle.signal,
+          onFailure: (error) =>
+            log.error({
+              event: "factory.image_preparation_failed",
+              reason: error instanceof Error ? error.message.slice(0, 500) : "Unknown failure",
+            }),
+        })
+      : undefined;
   const executionProcessor = createFactoryExecutionProcessor({
     pool,
     readSourceConfig,
     ...(factoryExecutionImage === undefined ? {} : { containerImage: factoryExecutionImage }),
+    ...(prepareContainerImage === undefined ? {} : { prepareContainerImage }),
     ...(factoryDockerExecutable === undefined ? {} : { dockerExecutable: factoryDockerExecutable }),
   });
   const conceptualReviewProcessor = createFactoryConceptualReviewProcessor({
@@ -146,7 +163,6 @@ export function createFactoryBackgroundRuntime({
         }),
   });
 
-  const lifecycle = new AbortController();
   const isStopped = () => lifecycle.signal.aborted;
   const timers: NodeJS.Timeout[] = [];
   const activeRepairs = new Set<Promise<void>>();
