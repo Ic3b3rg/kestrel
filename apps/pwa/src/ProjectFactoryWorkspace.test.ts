@@ -8,13 +8,20 @@ import {
   type ProjectFactoryWorkspaceProps,
 } from "./ProjectFactoryWorkspace.js";
 import type * as apiModule from "./api.js";
+import type * as issueApiModule from "./project-issue-api.js";
 const api = vi.hoisted(() => ({ board: vi.fn<typeof apiModule.fetchProjectBoard>() }));
+const issueApi = vi.hoisted(() => ({ start: vi.fn<typeof issueApiModule.startProjectIssue>() }));
 vi.mock("./api.js", async (original) => ({
   ...(await original<typeof apiModule>()),
   fetchProjectBoard: api.board,
 }));
+vi.mock("./project-issue-api.js", async (original) => ({
+  ...(await original<typeof issueApiModule>()),
+  startProjectIssue: issueApi.start,
+}));
 const projectId = "01991c36-7f90-7000-8000-000000000001";
 const otherId = "01991c36-7f90-7000-8000-000000000009";
+const startId = "01991c36-7f90-7000-8000-000000000010";
 const at = "2026-09-23T12:00:00.000Z";
 const snapshot: ProjectBoardSnapshot = {
   schemaVersion: 1,
@@ -78,11 +85,31 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers();
   api.board.mockReset().mockResolvedValue(snapshot);
+  issueApi.start.mockReset().mockResolvedValue({ id: startId });
   navigate.mockReset();
   authError.mockReset().mockReturnValue(false);
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
+});
+
+it("opens the stable issue conversation as soon as a keyboard start is accepted", async () => {
+  const issue = snapshot.github.issues[0];
+  if (issue === undefined) throw new Error("Missing issue fixture");
+  api.board.mockResolvedValue({
+    ...snapshot,
+    github: {
+      ...snapshot.github,
+      issues: [{ ...issue, labels: [{ name: "ready-for-agent", color: "008800" }] }],
+    },
+  });
+  await render();
+  await act(async () => {
+    container.querySelector<HTMLButtonElement>('[aria-label="Start issue #42"]')?.click();
+    await Promise.resolve();
+  });
+  expect(issueApi.start).toHaveBeenCalledWith(projectId, 42, expect.any(String));
+  expect(navigate).toHaveBeenCalledWith({ kind: "issue", projectId, startId });
 });
 afterEach(() => {
   act(() => root.unmount());

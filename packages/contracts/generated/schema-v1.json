@@ -29949,6 +29949,70 @@
       ],
       "type": "object"
     },
+    "ProjectIssueStart": {
+      "additionalProperties": false,
+      "properties": {
+        "featureId": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        },
+        "issueNumber": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "issueUrl": {
+          "format": "uri",
+          "type": "string"
+        },
+        "message": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "enum": [
+            "queued",
+            "preparing",
+            "running",
+            "blocked",
+            "done"
+          ],
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "issueNumber",
+        "issueUrl",
+        "title",
+        "state",
+        "featureId",
+        "message"
+      ],
+      "type": "object"
+    },
     "ProjectIssueStartAccepted": {
       "additionalProperties": false,
       "properties": {

@@ -2,6 +2,7 @@ import { FormFeedback } from "./components/FormFeedback.js";
 import { Button } from "./components/ui/button.js";
 import { WorkspaceSuspendedContext } from "./components/ui/workspace-suspension.js";
 import { FeatureNavigation } from "./FeatureNavigation.js";
+import { ProjectIssueConversation } from "./ProjectIssueConversation.js";
 import { FeatureChatPanel } from "./FeatureChatPanel.js";
 import { ProjectFactoryWorkspace } from "./ProjectFactoryWorkspace.js";
 import { NewPlanningWorkspace } from "./NewPlanningWorkspace.js";
@@ -654,7 +655,10 @@ export function App() {
   }
 
   const selectedProject =
-    route.kind === "project" || route.kind === "feature" || route.kind === "project_settings"
+    route.kind === "project" ||
+    route.kind === "feature" ||
+    route.kind === "issue" ||
+    route.kind === "project_settings"
       ? (projectInbox?.projects.find((project) => project.id === route.projectId) ?? null)
       : null;
   const navigationProjectId = "projectId" in route ? route.projectId : undefined;
@@ -801,6 +805,23 @@ export function App() {
             onNavigate={navigate}
             onAuthenticationError={handleAuthenticationBoundaryError}
             onDraftDirtyChange={setPlanDirty}
+          />
+        );
+      case "issue":
+        return (
+          <ProjectIssueConversation
+            key={`${route.projectId}/${route.startId}`}
+            projectId={route.projectId}
+            projectName={
+              navigationProject === undefined ? "Project" : projectLabel(navigationProject)
+            }
+            startId={route.startId}
+            online={online}
+            onNavigate={navigate}
+            onAuthenticationError={handleAuthenticationBoundaryError}
+            onFeatureRead={rememberFeature}
+            onFeatureUnavailable={forgetFeature}
+            onPlanDirtyChange={setPlanDirty}
           />
         );
       case "feature":
