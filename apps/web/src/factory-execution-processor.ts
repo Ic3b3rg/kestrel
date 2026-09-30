@@ -57,6 +57,7 @@ export interface FactoryExecutionProcessorOptions {
   connection?: CodexAgentRuntimePort;
   runtime?: CodexExecutionRuntime;
   containerImage?: string;
+  prepareContainerImage?: (signal: AbortSignal) => Promise<string>;
   dockerExecutable?: string;
 }
 
@@ -285,7 +286,16 @@ async function execute(
       return model;
     };
     if (!final) await selectModel();
+    if (options.containerImage === undefined && options.prepareContainerImage !== undefined)
+      await recordFactoryExecutionActivity(
+        pool,
+        run,
+        "lifecycle",
+        "Preparing the isolated execution environment.",
+      );
     await sandbox.open();
+    if (options.containerImage === undefined && options.prepareContainerImage !== undefined)
+      await recordFactoryExecutionActivity(pool, run, "lifecycle", "Execution environment ready.");
     let previousChecks: VerificationFeedback[] = [];
     for (let round = 1; round <= 3; round++) {
       verifying = false;
