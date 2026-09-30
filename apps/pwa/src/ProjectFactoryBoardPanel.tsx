@@ -1,3 +1,4 @@
+import { Skeleton } from "./components/ui/skeleton.js";
 import { FormFeedback } from "./components/FormFeedback.js";
 import { useId, type MouseEvent } from "react";
 import { ArrowUpRight, GitPullRequest, Plus, RefreshCw, Settings } from "lucide-react";
@@ -25,6 +26,11 @@ export interface ProjectFactoryBoardPanelProps {
   onOpenPullRequests: () => void;
   onOpenSettings: () => void;
   settingsHref: string;
+  onOpenIssue?: (number: number) => void;
+  onStartIssue?: (number: number) => void;
+  startingIssue?: number | null;
+  onCancelStart?: (id: string) => void;
+  onRetryStart?: (id: string) => void;
 }
 
 function openSettings(event: MouseEvent<HTMLAnchorElement>, onOpenSettings: () => void): void {
@@ -41,29 +47,85 @@ function openSettings(event: MouseEvent<HTMLAnchorElement>, onOpenSettings: () =
   onOpenSettings();
 }
 
-function GitHubIssueCard({ issue }: { issue: ProjectBoardSnapshot["github"]["issues"][number] }) {
+function GitHubIssueCard({
+  issue,
+  readyLabel,
+  online,
+  onOpen,
+  onStart,
+  starting,
+}: {
+  issue: ProjectBoardSnapshot["github"]["issues"][number];
+  readyLabel: string;
+  online: boolean;
+  onOpen?: ((number: number) => void) | undefined;
+  onStart?: ((number: number) => void) | undefined;
+  starting: boolean;
+}) {
+  const eligible =
+    online &&
+    !starting &&
+    issue.state === "open" &&
+    (issue.labels ?? []).some((label) => label.name === readyLabel);
   return (
-    <li className="min-w-0">
+    <li
+      className="min-w-0 rounded-lg border border-border bg-card"
+      draggable={eligible && onStart !== undefined}
+      onDragStart={(event) => {
+        if (!eligible) {
+          event.preventDefault();
+          return;
+        }
+        event.dataTransfer.setData("application/x-kestrel-issue", String(issue.number));
+        event.dataTransfer.effectAllowed = "move";
+      }}
+    >
       <Button
-        asChild
-        variant="outline"
+        variant="ghost"
         className="h-auto w-full min-w-0 flex-col items-start gap-2 p-3 text-left"
+        aria-label={`Open issue #${String(issue.number)}: ${issue.title}`}
+        onClick={() => onOpen?.(issue.number)}
       >
+        <span className="text-xs font-normal text-muted-foreground">
+          GitHub issue #{issue.number}
+        </span>
+        <strong className="max-w-full break-words font-medium">{issue.title}</strong>
+        <span className="flex max-w-full flex-wrap gap-1">
+          {(issue.labels ?? []).map((label) => (
+            <span
+              key={label.name}
+              className="rounded border border-border px-1.5 py-0.5 text-xs font-normal"
+            >
+              {label.name}
+            </span>
+          ))}
+        </span>
+        <span className="text-xs font-normal text-muted-foreground">
+          {issue.commentCount ?? 0} comments
+        </span>
+      </Button>
+      <div className="flex flex-wrap items-center justify-between border-t border-border px-2 py-1">
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={!eligible || onStart === undefined}
+          aria-label={`Start issue #${String(issue.number)}`}
+          onClick={() => onStart?.(issue.number)}
+        >
+          {starting ? "Starting…" : "Start"}
+        </Button>
         <a
+          className="text-xs text-muted-foreground underline"
           href={issue.url}
           target="_blank"
           rel="noreferrer"
-          aria-label={`Open GitHub issue #${String(issue.number)}: ${issue.title}`}
         >
-          <span className="text-xs font-normal text-muted-foreground">
-            GitHub issue #{issue.number}
-          </span>
-          <strong className="max-w-full break-words font-medium">{issue.title}</strong>
-          <span className="max-w-full break-words text-xs font-normal text-muted-foreground">
-            {issue.repository.owner}/{issue.repository.name}
-          </span>
+          GitHub <ArrowUpRight className="inline size-3" aria-hidden="true" />
         </a>
-      </Button>
+      </div>
+      {!eligible && online && !starting ? (
+        <p className="px-3 pb-2 text-xs text-muted-foreground">Requires {readyLabel}</p>
+      ) : null}
     </li>
   );
 }
@@ -72,10 +134,14 @@ function WorkItemCard({
   feature,
   item,
   onOpenFeature,
+  onOpenIssue,
+  queued,
 }: {
   feature: ProjectBoardWorkItem["feature"];
   item: ProjectBoardWorkItem["item"];
   onOpenFeature: ProjectFactoryBoardPanelProps["onOpenFeature"];
+  onOpenIssue?: ((number: number) => void) | undefined;
+  queued?: boolean | undefined;
 }) {
   const contextId = useId();
   const hasContext = item.dependsOn.length > 0 || item.blocking !== null;
@@ -96,6 +162,9 @@ function WorkItemCard({
         <span className="text-xs font-normal text-muted-foreground">
           {item.order} · {item.key}
         </span>
+        {queued ? (
+          <span className="text-xs text-muted-foreground">Waiting for development</span>
+        ) : null}
         {hasContext ? (
           <span id={contextId} className="flex max-w-full flex-col gap-2 text-xs font-normal">
             {item.dependsOn.length === 0 ? null : (
@@ -116,6 +185,18 @@ function WorkItemCard({
           <Button asChild variant="ghost" size="sm" className="text-muted-foreground">
             <a
               href={item.providerUrl}
+              onClick={(event) => {
+                const number = Number(item.providerUrl?.split("/").at(-1));
+                if (
+                  onOpenIssue &&
+                  Number.isSafeInteger(number) &&
+                  !event.metaKey &&
+                  !event.ctrlKey
+                ) {
+                  event.preventDefault();
+                  onOpenIssue(number);
+                }
+              }}
               target="_blank"
               rel="noreferrer"
               aria-label={"Open linked issue for " + item.title}
@@ -142,8 +223,14 @@ export function ProjectFactoryBoardPanel({
   onOpenPullRequests,
   onOpenSettings,
   settingsHref,
+  onOpenIssue,
+  onStartIssue,
+  startingIssue,
+  onCancelStart,
+  onRetryStart,
 }: ProjectFactoryBoardPanelProps) {
   const titleId = useId();
+  const initialLoading = loading && snapshot === null;
   const planningFeatures = snapshot?.planningFeatures ?? [];
   const workItems = snapshot?.workItems ?? [];
   const availableGitHubIssues = snapshot?.github.issues ?? [];
@@ -194,6 +281,12 @@ export function ProjectFactoryBoardPanel({
           <FactoryProviderProblem failure={githubIssueFailure} projectId={projectId} />
         </FormFeedback>
       )}
+      {snapshot?.github.fetchedAt ? (
+        <p className="text-xs text-muted-foreground">
+          GitHub updated {new Date(snapshot.github.fetchedAt).toLocaleString()}
+          {snapshot.github.refreshing ? " · Refreshing…" : ""}
+        </p>
+      ) : null}
       {snapshot?.github.retained ? (
         <p role="status" className="text-sm text-muted-foreground">
           Showing the last available GitHub issues.
@@ -204,21 +297,58 @@ export function ProjectFactoryBoardPanel({
           Showing a limited set of GitHub issues. More open GitHub issues may exist.
         </p>
       ) : null}
+      {initialLoading ? (
+        <p role="status" className="sr-only">
+          Loading board…
+        </p>
+      ) : null}
       <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {columns.map((column) => {
           const items = workItems.filter(({ item }) => item.column === column.id);
           const drafts = column.id === "todo" ? planningFeatures : [];
           const providerIssues = column.id === "todo" ? availableGitHubIssues : [];
-          const count = items.length + drafts.length + providerIssues.length;
+          const starts =
+            column.id === "in_progress"
+              ? (snapshot?.starts ?? []).filter(
+                  (start) => !workItems.some(({ feature }) => feature.id === start.featureId),
+                )
+              : [];
+          const count = items.length + drafts.length + providerIssues.length + starts.length;
           return (
             <section
               key={column.id}
               aria-label={column.label}
+              onDragOver={(event) => {
+                if (
+                  column.id === "in_progress" &&
+                  online &&
+                  event.dataTransfer.types.includes("application/x-kestrel-issue")
+                ) {
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "move";
+                }
+              }}
+              onDrop={(event) => {
+                if (column.id !== "in_progress") return;
+                event.preventDefault();
+                const number = Number(event.dataTransfer.getData("application/x-kestrel-issue"));
+                const issue = availableGitHubIssues.find((issue) => issue.number === number);
+                if (
+                  online &&
+                  issue?.labels?.some(
+                    (label) => label.name === (snapshot?.settings?.readyLabel ?? "ready-for-agent"),
+                  )
+                )
+                  onStartIssue?.(number);
+              }}
               className="flex min-w-0 flex-col gap-3 rounded-lg border border-border/60 bg-muted/20 p-3 sm:min-h-64"
             >
               <header className="flex min-h-8 items-center justify-between gap-2">
                 <h2 className="text-sm font-medium">
-                  {column.label} <span className="ml-1 text-muted-foreground">{count}</span>
+                  {column.label}{" "}
+                  {!initialLoading ? (
+                    <span className="ml-1 text-muted-foreground">{count}</span>
+                  ) : null}
                 </h2>
                 {column.id === "todo" ? (
                   <Button
@@ -233,7 +363,21 @@ export function ProjectFactoryBoardPanel({
                 ) : null}
               </header>
               {count === 0 ? (
-                loading ? null : (
+                initialLoading ? (
+                  <div aria-hidden="true" className="space-y-3">
+                    {[0, 1].map((index) => (
+                      <div
+                        key={index}
+                        className="space-y-3 rounded-lg border border-border bg-card p-3"
+                      >
+                        <Skeleton className="h-3 w-16 motion-reduce:animate-none" />
+                        <Skeleton className="h-4 w-full motion-reduce:animate-none" />
+                        <Skeleton className="h-4 w-2/3 motion-reduce:animate-none" />
+                        <Skeleton className="h-5 w-24 rounded-full motion-reduce:animate-none" />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
                   <p className="py-3 text-sm text-muted-foreground">
                     {column.id === "todo"
                       ? "Start a plan to add work."
@@ -262,14 +406,80 @@ export function ProjectFactoryBoardPanel({
                     </li>
                   ))}
                   {providerIssues.map((issue) => (
-                    <GitHubIssueCard key={issue.id} issue={issue} />
+                    <GitHubIssueCard
+                      key={issue.id}
+                      issue={issue}
+                      readyLabel={snapshot?.settings?.readyLabel ?? "ready-for-agent"}
+                      online={online}
+                      onOpen={onOpenIssue}
+                      onStart={onStartIssue}
+                      starting={startingIssue === issue.number}
+                    />
                   ))}
-                  {items.map(({ feature, item }) => (
+                  {starts.map((start) => (
+                    <li
+                      key={start.id}
+                      className="space-y-2 rounded-lg border border-border bg-card p-3"
+                    >
+                      <button
+                        className="text-left font-medium"
+                        onClick={() => onOpenIssue?.(start.issueNumber)}
+                      >
+                        #{start.issueNumber} {start.title}
+                      </button>
+                      <p className="text-xs text-muted-foreground">
+                        {start.state === "queued"
+                          ? "Waiting for development"
+                          : start.state === "preparing"
+                            ? "Preparing development"
+                            : start.state === "blocked"
+                              ? "Needs attention"
+                              : "Starting development"}
+                      </p>
+                      {start.message === null ? null : (
+                        <p className="text-sm" role="status">
+                          {start.message}
+                        </p>
+                      )}
+                      {start.featureId === null ? null : (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            if (start.featureId !== null) onOpenFeature(start.featureId, "chat");
+                          }}
+                        >
+                          Open work
+                        </Button>
+                      )}
+                      {start.state === "blocked" ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={!online}
+                          onClick={() => onRetryStart?.(start.id)}
+                        >
+                          Retry
+                        </Button>
+                      ) : null}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={!online}
+                        onClick={() => onCancelStart?.(start.id)}
+                      >
+                        Cancel queued work
+                      </Button>
+                    </li>
+                  ))}
+                  {items.map(({ feature, item, queued }) => (
                     <WorkItemCard
                       key={item.id}
                       feature={feature}
                       item={item}
                       onOpenFeature={onOpenFeature}
+                      onOpenIssue={onOpenIssue}
+                      queued={queued}
                     />
                   ))}
                 </ol>

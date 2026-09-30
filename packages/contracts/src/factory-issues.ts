@@ -34,6 +34,16 @@ export const FactoryGitHubIssueSchema = z.strictObject({
   title: z.string().min(1).max(512),
   body: z.string().max(65_536),
   state: z.enum(["open", "closed"]),
+  labels: z
+    .array(
+      z.strictObject({
+        name: z.string().min(1).max(100),
+        color: z.string().regex(/^[a-fA-F0-9]{6}$/u),
+      }),
+    )
+    .max(100)
+    .optional(),
+  commentCount: z.int().nonnegative().optional(),
   // Null means dependency metadata was not available; the original body is still retained.
   dependencies: z.array(dependency).max(100).nullable(),
 });

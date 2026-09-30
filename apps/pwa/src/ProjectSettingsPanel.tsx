@@ -1,3 +1,4 @@
+import { ProjectBoardSettingsPanel } from "./ProjectBoardSettingsPanel.js";
 import { LifecycleProfilePanel } from "./LifecycleProfilePanel.js";
 import type { DirectApiProfile, ProjectInbox } from "@kestrel/contracts";
 
@@ -159,6 +160,11 @@ export function ProjectSettingsPanel({
         </dl>
       </section>
 
+      <ProjectBoardSettingsPanel
+        projectId={project.id}
+        online={online}
+        onAuthenticationError={onAuthenticationError}
+      />
       <ProjectGitHubAccessPanel
         project={project}
         online={online}

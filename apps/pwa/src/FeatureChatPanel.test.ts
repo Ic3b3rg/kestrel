@@ -135,6 +135,36 @@ describe("persistent planning conversation", () => {
     });
   }
 
+  it("renders Markdown in sent messages and Kestrel replies without activating embedded HTML", async () => {
+    await render({
+      loadChat: () =>
+        Promise.resolve({
+          ...initial,
+          turns: [],
+          messages: [
+            { id: messageId, role: "user", content: "Please keep **Unicode**.", createdAt },
+            {
+              id: turnId,
+              role: "assistant",
+              content:
+                "## Proposed plan\n\n- [x] Read requirements\n\n| Step | Result |\n| --- | --- |\n| 1 | Export |\n\n```ts\nconst ready = true;\n```\n\n[Guide](https://example.com/guide)\n\n[Unsafe](javascript:alert(1))\n\n<script>window.unsafePlan = true</script>",
+              createdAt,
+            },
+          ],
+        }),
+    });
+    const user = container.querySelector('[aria-label="Your message"]');
+    const reply = container.querySelector('[aria-label="Kestrel reply"]');
+    expect(user?.querySelector("p strong")?.textContent).toBe("Unicode");
+    expect(reply?.querySelector("h2")?.textContent).toBe("Proposed plan");
+    expect(reply?.querySelector("table")?.textContent).toContain("Export");
+    expect(reply?.querySelector('input[type="checkbox"]')?.hasAttribute("disabled")).toBe(true);
+    expect(reply?.querySelector("pre code")?.textContent).toContain("const ready = true;");
+    expect(reply?.querySelector('a[href="https://example.com/guide"]')).not.toBeNull();
+    expect(reply?.querySelector('a[href^="javascript:"]')).toBeNull();
+    expect(reply?.querySelector("script")).toBeNull();
+  });
+
   it("allows sending after removing a server-rejected attachment without editing the message", async () => {
     const sendMessage = vi.fn().mockRejectedValueOnce(
       new ApiClientError(409, {
