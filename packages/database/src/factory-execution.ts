@@ -1,3 +1,4 @@
+import { readIssueExecutionContext } from "./project-issue-dispatch.js";
 import { FrozenLifecycleProfileSchema, type FrozenLifecycleProfile } from "@kestrel/contracts";
 import type { PoolClient } from "pg";
 import {
@@ -46,6 +47,7 @@ import {
 export type { FactoryFeatureWorkspace } from "./factory-execution-ledger.js";
 
 export interface ClaimedFactoryExecution {
+  issueExecutionContext?: unknown;
   lifecycleProfile?: FrozenLifecycleProfile | null;
   id: string;
   ownerInstanceId: string;
@@ -134,13 +136,15 @@ export async function queueFactoryExecutions(
            JOIN projects prior_owner ON prior_owner.id = prior.project_id
            JOIN factory_plan_approvals prior_approval ON prior_approval.feature_id = prior.id AND prior_approval.plan_version = prior.approved_plan_version
            WHERE COALESCE(prior_owner.canonical_project_id, prior_owner.id) = COALESCE(owner.canonical_project_id, owner.id)
-             AND prior.state IN ('queued', 'implementing', 'gated', 'in_review', 'merging')
+             AND prior.state IN ('queued', 'implementing', 'gated')
              AND (prior_approval.approved_at, prior.id) < (approval.approved_at, feature.id))
        ORDER BY approval.approved_at, feature.id LIMIT 32 FOR UPDATE OF feature`,
     );
     const queued: string[] = [];
+    const reservedProjects = new Set<string>();
     for (const candidate of candidates.rows) {
       if (available <= 0) break;
+      if (reservedProjects.has(candidate.project_id)) continue;
       const version = await client.query<{ version: number; document: unknown }>(
         `SELECT plan.version, plan.document FROM factory_plan_versions plan JOIN factory_features feature
          ON feature.id = plan.feature_id AND feature.approved_plan_version = plan.version WHERE feature.id = $1`,
@@ -179,6 +183,7 @@ export async function queueFactoryExecutions(
         );
         if (finalId !== null) {
           queued.push(finalId);
+          reservedProjects.add(candidate.project_id);
           available = Math.min(
             available - 1,
             plan.limits.maxConcurrentProjects - active.rows.length - queued.length,
@@ -247,6 +252,7 @@ export async function queueFactoryExecutions(
         [candidate.id, ready.id, `${ready.key} reserved for automatic execution`],
       );
       queued.push(id);
+      reservedProjects.add(candidate.project_id);
       available = Math.min(
         available - 1,
         plan.limits.maxConcurrentProjects - active.rows.length - queued.length,
@@ -605,6 +611,7 @@ export async function claimFactoryExecution(
         plan,
         context: PlanningContextSchema.nullable().parse(version.source_context),
         planMarkdown: version.plan_markdown,
+        issueExecutionContext: await readIssueExecutionContext(client, row.feature_id),
         specMarkdown: version.spec_markdown,
         source: row.source,
         gateResolution,

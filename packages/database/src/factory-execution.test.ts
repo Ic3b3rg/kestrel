@@ -286,103 +286,117 @@ it("backfills an existing gated attempt without replacing its question or granti
   expect(send).not.toHaveBeenCalled();
 });
 
-it("admits a single answered retry with frozen source and checks after its verified dependency", async () => {
-  const verification = [
-    { program: "node", args: ["--test", "stable.test.mjs"], cwd: ".", timeoutSeconds: 10 },
-  ];
-  const source = { repositoryId: "frozen-repository", identity: "frozen-identity" };
-  const now = new Date("2026-09-08T12:00:00.000Z");
-  const planItem = {
-    key: "base",
-    title: "Base behavior",
-    description: "Return ordered values",
-    requirementKeys: ["order"],
-    acceptance: ["Stable values"],
-    dependsOn: [] as string[],
-    verification,
-  };
-  const document = {
-    objective: "Retain stable order",
-    scope: { includes: ["Ordering"], excludes: ["New requirements"] },
-    acceptance: [{ key: "order", outcome: "The values have stable order" }],
-    workItems: [planItem, { ...planItem, key: "stable-order", dependsOn: ["base"] }],
-    limits: { maxConcurrentProjects: 2, maxActiveFeaturesPerProject: 1, attemptTimeoutSeconds: 60 },
-  };
-  const query = vi.fn((statement: string, parameters?: unknown[]) => {
-    if (statement.includes("AS limit")) return { rows: [] };
-    if (statement.includes("FROM factory_features feature JOIN projects"))
-      return {
-        rows: [{ id: featureId, project_id: projectId, state: "queued", approved_plan_version: 3 }],
-      };
-    if (statement.includes("SELECT plan.version, plan.document"))
-      return { rows: [{ version: 3, document }] };
-    if (statement.includes("SELECT id, key, board_column FROM factory_work_items"))
-      return {
-        rows: [
-          { id: ownerId, key: "base", board_column: "in_review" },
-          { id: itemId, key: "stable-order", board_column: "todo" },
-        ],
-      };
-    if (statement.includes("WHERE work_item_id = $1 ORDER BY attempt"))
-      return {
-        rows: [{ id: runId, attempt: 1, plan_version: 3, source, accepted_commands: verification }],
-      };
-    if (statement.includes("FROM factory_human_gates gate"))
-      return {
-        rows: [
-          {
-            id: gateId,
-            feature_id: featureId,
-            work_item_id: itemId,
-            run_id: runId,
-            plan_version: 3,
-            reason: "input_required",
-            question: "Keep equal values in order?",
-            required_decision: "clarify_within_plan",
-            created_at: now,
-            request_id: successorId,
-            resolved_by: ownerId,
-            decision: "resume_within_plan",
-            answer: "Yes.",
-            resolved_at: now,
-            run_state: "blocked",
-            run_failure: "input_required",
-            attempt: 1,
-            reservation_released_at: now,
-            has_pending_container: false,
-            latest_run_id: runId,
-            successor_run_id: null,
-            board_column: "todo",
-          },
-        ],
-      };
-    if (statement.includes("local_repository_sources"))
-      throw new Error("A retry must not rebind the frozen source");
-    if (statement.includes("INSERT INTO factory_execution_runs")) {
-      expect(parameters).toEqual([
-        featureId,
-        projectId,
-        itemId,
-        3,
-        2,
-        JSON.stringify(source),
-        JSON.stringify(verification),
-        gateId,
-      ]);
-      return { rows: [{ id: successorId }] };
-    }
-    return { rows: [] };
-  });
-  const send = vi.fn().mockResolvedValue(successorId);
-  const pool = { connect: () => ({ query, release: vi.fn() }) } as never;
-  expect(await queueFactoryExecutions(pool, { send })).toEqual([successorId]);
-  expect(send).toHaveBeenCalledExactlyOnceWith(
-    "factory-execution-v1",
-    { runId: successorId },
-    expect.objectContaining({ id: successorId }),
-  );
-  expect(query.mock.calls.some(([sql]) => sql.includes("UPDATE factory_work_items"))).toBe(false);
-});
+it.each([1, 2])(
+  "admits one Project writer with %i same-Project candidates and a frozen retry",
+  async (candidates) => {
+    const verification = [
+      { program: "node", args: ["--test", "stable.test.mjs"], cwd: ".", timeoutSeconds: 10 },
+    ];
+    const source = { repositoryId: "frozen-repository", identity: "frozen-identity" };
+    const now = new Date("2026-09-08T12:00:00.000Z");
+    const planItem = {
+      key: "base",
+      title: "Base behavior",
+      description: "Return ordered values",
+      requirementKeys: ["order"],
+      acceptance: ["Stable values"],
+      dependsOn: [] as string[],
+      verification,
+    };
+    const document = {
+      objective: "Retain stable order",
+      scope: { includes: ["Ordering"], excludes: ["New requirements"] },
+      acceptance: [{ key: "order", outcome: "The values have stable order" }],
+      workItems: [planItem, { ...planItem, key: "stable-order", dependsOn: ["base"] }],
+      limits: {
+        maxConcurrentProjects: 2,
+        maxActiveFeaturesPerProject: 1,
+        attemptTimeoutSeconds: 60,
+      },
+    };
+    const query = vi.fn((statement: string, parameters?: unknown[]) => {
+      if (statement.includes("AS limit")) return { rows: [] };
+      if (statement.includes("FROM factory_features feature JOIN projects"))
+        return {
+          rows: Array.from({ length: candidates }, (_, index) => ({
+            id: index === 0 ? featureId : ownerId,
+            project_id: projectId,
+            state: "queued",
+            approved_plan_version: 3,
+          })),
+        };
+      if (statement.includes("SELECT plan.version, plan.document"))
+        return { rows: [{ version: 3, document }] };
+      if (statement.includes("SELECT id, key, board_column FROM factory_work_items"))
+        return {
+          rows: [
+            { id: ownerId, key: "base", board_column: "in_review" },
+            { id: itemId, key: "stable-order", board_column: "todo" },
+          ],
+        };
+      if (statement.includes("WHERE work_item_id = $1 ORDER BY attempt"))
+        return {
+          rows: [
+            { id: runId, attempt: 1, plan_version: 3, source, accepted_commands: verification },
+          ],
+        };
+      if (statement.includes("FROM factory_human_gates gate"))
+        return {
+          rows: [
+            {
+              id: gateId,
+              feature_id: featureId,
+              work_item_id: itemId,
+              run_id: runId,
+              plan_version: 3,
+              reason: "input_required",
+              question: "Keep equal values in order?",
+              required_decision: "clarify_within_plan",
+              created_at: now,
+              request_id: successorId,
+              resolved_by: ownerId,
+              decision: "resume_within_plan",
+              answer: "Yes.",
+              resolved_at: now,
+              run_state: "blocked",
+              run_failure: "input_required",
+              attempt: 1,
+              reservation_released_at: now,
+              has_pending_container: false,
+              latest_run_id: runId,
+              successor_run_id: null,
+              board_column: "todo",
+            },
+          ],
+        };
+      if (statement.includes("local_repository_sources"))
+        throw new Error("A retry must not rebind the frozen source");
+      if (statement.includes("INSERT INTO factory_execution_runs")) {
+        expect(parameters).toEqual([
+          featureId,
+          projectId,
+          itemId,
+          3,
+          2,
+          JSON.stringify(source),
+          JSON.stringify(verification),
+          gateId,
+        ]);
+        return { rows: [{ id: successorId }] };
+      }
+      return { rows: [] };
+    });
+    const send = vi.fn().mockResolvedValue(successorId);
+    const pool = { connect: () => ({ query, release: vi.fn() }) } as never;
+    expect(await queueFactoryExecutions(pool, { send })).toEqual([successorId]);
+    expect(send).toHaveBeenCalledExactlyOnceWith(
+      "factory-execution-v1",
+      { runId: successorId },
+      expect.objectContaining({ id: successorId }),
+    );
+    expect(query.mock.calls.some(([sql]) => sql.includes("UPDATE factory_work_items"))).toBe(false);
+  },
+);
 
 it.each([
   { purpose: "work_item", count: 38, allowed: true },

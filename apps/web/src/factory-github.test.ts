@@ -243,6 +243,20 @@ afterEach(async () => {
 });
 
 describe("Factory GitHub subprocess boundary", () => {
+  it("reads full comment bodies and exposes a continuation page", async () => {
+    const { adapter } = await fixture("comment_limited");
+    const discussion = await adapter.readIssueDiscussion(identity, 1, 1);
+    expect(discussion.issue.body).toBe("Operator body");
+    expect(discussion.comments).toHaveLength(20);
+    expect(discussion.comments[0]).toEqual({
+      id: "1000",
+      body: "Unrelated comment",
+      author: "operator",
+      url: "https://github.com/owner/notes/issues/1#issuecomment-1000",
+    });
+    expect(discussion.nextPage).toBe(2);
+  });
+
   it("bounds a Project catalog to five pages and preserves partial reads on failure", async () => {
     const bounded = await fixture("limited");
     const result = await bounded.adapter.readIssueCatalog({ owner: "owner", name: "notes" });
@@ -736,5 +750,22 @@ describe("Factory GitHub subprocess boundary", () => {
     expect((await calls()).filter((call) => call.args.includes("POST"))).toHaveLength(1);
     await setState({ mode: "unsupported_write", dependencies: [] });
     expect(await adapter.addDependency(identity, 1, "500")).toEqual({ state: "unsupported" });
+  });
+});
+
+it("retains labels and comment counts from issue lists without per-card requests", async () => {
+  const { adapter, state, setState } = await fixture();
+  const current = await state();
+  await setState({
+    issues: current.issues.map((issue) => ({
+      ...issue,
+      labels: [{ name: "ready-for-agent", color: "008800" }],
+      comments: 3,
+    })),
+  });
+  const catalog = await adapter.readIssueCatalog({ owner: "owner", name: "notes" });
+  expect(catalog.issues[0]).toMatchObject({
+    labels: [{ name: "ready-for-agent", color: "008800" }],
+    commentCount: 3,
   });
 });
