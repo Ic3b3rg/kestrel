@@ -192,6 +192,79 @@ afterAll(async () => {
   await pool.end();
 });
 
+it("asks for input instead of saving a placeholder board-start plan", async () => {
+  turn.issueExecutionContext = {
+    issue: { number: 142, title: "Recognize supported documentation PRs" },
+    conversation: [],
+  };
+  const question =
+    "Contracts #49 and #55 were unavailable. Which documentation files are supported?";
+  runTurn.mockResolvedValue({
+    threadId: "plan-thread",
+    turnId: "runtime-turn",
+    text: JSON.stringify({ status: "input_required", plan: null, question }),
+  });
+  await processor().process({ turnId: turn.id });
+  const outputSchema = runTurn.mock.calls[0]?.[0].outputSchema;
+  expect(outputSchema).toHaveProperty("properties.status");
+  expect(outputSchema).toHaveProperty("properties.plan");
+  expect(outputSchema).toHaveProperty("properties.question");
+  expect(completePlanningTurn).toHaveBeenCalledExactlyOnceWith(pool, turn, {
+    failure: "input_required",
+    question,
+  });
+  expect(generated).not.toHaveBeenCalled();
+});
+
+it("saves a complete board-start plan when the structured result is ready", async () => {
+  turn.issueExecutionContext = { issue: { number: 142 }, conversation: [] };
+  const document = plan();
+  runTurn.mockResolvedValue({
+    threadId: "plan-thread",
+    turnId: "runtime-turn",
+    text: JSON.stringify({ status: "ready", plan: document, question: null }),
+  });
+  await processor().process({ turnId: turn.id });
+  expect(generated).toHaveBeenCalledExactlyOnceWith(
+    pool,
+    turn,
+    document,
+    context,
+    renderFeaturePlanArtifacts,
+  );
+  expect(completePlanningTurn).not.toHaveBeenCalled();
+});
+
+it("rejects a board-start plan that also says input is required", async () => {
+  turn.issueExecutionContext = { issue: { number: 142 }, conversation: [] };
+  runTurn.mockResolvedValue({
+    threadId: "plan-thread",
+    turnId: "runtime-turn",
+    text: JSON.stringify({ status: "ready", plan: plan(), question: "Which files?" }),
+  });
+  await processor().process({ turnId: turn.id });
+  expect(generated).not.toHaveBeenCalled();
+  expect(completePlanningTurn).toHaveBeenCalledExactlyOnceWith(pool, turn, {
+    failure: "invalid_response",
+  });
+});
+
+it("rejects the old placeholder-plan response for board-started work", async () => {
+  turn.issueExecutionContext = { issue: { number: 142 }, conversation: [] };
+  const placeholder = plan();
+  placeholder.objective = "Generation incomplete: clarify the scope before execution.";
+  runTurn.mockResolvedValue({
+    threadId: "plan-thread",
+    turnId: "runtime-turn",
+    text: JSON.stringify(placeholder),
+  });
+  await processor().process({ turnId: turn.id });
+  expect(generated).not.toHaveBeenCalled();
+  expect(completePlanningTurn).toHaveBeenCalledExactlyOnceWith(pool, turn, {
+    failure: "invalid_response",
+  });
+});
+
 it("requests and persists a descriptive title in the real planning turn's structured reply", async () => {
   turn.purpose = "conversation";
   turn.needsTitle = true;
