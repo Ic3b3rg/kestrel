@@ -17,6 +17,7 @@ import { WorkspaceSuspendedContext } from "./components/ui/workspace-suspension.
 import { FactoryGatePanel, GateAnswer } from "./FactoryGatePanel.js";
 
 type FactoryVerificationCommand = FactoryExecutionRun["acceptedCommands"][number];
+type ExecutionActivity = FactoryExecutionRun["activity"][number];
 
 const phaseLabels: Record<FactoryExecution["state"], string> = {
   not_approved: "Execution starts after plan approval",
@@ -197,6 +198,89 @@ function VerificationResult({ result }: { result: FactoryVerificationResult }) {
   );
 }
 
+function ActivityEntry({ event }: { event: ExecutionActivity }) {
+  return (
+    <li className="min-w-0 rounded-md border bg-background p-3 text-sm">
+      <p className="whitespace-pre-wrap break-words font-medium">{displayText(event.summary)}</p>
+      {event.itemState === "started" ? <p className="text-muted-foreground">Running…</p> : null}
+      {event.itemState === "failed" ? <p className="text-destructive">Failed</p> : null}
+      {event.exitCode === undefined ? null : <p>Exit code {event.exitCode}</p>}
+      {event.detail === undefined ? null : (
+        <details className="min-w-0">
+          <summary className="cursor-pointer rounded-sm focus-visible:outline focus-visible:outline-ring">
+            Output
+          </summary>
+          <pre
+            className="mt-2 max-h-64 max-w-full overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-3 text-xs"
+            tabIndex={0}
+          >
+            <code>{displayText(event.detail)}</code>
+          </pre>
+        </details>
+      )}
+      <time className="text-xs text-muted-foreground" dateTime={event.createdAt}>
+        {new Date(event.createdAt).toLocaleString()}
+      </time>
+    </li>
+  );
+}
+
+function TimelineItems({
+  events,
+  parentPath,
+}: {
+  events: ExecutionActivity[];
+  parentPath: string;
+}) {
+  const seen = new Set<string>();
+  const entries: Array<
+    { kind: "event"; event: ExecutionActivity } | { kind: "agent"; path: string }
+  > = [];
+  for (const event of events) {
+    const path = event.agentPath ?? "/root";
+    if (path === parentPath) {
+      if (event.kind !== "subagent") entries.push({ kind: "event", event });
+      continue;
+    }
+    if (!path.startsWith(`${parentPath}/`)) continue;
+    const segment = path.slice(parentPath.length + 1).split("/")[0];
+    if (!segment) continue;
+    const childPath = `${parentPath}/${segment}`;
+    if (seen.has(childPath)) continue;
+    seen.add(childPath);
+    entries.push({ kind: "agent", path: childPath });
+  }
+  return (
+    <>
+      {entries.map((entry) => {
+        if (entry.kind === "event")
+          return <ActivityEntry key={entry.event.id} event={entry.event} />;
+        const lifecycle = events.filter(
+          (event) => event.kind === "subagent" && event.agentPath === entry.path,
+        );
+        const status = lifecycle.some((event) => event.itemState === "failed")
+          ? "Failed"
+          : lifecycle.some((event) => event.itemState === "completed")
+            ? "Completed"
+            : "Working";
+        const name = entry.path.split("/").at(-1) ?? "agent";
+        return (
+          <li key={entry.path} className="min-w-0 rounded-md border bg-background p-3 text-sm">
+            <details className="min-w-0">
+              <summary className="cursor-pointer break-words rounded-sm font-medium focus-visible:outline focus-visible:outline-ring">
+                Subagent {displayText(name)} · {status}
+              </summary>
+              <ol className="mt-3 grid min-w-0 gap-2">
+                <TimelineItems events={events} parentPath={entry.path} />
+              </ol>
+            </details>
+          </li>
+        );
+      })}
+    </>
+  );
+}
+
 function RunDetails({ run }: { run: FactoryExecutionRun }) {
   const live = ["queued", "running", "verifying", "stopping"].includes(run.state);
   const completedItems = new Set(
@@ -242,33 +326,7 @@ function RunDetails({ run }: { run: FactoryExecutionRun }) {
             <p className="text-sm text-muted-foreground">No activity recorded yet.</p>
           ) : (
             <ol className="grid min-w-0 gap-2" aria-live="polite">
-              {liveActivity.map((event) => (
-                <li key={event.id} className="min-w-0 rounded-md border bg-background p-3 text-sm">
-                  <p className="whitespace-pre-wrap break-words font-medium">
-                    {displayText(event.summary)}
-                  </p>
-                  {event.itemState === "started" ? (
-                    <p className="text-muted-foreground">Running…</p>
-                  ) : null}
-                  {event.exitCode === undefined ? null : <p>Exit code {event.exitCode}</p>}
-                  {event.detail === undefined ? null : (
-                    <details className="min-w-0">
-                      <summary className="cursor-pointer rounded-sm focus-visible:outline focus-visible:outline-ring">
-                        Output
-                      </summary>
-                      <pre
-                        className="mt-2 max-h-64 max-w-full overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-3 text-xs"
-                        tabIndex={0}
-                      >
-                        <code>{displayText(event.detail)}</code>
-                      </pre>
-                    </details>
-                  )}
-                  <time className="text-xs text-muted-foreground" dateTime={event.createdAt}>
-                    {new Date(event.createdAt).toLocaleString()}
-                  </time>
-                </li>
-              ))}
+              <TimelineItems events={liveActivity} parentPath="/root" />
             </ol>
           )}
         </section>

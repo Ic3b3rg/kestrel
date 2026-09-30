@@ -307,6 +307,7 @@ async function execute(
               {
                 itemId: `${String(round)}:${activity.itemId}`,
                 itemState: activity.state,
+                ...(activity.agentPath === undefined ? {} : { agentPath: activity.agentPath }),
                 ...(activity.detail === undefined
                   ? {}
                   : { detail: publicText(activity.detail, 8192) }),
