@@ -213,6 +213,56 @@ lines.on("line", async (line) => {
       });
       return;
     }
+    if (mode === "activity") {
+      await send({
+        method: "item/completed",
+        params: {
+          threadId,
+          turnId,
+          item: {
+            id: "thinking",
+            type: "reasoning",
+            summary: ["Inspecting the selected source.", "Choosing the smallest edit."],
+            content: ["private raw reasoning must stay hidden"],
+          },
+        },
+      });
+      await send({
+        method: "item/started",
+        params: {
+          threadId,
+          turnId,
+          item: { id: "command", type: "commandExecution", command: "node --test" },
+        },
+      });
+      await send({
+        method: "item/completed",
+        params: {
+          threadId,
+          turnId,
+          item: {
+            id: "command",
+            type: "commandExecution",
+            command: "node --test",
+            aggregatedOutput: "1 test passed\n",
+            exitCode: 0,
+          },
+        },
+      });
+      await send({
+        method: "item/completed",
+        params: {
+          threadId,
+          turnId,
+          item: { id: "answer", type: "agentMessage", phase: "final_answer", text: "Done." },
+        },
+      });
+      await send({
+        method: "turn/completed",
+        params: { threadId, turn: { id: turnId, status: "completed", items: [], error: null } },
+      });
+      return;
+    }
     await send({
       method: "item/started",
       params: {

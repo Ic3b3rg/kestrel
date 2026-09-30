@@ -43,9 +43,11 @@ export class CodexExecutionError extends Error {
 
 export interface CodexExecutionActivity {
   itemId: string;
-  kind: "message" | "command" | "file_change";
+  kind: "message" | "reasoning" | "command" | "file_change";
   state: "started" | "completed";
   summary: string;
+  detail?: string;
+  exitCode?: number;
 }
 export interface CodexExecutionQuestion {
   code: "input_required" | "permission_required";
@@ -1083,9 +1085,9 @@ class ExecutionTurn {
     const item = record(value);
     const type = boundedString(item.type);
     const id = boundedString(item.id);
-    if (["reasoning", "plan", "userMessage", "contextCompaction"].includes(type)) return;
+    if (["plan", "userMessage", "contextCompaction"].includes(type)) return;
     if (
-      !["agentMessage", "commandExecution", "fileChange"].includes(type) ||
+      !["agentMessage", "reasoning", "commandExecution", "fileChange"].includes(type) ||
       (type === "fileChange" && this.#options.allowFileChanges === false)
     )
       throw new CodexExecutionError("permission_required");
@@ -1098,21 +1100,38 @@ class ExecutionTurn {
     const key = `${completed ? "completed" : "started"}:${id}`;
     if (this.#seen.has(key)) return;
     this.#seen.add(key);
+    const reasoningSummary =
+      type === "reasoning" && Array.isArray(item.summary)
+        ? textPrefix(
+            item.summary.filter((part): part is string => typeof part === "string").join("\n"),
+          )
+        : "";
+    if (type === "reasoning" && !reasoningSummary.trim()) return;
     const activity: CodexExecutionActivity = {
       itemId: id,
       kind:
         type === "agentMessage"
           ? "message"
-          : type === "commandExecution"
-            ? "command"
-            : "file_change",
+          : type === "reasoning"
+            ? "reasoning"
+            : type === "commandExecution"
+              ? "command"
+              : "file_change",
       state: completed ? "completed" : "started",
       summary:
         type === "agentMessage"
           ? textPrefix(item.text ?? "")
-          : type === "commandExecution"
-            ? textPrefix(item.command ?? "Command execution")
-            : "Workspace file changes",
+          : type === "reasoning"
+            ? reasoningSummary
+            : type === "commandExecution"
+              ? textPrefix(item.command ?? "Command execution")
+              : "Workspace file changes",
+      ...(type === "commandExecution" && completed && typeof item.aggregatedOutput === "string"
+        ? { detail: textPrefix(item.aggregatedOutput, 8_192) }
+        : {}),
+      ...(type === "commandExecution" && completed && Number.isSafeInteger(item.exitCode)
+        ? { exitCode: item.exitCode as number }
+        : {}),
     };
     this.#enqueue(() => this.#input.onActivity(activity));
   }

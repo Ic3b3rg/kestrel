@@ -18,6 +18,7 @@ import { z } from "zod";
 
 import {
   createCodexExecutionRuntime,
+  type CodexExecutionTurnInput,
   type CodexExecutionRuntimeOptions,
 } from "./codex-execution-runtime.js";
 
@@ -68,6 +69,32 @@ it("delivers the approved model controls to the contained execution turn", async
     effort: "high",
     serviceTierForTurn: "default",
   });
+});
+
+it("emits public reasoning summaries and bounded command results", async () => {
+  const { cwd, runtime } = await fixture("activity");
+  const turn: CodexExecutionTurnInput = input(cwd);
+  const events: unknown[] = [];
+  turn.onActivity = (event) => {
+    events.push(event);
+    return Promise.resolve();
+  };
+  await runtime.runTurn(turn);
+  expect(events).toContainEqual({
+    itemId: "thinking",
+    kind: "reasoning",
+    state: "completed",
+    summary: "Inspecting the selected source.\nChoosing the smallest edit.",
+  });
+  expect(events).toContainEqual({
+    itemId: "command",
+    kind: "command",
+    state: "completed",
+    summary: "node --test",
+    detail: "1 test passed\n",
+    exitCode: 0,
+  });
+  expect(JSON.stringify(events)).not.toContain("private raw reasoning");
 });
 
 it("mounts review source read-only and rejects every file-change event", async () => {

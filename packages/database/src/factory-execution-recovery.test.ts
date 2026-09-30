@@ -246,6 +246,10 @@ it("settles a cancelled correction instead of leaving an unresolvable active gat
   expect(
     state.query.mock.calls.find(([sql]) => sql.includes("UPDATE factory_review_corrections"))?.[1],
   ).toEqual([correctionId, "cancelled", "cancelled", runId]);
+  expect(state.query.mock.calls).toContainEqual([
+    "UPDATE factory_execution_activity SET detail = NULL WHERE run_id = $1 AND detail IS NOT NULL",
+    [runId],
+  ]);
 });
 
 it("rejects a late identity callback after another owner has completed recovery", async () => {
