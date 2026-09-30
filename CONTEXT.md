@@ -243,7 +243,7 @@ _Avoid_: Repository test configuration, runtime permission prompt, arbitrary she
 These terms describe the Factory 0.1 delivery domain. Deployment, maintenance, remote operation, and provider-side invocation remain future scope.
 
 **Factory 0.1**:
-The first complete local Kestrel lifecycle from in-product planning and approved issue execution through a requirements-first Conceptual Review and explicitly approved merge, with concurrent Projects and one active Feature per Project.
+The first complete local Kestrel lifecycle from in-product planning and approved issue execution through a requirements-first Conceptual Review and explicitly approved merge, with concurrent Projects and one active implementation per Project; independent Features may await review concurrently.
 _Avoid_: Review First V1, autonomous merge, workflow editor
 
 **Feature**:
@@ -283,7 +283,7 @@ A future provider-side interaction by an authorized human, such as a command or 
 _Avoid_: Provider Review Input, Provider Synchronization, Run Trigger, webhook delivery
 
 **Run Trigger**:
-The Operator's approval of an exact Feature Plan that authorizes its eligible Agent Runs within the declared scope and limits. Receiving or synchronizing provider activity is never sufficient.
+The Operator's approval of an exact Feature Plan, or explicit start of an eligible Tracker Issue from the Project board, that authorizes bounded development. A board start retains the current issue conversation when its queued work begins and authorizes Kestrel to derive the operational Feature Plan within that request and the Project limits. Receiving or synchronizing provider activity is never sufficient.
 _Avoid_: Provider Invocation, issue event, automatic issue execution
 
 **Agent Run**:

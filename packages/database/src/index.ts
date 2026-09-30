@@ -44,3 +44,5 @@ export * from "./factory-feature-merge.js";
 export * from "./lifecycle-profiles.js";
 
 export * from "./planning-attachments.js";
+export * from "./project-issue-board.js";
+export * from "./project-issue-dispatch.js";
