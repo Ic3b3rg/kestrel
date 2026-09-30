@@ -327,6 +327,18 @@ export function replayFactoryReviewCorrectionRequest(
   );
 }
 
+async function projectHasWriter(client: PoolClient, projectId: string): Promise<boolean> {
+  const result = await client.query(
+    `SELECT run.id FROM factory_execution_runs run
+     JOIN projects running_project ON running_project.id = run.project_id
+     WHERE COALESCE(running_project.canonical_project_id, running_project.id) =
+       (SELECT COALESCE(canonical_project_id,id) FROM projects WHERE id=$1)
+       AND run.reservation_released_at IS NULL LIMIT 1`,
+    [projectId],
+  );
+  return result.rows.length > 0;
+}
+
 export function requestFactoryReviewCorrection(
   pool: DatabasePool,
   boss: DiagnosticJobSender,
@@ -340,6 +352,12 @@ export function requestFactoryReviewCorrection(
   return withFactoryFeature(pool, projectId, featureId, async (client, feature) => {
     const replay = await replayOrConflict(client, feature, actorId, command);
     if (replay !== null) return replay;
+    // The Feature is already locked. A try-lock avoids reversing the scheduler's lock order.
+    const scheduling = await client.query<{ locked: boolean }>(
+      "SELECT pg_try_advisory_xact_lock(hashtextextended('factory-execution-scheduler-v1',0)) AS locked",
+    );
+    if (scheduling.rows[0]?.locked !== true || (await projectHasWriter(client, feature.project_id)))
+      throw new FactoryReviewCorrectionError("not_ready");
     if (
       feature.state !== "in_review" ||
       feature.approved_plan_version !== command.expectedPlanVersion
@@ -937,6 +955,9 @@ export async function reconcileFactoryReviewCorrections(
       "SELECT pg_advisory_xact_lock(hashtextextended('factory-review-correction-reconcile-v1', 0))",
     );
     await client.query(
+      "SELECT pg_advisory_xact_lock(hashtextextended('factory-execution-scheduler-v1',0))",
+    );
+    await client.query(
       `UPDATE factory_review_corrections SET
        state = CASE WHEN push_attempted AND push_confirmed_at IS NULL THEN 'uncertain' ELSE 'publishing' END,
        failure = CASE WHEN push_attempted AND push_confirmed_at IS NULL THEN 'uncertain_write' ELSE NULL END,
@@ -1018,7 +1039,7 @@ export async function reconcileFactoryReviewCorrections(
        ORDER BY correction.updated_at, correction.id LIMIT 20 FOR UPDATE OF correction, feature`,
     );
     for (const row of resumable.rows) {
-      if (row.attempt >= 20) continue;
+      if (row.attempt >= 20 || (await projectHasWriter(client, row.project_id))) continue;
       const revision = {
         baseCommitId: row.base_commit_id,
         headCommitId: row.head_commit_id,
