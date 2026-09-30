@@ -162,17 +162,31 @@ it("collects later comment pages before deriving a plan", async () => {
   );
 });
 
-it("keeps a failed plan visible without authorizing execution", async () => {
+it("keeps an input-required plan visible without authorizing execution", async () => {
   db.rows.mockResolvedValue([{ ...start, state: "preparing", feature_id: feature }]);
   db.requested.mockResolvedValue(true);
   db.plans.mockResolvedValue({
     approval: null,
     current: null,
-    generation: { state: "failed", question: "Which format?" },
+    generation: { state: "failed", failure: "input_required", question: "Which format?" },
   });
   await dispatch();
   expect(db.update).toHaveBeenCalledWith(pool, start.id, "blocked", "Which format?");
   expect(db.approve).not.toHaveBeenCalled();
+});
+
+it("auto-approves a completed plan bound only to the selected issue", async () => {
+  db.rows.mockResolvedValue([{ ...start, state: "preparing", feature_id: feature }]);
+  db.requested.mockResolvedValue(true);
+  db.readImports.mockResolvedValue({ issues: [{ id: project, issue }] });
+  db.plans.mockResolvedValue({
+    approval: null,
+    current: { version: 1, document: { workItems: [{ importedIssueId: project }] } },
+    generation: { state: "completed" },
+  });
+  await dispatch();
+  expect(db.approve).toHaveBeenCalledOnce();
+  expect(db.update).toHaveBeenCalledWith(pool, start.id, "running");
 });
 
 it("does not auto-approve a plan bound to a different imported issue", async () => {

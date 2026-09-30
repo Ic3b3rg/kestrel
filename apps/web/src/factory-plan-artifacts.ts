@@ -5,8 +5,33 @@ import {
   type PlanningContext,
   type ImportedFactoryIssue,
 } from "@kestrel/contracts";
+import { z } from "zod";
 
 import { CodexPlanningError } from "./codex-planning-runtime.js";
+
+export const BoardIssuePlanResultSchema = z.strictObject({
+  status: z.enum(["ready", "input_required"]),
+  plan: GeneratedFeaturePlanDocumentSchema.nullable(),
+  question: z.string().trim().min(1).max(4000).nullable(),
+});
+
+export function parseBoardIssuePlanResult(
+  text: string,
+): { status: "ready"; plan: FeaturePlanDocument } | { status: "input_required"; question: string } {
+  try {
+    const result = BoardIssuePlanResultSchema.parse(JSON.parse(text));
+    if (result.status === "input_required") {
+      if (result.plan !== null || result.question === null)
+        throw new CodexPlanningError("invalid_response");
+      return { status: "input_required", question: result.question };
+    }
+    if (result.plan === null || result.question !== null)
+      throw new CodexPlanningError("invalid_response");
+    return { status: "ready", plan: parseGeneratedFeaturePlan(JSON.stringify(result.plan)) };
+  } catch {
+    throw new CodexPlanningError("invalid_response");
+  }
+}
 
 export function parseGeneratedFeaturePlan(text: string): FeaturePlanDocument {
   try {
