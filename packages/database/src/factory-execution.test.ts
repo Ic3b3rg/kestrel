@@ -192,6 +192,10 @@ it("atomically retains the actual consequential question and approved identity w
       "clarify_within_plan",
     ]),
   );
+  expect(query.mock.calls).toContainEqual([
+    "UPDATE factory_execution_activity SET detail = NULL WHERE run_id = $1 AND detail IS NOT NULL",
+    [runId],
+  ]);
   expect(query.mock.calls.at(-1)?.[0]).toBe("COMMIT");
   expect(release).toHaveBeenCalledOnce();
 });
@@ -242,6 +246,10 @@ it.each([
     expect(calls.find(([sql]) => sql.includes("INSERT INTO factory_human_gates"))?.[1]).toEqual(
       expect.arrayContaining([runId, "interrupted", "inspect_environment"]),
     );
+    expect(calls).toContainEqual([
+      "UPDATE factory_execution_activity SET detail = NULL WHERE run_id = $1 AND detail IS NOT NULL",
+      [runId],
+    ]);
   },
 );
 

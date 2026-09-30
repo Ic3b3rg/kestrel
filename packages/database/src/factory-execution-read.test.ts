@@ -8,6 +8,73 @@ const runId = "01991c36-7f90-7000-8000-000000000003";
 const itemId = "01991c36-7f90-7000-8000-000000000004";
 const gateId = "01991c36-7f90-7000-8000-000000000005";
 
+it("returns bounded live item details while an execution is active", async () => {
+  const now = new Date("2026-09-08T12:00:00.000Z");
+  const run = {
+    id: runId,
+    feature_id: featureId,
+    project_id: projectId,
+    work_item_id: itemId,
+    attempt: 1,
+    plan_version: 1,
+    state: "running",
+    failure: null,
+    question: null,
+    final_summary: null,
+    runtime: null,
+    revision: null,
+    accepted_commands: [{ program: "node", args: ["--test"], cwd: ".", timeoutSeconds: 10 }],
+    created_at: now,
+    started_at: now,
+    completed_at: null,
+    reservation_released_at: null,
+    resume_gate_id: null,
+  };
+  const query = vi.fn((sql: string) => {
+    if (sql.includes("FROM factory_features") && sql.includes("FOR UPDATE"))
+      return {
+        rows: [
+          { id: featureId, project_id: projectId, state: "implementing", approved_plan_version: 1 },
+        ],
+      };
+    if (sql.includes("SELECT * FROM factory_execution_runs")) return { rows: [run] };
+    if (sql.includes("FROM factory_execution_activity"))
+      return {
+        rows: [
+          {
+            id: gateId,
+            kind: "command",
+            summary: "node --test",
+            item_id: "1:command",
+            item_state: "completed",
+            detail: "1 test passed\n",
+            exit_code: 0,
+            created_at: now,
+          },
+        ],
+      };
+    return { rows: [] };
+  });
+  const attempt = await readFactoryExecutionRun(
+    { connect: () => ({ query, release: vi.fn() }) } as never,
+    projectId,
+    featureId,
+    runId,
+  );
+  expect(attempt.activity).toEqual([
+    {
+      id: gateId,
+      kind: "command",
+      summary: "node --test",
+      itemId: "1:command",
+      itemState: "completed",
+      detail: "1 test passed\n",
+      exitCode: 0,
+      createdAt: now.toISOString(),
+    },
+  ]);
+});
+
 it("does not claim whole-Feature verification from completed Work Item columns without a certificate", async () => {
   const query = vi.fn((sql: string) => {
     if (sql.includes("FROM factory_features") && sql.includes("FOR UPDATE"))

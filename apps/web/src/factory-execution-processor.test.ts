@@ -749,7 +749,13 @@ it("claims, freezes source, closes implementation, checkpoints and verifies exac
   expect(finishFactoryExecution).toHaveBeenCalledWith(
     pool,
     expect.objectContaining({ id: run.id }),
-    { verified: true, writerStopped: true, failure: null, question: null },
+    {
+      verified: true,
+      writerStopped: true,
+      failure: null,
+      question: null,
+      finalSummary: "The approved value is implemented.",
+    },
   );
   const turn = runTurn.mock.calls[0]?.[0];
   if (turn === undefined) throw new Error("Runtime was not invoked");
@@ -1117,6 +1123,7 @@ it("records an explicit requirements question without checkpointing or answering
     writerStopped: true,
     failure: "input_required",
     question: "May the exported value change for existing callers?",
+    finalSummary: null,
   });
 });
 
@@ -1145,6 +1152,7 @@ it("acknowledges a runtime permission question and aborts with its actionable ga
     writerStopped: true,
     failure: "permission_required",
     question: "May this command write outside the approved workspace?",
+    finalSummary: null,
   });
 });
 
@@ -1204,6 +1212,7 @@ it("repairs technical failures in a fresh turn and rechecks every exact command 
     writerStopped: true,
     failure: null,
     question: null,
+    finalSummary: "Implementation round completed.",
   });
 });
 
@@ -1436,6 +1445,7 @@ it("keeps the first captured source and Feature head when a dependent item start
     writerStopped: true,
     failure: null,
     question: null,
+    finalSummary: "The approved value is implemented.",
   });
 });
 

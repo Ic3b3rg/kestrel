@@ -145,6 +145,7 @@ export interface ExecutionCompletion {
   writerStopped: boolean;
   failure: FactoryExecutionFailure | null;
   question: string | null;
+  finalSummary?: string | null;
 }
 
 /** Live completion validates the exact proof before any terminal domain fact can commit. */
@@ -233,9 +234,21 @@ export async function finishExecutionRun(
         ? null
         : (outcome.failure ?? "interrupted");
   await client.query(
-    `UPDATE factory_execution_runs SET state = $2, failure = $3, question = $4, completed_at = clock_timestamp(),
+    `UPDATE factory_execution_runs SET state = $2, failure = $3, question = $4,
+        final_summary = $6, completed_at = clock_timestamp(),
         reservation_released_at = CASE WHEN $5 THEN clock_timestamp() ELSE NULL END WHERE id = $1`,
-    [row.id, state, failure, outcome.question?.slice(0, 4000) ?? null, writerStopped],
+    [
+      row.id,
+      state,
+      failure,
+      outcome.question?.slice(0, 4000) ?? null,
+      writerStopped,
+      verified ? (outcome.finalSummary?.slice(0, 4000) ?? null) : null,
+    ],
+  );
+  await client.query(
+    "UPDATE factory_execution_activity SET detail = NULL WHERE run_id = $1 AND detail IS NOT NULL",
+    [row.id],
   );
   const certificate =
     verified && row.purpose === "correction"
@@ -296,6 +309,10 @@ export async function recoverExecutionRun(
          WHERE id = $1`,
     [run.id, cancelled ? "cancelled" : "blocked", failure],
   );
+  await client.query(
+    "UPDATE factory_execution_activity SET detail = NULL WHERE run_id = $1 AND detail IS NOT NULL",
+    [run.id],
+  );
   await applyExecutionOutcome(client, feature, run, {
     verified: false,
     failure,
@@ -333,6 +350,10 @@ export async function interruptExecutionRun(
            stop_requested_at = clock_timestamp(), completed_at = clock_timestamp(),
            reservation_released_at = CASE WHEN $4 THEN clock_timestamp() ELSE NULL END WHERE id = $1`,
     [row.id, writerStopped ? "blocked" : "interrupted", question, writerStopped],
+  );
+  await client.query(
+    "UPDATE factory_execution_activity SET detail = NULL WHERE run_id = $1 AND detail IS NOT NULL",
+    [row.id],
   );
   await applyExecutionOutcome(client, feature, row, {
     verified: false,
