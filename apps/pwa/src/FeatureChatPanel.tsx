@@ -30,6 +30,7 @@ import { DocumentInspector, failures, pendingTurn } from "./PlanningDetails.js";
 import { FeaturePlanPanel } from "./FeaturePlanPanel.js";
 import { GeneratedPlanDocuments } from "./FeaturePlanDocuments.js";
 import { FeatureBoardPanel } from "./FeatureBoardPanel.js";
+import { FeatureExecutionPanel } from "./FeatureExecutionPanel.js";
 import { FeatureReviewPanel } from "./FeatureReviewPanel.js";
 import { SkillProvenance } from "./SkillProvenance.js";
 import { PlanningSkillChips } from "./PlanningSkillChips.js";
@@ -190,6 +191,7 @@ export interface FeatureChatPanelProps {
   onAuthenticationError: (error: unknown) => boolean;
   onFeatureRead: (feature: Feature) => void;
   onFeatureUnavailable: (projectId: string, featureId: string) => void;
+  issueConversation?: boolean;
   loadChat?: typeof fetchFeatureChat;
   loadPlanVersion?: typeof fetchFeaturePlanVersion;
   sendMessage?: typeof sendPlanningMessage;
@@ -210,6 +212,7 @@ export function FeatureChatPanel({
   onAuthenticationError,
   onFeatureRead,
   onFeatureUnavailable,
+  issueConversation = false,
   loadChat = fetchFeatureChat,
   loadPlanVersion = fetchFeaturePlanVersion,
   sendMessage = sendPlanningMessage,
@@ -392,6 +395,8 @@ export function FeatureChatPanel({
       </section>
     );
 
+  const visibleMessages =
+    issueConversation && chat.feature.state !== "planning" ? [] : chat.messages;
   return (
     <section className="feature-planning" aria-labelledby="feature-title">
       <header className="feature-planning-header">
@@ -512,11 +517,12 @@ export function FeatureChatPanel({
           ) : null}
           <ol
             className="planning-messages"
+            hidden={issueConversation && chat.feature.state !== "planning"}
             aria-label="Conversation"
             aria-live="polite"
             aria-relevant="additions text"
           >
-            {chat.messages.map((message) => {
+            {visibleMessages.map((message) => {
               const turn = chat.turns.filter(({ messageId }) => messageId === message.id).at(-1);
               const failure =
                 turn?.failure === null || turn?.failure === undefined
@@ -603,7 +609,7 @@ export function FeatureChatPanel({
                               <Square aria-hidden="true" />
                               Stop planning
                             </Button>
-                          ) : (
+                          ) : issueConversation ? null : (
                             <Button
                               variant="outline"
                               disabled={
@@ -667,7 +673,11 @@ export function FeatureChatPanel({
               ) : null}
             </FormFeedback>
           )}
-          <form className="planning-composer" onSubmit={submit}>
+          <form
+            className="planning-composer"
+            hidden={issueConversation && chat.feature.state !== "planning"}
+            onSubmit={submit}
+          >
             <Label htmlFor="planning-message" className="sr-only">
               Message
             </Label>
@@ -736,12 +746,23 @@ export function FeatureChatPanel({
                 draft.trim() !== ""
               }
             />
-            {editable ? null : (
+            {!editable || issueConversation ? (
               <p id="planning-message-help" className="text-xs text-muted-foreground">
-                This conversation is read-only. Its saved messages remain available.
+                {editable
+                  ? "⌘/Ctrl + Enter to send. This issue was authorized when you started it from the board."
+                  : "This conversation is read-only. Its saved messages remain available."}
               </p>
-            )}
+            ) : null}
           </form>
+          {issueConversation && chat.feature.state !== "planning" ? (
+            <FeatureExecutionPanel
+              projectId={projectId}
+              featureId={featureId}
+              online={online}
+              onAuthenticationError={onAuthenticationError}
+              onGateResolved={() => void refresh()}
+            />
+          ) : null}
         </TabsContent>
         <TabsContent value="plan" forceMount className="data-[state=inactive]:hidden">
           <FeaturePlanPanel

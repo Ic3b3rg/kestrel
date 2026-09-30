@@ -332,4 +332,23 @@ describe("Project Factory board", () => {
     await render({ snapshot: board, onStartIssue, onOpenIssue });
     expect(button("Start issue #43").disabled).toBe(true);
   });
+  it("reopens the same issue conversation from its In progress card", async () => {
+    const board = snapshot();
+    const startId = "01991c36-7f90-7000-8000-000000000010";
+    board.starts = [
+      {
+        id: startId,
+        issueNumber: 43,
+        issueUrl: "https://github.com/owner/reports/issues/43",
+        title: "Queued export",
+        state: "preparing",
+        featureId: null,
+        message: null,
+      },
+    ];
+    const onOpenStart = vi.fn();
+    await render({ snapshot: board, onOpenStart });
+    act(() => button("Open issue conversation #43").click());
+    expect(onOpenStart).toHaveBeenCalledWith(startId);
+  });
 });

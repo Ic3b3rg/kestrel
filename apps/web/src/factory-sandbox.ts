@@ -183,6 +183,7 @@ export interface FactorySandboxOptions {
   readSourceConfig: () => Promise<LocalSourceConfig>;
   runtime?: CodexExecutionRuntime;
   containerImage?: string;
+  prepareContainerImage?: (signal: AbortSignal) => Promise<string>;
   dockerExecutable?: string;
   signal: AbortSignal;
   deadline: number;
@@ -311,12 +312,24 @@ export function createFactorySandbox(options: FactorySandboxOptions) {
           ...config.repositoryRoots.map((root) => root.path),
           homedir(),
         ].sort((left, right) => right.length - left.length);
-        if (options.runtime === undefined && !options.containerImage?.trim())
+        let containerImage = options.containerImage;
+        if (containerImage === undefined && options.prepareContainerImage !== undefined) {
+          try {
+            containerImage = await options.prepareContainerImage(signal);
+          } catch {
+            throw new FactoryExecutionError(
+              "sandbox_unavailable",
+              "Kestrel could not prepare the isolated execution image. Check Docker and the local runtime log, then retry this work.",
+            );
+          }
+        }
+        signal.throwIfAborted();
+        if (options.runtime === undefined && !containerImage?.trim())
           throw new FactoryExecutionError("sandbox_unavailable");
         runtime =
           options.runtime ??
           createCodexExecutionRuntime({
-            containerImage: options.containerImage ?? "",
+            containerImage: containerImage ?? "",
             timeoutMs: run.plan.limits.attemptTimeoutSeconds * 1000,
             ...(options.dockerExecutable === undefined
               ? {}

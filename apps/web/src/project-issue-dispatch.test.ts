@@ -16,6 +16,7 @@ const db = vi.hoisted(() => ({
   approve: vi.fn(),
   accept: vi.fn(),
   requested: vi.fn(),
+  activeTurn: vi.fn(),
   readImports: vi.fn(),
 }));
 const read = vi.hoisted(() => vi.fn());
@@ -36,6 +37,7 @@ vi.mock("@kestrel/database", async (original) => ({
   readFactoryIssueImports: db.readImports,
   acceptPlanningMessage: db.accept,
   hasIssueDispatchPlanRequest: db.requested,
+  hasActiveIssuePlanningTurn: db.activeTurn,
 }));
 const project = "01991c36-7f90-7000-8000-000000000001";
 const feature = "01991c36-7f90-7000-8000-000000000002";
@@ -77,6 +79,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   db.rows.mockResolvedValue([start]);
   db.busy.mockResolvedValue(false);
+  db.activeTurn.mockResolvedValue(false);
   db.create.mockResolvedValue({ id: feature });
   db.imports.mockResolvedValue({ issues: [{ id: project }] });
   read.mockReset().mockResolvedValue({
@@ -162,17 +165,42 @@ it("collects later comment pages before deriving a plan", async () => {
   );
 });
 
-it("keeps a failed plan visible without authorizing execution", async () => {
+it("keeps an input-required plan visible without authorizing execution", async () => {
   db.rows.mockResolvedValue([{ ...start, state: "preparing", feature_id: feature }]);
   db.requested.mockResolvedValue(true);
   db.plans.mockResolvedValue({
     approval: null,
     current: null,
-    generation: { state: "failed", question: "Which format?" },
+    generation: { state: "failed", failure: "input_required", question: "Which format?" },
   });
   await dispatch();
   expect(db.update).toHaveBeenCalledWith(pool, start.id, "blocked", "Which format?");
   expect(db.approve).not.toHaveBeenCalled();
+});
+
+it("waits for a clarification answer to finish before retrying plan generation", async () => {
+  db.rows.mockResolvedValue([{ ...start, state: "preparing", feature_id: feature }]);
+  db.requested.mockResolvedValue(false);
+  db.activeTurn.mockResolvedValue(true);
+  db.plans.mockResolvedValue({ approval: null, current: null, generation: { state: "failed" } });
+  await dispatch();
+  expect(db.activeTurn).toHaveBeenCalledWith(pool, feature);
+  expect(db.accept).not.toHaveBeenCalled();
+  expect(db.update).not.toHaveBeenCalledWith(pool, start.id, "blocked", expect.anything());
+});
+
+it("auto-approves a completed plan bound only to the selected issue", async () => {
+  db.rows.mockResolvedValue([{ ...start, state: "preparing", feature_id: feature }]);
+  db.requested.mockResolvedValue(true);
+  db.readImports.mockResolvedValue({ issues: [{ id: project, issue }] });
+  db.plans.mockResolvedValue({
+    approval: null,
+    current: { version: 1, document: { workItems: [{ importedIssueId: project }] } },
+    generation: { state: "completed" },
+  });
+  await dispatch();
+  expect(db.approve).toHaveBeenCalledOnce();
+  expect(db.update).toHaveBeenCalledWith(pool, start.id, "running");
 });
 
 it("does not auto-approve a plan bound to a different imported issue", async () => {

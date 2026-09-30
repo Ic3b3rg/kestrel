@@ -18,6 +18,7 @@ import { z } from "zod";
 
 import {
   createCodexExecutionRuntime,
+  type CodexExecutionTurnInput,
   type CodexExecutionRuntimeOptions,
 } from "./codex-execution-runtime.js";
 
@@ -68,6 +69,126 @@ it("delivers the approved model controls to the contained execution turn", async
     effort: "high",
     serviceTierForTurn: "default",
   });
+});
+
+it("emits public reasoning summaries and bounded command results", async () => {
+  const { cwd, runtime } = await fixture("activity");
+  const turn: CodexExecutionTurnInput = input(cwd);
+  const events: unknown[] = [];
+  turn.onActivity = (event) => {
+    events.push(event);
+    return Promise.resolve();
+  };
+  await runtime.runTurn(turn);
+  expect(events).toContainEqual({
+    itemId: "thinking",
+    kind: "reasoning",
+    state: "completed",
+    summary: "Inspecting the selected source.\nChoosing the smallest edit.",
+  });
+  expect(events).toContainEqual({
+    itemId: "command",
+    kind: "command",
+    state: "completed",
+    summary: "node --test",
+    detail: "1 test passed\n",
+    exitCode: 0,
+  });
+  expect(JSON.stringify(events)).not.toContain("private raw reasoning");
+});
+
+it("reports a delegated task and its child command once without exposing private reasoning", async () => {
+  const { cwd, runtime, logPath } = await fixture("multiagent");
+  const turn: CodexExecutionTurnInput = input(cwd);
+  const events: unknown[] = [];
+  turn.onActivity = (event) => {
+    events.push(event);
+    return Promise.resolve();
+  };
+  await runtime.runTurn(turn);
+  expect(events).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ kind: "subagent", agentPath: "/root/alpha", state: "started" }),
+      expect.objectContaining({
+        kind: "reasoning",
+        agentPath: "/root/alpha",
+        summary: "Inspecting the delegated file.",
+      }),
+      expect.objectContaining({
+        kind: "command",
+        agentPath: "/root/alpha",
+        state: "completed",
+        detail: "export const value = 1;\n",
+        exitCode: 0,
+      }),
+      expect.objectContaining({ kind: "subagent", agentPath: "/root/alpha", state: "completed" }),
+    ]),
+  );
+  expect(
+    events.filter(
+      (event) =>
+        (event as { itemId?: string }).itemId === "child-thread:child-command" &&
+        (event as { state?: string }).state === "completed",
+    ),
+  ).toHaveLength(1);
+  expect(JSON.stringify(events)).not.toContain("private child reasoning");
+  const thread = (await protocolMessages(logPath)).find(
+    (message) => message.method === "thread/start",
+  );
+  expect(thread?.params).toMatchObject({
+    config: {
+      features: {
+        multi_agent: true,
+        multi_agent_v2: { enabled: true, max_concurrent_threads_per_session: 3 },
+      },
+    },
+  });
+});
+
+it("rejects a child request for broader permissions and stops its container", async () => {
+  const { cwd, runtime } = await fixture("multiagent_permission");
+  const turn = input(cwd);
+  await expect(runtime.runTurn(turn)).rejects.toMatchObject({ code: "permission_required" });
+  expect(turn.onQuestion).toHaveBeenCalledWith(
+    expect.objectContaining({ code: "permission_required" }),
+  );
+  expect(turn.onStopped).toHaveBeenCalledOnce();
+});
+
+it("rejects a runtime profile that lifts the delegated thread cap", async () => {
+  const { cwd, runtime } = await fixture("multiagent_unbounded");
+  const turn = input(cwd);
+  await expect(runtime.runTurn(turn)).rejects.toMatchObject({ code: "permission_required" });
+  expect(turn.onStopped).toHaveBeenCalledOnce();
+  expect(turn.onThread).not.toHaveBeenCalled();
+});
+
+it("keeps a failed delegated task visible without using its answer as the parent answer", async () => {
+  const { cwd, runtime } = await fixture("multiagent_failed");
+  const turn: CodexExecutionTurnInput = input(cwd);
+  const events: unknown[] = [];
+  turn.onActivity = (event) => {
+    events.push(event);
+    return Promise.resolve();
+  };
+  const result = await runtime.runTurn(turn);
+  expect(result.text).toBe("Delegation complete.");
+  expect(events).toContainEqual(
+    expect.objectContaining({ kind: "subagent", agentPath: "/root/alpha", state: "failed" }),
+  );
+});
+
+it("stops the shared container when a delegated task is cancelled", async () => {
+  const { cwd, runtime } = await fixture("multiagent_stall");
+  const abort = new AbortController();
+  const stopped = vi.fn(() => Promise.resolve());
+  const turn: CodexExecutionTurnInput = { ...input(cwd), signal: abort.signal, onStopped: stopped };
+  turn.onActivity = (event) => {
+    if (event.kind === "subagent" && event.state === "started") abort.abort();
+    return Promise.resolve();
+  };
+  await expect(runtime.runTurn(turn)).rejects.toMatchObject({ code: "cancelled" });
+  expect(stopped).toHaveBeenCalledOnce();
 });
 
 it("mounts review source read-only and rejects every file-change event", async () => {

@@ -190,6 +190,24 @@ describe("persistent planning conversation", () => {
     expect(reply?.querySelector('a[href^="javascript:"]')).toBeNull();
     expect(reply?.querySelector("script")).toBeNull();
   });
+  it("replaces temporary planning text with the Agent Run in an issue conversation", async () => {
+    await render({
+      issueConversation: true,
+      loadChat: () =>
+        Promise.resolve({
+          ...initial,
+          feature: { ...initial.feature, state: "queued" },
+          turns: [],
+          messages: [
+            { id: messageId, role: "user", content: "Temporary planning prompt", createdAt },
+          ],
+        }),
+    });
+    expect(container.querySelector<HTMLOListElement>(".planning-messages")?.hidden).toBe(true);
+    expect(container.textContent).not.toContain("Temporary planning prompt");
+    expect(container.querySelector<HTMLFormElement>(".planning-composer")?.hidden).toBe(true);
+    expect(container.textContent).toContain("Execution");
+  });
 
   it("allows sending after removing a server-rejected attachment without editing the message", async () => {
     const sendMessage = vi.fn().mockRejectedValueOnce(

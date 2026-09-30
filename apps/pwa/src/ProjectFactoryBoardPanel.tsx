@@ -32,6 +32,7 @@ export interface ProjectFactoryBoardPanelProps {
   settingsHref: string;
   onOpenIssue?: (number: number) => void;
   onStartIssue?: (number: number) => void;
+  onOpenStart?: (id: string) => void;
   startingIssue?: number | null;
   onCancelStart?: (id: string) => void;
   onRetryStart?: (id: string) => void;
@@ -288,6 +289,7 @@ export function ProjectFactoryBoardPanel({
   settingsHref,
   onOpenIssue,
   onStartIssue,
+  onOpenStart,
   startingIssue,
   onCancelStart,
   onRetryStart,
@@ -370,11 +372,19 @@ export function ProjectFactoryBoardPanel({
         {columns.map((column) => {
           const items = workItems.filter(({ item }) => item.column === column.id);
           const drafts = column.id === "todo" ? planningFeatures : [];
-          const providerIssues = column.id === "todo" ? availableGitHubIssues : [];
+          const providerIssues =
+            column.id === "todo"
+              ? availableGitHubIssues.filter(
+                  (issue) =>
+                    !(snapshot?.starts ?? []).some((start) => start.issueNumber === issue.number),
+                )
+              : [];
           const starts =
-            column.id === "in_progress"
+            column.id === "in_progress" || column.id === "completed"
               ? (snapshot?.starts ?? []).filter(
-                  (start) => !workItems.some(({ feature }) => feature.id === start.featureId),
+                  (start) =>
+                    (column.id === "completed" ? start.state === "done" : start.state !== "done") &&
+                    !workItems.some(({ feature }) => feature.id === start.featureId),
                 )
               : [];
           const count = items.length + drafts.length + providerIssues.length + starts.length;
@@ -497,7 +507,8 @@ export function ProjectFactoryBoardPanel({
                     >
                       <button
                         className="text-left font-medium"
-                        onClick={() => onOpenIssue?.(start.issueNumber)}
+                        aria-label={`Open issue conversation #${String(start.issueNumber)}`}
+                        onClick={() => onOpenStart?.(start.id)}
                       >
                         #{start.issueNumber} {start.title}
                       </button>
@@ -508,24 +519,18 @@ export function ProjectFactoryBoardPanel({
                             ? "Preparing development"
                             : start.state === "blocked"
                               ? "Needs attention"
-                              : "Starting development"}
+                              : start.state === "done"
+                                ? "Work ended"
+                                : "Starting development"}
                       </p>
                       {start.message === null ? null : (
                         <p className="text-sm" role="status">
                           {start.message}
                         </p>
                       )}
-                      {start.featureId === null ? null : (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => {
-                            if (start.featureId !== null) onOpenFeature(start.featureId, "chat");
-                          }}
-                        >
-                          Open work
-                        </Button>
-                      )}
+                      <Button size="sm" variant="ghost" onClick={() => onOpenStart?.(start.id)}>
+                        Open conversation
+                      </Button>
                       {start.state === "blocked" ? (
                         <Button
                           size="sm"
@@ -536,14 +541,16 @@ export function ProjectFactoryBoardPanel({
                           Retry
                         </Button>
                       ) : null}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={!online}
-                        onClick={() => onCancelStart?.(start.id)}
-                      >
-                        Cancel queued work
-                      </Button>
+                      {start.state === "done" ? null : (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={!online}
+                          onClick={() => onCancelStart?.(start.id)}
+                        >
+                          Cancel queued work
+                        </Button>
+                      )}
                     </li>
                   ))}
                   {items.map(({ feature, item, queued }) => (

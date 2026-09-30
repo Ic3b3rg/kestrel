@@ -153,5 +153,96 @@ test('detached writer exists before namespace shutdown',async()=>{
         await rm(root, { recursive: true, force: true });
       }
     }, 120_000);
+
+    it("delegates one read-only inspection inside the shared Sandbox", async () => {
+      const image = process.env.KESTREL_FACTORY_EXECUTION_IMAGE;
+      if (image === undefined) throw new Error("Set KESTREL_FACTORY_EXECUTION_IMAGE");
+      const docker = process.env.KESTREL_DOCKER_EXECUTABLE ?? "docker";
+      const { stdout } = await exec("/usr/bin/which", ["codex"], {
+        encoding: "utf8",
+        timeout: 5_000,
+      });
+      const executable = await realpath(process.env.KESTREL_CODEX_EXECUTABLE ?? stdout.trim());
+      const connection = await createCodexAppServerAgentRuntime({ executable }).readConnection();
+      const model = connection.models.find((candidate) => candidate.isDefault)?.id;
+      if (model === undefined) throw new Error("No available default ChatGPT model");
+      const root = await realpath(await mkdtemp(join(tmpdir(), "kestrel-live-subagent-")));
+      const cwd = join(root, "workspace");
+      const gitDirectory = join(root, "repository.git");
+      const names: string[] = [];
+      const activities: Array<{
+        kind: string;
+        agentPath?: string;
+        state: string;
+        summary: string;
+      }> = [];
+      const lifecycle: CodexExecutionLifecycle = {
+        beforeContainerCreate: (name) => {
+          names.push(name);
+          return Promise.resolve();
+        },
+        onContainer: () => Promise.resolve(),
+        onStopped: () => Promise.resolve(),
+      };
+      try {
+        await mkdir(cwd);
+        await exec(
+          "git",
+          ["init", "--initial-branch=main", "--separate-git-dir", gitDirectory, cwd],
+          { timeout: 5_000 },
+        );
+        await writeFile(join(cwd, "value.mjs"), "export const delegatedValue = 42;\n");
+        const runtime = createCodexExecutionRuntime({
+          executable,
+          dockerExecutable: docker,
+          containerImage: image,
+          workspaceReadonly: true,
+          allowFileChanges: false,
+          timeoutMs: 90_000,
+          developerInstructions:
+            "You are inspecting an approved read-only fixture. Delegate exactly one file inspection task to a subagent, wait for it to finish, then answer. Keep all work in the remote Sandbox. Do not edit files or request more permissions.",
+        });
+        const result = await runtime.runTurn({
+          ...lifecycle,
+          cwd,
+          gitDirectory,
+          model,
+          requestId: randomUUID(),
+          prompt:
+            "Spawn one subagent to read /workspace/value.mjs and report the exported constant. Wait for the subagent, then state the value in one sentence. Do not edit files.",
+          onThread: () => Promise.resolve(),
+          onTurn: () => Promise.resolve(),
+          onActivity: (activity) => {
+            activities.push(activity);
+            return Promise.resolve();
+          },
+          onQuestion: () => Promise.reject(new Error("Unexpected runtime question")),
+        });
+        expect(result.text).toContain("42");
+        expect(
+          activities.some((event) => event.kind === "subagent" && event.state === "started"),
+          JSON.stringify(activities),
+        ).toBe(true);
+        expect(
+          activities.some(
+            (event) => event.agentPath?.startsWith("/root/") && event.kind !== "subagent",
+          ),
+          JSON.stringify(activities),
+        ).toBe(true);
+        expect(
+          activities.some((event) => event.kind === "subagent" && event.state === "completed"),
+          JSON.stringify(activities),
+        ).toBe(true);
+        expect(await readFile(join(cwd, "value.mjs"), "utf8")).toBe(
+          "export const delegatedValue = 42;\n",
+        );
+      } finally {
+        for (const name of names)
+          await exec(docker, ["rm", "--force", name], { timeout: 10_000, maxBuffer: 4096 }).catch(
+            () => undefined,
+          );
+        await rm(root, { recursive: true, force: true });
+      }
+    }, 120_000);
   },
 );

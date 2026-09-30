@@ -285,6 +285,8 @@ it("loads an attempt only when selected and shows its exact checks as inert text
   expect(container.textContent).toContain("Should archived notes appear in reports?");
   expect(fetch).toHaveBeenCalledTimes(1);
   await click("Attempt 1");
+  expect(container.textContent).toContain("Result");
+  expect(container.textContent).toContain("0 of 1 checks passed in the latest round.");
   expect(container.textContent).toContain("Approved plan · version 2");
   expect(container.textContent).toContain('["node","--test","tests/export report.test.mjs"]');
   expect(container.textContent).toContain("packages/reports");
@@ -293,13 +295,201 @@ it("loads an attempt only when selected and shows its exact checks as inert text
   expect(container.textContent).toContain("Output truncated");
   expect(container.textContent).toContain(head);
   expect(container.textContent).toContain(tree);
-  expect(container.textContent).toContain("Report export failed its declared check.");
+  expect(container.textContent).not.toContain("Report export failed its declared check.");
   expect(container.textContent).toContain("<script>untrusted()</script>");
   expect(container.querySelector("script")).toBeNull();
   expect(container.textContent).not.toContain("\u001b");
   expect(
     fetch.mock.calls.filter(([url]) => requestUrl(url).endsWith(`/runs/${runId}`)),
   ).toHaveLength(1);
+});
+
+it("opens the running attempt and shows public reasoning and tool output while work continues", async () => {
+  const activeRun = {
+    ...run,
+    state: "running" as const,
+    failure: null,
+    question: null,
+    writerStopped: false,
+    completedAt: null,
+    activity: [
+      { id: itemId, kind: "reasoning", summary: "I will inspect the report path.", createdAt },
+      {
+        id: featureId,
+        kind: "command",
+        summary: "node --test tests/export report.test.mjs",
+        itemId: "1:command-1",
+        itemState: "started",
+        createdAt,
+      },
+      {
+        id: projectId,
+        kind: "command",
+        summary: "node --test tests/export report.test.mjs",
+        itemId: "1:command-1",
+        itemState: "completed",
+        detail: "2 tests passed",
+        exitCode: 0,
+        createdAt,
+      },
+    ],
+  };
+  const firstWorkItem = execution.workItems[0];
+  if (firstWorkItem === undefined) throw new Error("Missing test Work Item");
+  const activeExecution = {
+    ...execution,
+    state: "running",
+    failure: null,
+    question: null,
+    workItems: [
+      {
+        ...firstWorkItem,
+        runs: [
+          {
+            ...firstWorkItem.runs[0],
+            state: "running",
+            writerStopped: false,
+            completedAt: null,
+          },
+        ],
+      },
+    ],
+  };
+  const fetch = vi.fn<typeof globalThis.fetch>((url) =>
+    Promise.resolve(
+      Response.json(requestUrl(url).endsWith(`/runs/${runId}`) ? activeRun : activeExecution),
+    ),
+  );
+  vi.stubGlobal("fetch", fetch);
+  await render();
+  expect(fetch.mock.calls.some(([url]) => requestUrl(url).endsWith(`/runs/${runId}`))).toBe(true);
+  expect(container.textContent).toContain("I will inspect the report path.");
+  expect(container.textContent).toContain("node --test tests/export report.test.mjs");
+  expect(container.textContent).toContain("2 tests passed");
+  expect(container.querySelectorAll('[aria-label="Live activity"] li')).toHaveLength(2);
+  expect(container.querySelector('button[aria-expanded="true"]')?.textContent).toContain(
+    "Attempt 1",
+  );
+});
+
+it.each([
+  ["completed", "Completed"],
+  ["failed", "Failed"],
+] as const)(
+  "groups delegated work with %s outcome while the run is active",
+  async (state, label) => {
+    const delegatedRun = {
+      ...run,
+      state: "running",
+      failure: null,
+      question: null,
+      writerStopped: false,
+      completedAt: null,
+      activity: [
+        {
+          id: projectId,
+          kind: "subagent",
+          summary: "Subagent alpha started",
+          itemId: "subagent:child-thread:started",
+          itemState: "started",
+          agentPath: "/root/alpha",
+          createdAt,
+        },
+        {
+          id: featureId,
+          kind: "command",
+          summary: "cat value.mjs",
+          itemId: "child-thread:command",
+          itemState: "completed",
+          agentPath: "/root/alpha",
+          detail: "export const value = 1;\n",
+          exitCode: 0,
+          createdAt,
+        },
+        {
+          id: itemId,
+          kind: "subagent",
+          summary: `Subagent alpha ${state}`,
+          itemId: `subagent:child-thread:${state}`,
+          itemState: state,
+          agentPath: "/root/alpha",
+          createdAt,
+        },
+      ],
+    };
+    const activeExecution = {
+      ...execution,
+      state: "running",
+      failure: null,
+      question: null,
+      workItems: [
+        {
+          ...execution.workItems[0],
+          runs: [
+            {
+              ...execution.workItems[0]?.runs[0],
+              state: "running",
+              writerStopped: false,
+              completedAt: null,
+            },
+          ],
+        },
+      ],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof globalThis.fetch>((url) =>
+        Promise.resolve(
+          Response.json(
+            requestUrl(url).endsWith(`/runs/${runId}`) ? delegatedRun : activeExecution,
+          ),
+        ),
+      ),
+    );
+    await render();
+    const group = [...container.querySelectorAll("details")].find((value) =>
+      value.querySelector("summary")?.textContent.includes(`Subagent alpha · ${label}`),
+    );
+    expect(group).toBeDefined();
+    expect(group?.textContent).toContain("cat value.mjs");
+    expect(group?.textContent).toContain("export const value = 1;");
+    expect(container.textContent).not.toContain("child-thread");
+  },
+);
+
+it("reopens the final answer after a verified run and hides transient activity", async () => {
+  const completed = {
+    ...run,
+    state: "verified",
+    failure: null,
+    question: null,
+    finalSummary: "Report export is implemented and verified.",
+    activity: [{ id: itemId, kind: "reasoning", summary: "Transient analysis", createdAt }],
+  };
+  const verifiedExecution = {
+    ...execution,
+    state: "verified",
+    failure: null,
+    question: null,
+    workItems: [
+      {
+        ...execution.workItems[0],
+        runs: [{ ...execution.workItems[0]?.runs[0], state: "verified", failure: null }],
+      },
+    ],
+  };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn<typeof globalThis.fetch>((url) =>
+      Promise.resolve(
+        Response.json(requestUrl(url).endsWith(`/runs/${runId}`) ? completed : verifiedExecution),
+      ),
+    ),
+  );
+  await render();
+  expect(container.textContent).toContain("Report export is implemented and verified.");
+  expect(container.textContent).not.toContain("Transient analysis");
+  expect(container.querySelector('[aria-label="Live activity"]')).toBeNull();
 });
 
 it("waits for a slow execution read before polling again and stops after verification", async () => {

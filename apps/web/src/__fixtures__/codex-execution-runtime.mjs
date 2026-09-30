@@ -117,8 +117,20 @@ lines.on("line", async (line) => {
                 "tool_suggest",
                 "shell_tool",
                 "skip_host_skill_discovery",
-              ].map((name) => [name, ["shell_tool", "skip_host_skill_discovery"].includes(name)]),
+              ].map((name) => [
+                name,
+                [
+                  "shell_tool",
+                  "skip_host_skill_discovery",
+                  "multi_agent",
+                  "multi_agent_v2",
+                ].includes(name),
+              ]),
             ),
+            multi_agent_v2: {
+              enabled: true,
+              max_concurrent_threads_per_session: mode === "multiagent_unbounded" ? 99 : 3,
+            },
             ...(mode === "unknown_feature" ? { future_network_tool: true } : {}),
           },
           web_search: "disabled",
@@ -210,6 +222,191 @@ lines.on("line", async (line) => {
       await send({
         method: "item/started",
         params: { threadId, turnId, item: { id: "tool", type: "mcpToolCall" } },
+      });
+      return;
+    }
+    if (mode === "activity") {
+      await send({
+        method: "item/completed",
+        params: {
+          threadId,
+          turnId,
+          item: {
+            id: "thinking",
+            type: "reasoning",
+            summary: ["Inspecting the selected source.", "Choosing the smallest edit."],
+            content: ["private raw reasoning must stay hidden"],
+          },
+        },
+      });
+      await send({
+        method: "item/started",
+        params: {
+          threadId,
+          turnId,
+          item: { id: "command", type: "commandExecution", command: "node --test" },
+        },
+      });
+      await send({
+        method: "item/completed",
+        params: {
+          threadId,
+          turnId,
+          item: {
+            id: "command",
+            type: "commandExecution",
+            command: "node --test",
+            aggregatedOutput: "1 test passed\n",
+            exitCode: 0,
+          },
+        },
+      });
+      await send({
+        method: "item/completed",
+        params: {
+          threadId,
+          turnId,
+          item: { id: "answer", type: "agentMessage", phase: "final_answer", text: "Done." },
+        },
+      });
+      await send({
+        method: "turn/completed",
+        params: { threadId, turn: { id: turnId, status: "completed", items: [], error: null } },
+      });
+      return;
+    }
+    if (
+      ["multiagent", "multiagent_permission", "multiagent_failed", "multiagent_stall"].includes(
+        mode,
+      )
+    ) {
+      const childThreadId = "child-thread";
+      const childTurnId = "child-turn";
+      const agentPath = "/root/alpha";
+      // The child turn can arrive before the parent announces its delegation.
+      await send({
+        method: "turn/started",
+        params: { threadId: childThreadId, turn: { id: childTurnId, status: "inProgress" } },
+      });
+      await send({
+        method: "item/completed",
+        params: {
+          threadId,
+          turnId,
+          item: {
+            id: "child-start",
+            type: "subAgentActivity",
+            kind: "started",
+            agentThreadId: childThreadId,
+            agentPath,
+          },
+        },
+      });
+      if (mode === "multiagent_stall") return;
+      if (mode === "multiagent_permission") {
+        await send({
+          id: "child-permission",
+          method: "item/permissions/requestApproval",
+          params: {
+            threadId: childThreadId,
+            turnId: childTurnId,
+            permissions: { network: { enabled: true } },
+          },
+        });
+        return;
+      }
+      await send({
+        method: "item/completed",
+        params: {
+          threadId: childThreadId,
+          turnId: childTurnId,
+          item: {
+            id: "child-reason",
+            type: "reasoning",
+            summary: ["Inspecting the delegated file."],
+            content: ["private child reasoning"],
+          },
+        },
+      });
+      await send({
+        method: "item/started",
+        params: {
+          threadId: childThreadId,
+          turnId: childTurnId,
+          item: { id: "child-command", type: "commandExecution", command: "cat value.mjs" },
+        },
+      });
+      const command = {
+        id: "child-command",
+        type: "commandExecution",
+        command: "cat value.mjs",
+        aggregatedOutput: "export const value = 1;\n",
+        exitCode: 0,
+      };
+      await send({
+        method: "item/completed",
+        params: { threadId: childThreadId, turnId: childTurnId, item: command },
+      });
+      await send({
+        method: "item/completed",
+        params: { threadId: childThreadId, turnId: childTurnId, item: command },
+      });
+      await send({
+        method: "turn/completed",
+        params: {
+          threadId: childThreadId,
+          turn: {
+            id: childTurnId,
+            status: mode === "multiagent_failed" ? "failed" : "completed",
+            items: [command],
+            error: mode === "multiagent_failed" ? { message: "Child task failed" } : null,
+          },
+        },
+      });
+      await send({
+        method: "item/completed",
+        params: {
+          threadId,
+          turnId,
+          item: {
+            id: "child-done",
+            type: "subAgentActivity",
+            kind: mode === "multiagent_failed" ? "interrupted" : "completed",
+            agentThreadId: childThreadId,
+            agentPath,
+          },
+        },
+      });
+      await send({
+        method: "item/completed",
+        params: {
+          threadId,
+          turnId,
+          item: {
+            id: "root-self",
+            type: "subAgentActivity",
+            kind: "interacted",
+            agentThreadId: threadId,
+            agentPath: "/root",
+          },
+        },
+      });
+      await send({
+        method: "item/completed",
+        params: {
+          threadId,
+          turnId,
+          item: {
+            id: "answer",
+            type: "agentMessage",
+            phase: "final_answer",
+            text: "Delegation complete.",
+          },
+        },
+      });
+      await send({
+        method: "turn/completed",
+        params: { threadId, turn: { id: turnId, status: "completed", items: [], error: null } },
       });
       return;
     }

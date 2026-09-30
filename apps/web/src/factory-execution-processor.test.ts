@@ -749,7 +749,13 @@ it("claims, freezes source, closes implementation, checkpoints and verifies exac
   expect(finishFactoryExecution).toHaveBeenCalledWith(
     pool,
     expect.objectContaining({ id: run.id }),
-    { verified: true, writerStopped: true, failure: null, question: null },
+    {
+      verified: true,
+      writerStopped: true,
+      failure: null,
+      question: null,
+      finalSummary: "The approved value is implemented.",
+    },
   );
   const turn = runTurn.mock.calls[0]?.[0];
   if (turn === undefined) throw new Error("Runtime was not invoked");
@@ -1117,6 +1123,7 @@ it("records an explicit requirements question without checkpointing or answering
     writerStopped: true,
     failure: "input_required",
     question: "May the exported value change for existing callers?",
+    finalSummary: null,
   });
 });
 
@@ -1145,6 +1152,7 @@ it("acknowledges a runtime permission question and aborts with its actionable ga
     writerStopped: true,
     failure: "permission_required",
     question: "May this command write outside the approved workspace?",
+    finalSummary: null,
   });
 });
 
@@ -1204,6 +1212,7 @@ it("repairs technical failures in a fresh turn and rechecks every exact command 
     writerStopped: true,
     failure: null,
     question: null,
+    finalSummary: "Implementation round completed.",
   });
 });
 
@@ -1375,6 +1384,36 @@ it("reports a missing sandbox image as a recoverable run failure", async () => {
   );
 });
 
+it("prepares a missing sandbox image before running the authorized work", async () => {
+  const prepareContainerImage = vi.fn(() => Promise.resolve(`sha256:${"a".repeat(64)}`));
+  await processor({ prepareContainerImage }).process({ runId: run.id });
+  expect(prepareContainerImage).toHaveBeenCalledTimes(1);
+  expect(runTurn).toHaveBeenCalled();
+  expect(finishFactoryExecution).toHaveBeenCalledWith(
+    pool,
+    expect.anything(),
+    expect.objectContaining({ verified: true, failure: null }),
+  );
+});
+
+it("keeps a failed automatic image preparation recoverable", async () => {
+  const prepareContainerImage = vi.fn(() => Promise.reject(new Error("Docker daemon unavailable")));
+  await processor({ prepareContainerImage }).process({ runId: run.id });
+  expect(runTurn).not.toHaveBeenCalled();
+  expect(finishFactoryExecution).toHaveBeenCalledWith(
+    pool,
+    expect.anything(),
+    expect.objectContaining({
+      verified: false,
+      writerStopped: true,
+      failure: "sandbox_unavailable",
+    }),
+  );
+  expect(vi.mocked(finishFactoryExecution).mock.calls[0]?.[2].question).toContain(
+    "retry this work",
+  );
+});
+
 it("keeps an unavailable selected model as a gate without falling back", async () => {
   if (run.lifecycleProfile == null) throw new Error("Missing approved profile");
   run.lifecycleProfile.modelId = "missing-model";
@@ -1436,6 +1475,7 @@ it("keeps the first captured source and Feature head when a dependent item start
     writerStopped: true,
     failure: null,
     question: null,
+    finalSummary: "The approved value is implemented.",
   });
 });
 

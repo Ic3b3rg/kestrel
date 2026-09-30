@@ -57,6 +57,7 @@ export interface FactoryExecutionProcessorOptions {
   connection?: CodexAgentRuntimePort;
   runtime?: CodexExecutionRuntime;
   containerImage?: string;
+  prepareContainerImage?: (signal: AbortSignal) => Promise<string>;
   dockerExecutable?: string;
 }
 
@@ -239,6 +240,7 @@ async function execute(
   const publicText = sandbox.publicText;
   let verifying = false;
   let verified = false;
+  let finalSummary: string | null = null;
   let failure: ExecutionFailure | null = null;
   try {
     signal.throwIfAborted();
@@ -284,7 +286,16 @@ async function execute(
       return model;
     };
     if (!final) await selectModel();
+    if (options.containerImage === undefined && options.prepareContainerImage !== undefined)
+      await recordFactoryExecutionActivity(
+        pool,
+        run,
+        "lifecycle",
+        "Preparing the isolated execution environment.",
+      );
     await sandbox.open();
+    if (options.containerImage === undefined && options.prepareContainerImage !== undefined)
+      await recordFactoryExecutionActivity(pool, run, "lifecycle", "Execution environment ready.");
     let previousChecks: VerificationFeedback[] = [];
     for (let round = 1; round <= 3; round++) {
       verifying = false;
@@ -304,6 +315,15 @@ async function execute(
               run,
               activity.kind === "message" ? "runtime" : activity.kind,
               publicText(activity.summary, 2000) || "Runtime activity",
+              {
+                itemId: `${String(round)}:${activity.itemId}`,
+                itemState: activity.state,
+                ...(activity.agentPath === undefined ? {} : { agentPath: activity.agentPath }),
+                ...(activity.detail === undefined
+                  ? {}
+                  : { detail: publicText(activity.detail, 8192) }),
+                ...(activity.exitCode === undefined ? {} : { exitCode: activity.exitCode }),
+              },
             ),
           onQuestion: async (question) => {
             const text = publicText(question.question);
@@ -315,12 +335,8 @@ async function execute(
         const completion = readCompletion(result.text);
         if (completion.status === "input_required")
           throw new ExecutionFailure("input_required", completion.question);
-        await recordFactoryExecutionActivity(
-          pool,
-          run,
-          "runtime",
-          publicText(completion.summary, 2000),
-        );
+        finalSummary = publicText(completion.summary, 4000);
+        await recordFactoryExecutionActivity(pool, run, "runtime", finalSummary.slice(0, 2000));
         await sandbox.checkpoint(round);
       }
       verifying = true;
@@ -331,7 +347,31 @@ async function execute(
         throw new ExecutionFailure("invalid_response");
       previousChecks = [];
       for (let position = 1; position <= commands.length; position++) {
-        previousChecks.push(await sandbox.verify(round, position));
+        const itemId = `verification:${String(round)}:${String(position)}`;
+        await recordFactoryExecutionActivity(
+          pool,
+          run,
+          "verification",
+          `Check ${String(position)} running`,
+          {
+            itemId,
+            itemState: "started",
+          },
+        );
+        const check = await sandbox.verify(round, position);
+        previousChecks.push(check);
+        await recordFactoryExecutionActivity(
+          pool,
+          run,
+          "verification",
+          `Check ${String(position)} ${check.outcome}`,
+          {
+            itemId,
+            itemState: "completed",
+            detail: `${check.stdout}\n${check.stderr}`.slice(0, 8192),
+            ...(check.exitCode === null ? {} : { exitCode: check.exitCode }),
+          },
+        );
       }
       await sandbox.assertRevision();
       signal.throwIfAborted();
@@ -377,6 +417,7 @@ async function execute(
   }
   await finishFactoryExecution(pool, run, {
     verified,
+    finalSummary: verified ? finalSummary : null,
     writerStopped: sandbox.writerStopped,
     failure: failure?.code ?? null,
     question: verified

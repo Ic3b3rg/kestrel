@@ -66,6 +66,7 @@ import {
   ProjectBoardSnapshotSchema,
   ProjectBoardSettingsSchema,
   ProjectIssueDiscussionSchema,
+  ProjectIssueStartSchema,
   StartProjectIssueCommandSchema,
 } from "./project-board.js";
 
@@ -251,6 +252,7 @@ const factoryComponents = {
   ProjectBoardSnapshot: asComponentSchema(asJsonSchema(ProjectBoardSnapshotSchema)),
   ProjectBoardSettings: asComponentSchema(asJsonSchema(ProjectBoardSettingsSchema)),
   ProjectIssueDiscussion: asComponentSchema(asJsonSchema(ProjectIssueDiscussionSchema)),
+  ProjectIssueStart: asComponentSchema(asJsonSchema(ProjectIssueStartSchema)),
   StartProjectIssueCommand: asComponentSchema(asJsonSchema(StartProjectIssueCommandSchema)),
   ProjectIssueStartAccepted: {
     type: "object",
@@ -1393,6 +1395,15 @@ export const openApiDocument = sortJson({
         "ProjectIssueStartAccepted",
         202,
       ),
+    },
+    "/api/v1/projects/{projectId}/board/starts/{id}": {
+      parameters: ["projectId", "id"].map((name) => ({
+        in: "path",
+        name,
+        required: true,
+        schema: asJsonSchema(KestrelIdSchema),
+      })),
+      get: factoryRead("readProjectIssueStart", "ProjectIssueStart"),
     },
     ...Object.fromEntries(
       ["cancel", "retry"].map((action) => [

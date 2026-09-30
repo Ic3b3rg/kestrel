@@ -648,13 +648,30 @@ export function recordFactoryExecutionActivity(
   run: ClaimedFactoryExecution,
   kind: FactoryExecutionRun["activity"][number]["kind"],
   summary: string,
+  item: Pick<
+    FactoryExecutionRun["activity"][number],
+    "itemId" | "itemState" | "agentPath" | "detail" | "exitCode"
+  > = {},
 ): Promise<void> {
   return withRun(pool, run, async (client, _feature, row) => {
     if (row.reservation_released_at !== null) throw new FactoryError("conflict");
     await client.query(
-      `INSERT INTO factory_execution_activity (run_id, kind, summary) SELECT $1,$2,$3
+      `INSERT INTO factory_execution_activity
+         (run_id, kind, summary, item_id, item_state, agent_path, detail, exit_code)
+       SELECT $1,$2,$3,$4,$5,$6,$7,$8
        WHERE (SELECT count(*) FROM factory_execution_activity WHERE run_id = $1) < 1000`,
-      [run.id, kind, summary.slice(0, 2000)],
+      [
+        run.id,
+        kind,
+        summary.slice(0, 2000),
+        item.itemId?.slice(0, 256) ?? null,
+        item.itemState ?? null,
+        item.agentPath?.slice(0, 256) ?? null,
+        ["running", "verifying"].includes(row.state) && item.detail?.trim()
+          ? item.detail.slice(0, 8192)
+          : null,
+        item.exitCode ?? null,
+      ],
     );
   });
 }
@@ -708,6 +725,7 @@ export function finishFactoryExecution(
     writerStopped: boolean;
     failure: FactoryExecutionFailure | null;
     question: string | null;
+    finalSummary?: string | null;
   },
 ): Promise<void> {
   return withRun(pool, run, (client, feature, row) =>

@@ -28,6 +28,7 @@ export interface ExecutionRunRow {
   state: string;
   failure: string | null;
   question: string | null;
+  final_summary?: string | null;
   runtime: unknown;
   revision: unknown;
   accepted_commands: unknown;
@@ -201,6 +202,11 @@ export function readFactoryExecutionRun(
       id: string;
       kind: string;
       summary: string;
+      item_id: string | null;
+      item_state: string | null;
+      agent_path: string | null;
+      detail: string | null;
+      exit_code: number | null;
       created_at: Date;
     }>(
       "SELECT * FROM factory_execution_activity WHERE run_id = $1 ORDER BY created_at DESC, id DESC LIMIT 100",
@@ -216,6 +222,7 @@ export function readFactoryExecutionRun(
       featureId,
       approvedVersion: row.plan_version,
       question: row.question,
+      finalSummary: row.final_summary ?? null,
       gate: await factoryGateForRun(client, feature, runId),
       runtime: row.runtime,
       revision: row.revision,
@@ -227,6 +234,13 @@ export function readFactoryExecutionRun(
         id: event.id,
         kind: event.kind,
         summary: event.summary,
+        ...(event.item_id == null ? {} : { itemId: event.item_id }),
+        ...(event.item_state == null ? {} : { itemState: event.item_state }),
+        ...(event.agent_path == null ? {} : { agentPath: event.agent_path }),
+        ...(!["running", "verifying", "stopping"].includes(row.state) || event.detail == null
+          ? {}
+          : { detail: event.detail }),
+        ...(event.exit_code == null ? {} : { exitCode: event.exit_code }),
         createdAt: event.created_at.toISOString(),
       })),
       verification: verification.rows.map((check) => ({

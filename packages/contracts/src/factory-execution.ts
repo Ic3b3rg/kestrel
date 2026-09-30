@@ -78,6 +78,7 @@ const runDetails = {
   featureId: KestrelIdSchema,
   approvedVersion: z.int().min(1).max(200),
   question: z.string().min(1).max(4000).nullable(),
+  finalSummary: z.string().min(1).max(4000).nullable().optional(),
   gate: FactoryGateSchema.nullable().optional(),
   revision: FactoryExecutionRevisionSchema.nullable(),
   runtime: z
@@ -103,13 +104,20 @@ const runDetails = {
         id: KestrelIdSchema,
         kind: z.enum([
           "runtime",
+          "reasoning",
           "command",
           "file_change",
+          "subagent",
           "question",
           "verification",
           "lifecycle",
         ]),
         summary: z.string().min(1).max(2000),
+        itemId: z.string().min(1).max(256).optional(),
+        itemState: z.enum(["started", "completed", "failed"]).optional(),
+        agentPath: z.string().min(1).max(256).optional(),
+        detail: z.string().min(1).max(8192).optional(),
+        exitCode: z.int().optional(),
         createdAt: z.iso.datetime(),
       }),
     )

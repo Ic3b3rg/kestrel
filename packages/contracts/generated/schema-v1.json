@@ -10009,21 +10009,51 @@
               "items": {
                 "additionalProperties": false,
                 "properties": {
+                  "agentPath": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
                   "createdAt": {
                     "format": "date-time",
                     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
                     "type": "string"
+                  },
+                  "detail": {
+                    "maxLength": 8192,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "exitCode": {
+                    "maximum": 9007199254740991,
+                    "minimum": -9007199254740991,
+                    "type": "integer"
                   },
                   "id": {
                     "format": "uuid",
                     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
                     "type": "string"
                   },
+                  "itemId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "itemState": {
+                    "enum": [
+                      "started",
+                      "completed",
+                      "failed"
+                    ],
+                    "type": "string"
+                  },
                   "kind": {
                     "enum": [
                       "runtime",
+                      "reasoning",
                       "command",
                       "file_change",
+                      "subagent",
                       "question",
                       "verification",
                       "lifecycle"
@@ -10105,6 +10135,18 @@
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
               "type": "string"
+            },
+            "finalSummary": {
+              "anyOf": [
+                {
+                  "maxLength": 4000,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "gate": {
               "anyOf": [
@@ -11398,21 +11440,51 @@
               "items": {
                 "additionalProperties": false,
                 "properties": {
+                  "agentPath": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
                   "createdAt": {
                     "format": "date-time",
                     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
                     "type": "string"
+                  },
+                  "detail": {
+                    "maxLength": 8192,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "exitCode": {
+                    "maximum": 9007199254740991,
+                    "minimum": -9007199254740991,
+                    "type": "integer"
                   },
                   "id": {
                     "format": "uuid",
                     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
                     "type": "string"
                   },
+                  "itemId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "itemState": {
+                    "enum": [
+                      "started",
+                      "completed",
+                      "failed"
+                    ],
+                    "type": "string"
+                  },
                   "kind": {
                     "enum": [
                       "runtime",
+                      "reasoning",
                       "command",
                       "file_change",
+                      "subagent",
                       "question",
                       "verification",
                       "lifecycle"
@@ -11494,6 +11566,18 @@
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
               "type": "string"
+            },
+            "finalSummary": {
+              "anyOf": [
+                {
+                  "maxLength": 4000,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "gate": {
               "anyOf": [
@@ -12901,21 +12985,51 @@
               "items": {
                 "additionalProperties": false,
                 "properties": {
+                  "agentPath": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
                   "createdAt": {
                     "format": "date-time",
                     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
                     "type": "string"
+                  },
+                  "detail": {
+                    "maxLength": 8192,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "exitCode": {
+                    "maximum": 9007199254740991,
+                    "minimum": -9007199254740991,
+                    "type": "integer"
                   },
                   "id": {
                     "format": "uuid",
                     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
                     "type": "string"
                   },
+                  "itemId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "itemState": {
+                    "enum": [
+                      "started",
+                      "completed",
+                      "failed"
+                    ],
+                    "type": "string"
+                  },
                   "kind": {
                     "enum": [
                       "runtime",
+                      "reasoning",
                       "command",
                       "file_change",
+                      "subagent",
                       "question",
                       "verification",
                       "lifecycle"
@@ -13002,6 +13116,18 @@
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
               "type": "string"
+            },
+            "finalSummary": {
+              "anyOf": [
+                {
+                  "maxLength": 4000,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "gate": {
               "anyOf": [
@@ -29923,6 +30049,70 @@
         "nextPage",
         "fetchedAt",
         "failure"
+      ],
+      "type": "object"
+    },
+    "ProjectIssueStart": {
+      "additionalProperties": false,
+      "properties": {
+        "featureId": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        },
+        "issueNumber": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "issueUrl": {
+          "format": "uri",
+          "type": "string"
+        },
+        "message": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "enum": [
+            "queued",
+            "preparing",
+            "running",
+            "blocked",
+            "done"
+          ],
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "issueNumber",
+        "issueUrl",
+        "title",
+        "state",
+        "featureId",
+        "message"
       ],
       "type": "object"
     },

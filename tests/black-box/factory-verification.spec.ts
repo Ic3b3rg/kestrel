@@ -6,6 +6,7 @@ import {
   createVerificationFixture,
   processVerificationFixture,
   releaseVerificationPause,
+  verificationModule,
   type VerificationFixture,
 } from "./support/factory-verification-fixture.js";
 
@@ -91,9 +92,9 @@ test.describe("Final Feature verification evidence and decisions", () => {
         name: "Final attempt 1 · Verifying",
         exact: true,
       });
-      await attempt.focus();
-      await attempt.press("Enter");
+      await expect(attempt).toHaveAttribute("aria-expanded", "true");
       const details = final.getByRole("region", { name: "Final attempt 1 details", exact: true });
+      await expect(details.getByRole("region", { name: "Live activity" })).toBeVisible();
       await expect(
         details.getByText("order · command 2; consumer · command 2", { exact: true }),
       ).toBeVisible();
@@ -118,6 +119,36 @@ test.describe("Final Feature verification evidence and decisions", () => {
       await expect(
         details.getByText("Execution environment stop has not been confirmed.", { exact: true }),
       ).toBeVisible();
+      expect(
+        await verificationModule<{ inserted: boolean }>(
+          fixture.stack,
+          `
+        const runId = ${JSON.stringify(finalRunId)};
+        await pool.query("INSERT INTO factory_execution_activity (run_id,kind,summary,item_id,item_state,agent_path) VALUES ($1,'subagent','Subagent alpha started','child:start','started','/root/alpha')", [runId]);
+        await pool.query("INSERT INTO factory_execution_activity (run_id,kind,summary,item_id,item_state,agent_path,detail,exit_code) VALUES ($1,'command','cat value.mjs','child:command','completed','/root/alpha','export const value = 1;',0)", [runId]);
+        await pool.query("INSERT INTO factory_execution_activity (run_id,kind,summary,item_id,item_state,agent_path) VALUES ($1,'subagent','Subagent alpha completed','child:done','completed','/root/alpha')", [runId]);
+        console.log(JSON.stringify({inserted:true}));
+      `,
+        ),
+      ).toEqual({ inserted: true });
+      await execution.getByRole("button", { name: "Refresh execution", exact: true }).click();
+      const delegated = details.getByText("Subagent alpha · Completed", { exact: true });
+      await expect(delegated).toBeVisible();
+      await expect(details.getByText("cat value.mjs", { exact: true })).toBeHidden();
+      await delegated.focus();
+      await delegated.press("Enter");
+      await expect(details.getByText("cat value.mjs", { exact: true })).toBeVisible();
+      const delegatedOutput = delegated.locator("..").getByText("Output", { exact: true });
+      await delegatedOutput.focus();
+      await delegatedOutput.press("Enter");
+      await expect(details.getByText("export const value = 1;", { exact: true })).toBeVisible();
+      await page.setViewportSize({ width: 390, height: 844 });
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+      ).toBe(true);
+      await page.reload();
+      await expect(final.getByRole("region", { name: "Live activity" })).toBeVisible();
+      await expect(final.getByText("Subagent alpha · Completed", { exact: true })).toBeVisible();
       expect((await fixture.execution(featureId)).finalVerification?.certificate).toBeNull();
       await page.screenshot({
         path: testInfo.outputPath("final-verification-progress-desktop.png"),
@@ -187,6 +218,7 @@ test.describe("Final Feature verification evidence and decisions", () => {
       final.getByText("All 3 approved checks passed · plan version 1.", { exact: true }),
     ).toBeVisible();
     await expect(final.getByText(/Pull request publication is tracked below/)).toBeVisible();
+    await expect(final.getByRole("region", { name: "Live activity" })).toHaveCount(0);
     const confirmed = await fixture.execution(featureId);
     const certificate = confirmed.finalVerification?.certificate;
     if (certificate == null) throw new Error("Certified record missing");

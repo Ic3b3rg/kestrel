@@ -17,6 +17,7 @@ import { WorkspaceSuspendedContext } from "./components/ui/workspace-suspension.
 import { FactoryGatePanel, GateAnswer } from "./FactoryGatePanel.js";
 
 type FactoryVerificationCommand = FactoryExecutionRun["acceptedCommands"][number];
+type ExecutionActivity = FactoryExecutionRun["activity"][number];
 
 const phaseLabels: Record<FactoryExecution["state"], string> = {
   not_approved: "No execution has been authorized",
@@ -197,12 +198,139 @@ function VerificationResult({ result }: { result: FactoryVerificationResult }) {
   );
 }
 
+function ActivityEntry({ event }: { event: ExecutionActivity }) {
+  return (
+    <li className="min-w-0 rounded-md border bg-background p-3 text-sm">
+      <p className="whitespace-pre-wrap break-words font-medium">{displayText(event.summary)}</p>
+      {event.itemState === "started" ? <p className="text-muted-foreground">Running…</p> : null}
+      {event.itemState === "failed" ? <p className="text-destructive">Failed</p> : null}
+      {event.exitCode === undefined ? null : <p>Exit code {event.exitCode}</p>}
+      {event.detail === undefined ? null : (
+        <details className="min-w-0">
+          <summary className="cursor-pointer rounded-sm focus-visible:outline focus-visible:outline-ring">
+            Output
+          </summary>
+          <pre
+            className="mt-2 max-h-64 max-w-full overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-3 text-xs"
+            tabIndex={0}
+          >
+            <code>{displayText(event.detail)}</code>
+          </pre>
+        </details>
+      )}
+      <time className="text-xs text-muted-foreground" dateTime={event.createdAt}>
+        {new Date(event.createdAt).toLocaleString()}
+      </time>
+    </li>
+  );
+}
+
+function TimelineItems({
+  events,
+  parentPath,
+}: {
+  events: ExecutionActivity[];
+  parentPath: string;
+}) {
+  const seen = new Set<string>();
+  const entries: Array<
+    { kind: "event"; event: ExecutionActivity } | { kind: "agent"; path: string }
+  > = [];
+  for (const event of events) {
+    const path = event.agentPath ?? "/root";
+    if (path === parentPath) {
+      if (event.kind !== "subagent") entries.push({ kind: "event", event });
+      continue;
+    }
+    if (!path.startsWith(`${parentPath}/`)) continue;
+    const segment = path.slice(parentPath.length + 1).split("/")[0];
+    if (!segment) continue;
+    const childPath = `${parentPath}/${segment}`;
+    if (seen.has(childPath)) continue;
+    seen.add(childPath);
+    entries.push({ kind: "agent", path: childPath });
+  }
+  return (
+    <>
+      {entries.map((entry) => {
+        if (entry.kind === "event")
+          return <ActivityEntry key={entry.event.id} event={entry.event} />;
+        const lifecycle = events.filter(
+          (event) => event.kind === "subagent" && event.agentPath === entry.path,
+        );
+        const status = lifecycle.some((event) => event.itemState === "failed")
+          ? "Failed"
+          : lifecycle.some((event) => event.itemState === "completed")
+            ? "Completed"
+            : "Working";
+        const name = entry.path.split("/").at(-1) ?? "agent";
+        return (
+          <li key={entry.path} className="min-w-0 rounded-md border bg-background p-3 text-sm">
+            <details className="min-w-0">
+              <summary className="cursor-pointer break-words rounded-sm font-medium focus-visible:outline focus-visible:outline-ring">
+                Subagent {displayText(name)} · {status}
+              </summary>
+              <ol className="mt-3 grid min-w-0 gap-2">
+                <TimelineItems events={events} parentPath={entry.path} />
+              </ol>
+            </details>
+          </li>
+        );
+      })}
+    </>
+  );
+}
+
 function RunDetails({ run }: { run: FactoryExecutionRun }) {
+  const live = ["queued", "running", "verifying", "stopping"].includes(run.state);
+  const completedItems = new Set(
+    run.activity.filter((event) => event.itemState === "completed").map((event) => event.itemId),
+  );
+  const liveActivity = run.activity.filter(
+    (event) =>
+      event.itemState !== "started" ||
+      event.itemId === undefined ||
+      !completedItems.has(event.itemId),
+  );
+  const latestRound = Math.max(0, ...run.verification.map((check) => check.round));
+  const latestChecks = run.verification.filter((check) => check.round === latestRound);
+  const passedChecks = latestChecks.filter((check) => check.outcome === "passed").length;
   return (
     <div className="min-w-0 space-y-4 rounded-md border bg-muted/30 p-3">
-      <p className="text-sm font-medium">Approved plan · version {run.approvedVersion}</p>
-      <ExecutionProblem failure={run.failure} question={run.question} />
+      {live ? null : (
+        <div className="space-y-2 rounded-md border bg-background p-3">
+          <h5 className="text-sm font-semibold">Result</h5>
+          <p className="whitespace-pre-wrap break-words text-sm">
+            {displayText(
+              run.finalSummary ??
+                (run.failure === null
+                  ? run.state === "verified"
+                    ? "Implementation verified."
+                    : "This attempt ended before verification."
+                  : failureText[run.failure]),
+            )}
+          </p>
+          <p className="text-sm text-muted-foreground">
+            {latestChecks.length === 0
+              ? "No checks were completed."
+              : `${String(passedChecks)} of ${String(latestChecks.length)} checks passed in the latest round.`}
+          </p>
+        </div>
+      )}
+      <ExecutionProblem failure={live ? run.failure : null} question={run.question} />
       {run.gate == null ? null : <GateAnswer gate={run.gate} />}
+      {live ? (
+        <section className="space-y-2" aria-label="Live activity">
+          <h5 className="text-sm font-semibold">Live activity</h5>
+          {liveActivity.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No activity recorded yet.</p>
+          ) : (
+            <ol className="grid min-w-0 gap-2" aria-live="polite">
+              <TimelineItems events={liveActivity} parentPath="/root" />
+            </ol>
+          )}
+        </section>
+      ) : null}
       <p className="text-sm text-muted-foreground">
         {run.writerStopped
           ? "Execution environment stopped."
@@ -261,21 +389,12 @@ function RunDetails({ run }: { run: FactoryExecutionRun }) {
           Codex · {displayText(run.runtime.model)}
         </p>
       )}
-      <section className="space-y-2">
-        <h5 className="text-sm font-semibold">Attempt activity</h5>
-        {run.activity.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No activity recorded yet.</p>
-        ) : (
-          <ol className="factory-activity">
-            {run.activity.map((event) => (
-              <li key={event.id}>
-                <p className="whitespace-pre-wrap break-words">{displayText(event.summary)}</p>
-                <time dateTime={event.createdAt}>{new Date(event.createdAt).toLocaleString()}</time>
-              </li>
-            ))}
-          </ol>
-        )}
-      </section>
+      <details>
+        <summary className="cursor-pointer rounded-sm text-sm focus-visible:outline focus-visible:outline-ring">
+          Plan and attempt details
+        </summary>
+        <p className="mt-2 text-sm">Approved plan · version {run.approvedVersion}</p>
+      </details>
     </div>
   );
 }
@@ -340,11 +459,20 @@ function ExecutionPanel({
           ["pending", "running", "stopping"].includes(result.state) ||
           result.workItems.some((item) => item.runs.some(pendingRun)) ||
           result.finalVerification?.runs.some(pendingRun) === true;
+        const summaries = [
+          ...result.workItems.flatMap((item) => item.runs),
+          ...(result.finalVerification?.runs ?? []),
+        ];
+        const activeRun = summaries.find(pendingRun);
+        const latestVerified = summaries
+          .filter((summary) => summary.state === "verified")
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+        const autoRun = activeRun ?? latestVerified;
+        if (selectedRunId === null && autoRun !== undefined) {
+          setSelectedRunId(autoRun.id);
+        }
         if (selectedRunId !== null) {
-          const selected = [
-            ...result.workItems.flatMap((item) => item.runs),
-            ...(result.finalVerification?.runs ?? []),
-          ].find((item) => item.id === selectedRunId);
+          const selected = summaries.find((item) => item.id === selectedRunId);
           if (selected === undefined)
             throw new InvalidServerResponseError(
               "The selected attempt is missing from this Feature",

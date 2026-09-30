@@ -2,6 +2,7 @@ import {
   KestrelIdSchema,
   ProjectIssueDiscussionSchema,
   ProjectBoardSettingsSchema,
+  ProjectIssueStartSchema,
 } from "@kestrel/contracts";
 import { z } from "zod";
 import { authenticatedMutationHeaders, requireJson } from "./api.js";
@@ -32,6 +33,20 @@ export async function startProjectIssue(projectId: string, issueNumber: number, 
     }),
     z.object({ id: KestrelIdSchema }),
     "issue start",
+  );
+}
+export async function fetchProjectIssueStart(
+  projectId: string,
+  startId: string,
+  signal?: AbortSignal,
+) {
+  return requireJson(
+    await fetch(`${path(projectId)}/starts/${KestrelIdSchema.parse(startId)}`, {
+      credentials: "same-origin",
+      signal: signal ?? null,
+    }),
+    ProjectIssueStartSchema,
+    "issue conversation",
   );
 }
 export async function changeProjectIssueStart(
