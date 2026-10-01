@@ -53,7 +53,7 @@ const featureStatus: Record<Feature["state"], string> = {
   planning: "Interview · Define the outcome before implementation.",
   queued: "Issues published · Start an issue from the project board.",
   implementing: "In progress · Approved work is running on the workstation.",
-  gated: "Decision needed · Review the blocked work on the board.",
+  gated: "Work paused · Open the issue activity for details.",
   in_review: "In review · Inspect the work and its verification results.",
   merging: "Merge gate · The exact reviewed pull request is being reconciled.",
   completed: "Completed · The Feature is merged and its project queue is released.",
