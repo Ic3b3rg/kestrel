@@ -19,6 +19,7 @@ import {
   completeGeneratedFactoryPlan,
   completePlanningTurn,
   isPlanningTurnRunning,
+  PLANNING_TURN_TIMEOUT_MS,
   savePlanningContext,
   savePlanningThread,
   type DatabasePool,
@@ -192,7 +193,7 @@ export function createFactoryPlanningProcessor({
   pool,
   readSourceConfig,
   connection = createCodexAppServerAgentRuntime(),
-  runtime = createCodexPlanningRuntime({ timeoutMs: 180_000 }),
+  runtime = createCodexPlanningRuntime({ timeoutMs: PLANNING_TURN_TIMEOUT_MS.plan }),
 }: FactoryPlanningProcessorOptions) {
   return {
     async process(data: unknown, jobSignal?: AbortSignal): Promise<void> {
@@ -202,7 +203,7 @@ export function createFactoryPlanningProcessor({
       const turn = await claimPlanningTurn(pool, turnId);
       if (turn === null) return;
       const controller = new AbortController();
-      const deadline = AbortSignal.timeout(180_000);
+      const deadline = AbortSignal.timeout(PLANNING_TURN_TIMEOUT_MS[turn.purpose]);
       const signal = AbortSignal.any([
         controller.signal,
         deadline,

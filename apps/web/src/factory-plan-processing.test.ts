@@ -254,6 +254,44 @@ it("saves a complete board-start plan when the structured result is ready", asyn
   expect(completePlanningTurn).not.toHaveBeenCalled();
 });
 
+it("lets authorized issue preparation finish after the interview time limit", async () => {
+  turn.issueExecutionContext = { issue: { number: 142 }, conversation: [] };
+  vi.useFakeTimers({ toFake: ["setTimeout", "setInterval", "clearInterval"] });
+  const timeout = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), ms);
+    return controller.signal;
+  });
+  const started = Promise.withResolvers<undefined>();
+  const finish = Promise.withResolvers<Awaited<ReturnType<typeof runTurn>>>();
+  runTurn.mockImplementation((input) => {
+    started.resolve(undefined);
+    return Promise.race([
+      finish.promise,
+      new Promise<never>((_, reject) =>
+        input.signal?.addEventListener("abort", () => reject(new CodexPlanningError("timeout")), {
+          once: true,
+        }),
+      ),
+    ]);
+  });
+  try {
+    const processing = processor().process({ turnId: turn.id });
+    await started.promise;
+    await vi.advanceTimersByTimeAsync(180001);
+    expect(completePlanningTurn).not.toHaveBeenCalled();
+    finish.resolve({
+      threadId: "plan-thread",
+      turnId: "runtime-turn",
+      text: JSON.stringify({ status: "ready", plan: plan(), question: null }),
+    });
+    await processing;
+    expect(generated).toHaveBeenCalledOnce();
+  } finally {
+    timeout.mockRestore();
+  }
+});
+
 it("rejects a board-start plan that also says input is required", async () => {
   turn.issueExecutionContext = { issue: { number: 142 }, conversation: [] };
   runTurn.mockResolvedValue({

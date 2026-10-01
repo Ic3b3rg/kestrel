@@ -211,50 +211,62 @@ describe("persistent Factory planning", () => {
     expect(saved.messages).toHaveLength(1);
   });
 
-  it("makes an expired uncertain turn retryable without retaining its uncertain runtime thread", async () => {
-    const path = `/api/v1/projects/${projectId}/features`;
-    const created = await stack.fetchApi(path, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ requestId: randomUUID(), title: "Recover interrupted planning" }),
-    });
-    const feature = (await created.json()) as { id: string };
-    const chatPath = `${path}/${feature.id}`;
-    const accepted = await stack.fetchApi(`${chatPath}/messages`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        requestId: randomUUID(),
-        text: "What should happen after an interruption?",
-      }),
-    });
-    const turn = (await accepted.json()) as { turnId: string };
-    await expect
-      .poll(
-        async () => {
-          const chat = (await (await stack.fetchApi(chatPath)).json()) as {
-            turns: Array<{ state: string }>;
-          };
-          return chat.turns[0]?.state;
-        },
-        { timeout: 10_000, interval: 200 },
-      )
-      .toBe("failed");
-    // Reproduce a host crash after thread creation, before the result can be persisted.
-    await stack.executeSql(`
+  it.each(["conversation", "plan"] as const)(
+    "makes an expired uncertain %s turn retryable without retaining its uncertain runtime thread",
+    async (purpose) => {
+      const path = `/api/v1/projects/${projectId}/features`;
+      const created = await stack.fetchApi(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requestId: randomUUID(), title: "Recover interrupted planning" }),
+      });
+      const feature = (await created.json()) as { id: string };
+      const chatPath = `${path}/${feature.id}`;
+      const accepted = await stack.fetchApi(`${chatPath}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requestId: randomUUID(),
+          text: "What should happen after an interruption?",
+        }),
+      });
+      const turn = (await accepted.json()) as { turnId: string };
+      await expect
+        .poll(
+          async () => {
+            const chat = (await (await stack.fetchApi(chatPath)).json()) as {
+              turns: Array<{ state: string }>;
+            };
+            return chat.turns[0]?.state;
+          },
+          { timeout: 10_000, interval: 200 },
+        )
+        .toBe("failed");
+      // Reproduce a host crash after thread creation, before the result can be persisted.
+      await stack.executeSql(`
       UPDATE factory_features SET runtime_thread_id = 'uncertain-thread' WHERE id = '${feature.id}';
-      UPDATE factory_planning_turns SET state = 'running', failure = NULL, completed_at = NULL,
+      UPDATE factory_planning_turns SET state = 'running', purpose = '${purpose}', failure = NULL, completed_at = NULL,
         started_at = clock_timestamp() - interval '5 minutes' WHERE id = '${turn.turnId}';
     `);
-    const chat = (await (await stack.fetchApi(chatPath)).json()) as {
-      turns: unknown[];
-      messages: unknown[];
-    };
-    expect(chat.turns).toEqual([
-      expect.objectContaining({ id: turn.turnId, state: "failed", failure: "interrupted" }),
-    ]);
-    expect(chat.messages).toHaveLength(1);
-    const threadCleared = await stack.executeWebModule(`
+      if (purpose === "plan") {
+        const active = (await (await stack.fetchApi(chatPath)).json()) as {
+          turns: Array<{ state: string }>;
+        };
+        expect(active.turns[0]?.state).toBe("running");
+        await stack.executeSql(`
+        UPDATE factory_planning_turns SET started_at = clock_timestamp() - interval '12 minutes'
+          WHERE id = '${turn.turnId}';
+      `);
+      }
+      const chat = (await (await stack.fetchApi(chatPath)).json()) as {
+        turns: unknown[];
+        messages: unknown[];
+      };
+      expect(chat.turns).toEqual([
+        expect.objectContaining({ id: turn.turnId, state: "failed", failure: "interrupted" }),
+      ]);
+      expect(chat.messages).toHaveLength(1);
+      const threadCleared = await stack.executeWebModule(`
       import { createPool } from "@kestrel/database";
       const pool = createPool(process.env.DATABASE_URL);
       try {
@@ -262,8 +274,9 @@ describe("persistent Factory planning", () => {
         process.stdout.write(JSON.stringify(result.rows[0].cleared));
       } finally { await pool.end(); }
     `);
-    expect(JSON.parse(threadCleared)).toBe(true);
-  });
+      expect(JSON.parse(threadCleared)).toBe(true);
+    },
+  );
 
   it("rejects a retry when its answer could no longer be retrieved", async () => {
     const created = await stack.fetchApi(`/api/v1/projects/${projectId}/features`, {
