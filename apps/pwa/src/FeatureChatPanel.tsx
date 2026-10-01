@@ -400,18 +400,26 @@ export function FeatureChatPanel({
       </section>
     );
 
+  const firstIssueMessage = chat.messages.find((message) => message.role === "user");
+  const latestIssueReply =
+    chat.feature.state === "planning"
+      ? chat.messages.filter((message) => message.role === "assistant").at(-1)
+      : undefined;
   const visibleMessages = issueConversation
-    ? chat.messages.map((message, index) =>
-        index === 0 && message.role === "user"
-          ? {
-              ...message,
-              content:
-                issueNumber !== undefined && issueUrl !== undefined
-                  ? `Implement [issue #${String(issueNumber)}](${issueUrl}).`
-                  : "Implement this issue.",
-            }
-          : message,
-      )
+    ? [
+        ...(firstIssueMessage === undefined
+          ? []
+          : [
+              {
+                ...firstIssueMessage,
+                content:
+                  issueNumber !== undefined && issueUrl !== undefined
+                    ? `Implement [issue #${String(issueNumber)}](${issueUrl}).`
+                    : "Implement this issue.",
+              },
+            ]),
+        ...(latestIssueReply === undefined ? [] : [latestIssueReply]),
+      ]
     : chat.messages;
   return (
     <section className="feature-planning" aria-labelledby="feature-title">
@@ -600,7 +608,8 @@ export function FeatureChatPanel({
                       />
                     )}
                   </article>
-                  {message.role !== "user" ||
+                  {issueConversation ||
+                  message.role !== "user" ||
                   turn === undefined ||
                   turn.state === "completed" ? null : (
                     <div className="planning-turn-state" role="status">
@@ -632,7 +641,7 @@ export function FeatureChatPanel({
                               <Square aria-hidden="true" />
                               Stop planning
                             </Button>
-                          ) : issueConversation ? null : (
+                          ) : (
                             <Button
                               variant="outline"
                               disabled={

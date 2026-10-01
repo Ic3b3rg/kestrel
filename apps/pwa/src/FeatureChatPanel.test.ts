@@ -202,6 +202,12 @@ describe("persistent planning conversation", () => {
           turns: [],
           messages: [
             { id: messageId, role: "user", content: "Temporary planning prompt", createdAt },
+            {
+              id: featureId,
+              role: "user",
+              content: "Internal retry prompt with implementation instructions",
+              createdAt,
+            },
           ],
         }),
     });
@@ -211,6 +217,8 @@ describe("persistent planning conversation", () => {
       container.querySelector('a[href="https://github.com/owner/reports/issues/42"]'),
     ).not.toBeNull();
     expect(container.textContent).not.toContain("Temporary planning prompt");
+    expect(container.textContent).not.toContain("Internal retry prompt");
+    expect(container.querySelectorAll(".planning-messages > li")).toHaveLength(1);
     expect(container.querySelector<HTMLFormElement>(".planning-composer")).toBeNull();
     expect(container.textContent).toContain("Activity");
     expect(container.querySelector('[role="tablist"]')).toBeNull();
