@@ -439,16 +439,15 @@ it("answers a bounded project read and resumes the same model turn", async () =>
 it("continues preparing an issue across the full authorized source-read budget", async () => {
   const { cwd, logPath, runtime } = await fixture("project_reads");
   const read = vi.fn().mockResolvedValue({ content: "Relevant source page" });
-  await expect(
-    runtime.runTurn({
-      cwd,
-      model: "gpt-6.1-sol",
-      prompt: "Prepare an already-started issue",
-      requestId: "issue-preparation",
-      onThread: async () => {},
-      readProject: read,
-    }),
-  ).resolves.toMatchObject({ text: expect.stringContaining("Relevant source page") });
+  const result = await runtime.runTurn({
+    cwd,
+    model: "gpt-6.1-sol",
+    prompt: "Prepare an already-started issue",
+    requestId: "issue-preparation",
+    onThread: async () => {},
+    readProject: read,
+  });
+  expect(result.text).toContain("Relevant source page");
   expect(read).toHaveBeenCalledTimes(26);
   const recorded = await messages(logPath);
   const instructions = z

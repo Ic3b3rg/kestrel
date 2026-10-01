@@ -17,7 +17,7 @@ export const PlanningReadRequestSchema = z.discriminatedUnion("operation", [
   }),
 ]);
 export type PlanningReadRequest = z.infer<typeof PlanningReadRequestSchema>;
-export const PLANNING_READ_LIMITS = { calls: 64, bytes: 512_000 } as const;
+export const PLANNING_READ_LIMITS = { calls: 64, bytes: 512_000, responseBytes: 128_000 } as const;
 export const planningReadTool = {
   type: "function",
   name: "read_project",
@@ -81,6 +81,12 @@ export function createPlanningReader(input: {
       }
       input.signal.throwIfAborted();
       const bytes = Buffer.byteLength(JSON.stringify(result));
+      if (bytes > PLANNING_READ_LIMITS.responseBytes) {
+        return {
+          error:
+            "The requested source exceeds the per-response read limit. Retrieve a smaller page or another relevant source.",
+        };
+      }
       if (bytes > remainingBytes) {
         return { error: "The requested source exceeds this turn's remaining read budget." };
       }

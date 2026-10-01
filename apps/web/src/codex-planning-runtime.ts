@@ -155,7 +155,7 @@ class PlanningSession {
           .then((result) => {
             const text: string | undefined =
               result === undefined ? undefined : JSON.stringify(result);
-            if (text === undefined || Buffer.byteLength(text) > 128_000)
+            if (text === undefined || Buffer.byteLength(text) > PLANNING_READ_LIMITS.responseBytes)
               throw new Error("Read result exceeded its limit");
             this.#transport.send({
               id: message.id,

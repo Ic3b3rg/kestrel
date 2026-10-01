@@ -118,9 +118,12 @@ it("can inspect the relevant code and browser tests across more than sixteen sou
   }
 });
 
-it("retains the remaining budget after an oversized read so a smaller source can still be retrieved", async () => {
-  const read = reader();
-  mocks.readRepository.mockResolvedValueOnce({ content: "a".repeat(600000) });
-  expect(await read({ operation: "read_file", path: "large.md" })).toHaveProperty("error");
-  expect(await read({ operation: "read_file", path: "package.json" })).toHaveProperty("content");
-});
+it.each([150_000, 600_000])(
+  "retains the remaining budget after an oversized %i-byte read so a smaller source can still be retrieved",
+  async (bytes) => {
+    const read = reader();
+    mocks.readRepository.mockResolvedValueOnce({ content: "a".repeat(bytes) });
+    expect(await read({ operation: "read_file", path: "large.md" })).toHaveProperty("error");
+    expect(await read({ operation: "read_file", path: "package.json" })).toHaveProperty("content");
+  },
+);
