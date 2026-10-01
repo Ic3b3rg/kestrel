@@ -223,6 +223,7 @@ export function FeatureChatPanel({
   const [reading, setReading] = useState(true);
   const [readError, setReadError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [issueReviewArtifactId, setIssueReviewArtifactId] = useState<string | undefined>();
   const [planningSettings, setPlanningSettings] = useState<PlanningComposerSettings | undefined>();
   const [importsRevision, setImportsRevision] = useState(0);
   const [commandPending, setCommandPending] = useState(false);
@@ -781,15 +782,10 @@ export function FeatureChatPanel({
                 online={online}
                 onAuthenticationError={onAuthenticationError}
                 onFeatureChanged={() => void refresh()}
-                onSelectArtifact={(selectedArtifactId) =>
-                  onNavigate({
-                    kind: "feature",
-                    projectId,
-                    featureId,
-                    view: "review",
-                    ...(selectedArtifactId === undefined ? {} : { artifactId: selectedArtifactId }),
-                  })
-                }
+                {...(issueReviewArtifactId === undefined
+                  ? {}
+                  : { selectedArtifactId: issueReviewArtifactId })}
+                onSelectArtifact={setIssueReviewArtifactId}
               />
             </details>
           ) : null}

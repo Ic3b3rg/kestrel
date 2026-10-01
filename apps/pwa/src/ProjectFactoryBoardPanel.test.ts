@@ -366,5 +366,8 @@ describe("Project Factory board", () => {
       "Export reports",
     );
     expect(container.querySelector('[aria-label="Start issue #42"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Completed"]')?.textContent).not.toContain(
+      "Export reports",
+    );
   });
 });

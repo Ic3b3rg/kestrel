@@ -445,6 +445,7 @@ function ExecutionPanel({
   const detailId = useId();
   const [execution, setExecution] = useState<FactoryExecution | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [followLatest, setFollowLatest] = useState(true);
   const [run, setRun] = useState<FactoryExecutionRun | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -486,8 +487,13 @@ function ExecutionPanel({
           .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
         const latest = summaries.toSorted((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
         const autoRun = activeRun ?? (conversation ? latest : latestVerified);
-        if (selectedRunId === null && autoRun !== undefined) {
+        if (
+          autoRun !== undefined &&
+          autoRun.id !== selectedRunId &&
+          (selectedRunId === null || (conversation && followLatest))
+        ) {
           setSelectedRunId(autoRun.id);
+          return;
         }
         if (selectedRunId !== null) {
           const selected = summaries.find((item) => item.id === selectedRunId);
@@ -549,6 +555,7 @@ function ExecutionPanel({
     selectedRunId,
     onAuthenticationError,
     conversation,
+    followLatest,
   ]);
   const stopUnconfirmed =
     execution?.failure === "stop_unconfirmed" ||
@@ -580,6 +587,11 @@ function ExecutionPanel({
           </Button>
         </header>
         {error === null ? null : <FormFeedback kind="error">{error}</FormFeedback>}
+        {followLatest ? null : (
+          <Button variant="ghost" onClick={() => setFollowLatest(true)}>
+            Follow current activity
+          </Button>
+        )}
         <p role="status" className="text-sm text-muted-foreground">
           {execution == null
             ? "Loading activity…"
@@ -625,7 +637,10 @@ function ExecutionPanel({
                   <Button
                     variant="ghost"
                     aria-pressed={selectedRunId === attempt.id}
-                    onClick={() => setSelectedRunId(attempt.id)}
+                    onClick={() => {
+                      setFollowLatest(false);
+                      setSelectedRunId(attempt.id);
+                    }}
                   >
                     Attempt {attempt.attempt} · {runLabels[attempt.state]}
                   </Button>

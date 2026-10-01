@@ -186,6 +186,115 @@ describe("persistent planning conversation", () => {
     expect(container.textContent).toContain("Requirements");
   });
 
+  it("keeps review history selection inside the issue conversation", async () => {
+    const onNavigate = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: RequestInfo | URL) => {
+        const path = typeof url === "string" ? url : url instanceof URL ? url.href : url.url;
+        if (path.endsWith("/review/preparation"))
+          return Promise.resolve(
+            Response.json({
+              schemaVersion: 1,
+              projectId,
+              featureId,
+              changeProposalId: null,
+              preparationDigest: null,
+              basis: null,
+              publication: null,
+              evidence: null,
+              configuration: {
+                model: { route: "codex_subscription", modelId: "gpt-6.1-sol" },
+                runtimePolicy: {
+                  kind: "retained_source_review",
+                  version: 1,
+                  adapter: "codex_app_server",
+                  adapterVersion: 1,
+                  containerImage: null,
+                  containerUser: null,
+                  codexExecutable: null,
+                  codexExecutableDigest: null,
+                  codexVersion: null,
+                  codexProtocol: "app_server_v2",
+                  sourceAccess: "retained_read_only",
+                  networkAccess: false,
+                  writeAccess: false,
+                  status: "unavailable",
+                },
+                resources: {
+                  maximumAttempts: 3,
+                  timeoutSeconds: 900,
+                  maximumEvidenceItems: 400,
+                  maximumWorkspaceFiles: 20000,
+                  maximumWorkspaceBytes: 268435456,
+                  maximumGraphNodes: 800,
+                  maximumOutputBytes: 131072,
+                  containerPidsLimit: 128,
+                  containerMemoryBytes: 1073741824,
+                  containerNanoCpus: 2000000000,
+                  containerTmpfsBytes: 67108864,
+                },
+              },
+              readiness: {
+                state: "blocked",
+                startAllowed: false,
+                blockers: ["review_runtime_unavailable"],
+              },
+            }),
+          );
+        if (path.includes("/review/artifacts?"))
+          return Promise.resolve(
+            Response.json({
+              schemaVersion: 1,
+              reviews: [
+                {
+                  artifactId: messageId,
+                  workflowId: turnId,
+                  status: "complete",
+                  headCommitId: "a".repeat(40),
+                  requestedAt: createdAt,
+                  finishedAt: createdAt,
+                  currency: "up_to_date",
+                },
+              ],
+              offset: 0,
+              total: 1,
+              nextOffset: null,
+            }),
+          );
+        if (path.endsWith("/review/workflows/current"))
+          return Promise.resolve(Response.json({ schemaVersion: 1, review: null }));
+        return Promise.resolve(new Response(null, { status: 404 }));
+      }),
+    );
+    await render({
+      issueConversation: true,
+      onNavigate,
+      loadChat: () =>
+        Promise.resolve({
+          ...initial,
+          feature: { ...initial.feature, state: "in_review" },
+          turns: [],
+        }),
+    });
+    const history = [...container.querySelectorAll("button")].find((entry) =>
+      entry.textContent.includes("Review 1"),
+    );
+    expect(history).toBeDefined();
+    await act(async () => {
+      if (history === undefined) throw new Error("Review history unavailable");
+      history.click();
+      await Promise.resolve();
+    });
+    expect(onNavigate).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="tablist"]')).toBeNull();
+    expect(
+      [...container.querySelectorAll("button")]
+        .find((entry) => entry.textContent.includes("Review 1"))
+        ?.getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+
   it("allows sending after removing a server-rejected attachment without editing the message", async () => {
     const sendMessage = vi.fn().mockRejectedValueOnce(
       new ApiClientError(409, {

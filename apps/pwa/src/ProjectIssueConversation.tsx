@@ -126,9 +126,6 @@ export function ProjectIssueConversation({
             )}
             {start.state !== "blocked" ? null : (
               <>
-                {start.featureId === null ? null : (
-                  <p>Answer the question in the conversation, then resume preparation.</p>
-                )}
                 <Button type="button" disabled={!online || retrying} onClick={() => void retry()}>
                   {retrying ? "Retrying…" : "Retry preparation"}
                 </Button>

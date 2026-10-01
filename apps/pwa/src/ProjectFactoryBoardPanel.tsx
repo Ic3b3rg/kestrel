@@ -322,6 +322,10 @@ export function ProjectFactoryBoardPanel({
               ? (snapshot?.starts ?? []).filter(
                   (start) =>
                     (column.id === "completed" ? start.state === "done" : start.state !== "done") &&
+                    !(
+                      start.state === "done" &&
+                      availableGitHubIssues.some((issue) => issue.number === start.issueNumber)
+                    ) &&
                     !workItems.some(({ feature }) => feature.id === start.featureId),
                 )
               : [];
