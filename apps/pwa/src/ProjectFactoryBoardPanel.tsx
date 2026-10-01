@@ -312,7 +312,9 @@ export function ProjectFactoryBoardPanel({
             column.id === "todo"
               ? availableGitHubIssues.filter(
                   (issue) =>
-                    !(snapshot?.starts ?? []).some((start) => start.issueNumber === issue.number),
+                    !(snapshot?.starts ?? []).some(
+                      (start) => start.state !== "done" && start.issueNumber === issue.number,
+                    ),
                 )
               : [];
           const starts =

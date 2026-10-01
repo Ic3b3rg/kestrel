@@ -23,7 +23,7 @@ const labels: Record<ProjectIssueStart["state"], string> = {
   queued: "Waiting for development",
   preparing: "Preparing development",
   running: "Development started",
-  blocked: "Needs your attention",
+  blocked: "Preparation paused",
   done: "Work ended",
 };
 
@@ -115,7 +115,7 @@ export function ProjectIssueConversation({
               View GitHub issue
             </a>
           </header>
-          <div className="min-w-0 space-y-2 rounded-lg border p-4" role="status">
+          <div className="min-w-0 space-y-2 text-sm text-muted-foreground" role="status">
             <strong>
               {start.state === "done" && start.featureId === null
                 ? "Queued work cancelled"

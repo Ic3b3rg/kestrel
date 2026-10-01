@@ -620,10 +620,29 @@ describe("structured Feature Plan processing", () => {
     expect(input?.threadId).toBe("conversation-thread");
     expect(input?.outputSchema).toBeUndefined();
     expect(input?.prompt).toContain("Every saved note. Generate the plan.");
-    expect(input?.prompt).not.toContain("Use Markdown and preserve Unicode.");
+    expect(input?.prompt).toContain("Use Markdown and preserve Unicode.");
     expect(generated).not.toHaveBeenCalled();
     expect(completePlanningTurn).toHaveBeenCalledExactlyOnceWith(pool, turn, {
       text: "Which filename should the download use?",
     });
+  });
+});
+
+it("records a missing source as a technical preparation failure without saving a plan", async () => {
+  turn.issueExecutionContext = { issue: { number: 142 }, conversation: [] };
+  runTurn.mockResolvedValue({
+    threadId: "plan-thread",
+    turnId: "runtime-turn",
+    text: JSON.stringify({
+      status: "source_unavailable",
+      plan: null,
+      question: "GitHub contract #49 could not be read. Retry when access is restored.",
+    }),
+  });
+  await processor().process({ turnId: turn.id });
+  expect(generated).not.toHaveBeenCalled();
+  expect(completePlanningTurn).toHaveBeenCalledExactlyOnceWith(pool, turn, {
+    failure: "source_unavailable",
+    question: "GitHub contract #49 could not be read. Retry when access is restored.",
   });
 });

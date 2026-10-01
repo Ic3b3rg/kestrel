@@ -255,3 +255,29 @@ it("honors a rate-limit deadline even across restart and manual refresh", async 
   ).toMatchObject({ retryAt, retained: true });
   expect(readCatalog).toHaveBeenCalledTimes(2);
 });
+
+it("returns a cancelled issue to To do while retaining its ended start", async () => {
+  database.starts.mockResolvedValue([
+    {
+      id: feature.id,
+      issueNumber: 42,
+      issueUrl: issue.url,
+      title: issue.title,
+      state: "done",
+      featureId: feature.id,
+      message: null,
+    },
+  ]);
+  database.local.mockResolvedValue({
+    projectId,
+    features: [{ ...feature, state: "cancelled" }],
+    boards: [{ feature: { ...feature, state: "cancelled" }, columns: [{ id: "todo", items: [] }] }],
+  });
+  const result = await createProjectBoardService(pool, github).read(
+    projectId,
+    new AbortController().signal,
+  );
+  expect(result.github.issues).toEqual([expect.objectContaining({ number: 42 })]);
+  expect(result.workItems).toEqual([]);
+  expect(result.starts).toHaveLength(1);
+});

@@ -164,7 +164,7 @@ describe("persistent planning conversation", () => {
     expect(reply?.querySelector('a[href^="javascript:"]')).toBeNull();
     expect(reply?.querySelector("script")).toBeNull();
   });
-  it("replaces temporary planning text with the Agent Run in an issue conversation", async () => {
+  it("opens issue execution as one activity conversation without workflow tabs", async () => {
     await render({
       issueConversation: true,
       loadChat: () =>
@@ -177,10 +177,13 @@ describe("persistent planning conversation", () => {
           ],
         }),
     });
-    expect(container.querySelector<HTMLOListElement>(".planning-messages")?.hidden).toBe(true);
+    expect(container.querySelector<HTMLOListElement>(".planning-messages")?.hidden).toBe(false);
+    expect(container.textContent).toContain("Start this issue.");
     expect(container.textContent).not.toContain("Temporary planning prompt");
     expect(container.querySelector<HTMLFormElement>(".planning-composer")?.hidden).toBe(true);
-    expect(container.textContent).toContain("Execution");
+    expect(container.textContent).toContain("Activity");
+    expect(container.querySelector('[role="tablist"]')).toBeNull();
+    expect(container.textContent).toContain("Requirements");
   });
 
   it("allows sending after removing a server-rejected attachment without editing the message", async () => {

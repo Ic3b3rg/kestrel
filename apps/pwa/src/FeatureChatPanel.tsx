@@ -394,8 +394,13 @@ export function FeatureChatPanel({
       </section>
     );
 
-  const visibleMessages =
-    issueConversation && chat.feature.state !== "planning" ? [] : chat.messages;
+  const visibleMessages = issueConversation
+    ? chat.messages.map((message, index) =>
+        index === 0 && message.role === "user"
+          ? { ...message, content: "Start this issue." }
+          : message,
+      )
+    : chat.messages;
   return (
     <section className="feature-planning" aria-labelledby="feature-title">
       <header className="feature-planning-header">
@@ -443,58 +448,66 @@ export function FeatureChatPanel({
           </Button>
         </div>
       </header>
-      <Tabs value={view} onValueChange={selectView} className="feature-tabs">
-        <TabsList aria-label="Feature views" className="feature-tab-list">
-          {(["chat", "plan", "board", "review"] as const).map((value) => {
-            const route = {
-              kind: "feature" as const,
-              projectId,
-              featureId,
-              ...(value === "chat" ? {} : { view: value }),
-            };
-            return (
-              <TabsTrigger
-                asChild
-                value={value}
-                key={value}
-                onMouseDown={(event) => {
-                  if (
-                    event.button !== 0 ||
-                    event.altKey ||
-                    event.ctrlKey ||
-                    event.metaKey ||
-                    event.shiftKey
-                  )
-                    event.preventDefault();
-                }}
-              >
-                <a
-                  href={appPath(route)}
-                  onClick={(event) =>
-                    handleFeatureLink(event, route, (next) => {
-                      if (view !== value) onNavigate(next);
-                    })
-                  }
+      <Tabs
+        value={issueConversation ? "chat" : view}
+        onValueChange={selectView}
+        className="feature-tabs"
+      >
+        {issueConversation ? null : (
+          <TabsList aria-label="Feature views" className="feature-tab-list">
+            {(["chat", "plan", "board", "review"] as const).map((value) => {
+              const route = {
+                kind: "feature" as const,
+                projectId,
+                featureId,
+                ...(value === "chat" ? {} : { view: value }),
+              };
+              return (
+                <TabsTrigger
+                  asChild
+                  value={value}
+                  key={value}
+                  onMouseDown={(event) => {
+                    if (
+                      event.button !== 0 ||
+                      event.altKey ||
+                      event.ctrlKey ||
+                      event.metaKey ||
+                      event.shiftKey
+                    )
+                      event.preventDefault();
+                  }}
                 >
-                  {value === "chat"
-                    ? "Chat"
-                    : value === "plan"
-                      ? "Plan"
-                      : value === "board"
-                        ? "Board"
-                        : "Review"}
-                </a>
-              </TabsTrigger>
-            );
-          })}
-        </TabsList>
+                  <a
+                    href={appPath(route)}
+                    onClick={(event) =>
+                      handleFeatureLink(event, route, (next) => {
+                        if (view !== value) onNavigate(next);
+                      })
+                    }
+                  >
+                    {value === "chat"
+                      ? "Chat"
+                      : value === "plan"
+                        ? "Plan"
+                        : value === "board"
+                          ? "Board"
+                          : "Review"}
+                  </a>
+                </TabsTrigger>
+              );
+            })}
+          </TabsList>
+        )}
         <TabsContent value="chat" className="feature-chat-content">
           {readError === null ? null : (
             <FormFeedback className="planning-error" kind="error">
               {readError}
             </FormFeedback>
           )}
-          {chat.context?.notice === null || chat.context?.notice === undefined ? null : (
+          {issueConversation ||
+          chat.context?.notice === null ||
+          chat.context?.notice === undefined ? null : (
             <p className="planning-notice">{chat.context.notice}</p>
           )}
           {(chat.skills?.skills.length ?? 0) === 0 ? null : (
@@ -516,7 +529,6 @@ export function FeatureChatPanel({
           ) : null}
           <ol
             className="planning-messages"
-            hidden={issueConversation && chat.feature.state !== "planning"}
             aria-label="Conversation"
             aria-live="polite"
             aria-relevant="additions text"
@@ -756,54 +768,98 @@ export function FeatureChatPanel({
               online={online}
               onAuthenticationError={onAuthenticationError}
               onGateResolved={() => void refresh()}
+              conversation
             />
           ) : null}
+          {issueConversation &&
+          ["in_review", "merging", "completed"].includes(chat.feature.state) ? (
+            <details open className="issue-review">
+              <summary>Review and results</summary>
+              <FeatureReviewPanel
+                projectId={projectId}
+                featureId={featureId}
+                online={online}
+                onAuthenticationError={onAuthenticationError}
+                onFeatureChanged={() => void refresh()}
+                onSelectArtifact={(selectedArtifactId) =>
+                  onNavigate({
+                    kind: "feature",
+                    projectId,
+                    featureId,
+                    view: "review",
+                    ...(selectedArtifactId === undefined ? {} : { artifactId: selectedArtifactId }),
+                  })
+                }
+              />
+            </details>
+          ) : null}
         </TabsContent>
-        <TabsContent value="plan" forceMount className="data-[state=inactive]:hidden">
-          <FeaturePlanPanel
-            {...(chat.skills === undefined ? {} : { skillSelectionVersion: chat.skills.version })}
-            projectId={projectId}
-            featureId={featureId}
-            online={online}
-            visible={view === "plan"}
-            conversationPending={activeTurn !== undefined}
-            importsRevision={importsRevision}
-            onAuthenticationError={onAuthenticationError}
-            onChanged={() => void refresh()}
-            onApproved={() => selectView("board")}
-            onDirtyChange={onPlanDirtyChange}
-          />
-        </TabsContent>
-        <TabsContent value="board">
-          <FeatureBoardPanel
-            projectId={projectId}
-            featureId={featureId}
-            online={online}
-            onAuthenticationError={onAuthenticationError}
-            onViewPlan={() => selectView("plan")}
-            onOpenRevision={() => selectView("review")}
-            onFeatureChanged={() => void refresh()}
-          />
-        </TabsContent>
-        <TabsContent value="review">
-          <FeatureReviewPanel
-            projectId={projectId}
-            featureId={featureId}
-            online={online}
-            {...(artifactId === undefined ? {} : { selectedArtifactId: artifactId })}
-            onSelectArtifact={(selectedArtifactId) =>
-              onNavigate({
-                kind: "feature",
-                projectId,
-                featureId,
-                view: "review",
-                ...(selectedArtifactId === undefined ? {} : { artifactId: selectedArtifactId }),
-              })
-            }
-            onAuthenticationError={onAuthenticationError}
-            onFeatureChanged={() => void refresh()}
-          />
-        </TabsContent>
+        {issueConversation ? (
+          <details className="issue-requirements">
+            <summary>Requirements</summary>
+            <FeaturePlanPanel
+              visible={true}
+              conversationPending={activeTurn !== undefined}
+              projectId={projectId}
+              featureId={featureId}
+              online={online}
+              onAuthenticationError={onAuthenticationError}
+              onApproved={() => void refresh()}
+              onChanged={() => void refresh()}
+              onDirtyChange={onPlanDirtyChange}
+            />
+          </details>
+        ) : (
+          <>
+            <TabsContent value="plan" forceMount className="data-[state=inactive]:hidden">
+              <FeaturePlanPanel
+                {...(chat.skills === undefined
+                  ? {}
+                  : { skillSelectionVersion: chat.skills.version })}
+                projectId={projectId}
+                featureId={featureId}
+                online={online}
+                visible={view === "plan"}
+                conversationPending={activeTurn !== undefined}
+                importsRevision={importsRevision}
+                onAuthenticationError={onAuthenticationError}
+                onChanged={() => void refresh()}
+                onApproved={() => selectView("board")}
+                onDirtyChange={onPlanDirtyChange}
+              />
+            </TabsContent>
+            <TabsContent value="board">
+              <FeatureBoardPanel
+                projectId={projectId}
+                featureId={featureId}
+                online={online}
+                onAuthenticationError={onAuthenticationError}
+                onViewPlan={() => selectView("plan")}
+                onOpenRevision={() => selectView("review")}
+                onFeatureChanged={() => void refresh()}
+              />
+            </TabsContent>
+            <TabsContent value="review">
+              <FeatureReviewPanel
+                projectId={projectId}
+                featureId={featureId}
+                online={online}
+                {...(artifactId === undefined ? {} : { selectedArtifactId: artifactId })}
+                onSelectArtifact={(selectedArtifactId) =>
+                  onNavigate({
+                    kind: "feature",
+                    projectId,
+                    featureId,
+                    view: "review",
+                    ...(selectedArtifactId === undefined ? {} : { artifactId: selectedArtifactId }),
+                  })
+                }
+                onAuthenticationError={onAuthenticationError}
+                onFeatureChanged={() => void refresh()}
+              />
+            </TabsContent>
+          </>
+        )}
       </Tabs>
     </section>
   );

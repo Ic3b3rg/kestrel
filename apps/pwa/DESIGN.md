@@ -41,3 +41,9 @@ precedence. Keep ordinary copy focused on the next action; source identity, veri
 connection remediation remain inspectable where they inform an actual decision. Use one content
 heading, proportional spacing, visible focus, and responsive wrapping. Avoid decorative textures,
 section numbers, and headings prefixed with infrastructure labels.
+
+Issue execution opens one observation conversation. The issue title and state stay visible; user
+messages align right and Kestrel messages align left. Preparation, runtime activity, child agents,
+checks and the final answer remain on this surface across reloads. Requirements and review results
+use inspectable details instead of Chat/Plan/Board/Review navigation. Only unresolved product
+choices need an Operator answer; technical preparation failures show their cause and retry action.
