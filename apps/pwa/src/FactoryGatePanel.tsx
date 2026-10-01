@@ -73,6 +73,7 @@ export function FactoryGatePanel({
   useEffect(() => () => controller.current?.abort(), []);
   const current = gate.resolution === null ? (confirmed ?? gate) : gate;
   const productDecision = gate.reason === "input_required";
+  const automaticRecovery = gate.reason === "usage_limit" || gate.reason === "unavailable";
   const canAnswer = ![
     "cancelled",
     "stale_gate",
@@ -129,7 +130,7 @@ export function FactoryGatePanel({
   };
   return (
     <section
-      aria-label="Human gate"
+      aria-label={automaticRecovery ? "Execution status" : "Human gate"}
       className="min-w-0 space-y-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4"
     >
       {gate.purpose === "feature_verification" ? (
@@ -140,23 +141,31 @@ export function FactoryGatePanel({
       <h4 className="font-semibold">
         {current.resolution !== null
           ? "Recorded decision"
-          : canAnswer
-            ? productDecision
-              ? "Your decision is needed"
-              : "Technical interruption"
-            : "Retained question"}
+          : automaticRecovery
+            ? "Technical interruption"
+            : canAnswer
+              ? productDecision
+                ? "Your decision is needed"
+                : "Technical interruption"
+              : "Retained question"}
       </h4>
       <p className="whitespace-pre-wrap break-words font-medium">{gate.question}</p>
       <p className="text-sm text-muted-foreground">
-        {canAnswer && current.resolution === null
-          ? "This feature holds its Project queue. Other projects can continue. Your answer applies to "
-          : "This question belongs to "}
-        approved plan version {gate.approvedVersion}.
+        {automaticRecovery && current.resolution === null
+          ? "This feature holds its Project queue. Other projects can continue."
+          : canAnswer && current.resolution === null
+            ? `This feature holds its Project queue. Other projects can continue. Your answer applies to approved plan version ${String(gate.approvedVersion)}.`
+            : `This question belongs to approved plan version ${String(gate.approvedVersion)}.`}
       </p>
       {current.resolution !== null ? (
         <FormFeedback kind="success">
           <GateAnswer gate={current} />
         </FormFeedback>
+      ) : automaticRecovery ? (
+        <p className="text-sm">
+          No answer is needed. Kestrel retries recoverable runtime interruptions automatically.
+          Failed verification checks require technical repair; inspect the run details.
+        </p>
       ) : !canAnswer ? (
         <p className="text-sm">
           {current.resumeBlockedReason === null ? null : blockedText[current.resumeBlockedReason]}

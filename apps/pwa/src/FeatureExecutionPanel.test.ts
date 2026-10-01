@@ -236,33 +236,39 @@ it("answers the visible gate once against its approved plan and preserves a lost
   expect(container.textContent).toContain("Answer saved");
 });
 
-it("identifies an unavailable runtime as a technical interruption", async () => {
-  const technicalGate = {
-    ...gate,
-    reason: "unavailable" as const,
-    requiredDecision: "retry_within_plan" as const,
-    question: "The Codex runtime is unavailable. Restore the connection before retrying.",
-  };
-  vi.stubGlobal(
-    "fetch",
-    vi
-      .fn()
-      .mockImplementation((url: string) =>
-        Promise.resolve(
-          Response.json(
-            requestUrl(url).endsWith(`/runs/${runId}`)
-              ? { ...run, failure: "unavailable", gate: technicalGate }
-              : { ...execution, failure: "unavailable", gate: technicalGate },
+it.each(["unavailable", "usage_limit"] as const)(
+  "handles %s as an automatic technical interruption without asking for input",
+  async (reason) => {
+    const technicalGate = {
+      ...gate,
+      reason,
+      requiredDecision: "retry_within_plan" as const,
+      question: "The Codex runtime is unavailable. Restore the connection before retrying.",
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockImplementation((url: string) =>
+          Promise.resolve(
+            Response.json(
+              requestUrl(url).endsWith(`/runs/${runId}`)
+                ? { ...run, failure: reason, gate: technicalGate }
+                : { ...execution, failure: reason, gate: technicalGate },
+            ),
           ),
         ),
-      ),
-  );
-  await render({ conversation: true });
-  expect(container.textContent).toContain("Work paused by a technical problem.");
-  expect(container.textContent).toContain("Technical interruption");
-  expect(container.textContent).not.toContain("A product decision is needed");
-  expect(container.textContent).not.toContain("Answer the product question");
-});
+    );
+    await render({ conversation: true });
+    expect(container.textContent).toContain("Work paused by a technical problem.");
+    expect(container.textContent).toContain("Technical interruption");
+    expect(container.textContent).toContain("No answer is needed");
+    expect(container.querySelector("form")).toBeNull();
+    expect(container.textContent).not.toContain("Your answer applies");
+    expect(container.textContent).not.toContain("A product decision is needed");
+    expect(container.textContent).not.toContain("Answer the product question");
+  },
+);
 
 it("explains an unconfirmed stop and prevents a gate answer from restarting the writer", async () => {
   vi.stubGlobal(
