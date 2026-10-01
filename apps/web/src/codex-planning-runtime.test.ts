@@ -435,3 +435,24 @@ it("answers a bounded project read and resumes the same model turn", async () =>
   expect(read).toHaveBeenCalledWith({ operation: "read_file", path: "src/export.ts", offset: 0 });
   expect(result.text).toContain("csv");
 });
+
+it("continues preparing an issue across the full authorized source-read budget", async () => {
+  const { cwd, logPath, runtime } = await fixture("project_reads");
+  const read = vi.fn().mockResolvedValue({ content: "Relevant source page" });
+  const result = await runtime.runTurn({
+    cwd,
+    model: "gpt-6.1-sol",
+    prompt: "Prepare an already-started issue",
+    requestId: "issue-preparation",
+    onThread: async () => {},
+    readProject: read,
+  });
+  expect(result.text).toContain("Relevant source page");
+  expect(read).toHaveBeenCalledTimes(26);
+  const recorded = await messages(logPath);
+  const instructions = z
+    .object({ developerInstructions: z.string() })
+    .parse(recorded.find((entry) => entry.method === "thread/start")?.params).developerInstructions;
+  expect(instructions).toContain("Preparing an already-authorized issue is autonomous");
+  expect(instructions).not.toContain("Conduct the interview");
+});
