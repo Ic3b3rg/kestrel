@@ -1,6 +1,11 @@
 import { expect, it, vi } from "vitest";
 
-import { factoryGateForRetry, readFactoryGate, resolveFactoryGate } from "./factory-gates.js";
+import {
+  factoryGateForRetry,
+  readFactoryGate,
+  reconcileTransientFactoryGates,
+  resolveFactoryGate,
+} from "./factory-gates.js";
 
 const featureId = "01991c36-7f90-7000-8000-000000000001";
 const projectId = "01991c36-7f90-7000-8000-000000000002";
@@ -44,12 +49,36 @@ function storage() {
     board_column: "todo",
   };
   const activity: string[] = [];
+  let hasFailedVerification = false;
   const query = vi.fn((statement: string, parameters?: unknown[]) => {
     if (statement === "BEGIN" || statement === "COMMIT" || statement === "ROLLBACK")
       return { rowCount: 0, rows: [] };
     if (statement.includes("FROM factory_features") && statement.includes("FOR UPDATE"))
       return { rowCount: 1, rows: [{ ...feature }] };
     if (statement.includes("FROM factory_human_gates gate")) {
+      if (statement.includes("JOIN factory_features feature")) {
+        const candidate =
+          !hasFailedVerification &&
+          gate.resolved_at === null &&
+          feature.state === "gated" &&
+          ["usage_limit", "unavailable"].includes(gate.reason) &&
+          gate.reason === gate.run_failure &&
+          gate.attempt < 20;
+        return {
+          rowCount: candidate ? 1 : 0,
+          rows: candidate
+            ? [
+                {
+                  id: gate.id,
+                  feature_id: featureId,
+                  project_id: projectId,
+                  created_at: gate.created_at,
+                  attempt: gate.attempt,
+                },
+              ]
+            : [],
+        };
+      }
       const matches =
         parameters?.[0] === featureId &&
         (statement.includes("gate.request_id = $2")
@@ -59,13 +88,15 @@ function storage() {
             : parameters[1] === gate.id);
       return { rowCount: matches ? 1 : 0, rows: matches ? [{ ...gate }] : [] };
     }
+    if (statement.includes("FROM factory_verification_results"))
+      return { rowCount: hasFailedVerification ? 1 : 0, rows: [{ failed: hasFailedVerification }] };
     if (statement.includes("UPDATE factory_human_gates")) {
       if (gate.resolved_at !== null) return { rowCount: 0, rows: [] };
       Object.assign(gate, {
         request_id: parameters?.[1],
-        resolved_by: parameters?.[2],
-        decision: parameters?.[3],
-        answer: parameters?.[4],
+        resolved_by: statement.includes("resolved_by = NULL") ? null : parameters?.[2],
+        decision: statement.includes("resolved_by = NULL") ? "resume_within_plan" : parameters?.[3],
+        answer: statement.includes("resolved_by = NULL") ? parameters?.[2] : parameters?.[4],
         resolved_at: now,
       });
       return { rowCount: 1, rows: [{ id: gate.id }] };
@@ -81,9 +112,96 @@ function storage() {
     throw new Error(`Unexpected query: ${statement}`);
   });
   const client = { query, release: vi.fn() };
-  const pool = { connect: () => client } as never;
-  return { feature, gate, activity, query, client, pool };
+  const pool = { connect: () => client, query } as never;
+  return {
+    feature,
+    gate,
+    activity,
+    query,
+    client,
+    pool,
+    setFailedVerification: (value: boolean) => {
+      hasFailedVerification = value;
+    },
+  };
 }
+
+it("resumes a stopped transient failure on the approved plan when the runtime recovers", async () => {
+  const state = storage();
+  Object.assign(state.gate, {
+    reason: "unavailable",
+    run_failure: "unavailable",
+    created_at: new Date("2026-09-08T11:58:00.000Z"),
+  });
+  const ready = vi.fn().mockResolvedValue(true);
+  expect(await reconcileTransientFactoryGates(state.pool, ready, now)).toBe(1);
+  expect(ready).toHaveBeenCalledOnce();
+  expect(state.feature.state).toBe("queued");
+  expect(
+    await factoryGateForRetry(state.client as never, state.feature as never, runId),
+  ).toMatchObject({
+    resolution: { operatorId: null, decision: "resume_within_plan" },
+  });
+  expect(state.activity).toEqual([
+    "The runtime recovered; another attempt is queued within the approved plan.",
+  ]);
+});
+
+it("does not retry a run with a failed approved verification command", async () => {
+  const state = storage();
+  Object.assign(state.gate, {
+    reason: "unavailable",
+    run_failure: "unavailable",
+    created_at: new Date("2026-09-08T11:58:00.000Z"),
+  });
+  state.setFailedVerification(true);
+  const ready = vi.fn().mockResolvedValue(true);
+  expect(await reconcileTransientFactoryGates(state.pool, ready, now)).toBe(0);
+  expect(ready).not.toHaveBeenCalled();
+  expect(state.feature.state).toBe("gated");
+});
+
+it("waits while the runtime is unavailable and preserves the unresolved gate", async () => {
+  const state = storage();
+  Object.assign(state.gate, {
+    reason: "usage_limit",
+    run_failure: "usage_limit",
+    created_at: new Date("2026-09-08T11:58:00.000Z"),
+  });
+  expect(await reconcileTransientFactoryGates(state.pool, () => Promise.resolve(false), now)).toBe(
+    0,
+  );
+  expect(state.gate.resolved_at).toBeNull();
+  expect(state.feature.state).toBe("gated");
+});
+
+it("rechecks a stale gate under the feature lock before an automatic retry", async () => {
+  const state = storage();
+  Object.assign(state.gate, {
+    reason: "unavailable",
+    run_failure: "unavailable",
+    created_at: new Date("2026-09-08T11:58:00.000Z"),
+    latest_run_id: otherId,
+  });
+  expect(await reconcileTransientFactoryGates(state.pool, () => Promise.resolve(true), now)).toBe(
+    0,
+  );
+  expect(state.gate.resolved_at).toBeNull();
+});
+
+it("backs off repeated transient failures instead of restarting immediately", async () => {
+  const state = storage();
+  Object.assign(state.gate, {
+    reason: "unavailable",
+    run_failure: "unavailable",
+    created_at: new Date("2026-09-08T11:58:00.000Z"),
+    attempt: 3,
+  });
+  expect(await reconcileTransientFactoryGates(state.pool, () => Promise.resolve(true), now)).toBe(
+    0,
+  );
+  expect(state.gate.resolved_at).toBeNull();
+});
 
 const answer = {
   requestId,

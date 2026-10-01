@@ -26,6 +26,7 @@ vi.mock("@kestrel/database", async (original) => ({
   reconcileFactoryConceptualReviewWorkflows: vi.fn(),
   reconcileFactoryReviewCorrections: vi.fn(),
   reconcileFactoryFeatureMerges: vi.fn(),
+  reconcileTransientFactoryGates: vi.fn(),
 }));
 vi.mock("./factory-sandbox.js", () => ({ reconcileFactorySandboxes: vi.fn() }));
 vi.mock("./factory-execution-processor.js", async (original) => ({
@@ -76,6 +77,7 @@ const repairs = [
   database.reconcileFactoryConceptualReviewWorkflows,
   database.reconcileFactoryReviewCorrections,
   database.reconcileFactoryFeatureMerges,
+  database.reconcileTransientFactoryGates,
   database.reconcileFactoryFeaturePublications,
 ];
 const pools: database.DatabasePool[] = [];
@@ -113,6 +115,7 @@ function fixture() {
       Promise.resolve(config),
     ),
     conceptualReviewRuntimeProfile: null,
+    codexAgentRuntime: { readConnection: vi.fn() },
   });
   return { runtime, start, work, offWork, stop, log };
 }
@@ -130,7 +133,7 @@ it("repairs durable state before intake and registers each consumer only once", 
   expect(new Set(f.work.mock.calls.map(([queue]) => queue)).size).toBe(8);
   expect(f.work).toHaveBeenCalledTimes(8);
   for (const repair of repairs) expect(repair).toHaveBeenCalledTimes(1);
-  expect(vi.getTimerCount()).toBe(7);
+  expect(vi.getTimerCount()).toBe(8);
   await f.runtime.stop();
   expect(f.offWork).toHaveBeenCalledTimes(8);
   expect(vi.getTimerCount()).toBe(0);

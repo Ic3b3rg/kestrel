@@ -51,6 +51,7 @@ import {
   reconcileFactoryConceptualReviewWorkflows,
   reconcileFactoryReviewCorrections,
   reconcileFactoryFeatureMerges,
+  reconcileTransientFactoryGates,
   type createPgBoss,
   type DatabasePool,
 } from "@kestrel/database";
@@ -64,6 +65,7 @@ import type {
   createDatabaseFactoryConceptualReviewService,
   FactoryConceptualReviewService,
 } from "./routes/factory-conceptual-review.js";
+import type { CodexAgentRuntimePort } from "./codex-app-server.js";
 
 interface Options {
   pool: DatabasePool;
@@ -77,6 +79,7 @@ interface Options {
   conceptualReviewRuntimeProfile: NonNullable<
     Parameters<typeof createDatabaseFactoryConceptualReviewService>[2]
   >["runtimeProfile"];
+  codexAgentRuntime: CodexAgentRuntimePort;
   containerImage?: string;
   dockerExecutable?: string;
 }
@@ -92,6 +95,7 @@ export function createFactoryBackgroundRuntime({
   transport: openAiTransport,
   conceptualReview: factoryConceptualReviewService,
   conceptualReviewRuntimeProfile: factoryConceptualReviewRuntimeProfile,
+  codexAgentRuntime,
   containerImage: factoryExecutionImage,
   dockerExecutable: factoryDockerExecutable,
 }: Options) {
@@ -194,6 +198,16 @@ export function createFactoryBackgroundRuntime({
       event: "factory.publication_reconciliation_failed",
     },
     { run: reconcileExecution, interval: 2_000, event: "factory.execution_reconciliation_failed" },
+    {
+      run: async () => {
+        await reconcileTransientFactoryGates(pool, async () => {
+          const connection = await codexAgentRuntime.readConnection(lifecycle.signal);
+          return connection.state === "ready" && connection.usage?.availability === "available";
+        });
+      },
+      interval: 30_000,
+      event: "factory.transient_retry_failed",
+    },
     {
       run: reconcileReview,
       interval: 2_000,

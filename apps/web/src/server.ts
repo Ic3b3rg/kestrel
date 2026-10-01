@@ -163,6 +163,7 @@ const background = createFactoryBackgroundRuntime({
   transport: openAiTransport,
   conceptualReview: factoryConceptualReviewService,
   conceptualReviewRuntimeProfile: factoryConceptualReviewRuntimeProfile,
+  codexAgentRuntime,
   ...(factoryExecutionImage === undefined ? {} : { containerImage: factoryExecutionImage }),
   ...(factoryDockerExecutable === undefined ? {} : { dockerExecutable: factoryDockerExecutable }),
 });

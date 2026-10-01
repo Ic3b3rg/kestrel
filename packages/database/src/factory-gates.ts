@@ -7,6 +7,7 @@ import {
   type ResolveFactoryGateCommand,
 } from "@kestrel/contracts";
 import type { PoolClient } from "pg";
+import { randomUUID } from "node:crypto";
 
 import { FactoryError, withFactoryFeature, type FeatureRow } from "./factory-planning.js";
 import type { DatabasePool } from "./pool.js";
@@ -275,4 +276,92 @@ export function resolveFactoryGate(
       resolved,
     );
   });
+}
+
+interface TransientGateCandidate {
+  id: string;
+  feature_id: string;
+  project_id: string;
+  created_at: Date;
+  attempt: number;
+}
+
+function retryDue(candidate: Pick<TransientGateCandidate, "created_at" | "attempt">, now: Date) {
+  const delay = Math.min(16, 2 ** Math.max(0, candidate.attempt - 1)) * 60_000;
+  return now.getTime() - candidate.created_at.getTime() >= delay;
+}
+
+/** Repairs only transient runtime interruptions; an unsuccessful approved check needs diagnosis. */
+export async function reconcileTransientFactoryGates(
+  pool: DatabasePool,
+  runtimeReady: () => Promise<boolean>,
+  now = new Date(),
+): Promise<number> {
+  const candidates = await pool.query<TransientGateCandidate>(
+    `SELECT gate.id, gate.feature_id, feature.project_id, gate.created_at, run.attempt
+     FROM factory_human_gates gate
+     JOIN factory_features feature ON feature.id = gate.feature_id
+     JOIN factory_execution_runs run ON run.id = gate.run_id
+     WHERE gate.resolved_at IS NULL AND gate.reason IN ('usage_limit', 'unavailable')
+       AND run.failure = gate.reason AND feature.state = 'gated' AND run.attempt < 20
+       AND gate.created_at <= $1::timestamptz -
+         LEAST(16, power(2, GREATEST(0, run.attempt - 1))) * interval '1 minute'
+       AND NOT EXISTS (SELECT 1 FROM factory_verification_results result
+         WHERE result.run_id = run.id AND result.result->>'outcome' IS DISTINCT FROM 'passed')
+     ORDER BY gate.created_at, gate.id LIMIT 20`,
+    [now],
+  );
+  if (candidates.rows.length === 0 || !(await runtimeReady())) return 0;
+  let resumed = 0;
+  for (const candidate of candidates.rows) {
+    const didResume = await withFactoryFeature(
+      pool,
+      candidate.project_id,
+      candidate.feature_id,
+      async (client, feature) => {
+        const selected = await client.query<GateRow>(
+          `${gateSelection} WHERE gate.feature_id = $1 AND gate.id = $2`,
+          [candidate.feature_id, candidate.id],
+        );
+        const gate = selected.rows[0];
+        if (
+          gate === undefined ||
+          !["usage_limit", "unavailable"].includes(gate.reason) ||
+          gate.reason !== gate.run_failure ||
+          blockedReason(feature, gate) !== null ||
+          !retryDue({ created_at: gate.created_at, attempt: gate.attempt }, now)
+        )
+          return false;
+        const checks = await client.query<{ failed: boolean }>(
+          `SELECT EXISTS (SELECT 1 FROM factory_verification_results result
+            WHERE result.run_id = $1 AND result.result->>'outcome' IS DISTINCT FROM 'passed') AS failed`,
+          [gate.run_id],
+        );
+        if (checks.rows[0]?.failed !== false) return false;
+        const answer = "The runtime recovered; retrying the same approved plan automatically.";
+        const updated = await client.query(
+          `UPDATE factory_human_gates SET request_id = $2, resolved_by = NULL,
+             decision = 'resume_within_plan', answer = $3, resolved_at = clock_timestamp()
+           WHERE id = $1 AND resolved_at IS NULL RETURNING id`,
+          [gate.id, randomUUID(), answer],
+        );
+        if (updated.rowCount !== 1) return false;
+        await client.query(
+          "UPDATE factory_features SET state = 'queued', updated_at = clock_timestamp() WHERE id = $1",
+          [feature.id],
+        );
+        await client.query(
+          "INSERT INTO factory_activity (feature_id, work_item_id, kind, summary) VALUES ($1,$2,'gate_answered',$3)",
+          [
+            feature.id,
+            gate.work_item_id,
+            "The runtime recovered; another attempt is queued within the approved plan.",
+          ],
+        );
+        return true;
+      },
+    );
+    if (didResume) resumed += 1;
+  }
+  return resumed;
 }

@@ -26,7 +26,10 @@ export function GateAnswer({ gate }: { gate: FactoryGate }) {
   if (gate.resolution === null) return null;
   return (
     <div className="space-y-2 text-sm">
-      <p className="font-medium">Answer saved · plan version {gate.approvedVersion}</p>
+      <p className="font-medium">
+        {gate.resolution.operatorId === null ? "Automatic retry" : "Answer saved"} · plan version{" "}
+        {gate.approvedVersion}
+      </p>
       {gate.purpose === "feature_verification" ? (
         <p>Only final verification resumes. Verified Work Item implementations are retained.</p>
       ) : null}
