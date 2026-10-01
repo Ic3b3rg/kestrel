@@ -180,7 +180,7 @@ describe("Feature Plan Markdown artifacts", () => {
       expect(markdown).toContain("**download**: The Operator can download every saved note.");
       expect(markdown).toContain("Concurrent Projects: 2");
       expect(markdown).toContain("Active Features per Project: 1");
-      expect(markdown).toContain("Execution attempt timeout: 1800 seconds");
+      expect(markdown).toContain("Maximum verification command duration: 1800 seconds");
       expect(markdown).toContain("Source commit: `1234567890abcdef1234567890abcdef12345678`");
       expect(markdown).toContain("`CONTEXT.md` — blob `abcdef1234567890abcdef1234567890abcdef12`");
       expect(markdown).toContain(

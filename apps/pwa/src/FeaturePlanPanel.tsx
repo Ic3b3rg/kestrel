@@ -76,7 +76,7 @@ function planErrors(plan: FeaturePlanDocument): string[] {
     limits: "Execution limits",
     maxConcurrentProjects: "Concurrent Projects",
     maxActiveFeaturesPerProject: "Active features per Project",
-    attemptTimeoutSeconds: "Attempt limit",
+    attemptTimeoutSeconds: "Verification command limit",
     proposedDocuments: "Proposed document",
     path: "Path",
     markdown: "Markdown",
@@ -619,7 +619,7 @@ export function FeaturePlanPanel({
                 {displayed.document.workItems.length} Work Items ·{" "}
                 {displayed.document.limits.maxConcurrentProjects} concurrent Projects · 1 active
                 feature per Project · {displayed.document.limits.attemptTimeoutSeconds / 60} minutes
-                per attempt
+                per verification command
               </p>
               <Button
                 disabled={

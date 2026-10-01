@@ -80,7 +80,7 @@ export function renderFactoryIssueContent({
       list([
         `${String(plan.limits.maxConcurrentProjects)} concurrent Projects`,
         "1 active Feature per Project",
-        `${String(plan.limits.attemptTimeoutSeconds)} seconds per execution attempt`,
+        `${String(plan.limits.attemptTimeoutSeconds)} seconds maximum per verification command`,
       ]),
     ].join("\n\n") + "\n";
   if (Buffer.byteLength(body) > 65_000)

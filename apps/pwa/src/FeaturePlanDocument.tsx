@@ -668,7 +668,7 @@ export function FeaturePlanEditor({
             </NativeSelect>
           </div>
           <div>
-            <Label htmlFor="plan-attempt-limit">Attempt limit (minutes)</Label>
+            <Label htmlFor="plan-attempt-limit">Verification command limit (minutes)</Label>
             <Input
               id="plan-attempt-limit"
               type="number"
@@ -836,7 +836,7 @@ export function FeaturePlanDocumentView({
         <h3>Execution limits</h3>
         <p>
           {plan.limits.maxConcurrentProjects} concurrent Projects · 1 active feature per Project ·{" "}
-          {plan.limits.attemptTimeoutSeconds / 60} minutes per attempt
+          {plan.limits.attemptTimeoutSeconds / 60} minutes per verification command
         </p>
       </section>
     </div>

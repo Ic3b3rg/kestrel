@@ -138,7 +138,7 @@ export function renderFeaturePlanArtifacts({
     markdownList([
       `Concurrent Projects: ${String(plan.limits.maxConcurrentProjects)}`,
       `Active Features per Project: ${String(plan.limits.maxActiveFeaturesPerProject)}`,
-      `Execution attempt timeout: ${String(plan.limits.attemptTimeoutSeconds)} seconds`,
+      `Maximum verification command duration: ${String(plan.limits.attemptTimeoutSeconds)} seconds`,
     ]),
     sourceContextMarkdown(context),
     ...(imports.length === 0

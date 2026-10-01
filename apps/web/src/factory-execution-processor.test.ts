@@ -933,7 +933,6 @@ it("will not checkpoint a Sandbox until a contained implementation has stopped",
     readSourceConfig: () => Promise.resolve(config),
     runtime: { runTurn, runVerification },
     signal: new AbortController().signal,
-    deadline: Date.now() + 60_000,
   });
   await sandbox.open();
   await expect(sandbox.checkpoint(1)).rejects.toMatchObject({ code: "stop_unconfirmed" });
@@ -949,7 +948,6 @@ it("keeps missing teardown proof fenced in the Sandbox itself", async () => {
     readSourceConfig: () => Promise.resolve(config),
     runtime: { runTurn, runVerification },
     signal: new AbortController().signal,
-    deadline: Date.now() + 60_000,
   });
   await sandbox.open();
   await expect(
@@ -998,7 +996,6 @@ it.each(["cancellation", "evidence failure"])(
       readSourceConfig: () => Promise.resolve(config),
       runtime: { runTurn, runVerification },
       signal: abort.signal,
-      deadline: Date.now() + 60_000,
     });
     await sandbox.open();
     await expect(sandbox.verify(1, 1)).rejects.toBeDefined();
@@ -1013,7 +1010,6 @@ it("rejects a verification position outside the approved plan before any runtime
     readSourceConfig: () => Promise.resolve(config),
     runtime: { runTurn, runVerification },
     signal: new AbortController().signal,
-    deadline: Date.now() + 60_000,
   });
   await sandbox.open();
   await expect(sandbox.verify(1, 99)).rejects.toMatchObject({ code: "invalid_response" });
@@ -1050,7 +1046,6 @@ it("redacts private paths at the Sandbox boundary for results, activity and ques
     readSourceConfig: () => Promise.resolve(config),
     runtime: { runTurn, runVerification },
     signal: new AbortController().signal,
-    deadline: Date.now() + 60_000,
   });
   await sandbox.open();
   const result = await sandbox.implement({
@@ -1252,11 +1247,12 @@ it("gates persistent verification failures after at most three technical rounds"
   );
 });
 
-it("shares one approved deadline across repair rounds", async () => {
+it("keeps a legacy execution alive beyond the plan's elapsed-time limit", async () => {
   vi.useFakeTimers({
     toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"],
   });
   const secondRound = latch();
+  const finish = latch();
   let round = 0;
   runTurn.mockImplementation((input) =>
     container(input, input.requestId, async () => {
@@ -1271,27 +1267,30 @@ it("shares one approved deadline across repair rounds", async () => {
         };
       }
       secondRound.resolve();
-      return new Promise<never>((_resolve, reject) =>
-        input.signal?.addEventListener(
-          "abort",
-          () => reject(new CodexExecutionError("cancelled")),
-          { once: true },
-        ),
-      );
+      await finish.promise;
+      await writeFile(join(input.cwd, "value.mjs"), "export const value = 2;\n");
+      return {
+        threadId: "second",
+        turnId: "second",
+        text: JSON.stringify({ status: "completed", summary: "Fixed", question: null }),
+      };
     }),
   );
   const processing = processor().process({ runId: run.id });
   await secondRound.promise;
-  await vi.advanceTimersByTimeAsync(39_999);
-  expect(runTurn.mock.calls[1]?.[0].signal?.aborted).toBe(false);
-  await vi.advanceTimersByTimeAsync(1);
-  await processing;
+  try {
+    await vi.advanceTimersByTimeAsync(60_001);
+    expect(runTurn.mock.calls[1]?.[0].signal?.aborted).toBe(false);
+  } finally {
+    finish.resolve();
+    await processing;
+  }
   expect(runTurn).toHaveBeenCalledTimes(2);
-  expect(recordFactoryExecutionCheckpoint).toHaveBeenCalledTimes(1);
+  expect(recordFactoryExecutionCheckpoint).toHaveBeenCalledTimes(2);
   expect(finishFactoryExecution).toHaveBeenCalledWith(
     pool,
     expect.anything(),
-    expect.objectContaining({ verified: false, writerStopped: true, failure: "timeout" }),
+    expect.objectContaining({ verified: true, writerStopped: true, failure: null }),
   );
   expect(vi.getTimerCount()).toBe(0);
 });

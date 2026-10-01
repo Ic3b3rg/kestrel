@@ -211,17 +211,6 @@ async function execute(
   if (run === null) return;
   const { pool } = options;
   const abort = new AbortController();
-  const autonomousIssue = run.issueExecutionContext != null;
-  const timer = autonomousIssue
-    ? null
-    : setTimeout(
-        () => abort.abort(new ExecutionFailure("timeout")),
-        run.plan.limits.attemptTimeoutSeconds * 1000,
-      );
-  timer?.unref();
-  const deadline = autonomousIssue
-    ? Number.POSITIVE_INFINITY
-    : Date.now() + run.plan.limits.attemptTimeoutSeconds * 1000;
   const signal = AbortSignal.any([
     abort.signal,
     shutdown,
@@ -241,7 +230,7 @@ async function execute(
     pulses.add(polling);
   }, 1000);
   heartbeat.unref();
-  const sandbox = createFactorySandbox({ ...options, run, signal, deadline });
+  const sandbox = createFactorySandbox({ ...options, run, signal });
   const publicText = sandbox.publicText;
   let verifying = false;
   let verified = false;
@@ -402,7 +391,7 @@ async function execute(
         pool,
         run,
         "verification",
-        "The approved checks failed. Starting another technical repair round within the same approved time limit.",
+        "The approved checks failed. Starting another technical repair round.",
       );
     }
   } catch (error) {
@@ -410,7 +399,6 @@ async function execute(
   } finally {
     clearInterval(heartbeat);
     await Promise.all(pulses);
-    if (timer !== null) clearTimeout(timer);
   }
   if (signal.aborted) {
     verified = false;
