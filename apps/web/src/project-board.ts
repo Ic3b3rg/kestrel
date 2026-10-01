@@ -167,14 +167,16 @@ export function createProjectBoardService(
       const starts = await readProjectIssueStarts(pool, local.projectId);
       const catalog = await readCatalog(local.projectId, signal, refreshProvider);
       signal.throwIfAborted();
-      const approved = new Set(local.boards.map(({ feature }) => feature.id));
-      const workItems = local.boards.flatMap((board) =>
+      const visibleBoards = local.boards.filter((board) => board.feature.state !== "cancelled");
+      const activeStarts = starts.filter((start) => start.state !== "done");
+      const approved = new Set(visibleBoards.map(({ feature }) => feature.id));
+      const workItems = visibleBoards.flatMap((board) =>
         board.columns.flatMap((column) =>
           column.items.map((item) =>
             ProjectBoardWorkItemSchema.parse({
               queued:
                 item.column === "todo" &&
-                starts.some((start) => start.featureId === board.feature.id),
+                activeStarts.some((start) => start.featureId === board.feature.id),
               feature: {
                 id: board.feature.id,
                 projectId: board.feature.projectId,
@@ -189,7 +191,7 @@ export function createProjectBoardService(
                 dependsOn: item.dependsOn,
                 column:
                   item.column === "todo" &&
-                  starts.some((start) => start.featureId === board.feature.id)
+                  activeStarts.some((start) => start.featureId === board.feature.id)
                     ? "in_progress"
                     : item.column,
                 blocking: item.blocking,
@@ -203,7 +205,7 @@ export function createProjectBoardService(
       );
       const linked = new Set([
         ...workItems.map(({ item }) => item.providerUrl),
-        ...starts.map((start) => start.issueUrl),
+        ...activeStarts.map((start) => start.issueUrl),
       ]);
       const seen = new Set<string>();
       const issues = catalog.issues.filter((issue) => {

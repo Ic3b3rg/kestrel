@@ -214,8 +214,14 @@ Return result partial because executed checks are not linked. Account for the ou
           onQuestion: () => Promise.reject(new Error("Unexpected runtime question")),
         });
         await denialChecks;
+        const output = JSON.parse(turn.text) as unknown;
+        const validated = FactoryConceptualReviewModelOutputSchema.safeParse(output);
+        if (!validated.success)
+          throw new Error(
+            JSON.stringify(validated.error.issues.map(({ path, message }) => ({ path, message }))),
+          );
         const graph = FactoryConceptualReviewDraftSchema.parse(
-          parseFactoryConceptualReviewModelOutput(JSON.parse(turn.text)),
+          parseFactoryConceptualReviewModelOutput(output),
         );
         expect(graph.result).toBe("partial");
         expect(turn.text).not.toContain("OPERATOR_PROFILE_CANARY");

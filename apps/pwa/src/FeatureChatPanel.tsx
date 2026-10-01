@@ -224,6 +224,7 @@ export function FeatureChatPanel({
   const [reading, setReading] = useState(true);
   const [readError, setReadError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [issueReviewArtifactId, setIssueReviewArtifactId] = useState<string | undefined>();
   const [planningSettings, setPlanningSettings] = useState<PlanningComposerSettings | undefined>();
   const [importsRevision, setImportsRevision] = useState(0);
   const [commandPending, setCommandPending] = useState(false);
@@ -395,8 +396,13 @@ export function FeatureChatPanel({
       </section>
     );
 
-  const visibleMessages =
-    issueConversation && chat.feature.state !== "planning" ? [] : chat.messages;
+  const visibleMessages = issueConversation
+    ? chat.messages.map((message, index) =>
+        index === 0 && message.role === "user"
+          ? { ...message, content: "Start this issue." }
+          : message,
+      )
+    : chat.messages;
   return (
     <section className="feature-planning" aria-labelledby="feature-title">
       <header className="feature-planning-header">
@@ -444,8 +450,12 @@ export function FeatureChatPanel({
           </Button>
         </div>
       </header>
-      <Tabs value={view} onValueChange={selectView} className="feature-tabs">
-        {editable && view === "chat" ? (
+      <Tabs
+        value={issueConversation ? "chat" : view}
+        onValueChange={selectView}
+        className="feature-tabs"
+      >
+        {issueConversation ? null : editable && view === "chat" ? (
           <div className="flex justify-end">
             <Button variant="ghost" onClick={() => selectView("plan")}>
               Review requirements
@@ -503,7 +513,9 @@ export function FeatureChatPanel({
               {readError}
             </FormFeedback>
           )}
-          {chat.context?.notice === null || chat.context?.notice === undefined ? null : (
+          {issueConversation ||
+          chat.context?.notice === null ||
+          chat.context?.notice === undefined ? null : (
             <p className="planning-notice">{chat.context.notice}</p>
           )}
           {chat.messages.length === 0 && editable ? (
@@ -517,7 +529,6 @@ export function FeatureChatPanel({
           ) : null}
           <ol
             className="planning-messages"
-            hidden={issueConversation && chat.feature.state !== "planning"}
             aria-label="Conversation"
             aria-live="polite"
             aria-relevant="additions text"
@@ -761,54 +772,93 @@ export function FeatureChatPanel({
               online={online}
               onAuthenticationError={onAuthenticationError}
               onGateResolved={() => void refresh()}
+              conversation
             />
           ) : null}
+          {issueConversation &&
+          ["in_review", "merging", "completed"].includes(chat.feature.state) ? (
+            <details open className="issue-review">
+              <summary>Review and results</summary>
+              <FeatureReviewPanel
+                projectId={projectId}
+                featureId={featureId}
+                online={online}
+                onAuthenticationError={onAuthenticationError}
+                onFeatureChanged={() => void refresh()}
+                {...(issueReviewArtifactId === undefined
+                  ? {}
+                  : { selectedArtifactId: issueReviewArtifactId })}
+                onSelectArtifact={setIssueReviewArtifactId}
+              />
+            </details>
+          ) : null}
         </TabsContent>
-        <TabsContent value="plan" forceMount className="data-[state=inactive]:hidden">
-          <FeaturePlanPanel
-            {...(chat.skills === undefined ? {} : { skillSelectionVersion: chat.skills.version })}
-            projectId={projectId}
-            featureId={featureId}
-            online={online}
-            visible={view === "plan"}
-            conversationPending={activeTurn !== undefined}
-            importsRevision={importsRevision}
-            onAuthenticationError={onAuthenticationError}
-            onChanged={() => void refresh()}
-            onApproved={() => selectView("board")}
-            onDirtyChange={onPlanDirtyChange}
-          />
-        </TabsContent>
-        <TabsContent value="board">
-          <FeatureBoardPanel
-            projectId={projectId}
-            featureId={featureId}
-            online={online}
-            onAuthenticationError={onAuthenticationError}
-            onViewPlan={() => selectView("plan")}
-            onOpenRevision={() => selectView("review")}
-            onFeatureChanged={() => void refresh()}
-          />
-        </TabsContent>
-        <TabsContent value="review">
-          <FeatureReviewPanel
-            projectId={projectId}
-            featureId={featureId}
-            online={online}
-            {...(artifactId === undefined ? {} : { selectedArtifactId: artifactId })}
-            onSelectArtifact={(selectedArtifactId) =>
-              onNavigate({
-                kind: "feature",
-                projectId,
-                featureId,
-                view: "review",
-                ...(selectedArtifactId === undefined ? {} : { artifactId: selectedArtifactId }),
-              })
-            }
-            onAuthenticationError={onAuthenticationError}
-            onFeatureChanged={() => void refresh()}
-          />
-        </TabsContent>
+        {issueConversation ? (
+          <details className="issue-requirements">
+            <summary>Requirements</summary>
+            <FeaturePlanPanel
+              visible={true}
+              conversationPending={activeTurn !== undefined}
+              projectId={projectId}
+              featureId={featureId}
+              online={online}
+              onAuthenticationError={onAuthenticationError}
+              onApproved={() => void refresh()}
+              onChanged={() => void refresh()}
+              onDirtyChange={onPlanDirtyChange}
+            />
+          </details>
+        ) : (
+          <>
+            <TabsContent value="plan" forceMount className="data-[state=inactive]:hidden">
+              <FeaturePlanPanel
+                {...(chat.skills === undefined
+                  ? {}
+                  : { skillSelectionVersion: chat.skills.version })}
+                projectId={projectId}
+                featureId={featureId}
+                online={online}
+                visible={view === "plan"}
+                conversationPending={activeTurn !== undefined}
+                importsRevision={importsRevision}
+                onAuthenticationError={onAuthenticationError}
+                onChanged={() => void refresh()}
+                onApproved={() => selectView("board")}
+                onDirtyChange={onPlanDirtyChange}
+              />
+            </TabsContent>
+            <TabsContent value="board">
+              <FeatureBoardPanel
+                projectId={projectId}
+                featureId={featureId}
+                online={online}
+                onAuthenticationError={onAuthenticationError}
+                onViewPlan={() => selectView("plan")}
+                onOpenRevision={() => selectView("review")}
+                onFeatureChanged={() => void refresh()}
+              />
+            </TabsContent>
+            <TabsContent value="review">
+              <FeatureReviewPanel
+                projectId={projectId}
+                featureId={featureId}
+                online={online}
+                {...(artifactId === undefined ? {} : { selectedArtifactId: artifactId })}
+                onSelectArtifact={(selectedArtifactId) =>
+                  onNavigate({
+                    kind: "feature",
+                    projectId,
+                    featureId,
+                    view: "review",
+                    ...(selectedArtifactId === undefined ? {} : { artifactId: selectedArtifactId }),
+                  })
+                }
+                onAuthenticationError={onAuthenticationError}
+                onFeatureChanged={() => void refresh()}
+              />
+            </TabsContent>
+          </>
+        )}
       </Tabs>
     </section>
   );

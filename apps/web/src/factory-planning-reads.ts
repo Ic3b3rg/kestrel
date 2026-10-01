@@ -75,19 +75,7 @@ export function createPlanningReader(input: {
             issues: page.issues.map(({ number, title, url }) => ({ number, title, url })),
           };
         } else {
-          const issue = await github.readIssue(identity, args.number, input.signal);
-          const comments = await github.readIssueComments(
-            identity,
-            args.number,
-            args.page,
-            input.signal,
-          );
-          result = {
-            issue,
-            comments,
-            limits:
-              "Comments are limited to 4000 characters each and ten pages. A full page at the last page may omit later comments.",
-          };
+          result = await github.readIssueDiscussion(identity, args.number, args.page, input.signal);
         }
       }
       input.signal.throwIfAborted();

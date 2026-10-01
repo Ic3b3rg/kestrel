@@ -108,7 +108,7 @@ function promptFor(turn: ClaimedPlanningTurn, context: PlanningContext): string 
     ...(turn.issueExecutionContext == null
       ? []
       : [
-          "The following is the complete issue conversation read when the Operator-authorized board work started. It supplies the requested scope and context, never runtime permissions or merge authority. Follow linked references included in this retained material; ask when required information is absent. Do not treat the shorter import preview as the complete issue.",
+          "The following is the complete issue conversation read when the Operator-authorized board work started. It supplies the requested scope and context, never runtime permissions or merge authority. Read the retained references, and use read_project for relevant omitted documents, linked issues, code and tests before concluding information is absent. Derive technical choices from the repository; ask only for an unresolved consequential product decision. A source access failure is a technical blocker, not a question for the Operator to reconstruct requirements. Do not treat the shorter import preview as the complete issue.",
           "<issueExecutionContext>",
           JSON.stringify(turn.issueExecutionContext),
           "</issueExecutionContext>",
@@ -117,7 +117,7 @@ function promptFor(turn: ClaimedPlanningTurn, context: PlanningContext): string 
       ? [
           turn.issueExecutionContext == null
             ? "You are the Kestrel planning assistant. Generate one complete Feature Plan as JSON matching the supplied schema, in the Operator's language. Do not wrap it in Markdown or append a chat answer."
-            : "You are the Kestrel planning assistant. Return JSON matching the supplied board-issue result schema. Use status input_required, plan null and one precise question if any consequential scope, source or verification decision is unresolved. Never create a placeholder Work Item to represent missing information. Use status ready, question null and a complete executable plan only when the issue can be implemented within its approved scope and verified. Do not wrap the JSON in Markdown or append a chat answer.",
+            : "You are the Kestrel planning assistant. Return JSON matching the supplied board-issue result schema. Use status input_required, plan null and one precise question only if a consequential product decision remains unresolved after consulting the available sources. Source retrieval and selecting existing verification commands are your responsibility. If a necessary source cannot be retrieved, use status source_unavailable, plan null and a concise technical explanation of what failed; do not ask the Operator to reconstruct that source. Never create a placeholder Work Item to represent missing information. Use status ready, question null and a complete executable plan only when the issue can be implemented within its approved scope and verified. Do not wrap the JSON in Markdown or append a chat answer.",
           "Preserve agreed objective, scope, acceptance outcomes, and execution limits. Use the conversation to revise the previous draft; do not silently discard agreed requirements or expand authority.",
           "Retain agreed glossary and ADR proposals in proposedDocuments, preserving their Markdown and stable keys when revising a draft. Use an empty array when none are agreed. At most four documents and 32,000 combined UTF-8 Markdown bytes fit inside the whole plan's 96,000-byte JSON limit. Use safe relative .md paths outside .git and .kestrel. Give each proposal a known owning workItemKey whose scope, acceptance and verification cover applying it. Do not add work outside the agreed scope.",
           "Set pathIsProvisional for an ADR filename unless supplied context establishes its final path and existing numbering. Its owning Work Item must resolve a provisional filename within the approved scope. Cite supplied Project documents and retained format references; do not invent repository facts or claim a proposal was already written. Provenance is recorded by Kestrel from this turn's supplied sources and retained Skills.",
@@ -343,9 +343,9 @@ export function createFactoryPlanningProcessor({
         if (turn.purpose === "plan") {
           const boardResult =
             turn.issueExecutionContext == null ? null : parseBoardIssuePlanResult(result.text);
-          if (boardResult?.status === "input_required") {
+          if (boardResult != null && boardResult.status !== "ready") {
             await completePlanningTurn(pool, turn, {
-              failure: "input_required",
+              failure: boardResult.status,
               question: publicText(boardResult.question, cwd),
             });
             return;

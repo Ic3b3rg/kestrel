@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
+import { BoardIssuePlanResultSchema, parseBoardIssuePlanResult } from "./factory-plan-artifacts.js";
 import { createCodexAppServerAgentRuntime } from "./codex-app-server.js";
 import { createCodexPlanningRuntime } from "./codex-planning-runtime.js";
 
@@ -229,4 +230,86 @@ describe.runIf(process.env.KESTREL_LIVE_CODEX_READS === "1")(
       }
     }, 120_000);
   },
+);
+
+it.runIf(process.env.KESTREL_LIVE_CODEX_PLANNING === "1")(
+  "prepares a ready issue by reading its contract and test command without an Operator question",
+  async () => {
+    const { stdout } = await execFileAsync("/usr/bin/which", ["codex"], {
+      encoding: "utf8",
+      timeout: 5000,
+      maxBuffer: 1024,
+    });
+    const executable = await realpath(process.env.KESTREL_CODEX_EXECUTABLE ?? stdout.trim());
+    const connection = await createCodexAppServerAgentRuntime({ executable }).readConnection();
+    const model = connection.models.find((candidate) => candidate.id === "gpt-6.1-sol")?.model;
+    if (model === undefined) throw new Error("GPT-6.1-Sol is absent from the live catalog");
+    const cwd = await realpath(await mkdtemp(join(tmpdir(), "kestrel-ready-issue-live-")));
+    const reads: unknown[] = [];
+    try {
+      const result = await createCodexPlanningRuntime({ executable, timeoutMs: 90_000 }).runTurn({
+        cwd,
+        model,
+        requestId: "ready-issue-sources",
+        onThread: async () => {},
+        outputSchema: z.toJSONSchema(BoardIssuePlanResultSchema, { target: "draft-7" }),
+        prompt:
+          "Prepare a complete executable plan for the already authorized issue #42: export a note as Markdown preserving Unicode. Exactly one Work Item must bind importedIssueId 01991c36-7f90-7000-8000-000000000001. This issue cites contract #49. Before preparing the plan use read_project to read_issue number 49 page 1, then read_file package.json. Use the supplied test command. All product requirements are settled: preserve note body exactly, no import or unrelated changes. Resolve implementation details yourself. Use limits maxConcurrentProjects 2, maxActiveFeaturesPerProject 1, attemptTimeoutSeconds 1800. Return status ready and the complete plan when sources establish the requirements. Missing technical facts must be read, not requested from the Operator.",
+        readProject: (value) => {
+          reads.push(value);
+          const request = z
+            .object({
+              operation: z.string(),
+              number: z.number().optional(),
+              path: z.string().optional(),
+            })
+            .parse(value);
+          if (request.operation === "read_issue" && request.number === 49)
+            return Promise.resolve({
+              issue: {
+                number: 49,
+                state: "closed",
+                body: "Serialize the note body exactly as UTF-8 Markdown. The export must preserve Unicode and line breaks. Implementation module: export.mjs.",
+              },
+              comments: [],
+              nextPage: null,
+            });
+          if (request.operation === "read_file" && request.path === "package.json")
+            return Promise.resolve({
+              content: JSON.stringify({
+                type: "module",
+                scripts: { test: "node --test export.test.mjs" },
+              }),
+              nextOffset: null,
+            });
+          return Promise.resolve({
+            error: "No other sources are needed for this bounded fixture.",
+          });
+        },
+      });
+      const parsed = parseBoardIssuePlanResult(result.text);
+      expect(parsed.status).toBe("ready");
+      if (parsed.status !== "ready") throw new Error("Ready issue unexpectedly required input");
+      expect(parsed.plan.workItems).toHaveLength(1);
+      expect(parsed.plan.workItems[0]?.importedIssueId).toBe(
+        "01991c36-7f90-7000-8000-000000000001",
+      );
+      expect(reads).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ operation: "read_issue", number: 49 }),
+          expect.objectContaining({ operation: "read_file", path: "package.json" }),
+        ]),
+      );
+      expect(
+        parsed.plan.workItems[0]?.verification.some(
+          (command) =>
+            (command.program === "node" && command.args.includes("export.test.mjs")) ||
+            (command.program === "npm" && command.args.includes("test")),
+        ),
+      ).toBe(true);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  },
+  120_000,
 );

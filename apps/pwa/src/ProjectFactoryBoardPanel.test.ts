@@ -351,4 +351,38 @@ describe("Project Factory board", () => {
     act(() => button("Open issue conversation #43").click());
     expect(onOpenStart).toHaveBeenCalledWith(startId);
   });
+  it("shows an open issue in To do after its previous start ended", async () => {
+    const state = snapshot();
+    state.workItems = [];
+    state.planningFeatures = [];
+    const issue = {
+      repository: { id: "901", owner: "owner", name: "reports" },
+      id: "42",
+      number: 42,
+      url: "https://github.com/owner/reports/issues/42",
+      title: "Export reports",
+      state: "open" as const,
+      labels: [{ name: "ready-for-agent", color: "008800" }],
+    };
+    state.github.issues = [issue];
+    state.starts = [
+      {
+        id: approved.id,
+        issueNumber: 42,
+        issueUrl: issue.url,
+        title: issue.title,
+        state: "done",
+        featureId: approved.id,
+        message: null,
+      },
+    ];
+    await render({ snapshot: state, onStartIssue: vi.fn() });
+    expect(container.querySelector('[aria-label="To do"]')?.textContent).toContain(
+      "Export reports",
+    );
+    expect(container.querySelector('[aria-label="Start issue #42"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Completed"]')?.textContent).not.toContain(
+      "Export reports",
+    );
+  });
 });

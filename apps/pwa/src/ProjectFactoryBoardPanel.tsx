@@ -376,7 +376,9 @@ export function ProjectFactoryBoardPanel({
             column.id === "todo"
               ? availableGitHubIssues.filter(
                   (issue) =>
-                    !(snapshot?.starts ?? []).some((start) => start.issueNumber === issue.number),
+                    !(snapshot?.starts ?? []).some(
+                      (start) => start.state !== "done" && start.issueNumber === issue.number,
+                    ),
                 )
               : [];
           const starts =
@@ -384,6 +386,10 @@ export function ProjectFactoryBoardPanel({
               ? (snapshot?.starts ?? []).filter(
                   (start) =>
                     (column.id === "completed" ? start.state === "done" : start.state !== "done") &&
+                    !(
+                      start.state === "done" &&
+                      availableGitHubIssues.some((issue) => issue.number === start.issueNumber)
+                    ) &&
                     !workItems.some(({ feature }) => feature.id === start.featureId),
                 )
               : [];

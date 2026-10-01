@@ -206,7 +206,7 @@ export function FactoryGatePanel({
           <p className="text-sm text-muted-foreground">
             {decision === "requires_plan_change"
               ? "Record what must change. Execution will stay paused; this does not approve a new scope."
-              : "Clarify the technical choice or confirm the problem is resolved. Requirements, checks and authorized limits remain those in the approved plan."}
+              : "Answer the product question above. Kestrel handles implementation choices and checks within the agreed requirements."}
           </p>
           {busy ? (
             <FormFeedback kind="pending">Saving your answer for this gate…</FormFeedback>

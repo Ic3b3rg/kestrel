@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
   identify: vi.fn(),
   listIssues: vi.fn(),
   readIssue: vi.fn(),
-  readIssueComments: vi.fn(),
+  readIssueDiscussion: vi.fn(),
   readRepository: vi.fn(),
 }));
 vi.mock("@kestrel/database", async (original) => ({
@@ -58,7 +58,11 @@ beforeEach(() => {
     limited: false,
   });
   mocks.readIssue.mockResolvedValue({ number: 1, title: "Saved reports", body: "Acceptance" });
-  mocks.readIssueComments.mockResolvedValue({ comments: [], nextPage: null });
+  mocks.readIssueDiscussion.mockResolvedValue({
+    issue: { number: 1, title: "Saved reports", body: "Acceptance" },
+    comments: [],
+    nextPage: null,
+  });
   mocks.readRepository.mockResolvedValue({ content: "Committed context", nextOffset: null });
 });
 it("restricts reads to the linked project and returns issue summaries before targeted details", async () => {
@@ -72,7 +76,8 @@ it("restricts reads to the linked project and returns issue summaries before tar
   );
   expect(await read({ operation: "read_issue", number: 1, page: 1 })).toMatchObject({
     issue: { body: "Acceptance" },
-    comments: { comments: [], nextPage: null },
+    comments: [],
+    nextPage: null,
   });
 });
 it("rejects writes, arbitrary repositories and traversal-shaped unsupported arguments without accessing sources", async () => {

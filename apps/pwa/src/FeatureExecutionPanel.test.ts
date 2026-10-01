@@ -528,6 +528,65 @@ it("waits for a slow execution read before polling again and stops after verific
   expect(fetch).toHaveBeenCalledTimes(2);
 });
 
+it("follows new issue attempts while letting the Operator inspect and leave history", async () => {
+  vi.useFakeTimers();
+  const nextId = "018f0f89-949a-75a8-8f61-6df78a843b24";
+  const summary = execution.workItems[0]?.runs[0];
+  const activity = run.activity[0];
+  if (summary === undefined || activity === undefined) throw new Error("Attempt fixture missing");
+  let hasNext = false;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((url: RequestInfo | URL) => {
+      if (requestUrl(url).endsWith(`/runs/${runId}`))
+        return Promise.resolve(Response.json({ ...run, question: null }));
+      if (requestUrl(url).endsWith(`/runs/${nextId}`))
+        return Promise.resolve(
+          Response.json({
+            ...run,
+            id: nextId,
+            attempt: 2,
+            question: null,
+            activity: [{ ...activity, summary: "Checking the new implementation." }],
+          }),
+        );
+      return Promise.resolve(
+        Response.json({
+          ...execution,
+          state: "running",
+          question: null,
+          workItems: [
+            {
+              ...execution.workItems[0],
+              runs: hasNext
+                ? [
+                    summary,
+                    { ...summary, id: nextId, attempt: 2, createdAt: "2026-09-07T12:01:00.000Z" },
+                  ]
+                : [summary],
+            },
+          ],
+        }),
+      );
+    }),
+  );
+  await render({ conversation: true });
+  expect(container.textContent).toContain("Report export failed its declared check.");
+  hasNext = true;
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2000);
+  });
+  expect(container.textContent).toContain("Checking the new implementation.");
+  await click("Attempt 1");
+  expect(container.textContent).toContain("Report export failed its declared check.");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2000);
+  });
+  expect(container.textContent).toContain("Report export failed its declared check.");
+  await click("Follow current activity");
+  expect(container.textContent).toContain("Checking the new implementation.");
+});
+
 it("keeps an unconfirmed cancellation visibly reserved without offering a replay", async () => {
   vi.stubGlobal(
     "fetch",

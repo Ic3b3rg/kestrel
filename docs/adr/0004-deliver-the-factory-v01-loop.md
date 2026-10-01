@@ -43,3 +43,16 @@ every prerequisite's confirmed merge commit is an ancestor before granting execu
 source is stale or ancestry exceeds the bounded read budget, the board returns an actionable block;
 Kestrel never silently runs the old interview snapshot or fetches/changes the Operator checkout. The
 original requirements retain their interview provenance separately.
+
+## Amendment: autonomous ready-issue execution (2026-10-01)
+
+The Operator confirmed that a started issue already has a small, sourced scope. Preparation reads
+its complete discussion, cited issue contracts and prerequisite state, then consults committed
+repository documents, code and tests. It derives implementation choices and verification commands
+within that scope. Missing source access is a technical preparation failure, not a Human Gate asking
+the Operator to reconstruct requirements. No incomplete or input-required plan authorizes execution.
+Human Gates remain only for consequential product or authority decisions unresolved by these
+sources. The issue workspace presents one chronological conversation with retained activity, child
+agents, verification and result; requirements and review remain inspectable without workflow tabs.
+Explicit merge authority remains unchanged. Cancellation preserves history and makes the open issue
+available in To do for a fresh explicit start.

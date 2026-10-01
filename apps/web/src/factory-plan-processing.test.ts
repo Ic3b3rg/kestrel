@@ -648,3 +648,22 @@ describe("structured Feature Plan processing", () => {
     });
   });
 });
+
+it("records a missing source as a technical preparation failure without saving a plan", async () => {
+  turn.issueExecutionContext = { issue: { number: 142 }, conversation: [] };
+  runTurn.mockResolvedValue({
+    threadId: "plan-thread",
+    turnId: "runtime-turn",
+    text: JSON.stringify({
+      status: "source_unavailable",
+      plan: null,
+      question: "GitHub contract #49 could not be read. Retry when access is restored.",
+    }),
+  });
+  await processor().process({ turnId: turn.id });
+  expect(generated).not.toHaveBeenCalled();
+  expect(completePlanningTurn).toHaveBeenCalledExactlyOnceWith(pool, turn, {
+    failure: "source_unavailable",
+    question: "GitHub contract #49 could not be read. Retry when access is restored.",
+  });
+});

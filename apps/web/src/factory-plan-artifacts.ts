@@ -10,20 +10,22 @@ import { z } from "zod";
 import { CodexPlanningError } from "./codex-planning-runtime.js";
 
 export const BoardIssuePlanResultSchema = z.strictObject({
-  status: z.enum(["ready", "input_required"]),
+  status: z.enum(["ready", "input_required", "source_unavailable"]),
   plan: GeneratedFeaturePlanDocumentSchema.nullable(),
   question: z.string().trim().min(1).max(4000).nullable(),
 });
 
 export function parseBoardIssuePlanResult(
   text: string,
-): { status: "ready"; plan: FeaturePlanDocument } | { status: "input_required"; question: string } {
+):
+  | { status: "ready"; plan: FeaturePlanDocument }
+  | { status: "input_required" | "source_unavailable"; question: string } {
   try {
     const result = BoardIssuePlanResultSchema.parse(JSON.parse(text));
-    if (result.status === "input_required") {
+    if (result.status !== "ready") {
       if (result.plan !== null || result.question === null)
         throw new CodexPlanningError("invalid_response");
-      return { status: "input_required", question: result.question };
+      return { status: result.status, question: result.question };
     }
     if (result.plan === null || result.question !== null)
       throw new CodexPlanningError("invalid_response");
