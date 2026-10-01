@@ -674,7 +674,9 @@ function ExecutionPanel({
                   : execution.state === "cancelled"
                     ? "Work stopped. Its history is saved."
                     : execution.gate != null
-                      ? "A product decision is needed."
+                      ? execution.gate.reason === "input_required"
+                        ? "A product decision is needed."
+                        : "Work paused by a technical problem."
                       : "Work paused."}
         </p>
         {execution?.gate == null ? (

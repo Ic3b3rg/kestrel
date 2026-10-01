@@ -69,6 +69,7 @@ export function FactoryGatePanel({
   const controller = useRef<AbortController | null>(null);
   useEffect(() => () => controller.current?.abort(), []);
   const current = gate.resolution === null ? (confirmed ?? gate) : gate;
+  const productDecision = gate.reason === "input_required";
   const canAnswer = ![
     "cancelled",
     "stale_gate",
@@ -137,7 +138,9 @@ export function FactoryGatePanel({
         {current.resolution !== null
           ? "Recorded decision"
           : canAnswer
-            ? "Your decision is needed"
+            ? productDecision
+              ? "Your decision is needed"
+              : "Technical interruption"
             : "Retained question"}
       </h4>
       <p className="whitespace-pre-wrap break-words font-medium">{gate.question}</p>
@@ -191,7 +194,7 @@ export function FactoryGatePanel({
           </div>
           <div className="space-y-1">
             <label htmlFor={`${id}-answer`} className="block text-sm font-medium">
-              Your answer
+              {productDecision ? "Your answer" : "Recovery note"}
             </label>
             <textarea
               id={`${id}-answer`}
@@ -206,7 +209,9 @@ export function FactoryGatePanel({
           <p className="text-sm text-muted-foreground">
             {decision === "requires_plan_change"
               ? "Record what must change. Execution will stay paused; this does not approve a new scope."
-              : "Answer the product question above. Kestrel handles implementation choices and checks within the agreed requirements."}
+              : productDecision
+                ? "Answer the product question above. Kestrel handles implementation choices and checks within the agreed requirements."
+                : "Confirm that the technical problem is resolved before retrying the same approved plan."}
           </p>
           {busy ? (
             <FormFeedback kind="pending">Saving your answer for this gate…</FormFeedback>
