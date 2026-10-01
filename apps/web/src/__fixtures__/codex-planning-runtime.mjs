@@ -10,6 +10,7 @@ log({
   inheritedApiKey: Object.hasOwn(process.env, "OPENAI_API_KEY"),
 });
 let output = Promise.resolve();
+let projectReads = 0;
 function send(message) {
   output = output.then(async () => {
     const bytes = Buffer.from(`${JSON.stringify(message)}\n`);
@@ -26,7 +27,25 @@ const lines = createInterface({ input: process.stdin });
 lines.on("line", async (line) => {
   const message = JSON.parse(line);
   log(message);
-  if (message.id === "read-1" && message.result) {
+  if (String(message.id).startsWith("read-") && message.result) {
+    if (mode === "project_reads" && ++projectReads < 26) {
+      await send({
+        id: `read-${projectReads + 1}`,
+        method: "item/tool/call",
+        params: {
+          threadId: "thread-planning",
+          turnId: "turn-planning",
+          callId: `read-${projectReads + 1}`,
+          tool: "read_project",
+          arguments: {
+            operation: "read_file",
+            path: "src/export.ts",
+            offset: projectReads * 12000,
+          },
+        },
+      });
+      return;
+    }
     await send({
       method: "item/completed",
       params: {
@@ -133,7 +152,7 @@ lines.on("line", async (line) => {
       });
       return;
     }
-    if (mode === "project_read") {
+    if (mode === "project_read" || mode === "project_reads") {
       await send({
         id: "read-1",
         method: "item/tool/call",

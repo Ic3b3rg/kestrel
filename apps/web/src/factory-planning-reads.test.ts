@@ -97,9 +97,30 @@ it("bounds the tool loop and keeps failures free of host secrets", async () => {
   expect(JSON.stringify(await read({ operation: "read_file", path: "README.md" }))).not.toContain(
     "secret",
   );
-  for (let index = 1; index < 16; index++) await read({ operation: "find_files", query: "docs" });
+  for (let index = 1; index < 64; index++) await read({ operation: "find_files", query: "docs" });
   expect(JSON.stringify(await read({ operation: "find_files", query: "docs" }))).toContain(
     "budget",
   );
-  expect(mocks.readRepository).toHaveBeenCalledTimes(16);
+  expect(mocks.readRepository).toHaveBeenCalledTimes(64);
+});
+
+it("can inspect the relevant code and browser tests across more than sixteen source pages", async () => {
+  const read = reader();
+  mocks.readRepository.mockResolvedValue({ content: "a".repeat(12000), nextOffset: 12000 });
+  for (let page = 0; page < 26; page++) {
+    expect(
+      await read({
+        operation: "read_file",
+        path: "tests/black-box/factory-review-corrections.spec.ts",
+        offset: page * 12000,
+      }),
+    ).toHaveProperty("content");
+  }
+});
+
+it("retains the remaining budget after an oversized read so a smaller source can still be retrieved", async () => {
+  const read = reader();
+  mocks.readRepository.mockResolvedValueOnce({ content: "a".repeat(600000) });
+  expect(await read({ operation: "read_file", path: "large.md" })).toHaveProperty("error");
+  expect(await read({ operation: "read_file", path: "package.json" })).toHaveProperty("content");
 });
