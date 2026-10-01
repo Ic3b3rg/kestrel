@@ -42,7 +42,7 @@ async function fixture(mode = "happy", runtimeOptions: Partial<CodexExecutionRun
   await writeFile(daemonPath, JSON.stringify(daemonId));
   await writeFile(
     dockerPath,
-    `#!${process.execPath}\nif (process.argv[2] === "info") { const {readFile}=await import("node:fs/promises"); console.log(JSON.parse(await readFile(${JSON.stringify(daemonPath)}, "utf8"))); } else { process.env.KESTREL_TEST_ROOT=${JSON.stringify(cwd)};process.env.KESTREL_TEST_MODE=${JSON.stringify(mode)};await import(${JSON.stringify(dockerFixturePath)}); }\n`,
+    `#!${process.execPath}\nif (process.argv[2] === "info") { const {readFile}=await import("node:fs/promises"); console.log(process.argv.includes("{{.NCPU}}") ? "12" : JSON.parse(await readFile(${JSON.stringify(daemonPath)}, "utf8"))); } else { process.env.KESTREL_TEST_ROOT=${JSON.stringify(cwd)};process.env.KESTREL_TEST_MODE=${JSON.stringify(mode)};await import(${JSON.stringify(dockerFixturePath)}); }\n`,
     { mode: 0o700 },
   );
   return {
@@ -532,6 +532,7 @@ it.each([
   "limit_memory",
   "limit_swap",
   "limit_cpu",
+  "limit_cpuset",
   "limit_init",
   "limit_shm",
   "limit_tmpfs",
@@ -693,6 +694,7 @@ it("runs exact verification argv in a separate container and preserves nonzero o
   if (create === undefined) throw new Error("Expected container creation");
   expect(create).toContain("--init");
   expect(create[create.indexOf("--memory") + 1]).toBe(String(2 * 1024 * 1024 * 1024));
+  expect(create[create.indexOf("--cpuset-cpus") + 1]).toBe("0-1");
   expect(create.slice(create.indexOf("--entrypoint") + 1)).toEqual([
     command[0],
     `sha256:${"1".repeat(64)}`,

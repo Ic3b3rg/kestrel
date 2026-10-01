@@ -194,7 +194,7 @@ const ENVIRONMENTS = [
 ];
 const OUTPUT_CAP = 64 * 1024;
 const CONTAINER_INSPECT =
-  '{"id":{{json .Id}},"name":{{json .Name}},"running":{{.State.Running}},"status":{{json .State.Status}},"exitCode":{{.State.ExitCode}},"image":{{json .Image}},"user":{{json .Config.User}},"network":{{json .HostConfig.NetworkMode}},"logDriver":{{json .HostConfig.LogConfig.Type}},"readonly":{{.HostConfig.ReadonlyRootfs}},"privileged":{{.HostConfig.Privileged}},"pidMode":{{json .HostConfig.PidMode}},"restart":{{json .HostConfig.RestartPolicy.Name}},"init":{{.HostConfig.Init}},"pidsLimit":{{.HostConfig.PidsLimit}},"memory":{{.HostConfig.Memory}},"memorySwap":{{.HostConfig.MemorySwap}},"nanoCpus":{{.HostConfig.NanoCpus}},"shmSize":{{.HostConfig.ShmSize}},"tmpfs":{{json .HostConfig.Tmpfs}},"capDrop":{{json .HostConfig.CapDrop}},"securityOpt":{{json .HostConfig.SecurityOpt}},"mounts":{{json .Mounts}},"labels":{{json .Config.Labels}}}';
+  '{"id":{{json .Id}},"name":{{json .Name}},"running":{{.State.Running}},"status":{{json .State.Status}},"exitCode":{{.State.ExitCode}},"image":{{json .Image}},"user":{{json .Config.User}},"network":{{json .HostConfig.NetworkMode}},"logDriver":{{json .HostConfig.LogConfig.Type}},"readonly":{{.HostConfig.ReadonlyRootfs}},"privileged":{{.HostConfig.Privileged}},"pidMode":{{json .HostConfig.PidMode}},"restart":{{json .HostConfig.RestartPolicy.Name}},"init":{{.HostConfig.Init}},"pidsLimit":{{.HostConfig.PidsLimit}},"memory":{{.HostConfig.Memory}},"memorySwap":{{.HostConfig.MemorySwap}},"nanoCpus":{{.HostConfig.NanoCpus}},"cpusetCpus":{{json .HostConfig.CpusetCpus}},"shmSize":{{.HostConfig.ShmSize}},"tmpfs":{{json .HostConfig.Tmpfs}},"capDrop":{{json .HostConfig.CapDrop}},"securityOpt":{{json .HostConfig.SecurityOpt}},"mounts":{{json .Mounts}},"labels":{{json .Config.Labels}}}';
 const FORWARD =
   "const n=require('node:net');const s=n.connect(8765,'127.0.0.1',()=>{process.stdin.pipe(s);s.pipe(process.stdout)});s.on('error',()=>process.exit(1));process.stdin.on('end',()=>s.end());";
 // This fixed probe waits for the executor socket. It never runs project code.
@@ -634,6 +634,11 @@ class ExecutionContainer {
       resources.tmpfsBytes < 1024 * 1024
     )
       throw new CodexExecutionError("invalid_response");
+    const availableCpus = Number(await this.cli(["info", "--format", "{{.NCPU}}"], signal));
+    if (!Number.isSafeInteger(availableCpus) || availableCpus < 1)
+      throw new CodexExecutionError("sandbox_unavailable");
+    const cpuCount = Math.min(availableCpus, Math.ceil(resources.nanoCpus / 1_000_000_000));
+    const cpuSet = cpuCount === 1 ? "0" : `0-${String(cpuCount - 1)}`;
     const containerUser =
       this.#options.containerUser ??
       `${String(process.getuid?.() ?? 1000)}:${String(process.getgid?.() ?? 1000)}`;
@@ -683,6 +688,8 @@ class ExecutionContainer {
         String(resources.memoryBytes),
         "--cpus",
         String(resources.nanoCpus / 1_000_000_000),
+        "--cpuset-cpus",
+        cpuSet,
         "--shm-size",
         String(shmBytes),
         "--user",
@@ -732,6 +739,7 @@ class ExecutionContainer {
       state.memory !== resources.memoryBytes ||
       state.memorySwap !== resources.memoryBytes ||
       state.nanoCpus !== resources.nanoCpus ||
+      state.cpusetCpus !== cpuSet ||
       state.shmSize !== shmBytes ||
       Object.keys(actualTmpfs).length !== 2 ||
       actualTmpfs["/tmp"] !== temporaryTmpfs ||

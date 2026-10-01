@@ -39,6 +39,7 @@ if (args[0] === "image") {
     memory: mode === "limit_memory" ? 0 : Number(value("--memory")),
     memorySwap: mode === "limit_swap" ? 0 : Number(value("--memory-swap")),
     nanoCpus: mode === "limit_cpu" ? 0 : Number(value("--cpus")) * 1_000_000_000,
+    cpusetCpus: mode === "limit_cpuset" ? "" : value("--cpuset-cpus"),
     shmSize: mode === "limit_shm" ? 0 : Number(value("--shm-size")),
     tmpfs:
       mode === "limit_tmpfs"
