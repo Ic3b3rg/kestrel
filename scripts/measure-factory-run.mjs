@@ -92,16 +92,25 @@ while (!stopping) {
           })
       : [];
   const cgroups = await Promise.all(
-    factoryNames.map(async (name) => ({
-      name,
-      memory: await command(docker, [
-        "exec",
-        name,
-        "sh",
-        "-c",
-        "cat /sys/fs/cgroup/memory.current /sys/fs/cgroup/memory.peak /sys/fs/cgroup/memory.max /sys/fs/cgroup/memory.events",
-      ]),
-    })),
+    factoryNames.map(async (name) => {
+      const [memory, pids] = await Promise.all([
+        command(docker, [
+          "exec",
+          name,
+          "sh",
+          "-c",
+          "cat /sys/fs/cgroup/memory.current /sys/fs/cgroup/memory.peak /sys/fs/cgroup/memory.max /sys/fs/cgroup/memory.events",
+        ]),
+        command(docker, [
+          "exec",
+          name,
+          "sh",
+          "-c",
+          "cat /sys/fs/cgroup/pids.current /sys/fs/cgroup/pids.peak /sys/fs/cgroup/pids.max /sys/fs/cgroup/pids.events",
+        ]),
+      ]);
+      return { name, memory, pids };
+    }),
   );
   await appendFile(
     output,
