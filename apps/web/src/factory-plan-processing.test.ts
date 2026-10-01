@@ -218,6 +218,20 @@ it("asks for input instead of saving a placeholder board-start plan", async () =
 
 it("saves a complete board-start plan when the structured result is ready", async () => {
   turn.issueExecutionContext = { issue: { number: 142 }, conversation: [] };
+  turn.skills = [
+    {
+      name: "grill-with-docs",
+      description: "Interview before preparing a plan",
+      contentDigest: "a".repeat(64),
+      source: { kind: "host", label: "grill-with-docs", candidateId: "b".repeat(64) },
+      files: [
+        {
+          path: "SKILL.md",
+          content: "Ask the Operator questions and request approval before continuing.",
+        },
+      ],
+    },
+  ];
   const document = plan();
   runTurn.mockResolvedValue({
     threadId: "plan-thread",
@@ -225,11 +239,14 @@ it("saves a complete board-start plan when the structured result is ready", asyn
     text: JSON.stringify({ status: "ready", plan: document, question: null }),
   });
   await processor().process({ turnId: turn.id });
+  const prompt = runTurn.mock.calls[0]?.[0].prompt ?? "";
+  expect(prompt).toContain("Skip interview and approval checkpoints in selected Skills");
+  expect(prompt).not.toContain("If consequential decisions or verification details are missing");
   expect(generated).toHaveBeenCalledExactlyOnceWith(
     pool,
     turn,
     document,
-    context,
+    expect.objectContaining(context),
     renderFeaturePlanArtifacts,
   );
   expect(completePlanningTurn).not.toHaveBeenCalled();
