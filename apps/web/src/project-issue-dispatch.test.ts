@@ -118,6 +118,7 @@ it("reads and retains the current complete conversation when queued work starts"
     }),
     { expectedVersion: null },
     {},
+    [],
   );
   expect(db.approve).not.toHaveBeenCalled();
 });

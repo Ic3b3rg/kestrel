@@ -211,12 +211,17 @@ async function execute(
   if (run === null) return;
   const { pool } = options;
   const abort = new AbortController();
-  const timer = setTimeout(
-    () => abort.abort(new ExecutionFailure("timeout")),
-    run.plan.limits.attemptTimeoutSeconds * 1000,
-  );
-  timer.unref();
-  const deadline = Date.now() + run.plan.limits.attemptTimeoutSeconds * 1000;
+  const autonomousIssue = run.issueExecutionContext != null;
+  const timer = autonomousIssue
+    ? null
+    : setTimeout(
+        () => abort.abort(new ExecutionFailure("timeout")),
+        run.plan.limits.attemptTimeoutSeconds * 1000,
+      );
+  timer?.unref();
+  const deadline = autonomousIssue
+    ? Number.POSITIVE_INFINITY
+    : Date.now() + run.plan.limits.attemptTimeoutSeconds * 1000;
   const signal = AbortSignal.any([
     abort.signal,
     shutdown,
@@ -405,7 +410,7 @@ async function execute(
   } finally {
     clearInterval(heartbeat);
     await Promise.all(pulses);
-    clearTimeout(timer);
+    if (timer !== null) clearTimeout(timer);
   }
   if (signal.aborted) {
     verified = false;

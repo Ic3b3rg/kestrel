@@ -1296,6 +1296,41 @@ it("shares one approved deadline across repair rounds", async () => {
   expect(vi.getTimerCount()).toBe(0);
 });
 
+it("keeps authorized board work running beyond the plan's elapsed-time limit", async () => {
+  run.issueExecutionContext = { issue: { number: 142 } };
+  vi.useFakeTimers({
+    toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"],
+  });
+  const started = latch();
+  const finish = latch();
+  runTurn.mockImplementation((input) =>
+    container(input, input.requestId, async () => {
+      started.resolve();
+      await finish.promise;
+      await writeFile(join(input.cwd, "value.mjs"), "export const value = 2;\n");
+      return {
+        threadId: "thread",
+        turnId: "turn",
+        text: JSON.stringify({ status: "completed", summary: "Implemented", question: null }),
+      };
+    }),
+  );
+  const processing = processor().process({ runId: run.id });
+  await started.promise;
+  try {
+    await vi.advanceTimersByTimeAsync(60_001);
+    expect(runTurn.mock.calls[0]?.[0].signal?.aborted).toBe(false);
+  } finally {
+    finish.resolve();
+    await processing;
+  }
+  expect(finishFactoryExecution).toHaveBeenCalledWith(
+    pool,
+    expect.anything(),
+    expect.objectContaining({ verified: true, writerStopped: true, failure: null }),
+  );
+});
+
 it("deduplicates local deliveries and drains teardown and an outstanding heartbeat before stop completes", async () => {
   vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
   const started = latch();

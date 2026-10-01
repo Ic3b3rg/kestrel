@@ -136,6 +136,7 @@ export function createProjectIssueDispatcher(
       },
       { expectedVersion },
       await runtime.readConnection(),
+      [],
     );
     await updateIssueDispatch(pool, start.id, "preparing");
   }

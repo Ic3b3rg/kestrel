@@ -133,7 +133,12 @@ describe("Project Factory board", () => {
       await Promise.resolve();
     });
     expect(onStartIssue).toHaveBeenCalledExactlyOnceWith(board.workItems[0]);
-    expect(container.querySelector('[draggable="true"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="To do"]')?.textContent).not.toContain(
+      firstItem.title,
+    );
+    expect(container.querySelector('[aria-label="In progress"]')?.textContent).toContain(
+      `${firstItem.title}Starting…`,
+    );
   });
 
   it("combines planning Features and approved Work Items without inventing completion or issue links", async () => {
@@ -329,7 +334,7 @@ describe("Project Factory board", () => {
     act(() => button("Start issue #43").click());
     expect(onStartIssue).toHaveBeenCalledWith(43);
     board.settings = { readyLabel: "ready-for-agent" };
-    await render({ snapshot: board, onStartIssue, onOpenIssue });
+    await render({ snapshot: board, onStartIssue, onOpenIssue, startError: "Start failed" });
     expect(button("Start issue #43").disabled).toBe(true);
   });
   it("reopens the same issue conversation from its In progress card", async () => {
@@ -350,6 +355,12 @@ describe("Project Factory board", () => {
     await render({ snapshot: board, onOpenStart });
     act(() => button("Open issue conversation #43").click());
     expect(onOpenStart).toHaveBeenCalledWith(startId);
+    act(() => {
+      container
+        .querySelector('[aria-label="In progress"] li')
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onOpenStart).toHaveBeenCalledTimes(2);
   });
   it("shows an open issue in To do after its previous start ended", async () => {
     const state = snapshot();

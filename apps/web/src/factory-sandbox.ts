@@ -330,7 +330,10 @@ export function createFactorySandbox(options: FactorySandboxOptions) {
           options.runtime ??
           createCodexExecutionRuntime({
             containerImage: containerImage ?? "",
-            timeoutMs: run.plan.limits.attemptTimeoutSeconds * 1000,
+            timeoutMs:
+              run.issueExecutionContext == null
+                ? run.plan.limits.attemptTimeoutSeconds * 1000
+                : null,
             ...(options.dockerExecutable === undefined
               ? {}
               : { dockerExecutable: options.dockerExecutable }),

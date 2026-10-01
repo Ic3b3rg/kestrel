@@ -9,7 +9,11 @@ afterEach(async () => {
   for (const directory of directories.splice(0))
     await rm(directory, { force: true, recursive: true });
 });
-async function fixture(mode: string, profile: "connection" | "turn") {
+async function fixture(
+  mode: string,
+  profile: "connection" | "turn",
+  timeoutMs: number | null = 2_000,
+) {
   const cwd = await mkdtemp(join(tmpdir(), "kestrel-transport-conformance-"));
   directories.push(cwd);
   const executable = join(cwd, "server.mjs");
@@ -32,6 +36,7 @@ async function fixture(mode: string, profile: "connection" | "turn") {
         if (mode === 'eof') { process.stdout.end(JSON.stringify({ id: message.id, result: { text: 'caffè 🪶' } })); return; }
         if (mode === 'wrong_id') { reply(message.id + 1); return; }
         if (mode === 'stderr') { process.stderr.write('x'.repeat(48 * 1024)); setTimeout(() => reply(message.id), 20); return; }
+        if (mode === 'delayed') { setTimeout(() => reply(message.id), 100); return; }
         if (mode === 'bidirectional') {
           pending = message.id;
           console.log(JSON.stringify({ method: 'progress', params: { state: 'working' } }));
@@ -49,7 +54,7 @@ async function fixture(mode: string, profile: "connection" | "turn") {
     arguments: [executable, mode],
     cwd,
     profile,
-    timeoutMs: 2_000,
+    timeoutMs,
     receive(message) {
       received.push(message);
       if (message.method === "approval")
@@ -58,6 +63,15 @@ async function fixture(mode: string, profile: "connection" | "turn") {
   });
   return { transport, received };
 }
+
+it("keeps an active turn alive without an aggregate transport deadline", async () => {
+  const { transport } = await fixture("delayed", "turn", null);
+  try {
+    expect(await transport.request("probe", {})).toEqual({ text: "caffè 🪶" });
+  } finally {
+    await transport.close();
+  }
+});
 
 it.each(["connection", "turn"] as const)(
   "correlates bidirectional requests and split UTF-8 frames in the %s profile",

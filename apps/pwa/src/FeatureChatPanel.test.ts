@@ -193,6 +193,8 @@ describe("persistent planning conversation", () => {
   it("opens issue execution as one activity conversation without workflow tabs", async () => {
     await render({
       issueConversation: true,
+      issueNumber: 42,
+      issueUrl: "https://github.com/owner/reports/issues/42",
       loadChat: () =>
         Promise.resolve({
           ...initial,
@@ -204,9 +206,12 @@ describe("persistent planning conversation", () => {
         }),
     });
     expect(container.querySelector<HTMLOListElement>(".planning-messages")?.hidden).toBe(false);
-    expect(container.textContent).toContain("Start this issue.");
+    expect(container.textContent).toContain("Implement issue #42.");
+    expect(
+      container.querySelector('a[href="https://github.com/owner/reports/issues/42"]'),
+    ).not.toBeNull();
     expect(container.textContent).not.toContain("Temporary planning prompt");
-    expect(container.querySelector<HTMLFormElement>(".planning-composer")?.hidden).toBe(true);
+    expect(container.querySelector<HTMLFormElement>(".planning-composer")).toBeNull();
     expect(container.textContent).toContain("Activity");
     expect(container.querySelector('[role="tablist"]')).toBeNull();
     expect(container.textContent).toContain("Requirements");

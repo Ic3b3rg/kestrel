@@ -139,6 +139,8 @@ export function ProjectIssueConversation({
               projectName={projectName}
               featureId={start.featureId}
               issueConversation
+              issueNumber={start.issueNumber}
+              issueUrl={start.issueUrl}
               online={online}
               onNavigate={onNavigate}
               onAuthenticationError={onAuthenticationError}

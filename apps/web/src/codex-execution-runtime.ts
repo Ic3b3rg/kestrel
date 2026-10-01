@@ -105,7 +105,7 @@ export interface CodexExecutionRuntime {
 export interface CodexExecutionRuntimeOptions {
   executable?: string;
   arguments?: readonly string[];
-  timeoutMs?: number;
+  timeoutMs?: number | null;
   dockerExecutable?: string;
   containerImage: string;
   workspaceReadonly?: boolean;
@@ -974,7 +974,7 @@ class ExecutionTurn {
     hostCwd: string,
     url: string,
     signal: AbortSignal,
-    timeoutMs: number,
+    timeoutMs: number | null,
     hostProfile: IsolatedCodexProfile | null,
   ) {
     this.#input = input;
@@ -1407,14 +1407,17 @@ async function isolated<T>(
   input: CodexExecutionLifecycle & { signal?: AbortSignal; gitDirectory?: string },
   workspacePath: string,
   requestId: string,
-  timeoutMs: number,
+  timeoutMs: number | null,
   operation: (container: ExecutionContainer, control: string, signal: AbortSignal) => Promise<T>,
 ): Promise<T> {
   boundedString(requestId);
-  timeout(timeoutMs);
+  if (timeoutMs !== null) timeout(timeoutMs);
   if (input.signal?.aborted) throw new CodexExecutionError("cancelled");
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(new CodexExecutionError("timeout")), timeoutMs);
+  const timer =
+    timeoutMs === null
+      ? null
+      : setTimeout(() => controller.abort(new CodexExecutionError("timeout")), timeoutMs);
   const signal =
     input.signal === undefined
       ? controller.signal
@@ -1442,7 +1445,7 @@ async function isolated<T>(
     checkAbort(signal);
     throw executionError(error);
   } finally {
-    clearTimeout(timer);
+    if (timer !== null) clearTimeout(timer);
     await container?.stop();
     if (control !== undefined) await rm(control, { recursive: true, force: true });
   }
@@ -1462,7 +1465,7 @@ export function createCodexExecutionRuntime(
           Buffer.byteLength(JSON.stringify(input.outputSchema)) > 64 * 1024
         )
           throw new CodexExecutionError("invalid_response");
-        const limit = timeout(options.timeoutMs ?? 120_000);
+        const limit = options.timeoutMs === null ? null : timeout(options.timeoutMs ?? 120_000);
         return await isolated(
           options,
           input,

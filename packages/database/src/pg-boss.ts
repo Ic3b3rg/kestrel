@@ -15,8 +15,8 @@ export const FACTORY_FEATURE_PUBLICATION_QUEUE_OPTIONS = {
 export const FACTORY_EXECUTION_QUEUE = "factory-execution-v1";
 export const FACTORY_EXECUTION_QUEUE_OPTIONS = {
   deleteAfterSeconds: 86_400,
-  // The longest approved attempt is two hours; leave time for confirmed teardown.
-  expireInSeconds: 7_320,
+  // Board work has no application deadline. PgBoss caps a single job at 24 hours.
+  expireInSeconds: 86_400,
   retryLimit: 0,
   notify: true,
 } satisfies Omit<Queue, "name">;

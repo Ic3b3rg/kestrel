@@ -200,7 +200,7 @@ function VerificationResult({ result }: { result: FactoryVerificationResult }) {
 
 function ActivityEntry({ event }: { event: ExecutionActivity }) {
   return (
-    <li className="min-w-0 rounded-md border bg-background p-3 text-sm">
+    <li className="min-w-0 border-b border-border/60 py-2 text-sm last:border-b-0">
       <p className="whitespace-pre-wrap break-words font-medium">{displayText(event.summary)}</p>
       {event.itemState === "started" ? <p className="text-muted-foreground">Running…</p> : null}
       {event.itemState === "failed" ? <p className="text-destructive">Failed</p> : null}
@@ -225,6 +225,53 @@ function ActivityEntry({ event }: { event: ExecutionActivity }) {
   );
 }
 
+function CommandGroup({ events }: { events: ExecutionActivity[] }) {
+  const running = events.some((event) => event.itemState === "started");
+  return (
+    <li className="min-w-0 border-b border-border/60 py-2 text-sm last:border-b-0">
+      <details className="min-w-0">
+        <summary className="cursor-pointer rounded-sm font-medium focus-visible:outline focus-visible:outline-ring">
+          {running ? "Running" : "Ran"}{" "}
+          {events.length === 1 ? "a command" : `${String(events.length)} commands`}
+          {events.length === 1 ? ` · ${displayText(events[0]?.summary.split("\n")[0] ?? "")}` : ""}
+        </summary>
+        <ol className="mt-2 space-y-2 border-l border-border pl-3">
+          {events.map((event) => (
+            <li key={event.id} className="min-w-0">
+              <details>
+                <summary className="cursor-pointer break-all font-mono text-xs focus-visible:outline focus-visible:outline-ring">
+                  {displayText(event.summary.split("\n")[0] ?? "Command")}
+                  {event.itemState === "started"
+                    ? " · running"
+                    : event.exitCode === undefined
+                      ? ""
+                      : ` · exit ${String(event.exitCode)}`}
+                </summary>
+                <div className="mt-2 min-w-0 space-y-2">
+                  <pre
+                    className="max-h-64 max-w-full overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-3 text-xs"
+                    tabIndex={0}
+                  >
+                    <code>{displayText(event.summary)}</code>
+                  </pre>
+                  {event.detail === undefined ? null : (
+                    <pre
+                      className="max-h-64 max-w-full overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-3 text-xs"
+                      tabIndex={0}
+                    >
+                      <code>{displayText(event.detail)}</code>
+                    </pre>
+                  )}
+                </div>
+              </details>
+            </li>
+          ))}
+        </ol>
+      </details>
+    </li>
+  );
+}
+
 function TimelineItems({
   events,
   parentPath,
@@ -234,12 +281,18 @@ function TimelineItems({
 }) {
   const seen = new Set<string>();
   const entries: Array<
-    { kind: "event"; event: ExecutionActivity } | { kind: "agent"; path: string }
+    | { kind: "event"; event: ExecutionActivity }
+    | { kind: "commands"; events: ExecutionActivity[] }
+    | { kind: "agent"; path: string }
   > = [];
   for (const event of events) {
     const path = event.agentPath ?? "/root";
     if (path === parentPath) {
-      if (event.kind !== "subagent") entries.push({ kind: "event", event });
+      if (event.kind === "command") {
+        const previous = entries.at(-1);
+        if (previous?.kind === "commands") previous.events.push(event);
+        else entries.push({ kind: "commands", events: [event] });
+      } else if (event.kind !== "subagent") entries.push({ kind: "event", event });
       continue;
     }
     if (!path.startsWith(`${parentPath}/`)) continue;
@@ -255,6 +308,8 @@ function TimelineItems({
       {entries.map((entry) => {
         if (entry.kind === "event")
           return <ActivityEntry key={entry.event.id} event={entry.event} />;
+        if (entry.kind === "commands")
+          return <CommandGroup key={entry.events[0]?.id} events={entry.events} />;
         const lifecycle = events.filter(
           (event) => event.kind === "subagent" && event.agentPath === entry.path,
         );

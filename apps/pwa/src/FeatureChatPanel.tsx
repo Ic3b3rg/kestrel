@@ -192,6 +192,8 @@ export interface FeatureChatPanelProps {
   onFeatureRead: (feature: Feature) => void;
   onFeatureUnavailable: (projectId: string, featureId: string) => void;
   issueConversation?: boolean;
+  issueNumber?: number;
+  issueUrl?: string;
   loadChat?: typeof fetchFeatureChat;
   loadPlanVersion?: typeof fetchFeaturePlanVersion;
   sendMessage?: typeof sendPlanningMessage;
@@ -213,6 +215,8 @@ export function FeatureChatPanel({
   onFeatureRead,
   onFeatureUnavailable,
   issueConversation = false,
+  issueNumber,
+  issueUrl,
   loadChat = fetchFeatureChat,
   loadPlanVersion = fetchFeaturePlanVersion,
   sendMessage = sendPlanningMessage,
@@ -399,7 +403,13 @@ export function FeatureChatPanel({
   const visibleMessages = issueConversation
     ? chat.messages.map((message, index) =>
         index === 0 && message.role === "user"
-          ? { ...message, content: "Start this issue." }
+          ? {
+              ...message,
+              content:
+                issueNumber !== undefined && issueUrl !== undefined
+                  ? `Implement [issue #${String(issueNumber)}](${issueUrl}).`
+                  : "Implement this issue.",
+            }
           : message,
       )
     : chat.messages;
@@ -565,7 +575,7 @@ export function FeatureChatPanel({
                       featureId={featureId}
                       messageId={message.id}
                     />
-                    {turn === undefined ? null : (
+                    {turn === undefined || issueConversation ? null : (
                       <LifecycleProfileRecord
                         profile={turn.lifecycleProfile}
                         effective={turn.runtimeProfileResult}
@@ -583,10 +593,12 @@ export function FeatureChatPanel({
                         loadVersion={loadPlanVersion}
                       />
                     )}
-                    <SkillProvenance
-                      skills={turn?.skills ?? []}
-                      onAuthenticationError={onAuthenticationError}
-                    />
+                    {issueConversation ? null : (
+                      <SkillProvenance
+                        skills={turn?.skills ?? []}
+                        onAuthenticationError={onAuthenticationError}
+                      />
+                    )}
                   </article>
                   {message.role !== "user" ||
                   turn === undefined ||
@@ -684,87 +696,83 @@ export function FeatureChatPanel({
               ) : null}
             </FormFeedback>
           )}
-          <form
-            className="planning-composer"
-            hidden={issueConversation && chat.feature.state !== "planning"}
-            onSubmit={submit}
-          >
-            <Label htmlFor="planning-message" className="sr-only">
-              Message
-            </Label>
-            <PlanningComposer
-              attachments={attachments}
-              project={projectName}
-              controls={
-                <PlanningModelControls
-                  projectId={projectId}
-                  online={online}
-                  {...(chat.planningSettings === undefined
-                    ? {}
-                    : { savedSettings: chat.planningSettings })}
-                  disabled={
+          {issueConversation ? null : (
+            <form className="planning-composer" onSubmit={submit}>
+              <Label htmlFor="planning-message" className="sr-only">
+                Message
+              </Label>
+              <PlanningComposer
+                attachments={attachments}
+                project={projectName}
+                controls={
+                  <PlanningModelControls
+                    projectId={projectId}
+                    online={online}
+                    {...(chat.planningSettings === undefined
+                      ? {}
+                      : { savedSettings: chat.planningSettings })}
+                    disabled={
+                      !editable ||
+                      commandPending ||
+                      activeTurn !== undefined ||
+                      attempt.current !== null
+                    }
+                    onReady={setProfileReady}
+                    onSettingsChange={(settings) => {
+                      setPlanningSettings(settings);
+                      if (attempt.current === null) setCommandError(null);
+                    }}
+                  />
+                }
+                skills={
+                  <PlanningSkillChips
+                    projectId={projectId}
+                    featureId={featureId}
+                    online={online}
+                    editable={editable && activeTurn === undefined && !commandPending}
+                    selection={chat.skills ?? { schemaVersion: 1, version: 0, skills: [] }}
+                    onChanged={refresh}
+                    onAuthenticationError={onAuthenticationError}
+                  />
+                }
+                input={{
+                  id: "planning-message",
+                  rows: 3,
+                  maxLength: 16_000,
+                  value: draft,
+                  online,
+                  onAuthenticationError,
+                  disabled:
+                    !online ||
                     !editable ||
                     commandPending ||
                     activeTurn !== undefined ||
-                    attempt.current !== null
-                  }
-                  onReady={setProfileReady}
-                  onSettingsChange={(settings) => {
-                    setPlanningSettings(settings);
+                    (commandError !== null && attempt.current !== null),
+                  onValueChange: (text) => {
+                    setDraft(text);
                     if (attempt.current === null) setCommandError(null);
-                  }}
-                />
-              }
-              skills={
-                <PlanningSkillChips
-                  projectId={projectId}
-                  featureId={featureId}
-                  online={online}
-                  editable={editable && activeTurn === undefined && !commandPending}
-                  selection={chat.skills ?? { schemaVersion: 1, version: 0, skills: [] }}
-                  onChanged={refresh}
-                  onAuthenticationError={onAuthenticationError}
-                />
-              }
-              input={{
-                id: "planning-message",
-                rows: 3,
-                maxLength: 16_000,
-                value: draft,
-                online,
-                onAuthenticationError,
-                disabled:
-                  !online ||
-                  !editable ||
-                  commandPending ||
-                  activeTurn !== undefined ||
-                  (commandError !== null && attempt.current !== null),
-                onValueChange: (text) => {
-                  setDraft(text);
-                  if (attempt.current === null) setCommandError(null);
-                },
-                placeholder: "Describe the change or answer Kestrel’s question…",
-                ...(editable ? {} : { describedBy: "planning-message-help" }),
-              }}
-              sendLabel={commandPending && attemptKind === "send" ? "Sending…" : "Send message"}
-              canSend={
-                online &&
-                editable &&
-                !commandPending &&
-                activeTurn === undefined &&
-                commandError === null &&
-                profileReady &&
-                draft.trim() !== ""
-              }
-            />
-            {!editable || issueConversation ? (
-              <p id="planning-message-help" className="text-xs text-muted-foreground">
-                {editable
-                  ? "⌘/Ctrl + Enter to send. This issue was authorized when you started it from the board."
-                  : "This conversation is read-only. Its saved messages remain available."}
-              </p>
-            ) : null}
-          </form>
+                  },
+                  placeholder: "Describe the change or answer Kestrel’s question…",
+                  ...(editable ? {} : { describedBy: "planning-message-help" }),
+                }}
+                sendLabel={commandPending && attemptKind === "send" ? "Sending…" : "Send message"}
+                canSend={
+                  online &&
+                  editable &&
+                  !commandPending &&
+                  activeTurn === undefined &&
+                  commandError === null &&
+                  profileReady &&
+                  draft.trim() !== ""
+                }
+              />
+              {!editable ? (
+                <p id="planning-message-help" className="text-xs text-muted-foreground">
+                  This conversation is read-only. Its saved messages remain available.
+                </p>
+              ) : null}
+            </form>
+          )}
           {issueConversation && chat.feature.state !== "planning" ? (
             <FeatureExecutionPanel
               projectId={projectId}

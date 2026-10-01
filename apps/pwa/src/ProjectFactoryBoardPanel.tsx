@@ -1,6 +1,17 @@
 import { Skeleton } from "./components/ui/skeleton.js";
 import { FormFeedback } from "./components/FormFeedback.js";
-import { useId, type MouseEvent } from "react";
+import { useEffect, useId, useState, type MouseEvent, type ReactNode } from "react";
+import {
+  DndContext,
+  DragOverlay,
+  KeyboardSensor,
+  PointerSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
 import { ArrowUpRight, GitPullRequest, Plus, RefreshCw, Settings } from "lucide-react";
 import type { ProjectBoardSnapshot, ProjectBoardWorkItem } from "@kestrel/contracts";
 import { Button } from "./components/ui/button.js";
@@ -52,6 +63,45 @@ function openSettings(event: MouseEvent<HTMLAnchorElement>, onOpenSettings: () =
   onOpenSettings();
 }
 
+function BoardColumn({ id, children }: { id: string; children: ReactNode }) {
+  const { isOver, setNodeRef } = useDroppable({ id, disabled: id !== "in_progress" });
+  return (
+    <section
+      ref={setNodeRef}
+      aria-label={columns.find((column) => column.id === id)?.label}
+      className={`flex min-w-0 flex-col gap-3 rounded-lg border bg-muted/20 p-3 sm:min-h-64 ${isOver ? "border-primary bg-primary/5" : "border-border/60"}`}
+    >
+      {children}
+    </section>
+  );
+}
+
+function DraggableCard({
+  id,
+  enabled,
+  children,
+}: {
+  id: string;
+  enabled: boolean;
+  children: ReactNode;
+}) {
+  const { attributes, listeners, isDragging, setNodeRef } = useDraggable({
+    id,
+    disabled: !enabled,
+  });
+  return (
+    <li
+      ref={setNodeRef}
+      {...(enabled ? attributes : {})}
+      {...(enabled ? listeners : {})}
+      data-draggable={enabled || undefined}
+      className={`min-w-0 rounded-lg border border-border bg-card ${isDragging ? "opacity-35" : ""}`}
+    >
+      {children}
+    </li>
+  );
+}
+
 function GitHubIssueCard({
   issue,
   readyLabel,
@@ -75,18 +125,7 @@ function GitHubIssueCard({
     issue.state === "open" &&
     (issue.labels ?? []).some((label) => label.name === readyLabel);
   return (
-    <li
-      className="min-w-0 rounded-lg border border-border bg-card"
-      draggable={eligible && onStart !== undefined}
-      onDragStart={(event) => {
-        if (!eligible) {
-          event.preventDefault();
-          return;
-        }
-        event.dataTransfer.setData("application/x-kestrel-issue", String(issue.number));
-        event.dataTransfer.effectAllowed = "move";
-      }}
-    >
+    <DraggableCard id={`issue:${issue.id}`} enabled={eligible && onStart !== undefined}>
       <Button
         variant="ghost"
         className="h-auto w-full min-w-0 flex-col items-start gap-2 p-3 text-left"
@@ -144,7 +183,7 @@ function GitHubIssueCard({
       {!eligible && online && !starting ? (
         <p className="px-3 pb-2 text-xs text-muted-foreground">Requires {readyLabel}</p>
       ) : null}
-    </li>
+    </DraggableCard>
   );
 }
 
@@ -168,17 +207,14 @@ function WorkItemCard({
   const contextId = useId();
   const hasContext = item.dependsOn.length > 0 || item.blocking !== null;
   return (
-    <li
-      className="min-w-0 rounded-lg border border-border bg-card"
-      draggable={
+    <DraggableCard
+      id={`work:${item.id}`}
+      enabled={
         !disabled &&
         onStart !== undefined &&
         item.column === "todo" &&
         item.executionFeatureId == null &&
         item.blocking === null
-      }
-      onDragStart={(event) =>
-        event.dataTransfer.setData("application/x-kestrel-work-item", item.id)
       }
     >
       <Button
@@ -266,7 +302,7 @@ function WorkItemCard({
           </Button>
         </div>
       )}
-    </li>
+    </DraggableCard>
   );
 }
 
@@ -295,12 +331,77 @@ export function ProjectFactoryBoardPanel({
   onRetryStart,
 }: ProjectFactoryBoardPanelProps) {
   const titleId = useId();
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [optimistic, setOptimistic] = useState<{ kind: "issue" | "work"; id: string } | null>(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor),
+  );
   const initialLoading = loading && snapshot === null;
   const planningFeatures = snapshot?.planningFeatures ?? [];
   const workItems = snapshot?.workItems ?? [];
   const availableGitHubIssues = snapshot?.github.issues ?? [];
   const githubIssueFailure = snapshot?.github.failure ?? null;
   const githubIssuesLimited = snapshot?.github.limited ?? false;
+  useEffect(() => {
+    if (optimistic === null) return;
+    if (startError != null) {
+      setOptimistic(null);
+      return;
+    }
+    if (optimistic.kind === "issue") {
+      const issue = availableGitHubIssues.find((candidate) => candidate.id === optimistic.id);
+      if (
+        issue !== undefined &&
+        (snapshot?.starts ?? []).some(
+          (start) => start.issueNumber === issue.number && start.state !== "done",
+        )
+      )
+        setOptimistic(null);
+    } else if (workItems.some(({ item }) => item.id === optimistic.id && item.column !== "todo")) {
+      setOptimistic(null);
+    }
+  }, [optimistic, startError, availableGitHubIssues, snapshot?.starts, workItems]);
+  const pendingIssue =
+    optimistic?.kind === "issue" && startError == null
+      ? availableGitHubIssues.find((issue) => issue.id === optimistic.id)
+      : undefined;
+  const pendingWork =
+    optimistic?.kind === "work" && startError == null
+      ? workItems.find(({ item }) => item.id === optimistic.id)
+      : undefined;
+  const pendingVisible =
+    (pendingIssue !== undefined &&
+      !(snapshot?.starts ?? []).some(
+        (start) => start.issueNumber === pendingIssue.number && start.state !== "done",
+      )) ||
+    (pendingWork !== undefined && pendingWork.item.column === "todo");
+  function beginIssue(issue: (typeof availableGitHubIssues)[number]) {
+    if (!online || startingIssueId != null || onStartIssue === undefined) return;
+    setOptimistic({ kind: "issue", id: issue.id });
+    onStartIssue(issue.number);
+  }
+  function beginWork(entry: ProjectBoardWorkItem) {
+    if (!online || startingIssueId != null || onStartWorkItem === undefined) return;
+    setOptimistic({ kind: "work", id: entry.item.id });
+    onStartWorkItem(entry);
+  }
+  function drop(event: DragEndEvent) {
+    setDraggedId(null);
+    if (!online || event.over?.id !== "in_progress") return;
+    const id = String(event.active.id);
+    if (id.startsWith("issue:")) {
+      const issue = availableGitHubIssues.find((candidate) => `issue:${candidate.id}` === id);
+      if (issue !== undefined) beginIssue(issue);
+    } else if (id.startsWith("work:")) {
+      const entry = workItems.find(
+        ({ item }) => `work:${item.id}` === id && item.column === "todo",
+      );
+      if (entry !== undefined) beginWork(entry);
+    }
+  }
+  const draggedIssue = availableGitHubIssues.find((issue) => `issue:${issue.id}` === draggedId);
+  const draggedWork = workItems.find(({ item }) => `work:${item.id}` === draggedId);
   return (
     <section className="min-w-0 space-y-6" aria-labelledby={titleId} aria-busy={loading}>
       {startError == null ? null : <FormFeedback kind="error">{startError}</FormFeedback>}
@@ -368,215 +469,222 @@ export function ProjectFactoryBoardPanel({
           Loading board…
         </p>
       ) : null}
-      <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {columns.map((column) => {
-          const items = workItems.filter(({ item }) => item.column === column.id);
-          const drafts = column.id === "todo" ? planningFeatures : [];
-          const providerIssues =
-            column.id === "todo"
-              ? availableGitHubIssues.filter(
-                  (issue) =>
-                    !(snapshot?.starts ?? []).some(
-                      (start) => start.state !== "done" && start.issueNumber === issue.number,
-                    ),
-                )
-              : [];
-          const starts =
-            column.id === "in_progress" || column.id === "completed"
-              ? (snapshot?.starts ?? []).filter(
-                  (start) =>
-                    (column.id === "completed" ? start.state === "done" : start.state !== "done") &&
-                    !(
-                      start.state === "done" &&
-                      availableGitHubIssues.some((issue) => issue.number === start.issueNumber)
-                    ) &&
-                    !workItems.some(({ feature }) => feature.id === start.featureId),
-                )
-              : [];
-          const count = items.length + drafts.length + providerIssues.length + starts.length;
-          return (
-            <section
-              key={column.id}
-              onDragOver={(event) => {
-                if (
-                  online &&
-                  column.id === "in_progress" &&
-                  (event.dataTransfer.types.includes("application/x-kestrel-work-item") ||
-                    event.dataTransfer.types.includes("application/x-kestrel-github-issue") ||
-                    event.dataTransfer.types.includes("application/x-kestrel-issue"))
-                )
-                  event.preventDefault();
-              }}
-              onDrop={(event) => {
-                if (!online || startingIssueId != null || column.id !== "in_progress") return;
-                event.preventDefault();
-                const id = event.dataTransfer.getData("application/x-kestrel-work-item");
-                const entry = workItems.find(
-                  ({ item }) => item.id === id && item.column === "todo",
-                );
-                if (entry !== undefined) onStartWorkItem?.(entry);
-                const providerId = event.dataTransfer.getData("application/x-kestrel-github-issue");
-                const issue = availableGitHubIssues.find((item) => item.id === providerId);
-                if (issue !== undefined) onStartGitHubIssue?.(issue);
-                const number = Number(event.dataTransfer.getData("application/x-kestrel-issue"));
-                const ready = availableGitHubIssues.find(
-                  (candidate) =>
-                    candidate.number === number &&
-                    candidate.labels?.some(
-                      (label) =>
-                        label.name === (snapshot?.settings?.readyLabel ?? "ready-for-agent"),
-                    ),
-                );
-                if (ready !== undefined) onStartIssue?.(ready.number);
-              }}
-              aria-label={column.label}
-              className="flex min-w-0 flex-col gap-3 rounded-lg border border-border/60 bg-muted/20 p-3 sm:min-h-64"
-            >
-              <header className="flex min-h-8 items-center justify-between gap-2">
-                <h2 className="text-sm font-medium">
-                  {column.label}{" "}
-                  {!initialLoading ? (
-                    <span className="ml-1 text-muted-foreground">{count}</span>
-                  ) : null}
-                </h2>
-                {column.id === "todo" ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    aria-label="New interview"
-                    onClick={onStartPlan}
-                  >
-                    <Plus aria-hidden="true" /> New
-                  </Button>
-                ) : null}
-              </header>
-              {count === 0 ? (
-                initialLoading ? (
-                  <div aria-hidden="true" className="space-y-3">
-                    {[0, 1].map((index) => (
-                      <div
-                        key={index}
-                        className="space-y-3 rounded-lg border border-border bg-card p-3"
-                      >
-                        <Skeleton className="h-3 w-16 motion-reduce:animate-none" />
-                        <Skeleton className="h-4 w-full motion-reduce:animate-none" />
-                        <Skeleton className="h-4 w-2/3 motion-reduce:animate-none" />
-                        <Skeleton className="h-5 w-24 rounded-full motion-reduce:animate-none" />
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="py-3 text-sm text-muted-foreground">
-                    {column.id === "todo"
-                      ? "Start an interview to add work."
-                      : "Work appears here as it progresses."}
-                  </p>
-                )
-              ) : (
-                <ol className="space-y-3">
-                  {drafts.map((feature) => (
-                    <li key={feature.id} className="min-w-0">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-auto w-full min-w-0 flex-col items-start gap-2 p-3 text-left"
-                        aria-label={"Open planning chat: " + feature.title}
-                        onClick={() => onOpenFeature(feature.id, "chat")}
-                      >
-                        <span className="text-xs font-normal text-muted-foreground">Planning</span>
-                        <strong className="max-w-full break-words font-medium">
-                          {feature.title}
-                        </strong>
-                        <span className="text-xs font-normal text-muted-foreground">
-                          Continue conversation
-                        </span>
-                      </Button>
-                    </li>
-                  ))}
-                  {providerIssues.map((issue) => (
-                    <GitHubIssueCard
-                      key={issue.id}
-                      issue={issue}
-                      readyLabel={snapshot?.settings?.readyLabel ?? "ready-for-agent"}
-                      online={online}
-                      onOpen={onOpenIssue}
-                      onStart={onStartIssue}
-                      starting={startingIssue === issue.number || startingIssueId === issue.id}
-                      onReview={onStartGitHubIssue}
-                    />
-                  ))}
-                  {starts.map((start) => (
-                    <li
-                      key={start.id}
-                      className="space-y-2 rounded-lg border border-border bg-card p-3"
+      <DndContext
+        sensors={sensors}
+        onDragStart={(event) => setDraggedId(String(event.active.id))}
+        onDragCancel={() => setDraggedId(null)}
+        onDragEnd={drop}
+      >
+        <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {columns.map((column) => {
+            const items = workItems.filter(
+              ({ item }) =>
+                item.column === column.id &&
+                !(column.id === "todo" && pendingVisible && pendingWork?.item.id === item.id),
+            );
+            const drafts = column.id === "todo" ? planningFeatures : [];
+            const providerIssues =
+              column.id === "todo"
+                ? availableGitHubIssues.filter(
+                    (issue) =>
+                      !(pendingVisible && pendingIssue?.id === issue.id) &&
+                      !(snapshot?.starts ?? []).some(
+                        (start) => start.state !== "done" && start.issueNumber === issue.number,
+                      ),
+                  )
+                : [];
+            const starts =
+              column.id === "in_progress" || column.id === "completed"
+                ? (snapshot?.starts ?? []).filter(
+                    (start) =>
+                      (column.id === "completed"
+                        ? start.state === "done"
+                        : start.state !== "done") &&
+                      !(
+                        start.state === "done" &&
+                        availableGitHubIssues.some((issue) => issue.number === start.issueNumber)
+                      ) &&
+                      !workItems.some(({ feature }) => feature.id === start.featureId),
+                  )
+                : [];
+            const optimisticHere = column.id === "in_progress" && pendingVisible;
+            const count =
+              items.length +
+              drafts.length +
+              providerIssues.length +
+              starts.length +
+              (optimisticHere ? 1 : 0);
+            return (
+              <BoardColumn key={column.id} id={column.id}>
+                <header className="flex min-h-8 items-center justify-between gap-2">
+                  <h2 className="text-sm font-medium">
+                    {column.label}{" "}
+                    {!initialLoading ? (
+                      <span className="ml-1 text-muted-foreground">{count}</span>
+                    ) : null}
+                  </h2>
+                  {column.id === "todo" ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      aria-label="New interview"
+                      onClick={onStartPlan}
                     >
-                      <button
-                        className="text-left font-medium"
-                        aria-label={`Open issue conversation #${String(start.issueNumber)}`}
-                        onClick={() => onOpenStart?.(start.id)}
+                      <Plus aria-hidden="true" /> New
+                    </Button>
+                  ) : null}
+                </header>
+                {count === 0 ? (
+                  initialLoading ? (
+                    <div aria-hidden="true" className="space-y-3">
+                      {[0, 1].map((index) => (
+                        <div
+                          key={index}
+                          className="space-y-3 rounded-lg border border-border bg-card p-3"
+                        >
+                          <Skeleton className="h-3 w-16 motion-reduce:animate-none" />
+                          <Skeleton className="h-4 w-full motion-reduce:animate-none" />
+                          <Skeleton className="h-4 w-2/3 motion-reduce:animate-none" />
+                          <Skeleton className="h-5 w-24 rounded-full motion-reduce:animate-none" />
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="py-3 text-sm text-muted-foreground">
+                      {column.id === "todo"
+                        ? "Start an interview to add work."
+                        : "Work appears here as it progresses."}
+                    </p>
+                  )
+                ) : (
+                  <ol className="space-y-3">
+                    {drafts.map((feature) => (
+                      <li key={feature.id} className="min-w-0">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-auto w-full min-w-0 flex-col items-start gap-2 p-3 text-left"
+                          aria-label={"Open planning chat: " + feature.title}
+                          onClick={() => onOpenFeature(feature.id, "chat")}
+                        >
+                          <span className="text-xs font-normal text-muted-foreground">
+                            Planning
+                          </span>
+                          <strong className="max-w-full break-words font-medium">
+                            {feature.title}
+                          </strong>
+                          <span className="text-xs font-normal text-muted-foreground">
+                            Continue conversation
+                          </span>
+                        </Button>
+                      </li>
+                    ))}
+                    {providerIssues.map((issue) => (
+                      <GitHubIssueCard
+                        key={issue.id}
+                        issue={issue}
+                        readyLabel={snapshot?.settings?.readyLabel ?? "ready-for-agent"}
+                        online={online}
+                        onOpen={onOpenIssue}
+                        onStart={onStartIssue === undefined ? undefined : () => beginIssue(issue)}
+                        starting={startingIssue === issue.number || startingIssueId === issue.id}
+                        onReview={onStartGitHubIssue}
+                      />
+                    ))}
+                    {optimisticHere ? (
+                      <li className="rounded-lg border border-primary/50 bg-card p-3" role="status">
+                        <strong className="block break-words font-medium">
+                          {pendingIssue
+                            ? `#${String(pendingIssue.number)} ${pendingIssue.title}`
+                            : pendingWork?.item.title}
+                        </strong>
+                        <span className="text-xs text-muted-foreground">Starting…</span>
+                      </li>
+                    ) : null}
+                    {starts.map((start) => (
+                      <li
+                        key={start.id}
+                        className="space-y-2 rounded-lg border border-border bg-card p-3 cursor-pointer"
+                        onClick={(event) => {
+                          if (!(event.target as HTMLElement).closest("button, a"))
+                            onOpenStart?.(start.id);
+                        }}
                       >
-                        #{start.issueNumber} {start.title}
-                      </button>
-                      <p className="text-xs text-muted-foreground">
-                        {start.state === "queued"
-                          ? "Waiting for development"
-                          : start.state === "preparing"
-                            ? "Preparing development"
-                            : start.state === "blocked"
-                              ? "Needs attention"
-                              : start.state === "done"
-                                ? "Work ended"
-                                : "Starting development"}
-                      </p>
-                      {start.message === null ? null : (
-                        <p className="text-sm" role="status">
-                          {start.message}
-                        </p>
-                      )}
-                      <Button size="sm" variant="ghost" onClick={() => onOpenStart?.(start.id)}>
-                        Open conversation
-                      </Button>
-                      {start.state === "blocked" ? (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={!online}
-                          onClick={() => onRetryStart?.(start.id)}
+                        <button
+                          className="block w-full text-left font-medium"
+                          aria-label={`Open issue conversation #${String(start.issueNumber)}`}
+                          onClick={() => onOpenStart?.(start.id)}
                         >
-                          Retry
-                        </Button>
-                      ) : null}
-                      {start.state === "done" ? null : (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={!online}
-                          onClick={() => onCancelStart?.(start.id)}
-                        >
-                          Cancel queued work
-                        </Button>
-                      )}
-                    </li>
-                  ))}
-                  {items.map(({ feature, item, queued }) => (
-                    <WorkItemCard
-                      key={item.id}
-                      feature={feature}
-                      item={item}
-                      onOpenFeature={onOpenFeature}
-                      onOpenIssue={onOpenIssue}
-                      queued={queued}
-                      onStart={onStartWorkItem}
-                      disabled={!online || startingIssueId != null}
-                    />
-                  ))}
-                </ol>
-              )}
-            </section>
-          );
-        })}
-      </div>
+                          #{start.issueNumber} {start.title}
+                          <span className="mt-2 block text-xs font-normal text-muted-foreground">
+                            {start.state === "queued"
+                              ? "Waiting for development"
+                              : start.state === "preparing"
+                                ? "Preparing development"
+                                : start.state === "blocked"
+                                  ? "Needs attention"
+                                  : start.state === "done"
+                                    ? "Work ended"
+                                    : "Starting development"}
+                          </span>
+                          {start.message === null ? null : (
+                            <span className="mt-2 block text-sm font-normal">{start.message}</span>
+                          )}
+                        </button>
+                        {start.state === "blocked" ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={!online}
+                            onClick={() => onRetryStart?.(start.id)}
+                          >
+                            Retry
+                          </Button>
+                        ) : null}
+                        {start.state === "done" ? null : (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={!online}
+                            onClick={() => onCancelStart?.(start.id)}
+                          >
+                            Cancel queued work
+                          </Button>
+                        )}
+                      </li>
+                    ))}
+                    {items.map(({ feature, item, queued }) => (
+                      <WorkItemCard
+                        key={item.id}
+                        feature={feature}
+                        item={item}
+                        onOpenFeature={onOpenFeature}
+                        onOpenIssue={onOpenIssue}
+                        queued={queued}
+                        onStart={onStartWorkItem === undefined ? undefined : beginWork}
+                        disabled={!online || startingIssueId != null}
+                      />
+                    ))}
+                  </ol>
+                )}
+              </BoardColumn>
+            );
+          })}
+        </div>
+        <DragOverlay>
+          {draggedIssue || draggedWork ? (
+            <div className="max-w-72 rounded-lg border border-primary bg-card p-3 shadow-lg">
+              <span className="text-xs text-muted-foreground">Move to In progress</span>
+              <strong className="block break-words font-medium">
+                {draggedIssue
+                  ? `#${String(draggedIssue.number)} ${draggedIssue.title}`
+                  : draggedWork?.item.title}
+              </strong>
+            </div>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
     </section>
   );
 }

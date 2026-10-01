@@ -332,6 +332,16 @@ it("opens the running attempt and shows public reasoning and tool output while w
         exitCode: 0,
         createdAt,
       },
+      {
+        id: runId,
+        kind: "command",
+        summary: "git status --short",
+        itemId: "1:command-2",
+        itemState: "completed",
+        detail: " M src/report.ts",
+        exitCode: 0,
+        createdAt,
+      },
     ],
   };
   const firstWorkItem = execution.workItems[0];
@@ -366,7 +376,14 @@ it("opens the running attempt and shows public reasoning and tool output while w
   expect(container.textContent).toContain("I will inspect the report path.");
   expect(container.textContent).toContain("node --test tests/export report.test.mjs");
   expect(container.textContent).toContain("2 tests passed");
-  expect(container.querySelectorAll('[aria-label="Live activity"] li')).toHaveLength(2);
+  expect(container.textContent).toContain("Ran 2 commands");
+  expect(container.querySelectorAll('[aria-label="Live activity"] > ol > li')).toHaveLength(2);
+  expect(
+    [
+      ...container.querySelectorAll<HTMLDetailsElement>('[aria-label="Live activity"] details'),
+    ].find((element) => element.querySelector("summary")?.textContent.includes("Ran 2 commands"))
+      ?.open,
+  ).toBe(false);
   expect(container.querySelector('button[aria-expanded="true"]')?.textContent).toContain(
     "Attempt 1",
   );

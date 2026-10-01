@@ -512,9 +512,18 @@ export async function acceptPlanningMessage(
   command: SendPlanningMessageCommand,
   planIntent?: { expectedVersion: number | null },
   connection?: CodexSubscriptionConnection,
+  initialSkillDigests?: string[],
 ): Promise<PlanningTurnAccepted> {
   return withFactoryFeature(pool, projectId, featureId, (client, row) =>
-    acceptPlanningMessageForFeature(client, boss, row, command, planIntent, undefined, connection),
+    acceptPlanningMessageForFeature(
+      client,
+      boss,
+      row,
+      command,
+      planIntent,
+      initialSkillDigests,
+      connection,
+    ),
   );
 }
 
@@ -626,7 +635,7 @@ export async function acceptPlanningMessageForFeature(
   const invokedSkillDigests = await resolvePlanningSkillInvocation(
     client,
     command.text,
-    initialSkillDigests !== undefined && initialSkillDigests.length > 0
+    initialSkillDigests !== undefined
       ? initialSkillDigests
       : row.skill_selection_version > 0
         ? selected
