@@ -225,6 +225,18 @@ function ActivityEntry({ event }: { event: ExecutionActivity }) {
   );
 }
 
+function commandHeading(summary: string): string {
+  const firstLine = summary.split("\n")[0]?.trim() ?? "";
+  const executable = firstLine.split(/\s+/)[0] ?? "Command";
+  const name = executable.split("/").at(-1) ?? executable;
+  const argument = firstLine
+    .slice(executable.length)
+    .trim()
+    .replace(/^-c\s+["']?/, "");
+  const preview = argument.length > 88 ? `${argument.slice(0, 87)}…` : argument;
+  return `${name}${preview ? ` · ${preview}` : ""}`;
+}
+
 function CommandGroup({ events }: { events: ExecutionActivity[] }) {
   const running = events.some((event) => event.itemState === "started");
   return (
@@ -233,14 +245,14 @@ function CommandGroup({ events }: { events: ExecutionActivity[] }) {
         <summary className="cursor-pointer rounded-sm font-medium focus-visible:outline focus-visible:outline-ring">
           {running ? "Running" : "Ran"}{" "}
           {events.length === 1 ? "a command" : `${String(events.length)} commands`}
-          {events.length === 1 ? ` · ${displayText(events[0]?.summary.split("\n")[0] ?? "")}` : ""}
+          {events.length === 1 ? ` · ${displayText(commandHeading(events[0]?.summary ?? ""))}` : ""}
         </summary>
         <ol className="mt-2 space-y-2 border-l border-border pl-3">
           {events.map((event) => (
             <li key={event.id} className="min-w-0">
               <details>
                 <summary className="cursor-pointer break-all font-mono text-xs focus-visible:outline focus-visible:outline-ring">
-                  {displayText(event.summary.split("\n")[0] ?? "Command")}
+                  {displayText(commandHeading(event.summary))}
                   {event.itemState === "started"
                     ? " · running"
                     : event.exitCode === undefined
@@ -262,6 +274,9 @@ function CommandGroup({ events }: { events: ExecutionActivity[] }) {
                       <code>{displayText(event.detail)}</code>
                     </pre>
                   )}
+                  {event.detail === undefined && event.itemState !== "started" ? (
+                    <p className="text-xs text-muted-foreground">No output recorded.</p>
+                  ) : null}
                 </div>
               </details>
             </li>
