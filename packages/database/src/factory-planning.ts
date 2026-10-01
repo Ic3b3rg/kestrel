@@ -97,21 +97,41 @@ export interface ClaimedPlanningTurn {
   source: { repositoryId: string; identity: string } | null;
 }
 
+export const PLANNING_TURN_TIMEOUT_MS = {
+  conversation: 180_000,
+  plan: 600_000,
+} as const;
+
+const PLANNING_TURN_RECOVERY_GRACE_MS = 60_000;
+
 export async function reconcilePlanningTurns(pool: DatabasePool): Promise<void> {
-  // Runtime turns are bounded to three minutes. Uncertain work is never silently replayed.
+  // Reconcile only after the runtime deadline and a grace period for persistence.
   await inTransaction(pool, async (client) => {
     // Use the same Feature-before-turn lock order as sends, completion, and cancellation.
-    const expired = await client.query<{ id: string }>(`
+    const expired = await client.query<{ id: string }>(
+      `
       SELECT id FROM factory_features WHERE EXISTS (
         SELECT 1 FROM factory_planning_turns WHERE feature_id = factory_features.id
-          AND state = 'running' AND started_at < clock_timestamp() - interval '4 minutes'
-      ) ORDER BY id FOR UPDATE`);
+          AND state = 'running' AND started_at < clock_timestamp() -
+            (CASE WHEN purpose = 'plan' THEN $1::integer ELSE $2::integer END) * interval '1 millisecond'
+      ) ORDER BY id FOR UPDATE`,
+      [
+        PLANNING_TURN_TIMEOUT_MS.plan + PLANNING_TURN_RECOVERY_GRACE_MS,
+        PLANNING_TURN_TIMEOUT_MS.conversation + PLANNING_TURN_RECOVERY_GRACE_MS,
+      ],
+    );
     if (expired.rows.length === 0) return;
     const interrupted = await client.query<{ feature_id: string }>(
       `UPDATE factory_planning_turns SET state = 'failed', failure = 'interrupted', completed_at = clock_timestamp()
        WHERE feature_id = ANY($1::uuid[]) AND state = 'running'
-         AND started_at < clock_timestamp() - interval '4 minutes' RETURNING feature_id`,
-      [expired.rows.map(({ id }) => id)],
+         AND started_at < clock_timestamp() -
+           (CASE WHEN purpose = 'plan' THEN $2::integer ELSE $3::integer END) * interval '1 millisecond'
+       RETURNING feature_id`,
+      [
+        expired.rows.map(({ id }) => id),
+        PLANNING_TURN_TIMEOUT_MS.plan + PLANNING_TURN_RECOVERY_GRACE_MS,
+        PLANNING_TURN_TIMEOUT_MS.conversation + PLANNING_TURN_RECOVERY_GRACE_MS,
+      ],
     );
     await client.query(
       "UPDATE factory_features SET runtime_thread_id = NULL, updated_at = clock_timestamp() WHERE id = ANY($1::uuid[])",

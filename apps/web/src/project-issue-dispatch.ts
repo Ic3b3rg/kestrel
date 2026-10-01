@@ -184,7 +184,7 @@ export function createProjectIssueDispatcher(
             throw new FactoryError(
               "conflict",
               plans.generation.question ??
-                "Planning needs attention. Open the work to resolve the question or retry.",
+                "Preparation stopped before producing a plan. Retry preparation.",
             );
           const items = plans.current.document.workItems;
           const imports = await readFactoryIssueImports(pool, start.project_id, start.feature_id);
