@@ -34,6 +34,7 @@ if (args[0] === "image") {
     privileged: false,
     pidMode: "",
     restart: value("--restart"),
+    init: mode === "limit_init" ? false : args.includes("--init"),
     pidsLimit: mode === "limit_pids" ? 0 : Number(value("--pids-limit")),
     memory: mode === "limit_memory" ? 0 : Number(value("--memory")),
     memorySwap: mode === "limit_swap" ? 0 : Number(value("--memory-swap")),

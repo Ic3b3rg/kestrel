@@ -532,6 +532,7 @@ it.each([
   "limit_memory",
   "limit_swap",
   "limit_cpu",
+  "limit_init",
   "limit_shm",
   "limit_tmpfs",
   "limit_log",
@@ -690,6 +691,7 @@ it("runs exact verification argv in a separate container and preserves nonzero o
   });
   const create = (await dockerCalls(cwd)).find((args) => args[0] === "create");
   if (create === undefined) throw new Error("Expected container creation");
+  expect(create).toContain("--init");
   expect(create.slice(create.indexOf("--entrypoint") + 1)).toEqual([
     command[0],
     `sha256:${"1".repeat(64)}`,
