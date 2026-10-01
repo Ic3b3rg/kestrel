@@ -1357,7 +1357,7 @@ class ExecutionTurn {
         },
         developerInstructions:
           this.#options.developerInstructions ??
-          "Implement only the approved scope in the selected remote workspace. That environment is contained externally. Do not access host tools, external services, privileges, or Git metadata writes. Ask when requirements or authorization must change.",
+          "Implement only the approved scope in the selected remote workspace. That environment is contained externally. Use only the remote shell to work or wait for its commands; do not call host tools such as clock.sleep. Do not access external services, privileges, or Git metadata writes. Ask when requirements or authorization must change.",
       })
       .then(record);
     const sandbox = record(thread.sandbox);
