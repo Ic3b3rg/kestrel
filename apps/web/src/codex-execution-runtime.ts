@@ -126,7 +126,7 @@ export interface CodexExecutionRuntimeOptions {
 }
 export const DEFAULT_CODEX_CONTAINER_RESOURCES = {
   pidsLimit: 128,
-  memoryBytes: 1024 * 1024 * 1024,
+  memoryBytes: 2 * 1024 * 1024 * 1024,
   nanoCpus: 2_000_000_000,
   tmpfsBytes: 64 * 1024 * 1024,
 } as const;
