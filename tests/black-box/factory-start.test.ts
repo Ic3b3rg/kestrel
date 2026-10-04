@@ -69,6 +69,7 @@ it("starts exactly one chat and first turn across simultaneous submissions, relo
   const read = async () => FeatureChatSchema.parse(await (await running().fetchApi(path)).json());
   expect((await read()).messages.map(({ content }) => content)).toEqual([command.text]);
   expect((await read()).turns).toHaveLength(1);
+  expect((await read()).turns[0]?.purpose).toBe("conversation");
   expect((await read()).feature.state).toBe("planning");
   expect((await post(collection, { ...command, text: "A different request" })).status).toBe(409);
   const rename = { requestId: randomUUID(), title: "Saved report search" };

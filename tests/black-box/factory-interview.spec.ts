@@ -5,6 +5,7 @@ import { startStack, TEST_OPERATOR_CREDENTIALS, type RunningStack } from "./supp
 import { createGitFixture, type GitFixture } from "./support/git-fixture.js";
 import { interviewCodexFixture } from "./support/interview-codex-fixture.js";
 import { factoryGitHubFixture } from "./support/factory-github-fixture.js";
+import { dragIssueToInProgress } from "./support/board-gesture.js";
 
 for (const gesture of ["drag", "keyboard"] as const) {
   test.describe(`Interview to individual issue · ${gesture}`, () => {
@@ -136,15 +137,34 @@ for (const gesture of ["drag", "keyboard"] as const) {
         ),
       );
       expect(execution.workItems.flatMap((item) => item.runs)).toEqual([]);
-      if (gesture === "drag") {
-        await chosen.dragTo(inProgress);
-      } else {
-        await chosen
-          .getByRole("button", { name: "Start issue: Retain original order", exact: true })
-          .focus();
-        await page.keyboard.press("Enter");
+      const startGate = Promise.withResolvers<undefined>();
+      const startRequested = Promise.withResolvers<undefined>();
+      await page.route("**/api/v1/projects/*/features/*/work-items/*/start", async (route) => {
+        expect(route.request().method()).toBe("POST");
+        startRequested.resolve(undefined);
+        await startGate.promise;
+        await route.continue();
+      });
+      try {
+        if (gesture === "drag") {
+          await dragIssueToInProgress(page, chosen, inProgress);
+        } else {
+          await chosen
+            .getByRole("button", { name: "Start issue: Retain original order", exact: true })
+            .focus();
+          await page.keyboard.press("Enter");
+        }
+        await startRequested.promise;
+        await expect(
+          inProgress.locator("li").filter({ hasText: "Retain original order" }),
+        ).toContainText("Starting…");
+        await expect(chosen).toHaveCount(0);
+      } finally {
+        startGate.resolve(undefined);
       }
-      await expect(chosen).toContainText("Start requested");
+      await expect(
+        inProgress.locator("li").filter({ hasText: "Retain original order" }),
+      ).toContainText("Start requested");
       await expect(todo.locator("li").filter({ hasText: "Add the consumer" })).toBeVisible();
       await page.screenshot({
         path: test.info().outputPath("individual-start-board.png"),

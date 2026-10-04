@@ -148,12 +148,14 @@ test.describe("Factory GitHub issues", () => {
     page.on("request", (request) => requests.push(new URL(request.url()).pathname));
     const projectId = await openProjectBoard(page, stack.pwaUrl);
     const todo = page.getByRole("region", { name: "To do", exact: true });
-    const issue = todo.getByRole("link", {
-      name: "Open GitHub issue #16: Existing issue 16",
+    const issue = todo.getByRole("button", {
+      name: "Open issue #16: Existing issue 16",
       exact: true,
     });
     await expect(issue).toBeVisible();
-    await expect(issue).toContainText("Ic3b3rg/kestrel");
+    await expect(
+      issue.locator("..").getByRole("link", { name: "GitHub", exact: true }),
+    ).toHaveAttribute("href", "https://github.com/Ic3b3rg/kestrel/issues/16");
     expect(requests).toContain(`/api/v1/projects/${projectId}/board`);
     expect(requests.some((path) => path.endsWith("/github-issues"))).toBe(false);
     expect(requests.some((path) => /\/features\/[^/]+\/board$/u.test(path))).toBe(false);

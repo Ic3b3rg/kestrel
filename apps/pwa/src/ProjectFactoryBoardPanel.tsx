@@ -357,7 +357,9 @@ export function ProjectFactoryBoardPanel({
 }: ProjectFactoryBoardPanelProps) {
   const titleId = useId();
   const [draggedId, setDraggedId] = useState<string | null>(null);
-  const [optimistic, setOptimistic] = useState<{ kind: "issue" | "work"; id: string } | null>(null);
+  const [optimistic, setOptimistic] = useState<
+    { kind: "issue"; id: string; number: number } | { kind: "work"; id: string } | null
+  >(null);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor),
@@ -375,11 +377,9 @@ export function ProjectFactoryBoardPanel({
       return;
     }
     if (optimistic.kind === "issue") {
-      const issue = availableGitHubIssues.find((candidate) => candidate.id === optimistic.id);
       if (
-        issue !== undefined &&
         (snapshot?.starts ?? []).some(
-          (start) => start.issueNumber === issue.number && start.state !== "done",
+          (start) => start.issueNumber === optimistic.number && start.state !== "done",
         )
       )
         setOptimistic(null);
@@ -403,7 +403,7 @@ export function ProjectFactoryBoardPanel({
     (pendingWork !== undefined && pendingWork.item.column === "todo");
   function beginIssue(issue: (typeof availableGitHubIssues)[number]) {
     if (!online || startingIssueId != null || onStartIssue === undefined) return;
-    setOptimistic({ kind: "issue", id: issue.id });
+    setOptimistic({ kind: "issue", id: issue.id, number: issue.number });
     onStartIssue(issue.number);
   }
   function beginWork(entry: ProjectBoardWorkItem) {

@@ -152,6 +152,54 @@ describe("Project Factory board", () => {
     );
   });
 
+  it("clears an optimistic issue when the start replaces the GitHub card, then allows cancellation and restart", async () => {
+    const board = snapshot();
+    const issue = {
+      repository: { id: "901", owner: "owner", name: "reports" },
+      id: "42",
+      number: 42,
+      url: "https://github.com/owner/reports/issues/42",
+      title: "Export saved reports",
+      state: "open" as const,
+      labels: [{ name: "ready-for-agent", color: "008800" }],
+      commentCount: 0,
+    };
+    board.github.issues = [issue];
+    const onStartIssue = vi.fn();
+    await render({ snapshot: board, onStartIssue });
+    await act(async () => {
+      button("Start issue #42").click();
+      await Promise.resolve();
+    });
+    expect(container.querySelector('[aria-label="In progress"]')?.textContent).toContain(
+      "Starting…",
+    );
+    await render({
+      snapshot: {
+        ...board,
+        github: { ...board.github, issues: [] },
+        starts: [
+          {
+            id: planning.id,
+            issueNumber: 42,
+            issueUrl: issue.url,
+            title: issue.title,
+            state: "queued",
+            featureId: null,
+            message: null,
+          },
+        ],
+      },
+      onStartIssue,
+    });
+    await render({ snapshot: { ...board, starts: [] }, onStartIssue });
+    expect(container.querySelector('[aria-label="To do"]')?.textContent).toContain(issue.title);
+    expect(container.querySelector('[aria-label="In progress"]')?.textContent).not.toContain(
+      "Starting…",
+    );
+    expect(button("Start issue #42").disabled).toBe(false);
+  });
+
   it.each(["shiftKey", "altKey"] as const)(
     "preserves %s on linked issue navigation",
     async (modifier) => {

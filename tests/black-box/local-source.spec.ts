@@ -119,7 +119,7 @@ test.describe("local-first Project flow", () => {
       });
       const repositoryId = await option.getAttribute("value");
       if (repositoryId === null) throw new Error(`Repository option ${name} has no identity`);
-      await dialog.getByLabel("Repository").selectOption(repositoryId);
+      await dialog.getByLabel("Repository", { exact: true }).selectOption(repositoryId);
       await dialog.getByRole("button", { name: "Open selected Project" }).click();
       await expect(dialog).toHaveCount(0);
       await expect(page.getByRole("heading", { level: 1, name, exact: true })).toBeVisible();
@@ -235,7 +235,9 @@ test.describe("local-first Project flow", () => {
     const kestrelOption = openProjectDialog.getByRole("option", { name: /^kestrel/u });
     const kestrelRepositoryId = await kestrelOption.getAttribute("value");
     if (kestrelRepositoryId === null) throw new Error("Kestrel repository identity is missing");
-    await openProjectDialog.getByLabel("Repository").selectOption(kestrelRepositoryId);
+    await openProjectDialog
+      .getByLabel("Repository", { exact: true })
+      .selectOption(kestrelRepositoryId);
     await openProjectDialog.getByRole("button", { name: "Open selected Project" }).click();
     await expect(
       page.getByRole("heading", { level: 1, name: "kestrel", exact: true }),

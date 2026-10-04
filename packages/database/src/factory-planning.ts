@@ -479,6 +479,7 @@ export async function readFactoryChat(
       ),
       turns: turns.rows.map((turn) =>
         PlanningTurnSchema.parse({
+          purpose: turn.purpose,
           lifecycleProfile:
             turn.lifecycle_profile == null
               ? null

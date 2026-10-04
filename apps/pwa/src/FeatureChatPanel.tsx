@@ -241,10 +241,11 @@ export function FeatureChatPanel({
   const activeRead = useRef<AbortController | null>(null);
   const alive = useRef(true);
   const [profileReady, setProfileReady] = useState(false);
+  const [skillsReady, setSkillsReady] = useState(true);
   const submitting = useRef(false);
 
   const refresh = useCallback(async () => {
-    if (!online) return;
+    if (!online) return false;
     const controller = new AbortController();
     activeRead.current?.abort();
     activeRead.current = controller;
@@ -252,18 +253,21 @@ export function FeatureChatPanel({
     setReadError(null);
     try {
       const result = await loadChat(projectId, featureId, controller.signal);
-      if (!alive.current || controller.signal.aborted) return;
+      if (!alive.current || controller.signal.aborted) return false;
       if (result.feature.id !== featureId)
         throw new Error("The response contains a different feature");
       setChat(result);
       onFeatureRead(result.feature);
+      return true;
     } catch (failure) {
-      if (!alive.current || controller.signal.aborted || onAuthenticationError(failure)) return;
+      if (!alive.current || controller.signal.aborted || onAuthenticationError(failure))
+        return false;
       if (failure instanceof ApiClientError && failure.status === 404)
         onFeatureUnavailable(projectId, featureId);
       setReadError(
         planningRequestError(failure, "The conversation could not be loaded. Refresh to retry."),
       );
+      return false;
     } finally {
       if (alive.current && activeRead.current === controller) setReading(false);
     }
@@ -349,7 +353,7 @@ export function FeatureChatPanel({
     event.preventDefault();
     if (
       attachments.busy ||
-      !profileReady ||
+      (!issueConversation && (!profileReady || !skillsReady)) ||
       chat?.feature.state !== "planning" ||
       draft.trim() === "" ||
       commandError !== null ||
@@ -401,25 +405,31 @@ export function FeatureChatPanel({
     );
 
   const firstIssueMessage = chat.messages.find((message) => message.role === "user");
-  const latestIssueReply =
-    chat.feature.state === "planning"
-      ? chat.messages.filter((message) => message.role === "assistant").at(-1)
-      : undefined;
+  const needsIssueAnswer =
+    issueConversation &&
+    chat.feature.state === "planning" &&
+    latestTurn?.state === "failed" &&
+    latestTurn.failure === "input_required" &&
+    latestTurn.question !== null;
   const visibleMessages = issueConversation
-    ? [
-        ...(firstIssueMessage === undefined
-          ? []
-          : [
-              {
-                ...firstIssueMessage,
+    ? chat.messages
+        .filter((message) =>
+          message.role === "assistant"
+            ? message.generatedPlanVersion === undefined
+            : message.id === firstIssueMessage?.id ||
+              chat.turns.some((turn) => turn.messageId === message.id && turn.purpose !== "plan"),
+        )
+        .map((message) =>
+          message.id === firstIssueMessage?.id
+            ? {
+                ...message,
                 content:
                   issueNumber !== undefined && issueUrl !== undefined
                     ? `Implement [issue #${String(issueNumber)}](${issueUrl}).`
-                    : firstIssueMessage.content,
-              },
-            ]),
-        ...(latestIssueReply === undefined ? [] : [latestIssueReply]),
-      ]
+                    : message.content,
+              }
+            : message,
+        )
     : chat.messages;
   return (
     <section className="feature-planning" aria-labelledby="feature-title">
@@ -573,7 +583,21 @@ export function FeatureChatPanel({
                       </time>
                     </header>
                     <div className="planning-message-content space-y-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_pre]:overflow-x-auto [&_pre]:rounded [&_pre]:bg-muted [&_pre]:p-3 [&_a]:underline">
-                      <Markdown remarkPlugins={[remarkGfm]} skipHtml disallowedElements={["img"]}>
+                      <Markdown
+                        remarkPlugins={[remarkGfm]}
+                        skipHtml
+                        disallowedElements={["img"]}
+                        components={{
+                          input: ({ checked }) => (
+                            <input
+                              type="checkbox"
+                              disabled
+                              checked={checked ?? false}
+                              aria-label={checked ? "Completed task" : "Incomplete task"}
+                            />
+                          ),
+                        }}
+                      >
                         {message.content}
                       </Markdown>
                     </div>
@@ -705,7 +729,13 @@ export function FeatureChatPanel({
               ) : null}
             </FormFeedback>
           )}
-          {issueConversation ? null : (
+          {needsIssueAnswer &&
+          !chat.messages.some(
+            (message) => message.role === "assistant" && message.content === latestTurn.question,
+          ) ? (
+            <blockquote className="planning-question">{latestTurn.question}</blockquote>
+          ) : null}
+          {issueConversation && !needsIssueAnswer ? null : (
             <form className="planning-composer" onSubmit={submit}>
               <Label htmlFor="planning-message" className="sr-only">
                 Message
@@ -714,35 +744,46 @@ export function FeatureChatPanel({
                 attachments={attachments}
                 project={projectName}
                 controls={
-                  <PlanningModelControls
-                    projectId={projectId}
-                    online={online}
-                    {...(chat.planningSettings === undefined
-                      ? {}
-                      : { savedSettings: chat.planningSettings })}
-                    disabled={
-                      !editable ||
-                      commandPending ||
-                      activeTurn !== undefined ||
-                      attempt.current !== null
-                    }
-                    onReady={setProfileReady}
-                    onSettingsChange={(settings) => {
-                      setPlanningSettings(settings);
-                      if (attempt.current === null) setCommandError(null);
-                    }}
-                  />
+                  issueConversation ? null : (
+                    <PlanningModelControls
+                      projectId={projectId}
+                      online={online}
+                      {...(chat.planningSettings === undefined
+                        ? {}
+                        : { savedSettings: chat.planningSettings })}
+                      disabled={
+                        !editable ||
+                        commandPending ||
+                        activeTurn !== undefined ||
+                        attempt.current !== null
+                      }
+                      onReady={setProfileReady}
+                      onSettingsChange={(settings) => {
+                        setPlanningSettings(settings);
+                        if (attempt.current === null) setCommandError(null);
+                      }}
+                    />
+                  )
                 }
                 skills={
-                  <PlanningSkillChips
-                    projectId={projectId}
-                    featureId={featureId}
-                    online={online}
-                    editable={editable && activeTurn === undefined && !commandPending}
-                    selection={chat.skills ?? { schemaVersion: 1, version: 0, skills: [] }}
-                    onChanged={refresh}
-                    onAuthenticationError={onAuthenticationError}
-                  />
+                  issueConversation ? null : (
+                    <PlanningSkillChips
+                      projectId={projectId}
+                      featureId={featureId}
+                      online={online}
+                      editable={editable && activeTurn === undefined && !commandPending}
+                      selection={chat.skills ?? { schemaVersion: 1, version: 0, skills: [] }}
+                      onChanged={async (skills) => {
+                        if (skills !== undefined)
+                          setChat((current) =>
+                            current === null ? current : { ...current, skills },
+                          );
+                        return refresh();
+                      }}
+                      onReadyChange={setSkillsReady}
+                      onAuthenticationError={onAuthenticationError}
+                    />
+                  )
                 }
                 input={{
                   id: "planning-message",
@@ -771,7 +812,7 @@ export function FeatureChatPanel({
                   !commandPending &&
                   activeTurn === undefined &&
                   commandError === null &&
-                  profileReady &&
+                  (issueConversation || (profileReady && skillsReady)) &&
                   draft.trim() !== ""
                 }
               />

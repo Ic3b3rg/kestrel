@@ -95,7 +95,8 @@ it("blocks selection during a reply and gives refresh guidance on a stale select
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
-  const onChanged = vi.fn();
+  const onChanged = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+  const onReadyChange = vi.fn();
   const render = (editable: boolean) =>
     act(() => {
       root.render(
@@ -106,6 +107,7 @@ it("blocks selection during a reply and gives refresh guidance on a stale select
           online: true,
           editable,
           onChanged,
+          onReadyChange,
           onAuthenticationError: () => false,
         }),
       );
@@ -135,6 +137,18 @@ it("blocks selection during a reply and gives refresh guidance on a stale select
       await Promise.resolve();
     });
     expect(onChanged).toHaveBeenCalledOnce();
+    expect(onReadyChange).toHaveBeenLastCalledWith(false);
+    expect(remove?.disabled).toBe(true);
+    await act(async () => {
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Refresh Skills")
+        ?.click();
+      await Promise.resolve();
+    });
+    expect(onChanged).toHaveBeenCalledTimes(2);
+    expect(onReadyChange).toHaveBeenLastCalledWith(true);
+    expect(remove?.disabled).toBe(false);
+    expect(container.textContent).not.toContain("Refresh Skills");
   } finally {
     act(() => root.unmount());
     container.remove();

@@ -270,7 +270,7 @@ test.describe("Feature plan approval", () => {
     await page
       .getByLabel("Objective", { exact: true })
       .fill("Find saved reports by a case-insensitive title search.");
-    await page.getByLabel("Attempt limit (minutes)", { exact: true }).fill("20");
+    await page.getByLabel("Verification command limit (minutes)", { exact: true }).fill("20");
     await page.getByRole("tab", { name: "Chat", exact: true }).click();
     await page
       .getByRole("button", { name: "Review requirements", exact: true })

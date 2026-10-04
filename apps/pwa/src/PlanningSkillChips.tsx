@@ -14,6 +14,7 @@ export function PlanningSkillChips({
   online,
   editable,
   onChanged,
+  onReadyChange,
   onAuthenticationError,
 }: {
   projectId: string;
@@ -21,7 +22,10 @@ export function PlanningSkillChips({
   selection: FeaturePlanningSkills;
   online: boolean;
   editable: boolean;
-  onChanged: () => void | Promise<void>;
+  onChanged: (
+    selection?: FeaturePlanningSkills,
+  ) => boolean | undefined | Promise<boolean | undefined>;
+  onReadyChange?: (ready: boolean) => void;
   onAuthenticationError: (error: unknown) => boolean;
 }) {
   const [pending, setPending] = useState(false);
@@ -34,7 +38,8 @@ export function PlanningSkillChips({
     setError(null);
     setStale(false);
     attempt.current = null;
-  }, [selection.version]);
+    if (!submitting.current) onReadyChange?.(true);
+  }, [selection.version, onReadyChange]);
 
   const select = async (digest?: string) => {
     if (!online || !editable || submitting.current) return;
@@ -48,13 +53,19 @@ export function PlanningSkillChips({
     const command = attempt.current;
     if (command === null) return;
     submitting.current = true;
+    onReadyChange?.(false);
     setPending(true);
     setError(null);
     setStale(false);
+    let confirmed = false;
     try {
-      await selectPlanningSkills(projectId, featureId, command);
+      const selected = await selectPlanningSkills(projectId, featureId, command);
       attempt.current = null;
-      await onChanged();
+      confirmed = (await onChanged(selected)) !== false;
+      if (!confirmed) {
+        setStale(true);
+        setError("Refresh the conversation to confirm the Skills before sending a message.");
+      }
     } catch (failure) {
       if (failure instanceof ApiClientError && failure.status === 409) {
         attempt.current = null;
@@ -71,6 +82,32 @@ export function PlanningSkillChips({
     } finally {
       submitting.current = false;
       setPending(false);
+      onReadyChange?.(confirmed);
+    }
+  };
+
+  const refreshSelection = async () => {
+    if (!online || submitting.current) return;
+    submitting.current = true;
+    setPending(true);
+    onReadyChange?.(false);
+    let confirmed = false;
+    try {
+      confirmed = (await onChanged()) !== false;
+      if (confirmed) {
+        setStale(false);
+        setError(null);
+        attempt.current = null;
+      }
+    } catch (failure) {
+      if (!onAuthenticationError(failure))
+        setError(
+          planningRequestError(failure, "The Skills could not be refreshed. Retry refresh."),
+        );
+    } finally {
+      submitting.current = false;
+      setPending(false);
+      onReadyChange?.(confirmed);
     }
   };
 
@@ -92,7 +129,12 @@ export function PlanningSkillChips({
             {error}
           </FormFeedback>
           {stale ? (
-            <Button type="button" variant="outline" onClick={() => void onChanged()}>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!online || pending}
+              onClick={() => void refreshSelection()}
+            >
               Refresh Skills
             </Button>
           ) : attempt.current !== null ? (
