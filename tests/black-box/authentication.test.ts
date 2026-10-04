@@ -646,9 +646,20 @@ describe("sole Operator authentication", () => {
 
     const expiredResponse = await requestStepUp(runningStack, loginResponse, baseStepUp);
     const expiredProof = StepUpProofSchema.parse(await expiredResponse.json());
-    expect(Date.parse(expiredProof.expiresAt)).toBeGreaterThan(Date.now());
-    expect(Date.parse(expiredProof.expiresAt)).toBeLessThanOrEqual(Date.now() + 5 * 60 * 1_000);
     const expiredDigest = createHash("sha256").update(expiredProof.proof).digest("hex");
+    // The proof's lifetime belongs to the database clock, not the host test runner.
+    await runningStack.executeSql(`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM operator_step_up_proofs
+          WHERE proof_digest = '${expiredDigest}'
+            AND expires_at - issued_at = interval '5 minutes'
+            AND expires_at > statement_timestamp()
+            AND date_trunc('milliseconds', expires_at) = '${new Date(expiredProof.expiresAt).toISOString()}'::timestamptz
+        ) THEN RAISE EXCEPTION 'step-up lifetime or response expiry is incorrect';
+        END IF;
+      END $$;
+    `);
     await runningStack.executeSql(`
       UPDATE operator_step_up_proofs
       SET issued_at = statement_timestamp() - interval '6 minutes',

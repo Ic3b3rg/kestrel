@@ -93,7 +93,7 @@ describe("approved exact-head merge through GitHub and the project queue", () =>
   });
 
   it(
-    "recovers an uncertain merge, closes linked issues, and releases the next Feature",
+    "recovers an uncertain merge and closes issues while independent work proceeds once",
     { timeout: 300_000 },
     async () => {
       const featureId = await journey.approvePublication("Merge one reviewed Feature");
@@ -109,7 +109,9 @@ describe("approved exact-head merge through GitHub and the project queue", () =>
       );
 
       const waitingFeatureId = await journey.approvePublication("Wait for the project lane");
-      expect(await journey.queue(waitingFeatureId)).toEqual([]);
+      // ADR 0005 releases the writable lane at review, before the prior merge.
+      const releasedRuns = await journey.queue(waitingFeatureId);
+      expect(releasedRuns).toHaveLength(1);
 
       const approval = await journey.merge(featureId, review);
       expect(approval.response.status, JSON.stringify(approval.error)).toBe(202);
@@ -164,8 +166,10 @@ describe("approved exact-head merge through GitHub and the project queue", () =>
       });
       expect(closing.merge?.issues.some(({ state }) => state === "failed")).toBe(true);
       expect(closing.merge?.issues.some(({ state }) => state === "closed")).toBe(true);
-      const releasedRuns = await journey.queue(waitingFeatureId);
-      expect(releasedRuns).toHaveLength(1);
+      expect(await journey.queue(waitingFeatureId)).toEqual([]);
+      expect(
+        (await journey.execution(waitingFeatureId)).workItems.flatMap((item) => item.runs),
+      ).toEqual([expect.objectContaining({ id: releasedRuns[0], state: "queued" })]);
       const completedBoard = await journey.board(featureId);
       expect(completedBoard.feature.state).toBe("completed");
       expect(completedBoard.columns.find(({ id }) => id === "completed")?.items).toHaveLength(2);
