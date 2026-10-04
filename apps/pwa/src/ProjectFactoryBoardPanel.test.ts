@@ -121,6 +121,103 @@ describe("Project Factory board", () => {
     return found;
   }
 
+  it("offers an equivalent keyboard action for starting exactly one issue", async () => {
+    const onStartIssue = vi.fn();
+    const board = snapshot();
+    board.workItems = [
+      { feature: approved, item: { ...firstItem, column: "todo", approvedVersion: 1 } },
+    ];
+    await render({ snapshot: board, onStartWorkItem: onStartIssue });
+    await act(async () => {
+      const start = button("Start issue: " + firstItem.title);
+      for (const code of ["Enter", "Space"]) {
+        const event = new KeyboardEvent("keydown", {
+          code,
+          key: code === "Enter" ? "Enter" : " ",
+          bubbles: true,
+          cancelable: true,
+        });
+        start.dispatchEvent(event);
+        expect(event.defaultPrevented).toBe(false);
+      }
+      start.click();
+      await Promise.resolve();
+    });
+    expect(onStartIssue).toHaveBeenCalledExactlyOnceWith(board.workItems[0]);
+    expect(container.querySelector('[aria-label="To do"]')?.textContent).not.toContain(
+      firstItem.title,
+    );
+    expect(container.querySelector('[aria-label="In progress"]')?.textContent).toContain(
+      `${firstItem.title}Starting…`,
+    );
+  });
+
+  it("clears an optimistic issue when the start replaces the GitHub card, then allows cancellation and restart", async () => {
+    const board = snapshot();
+    const issue = {
+      repository: { id: "901", owner: "owner", name: "reports" },
+      id: "42",
+      number: 42,
+      url: "https://github.com/owner/reports/issues/42",
+      title: "Export saved reports",
+      state: "open" as const,
+      labels: [{ name: "ready-for-agent", color: "008800" }],
+      commentCount: 0,
+    };
+    board.github.issues = [issue];
+    const onStartIssue = vi.fn();
+    await render({ snapshot: board, onStartIssue });
+    await act(async () => {
+      button("Start issue #42").click();
+      await Promise.resolve();
+    });
+    expect(container.querySelector('[aria-label="In progress"]')?.textContent).toContain(
+      "Starting…",
+    );
+    await render({
+      snapshot: {
+        ...board,
+        github: { ...board.github, issues: [] },
+        starts: [
+          {
+            id: planning.id,
+            issueNumber: 42,
+            issueUrl: issue.url,
+            title: issue.title,
+            state: "queued",
+            featureId: null,
+            message: null,
+          },
+        ],
+      },
+      onStartIssue,
+    });
+    await render({ snapshot: { ...board, starts: [] }, onStartIssue });
+    expect(container.querySelector('[aria-label="To do"]')?.textContent).toContain(issue.title);
+    expect(container.querySelector('[aria-label="In progress"]')?.textContent).not.toContain(
+      "Starting…",
+    );
+    expect(button("Start issue #42").disabled).toBe(false);
+  });
+
+  it.each(["shiftKey", "altKey"] as const)(
+    "preserves %s on linked issue navigation",
+    async (modifier) => {
+      const onOpenIssue = vi.fn();
+      await render({ onOpenIssue });
+      const link = container.querySelector<HTMLAnchorElement>(
+        `[aria-label="Open linked issue for ${firstItem.title}"]`,
+      );
+      if (link === null) throw new Error("Missing issue link");
+      const event = new MouseEvent("click", { bubbles: true, cancelable: true, [modifier]: true });
+      act(() => {
+        link.dispatchEvent(event);
+      });
+      expect(event.defaultPrevented).toBe(false);
+      expect(onOpenIssue).not.toHaveBeenCalled();
+    },
+  );
+
   it("combines planning Features and approved Work Items without inventing completion or issue links", async () => {
     await render();
     const todo = container.querySelector('[aria-label="To do"]');
@@ -197,7 +294,7 @@ describe("Project Factory board", () => {
     const onOpenSettings = vi.fn();
     await render({ onStartPlan, onOpenFeature, onRefresh, onOpenPullRequests, onOpenSettings });
     await act(async () => {
-      button("New plan").click();
+      button("New interview").click();
       button("Open planning chat: " + planning.title).click();
       button("Open Work Item: " + firstItem.title + " · " + approved.title).click();
       button("Refresh board").click();
@@ -278,11 +375,11 @@ describe("Project Factory board", () => {
   it("shows an empty four-column board with New in To do", async () => {
     await render({ snapshot: null });
     expect(container.querySelectorAll("h2")).toHaveLength(4);
-    expect(container.querySelector('[aria-label="To do"]')?.contains(button("New plan"))).toBe(
+    expect(container.querySelector('[aria-label="To do"]')?.contains(button("New interview"))).toBe(
       true,
     );
     expect(container.querySelectorAll("li")).toHaveLength(0);
-    expect(container.textContent).toContain("Start a plan");
+    expect(container.textContent).toContain("Start an interview");
   });
   it("keeps empty column text visible during a background refresh", async () => {
     await render({ loading: true });
@@ -314,7 +411,7 @@ describe("Project Factory board", () => {
     act(() => button("Start issue #43").click());
     expect(onStartIssue).toHaveBeenCalledWith(43);
     board.settings = { readyLabel: "ready-for-agent" };
-    await render({ snapshot: board, onStartIssue, onOpenIssue });
+    await render({ snapshot: board, onStartIssue, onOpenIssue, startError: "Start failed" });
     expect(button("Start issue #43").disabled).toBe(true);
   });
   it("reopens the same issue conversation from its In progress card", async () => {
@@ -335,5 +432,45 @@ describe("Project Factory board", () => {
     await render({ snapshot: board, onOpenStart });
     act(() => button("Open issue conversation #43").click());
     expect(onOpenStart).toHaveBeenCalledWith(startId);
+    act(() => {
+      container
+        .querySelector('[aria-label="In progress"] li')
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onOpenStart).toHaveBeenCalledTimes(2);
+  });
+  it("shows an open issue in To do after its previous start ended", async () => {
+    const state = snapshot();
+    state.workItems = [];
+    state.planningFeatures = [];
+    const issue = {
+      repository: { id: "901", owner: "owner", name: "reports" },
+      id: "42",
+      number: 42,
+      url: "https://github.com/owner/reports/issues/42",
+      title: "Export reports",
+      state: "open" as const,
+      labels: [{ name: "ready-for-agent", color: "008800" }],
+    };
+    state.github.issues = [issue];
+    state.starts = [
+      {
+        id: approved.id,
+        issueNumber: 42,
+        issueUrl: issue.url,
+        title: issue.title,
+        state: "done",
+        featureId: approved.id,
+        message: null,
+      },
+    ];
+    await render({ snapshot: state, onStartIssue: vi.fn() });
+    expect(container.querySelector('[aria-label="To do"]')?.textContent).toContain(
+      "Export reports",
+    );
+    expect(container.querySelector('[aria-label="Start issue #42"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Completed"]')?.textContent).not.toContain(
+      "Export reports",
+    );
   });
 });

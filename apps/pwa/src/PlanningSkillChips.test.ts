@@ -7,7 +7,10 @@ import { ApiClientError } from "./api.js";
 import { PlanningSkillChips } from "./PlanningSkillChips.js";
 
 const api = vi.hoisted(() => ({ select: vi.fn() }));
-vi.mock("./factory-skills-api.js", () => ({ selectPlanningSkills: api.select }));
+vi.mock("./factory-skills-api.js", () => ({
+  selectPlanningSkills: api.select,
+  fetchPlanningSkillCatalog: () => Promise.resolve({ schemaVersion: 1, skills: selection.skills }),
+}));
 const selection: FeaturePlanningSkills = {
   schemaVersion: 1,
   version: 3,
@@ -28,7 +31,7 @@ const selection: FeaturePlanningSkills = {
 };
 afterEach(() => vi.clearAllMocks());
 
-it("renders active chips and removes one with the authoritative selection version", async () => {
+it("replaces active skills with one selection with the authoritative selection version", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   api.select.mockResolvedValue({ ...selection, version: 4, skills: [selection.skills[1]] });
   const container = document.createElement("div");
@@ -49,11 +52,17 @@ it("renders active chips and removes one with the authoritative selection versio
         }),
       );
     });
-    expect(container.textContent).toContain("$grilling");
-    expect(container.textContent).toContain("$research");
+    expect(container.textContent).toContain("grilling");
+    expect(container.textContent).toContain("research");
     await act(async () => {
       [...container.querySelectorAll("button")]
-        .find((button) => button.getAttribute("aria-label") === "Remove grilling")
+        .find((button) => button.getAttribute("aria-label") === "Choose interview skill")
+        ?.click();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      [...document.querySelectorAll("button")]
+        .find((button) => button.textContent.startsWith("research"))
         ?.click();
       await Promise.resolve();
     });
@@ -73,7 +82,7 @@ it("renders active chips and removes one with the authoritative selection versio
   }
 });
 
-it("blocks removal during a reply and gives refresh guidance on a stale selection", async () => {
+it("blocks selection during a reply and gives refresh guidance on a stale selection", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   api.select.mockRejectedValue(
     new ApiClientError(409, {
@@ -86,7 +95,8 @@ it("blocks removal during a reply and gives refresh guidance on a stale selectio
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
-  const onChanged = vi.fn();
+  const onChanged = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+  const onReadyChange = vi.fn();
   const render = (editable: boolean) =>
     act(() => {
       root.render(
@@ -97,6 +107,7 @@ it("blocks removal during a reply and gives refresh guidance on a stale selectio
           online: true,
           editable,
           onChanged,
+          onReadyChange,
           onAuthenticationError: () => false,
         }),
       );
@@ -104,12 +115,18 @@ it("blocks removal during a reply and gives refresh guidance on a stale selectio
   try {
     render(false);
     const remove = [...container.querySelectorAll("button")].find(
-      (button) => button.getAttribute("aria-label") === "Remove grilling",
+      (button) => button.getAttribute("aria-label") === "Choose interview skill",
     );
     expect(remove?.disabled).toBe(true);
     render(true);
     await act(async () => {
       remove?.click();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      [...document.querySelectorAll("button")]
+        .find((button) => button.textContent.startsWith("research"))
+        ?.click();
       await Promise.resolve();
     });
     expect(container.textContent).toContain("Refresh Skills");
@@ -120,6 +137,18 @@ it("blocks removal during a reply and gives refresh guidance on a stale selectio
       await Promise.resolve();
     });
     expect(onChanged).toHaveBeenCalledOnce();
+    expect(onReadyChange).toHaveBeenLastCalledWith(false);
+    expect(remove?.disabled).toBe(true);
+    await act(async () => {
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Refresh Skills")
+        ?.click();
+      await Promise.resolve();
+    });
+    expect(onChanged).toHaveBeenCalledTimes(2);
+    expect(onReadyChange).toHaveBeenLastCalledWith(true);
+    expect(remove?.disabled).toBe(false);
+    expect(container.textContent).not.toContain("Refresh Skills");
   } finally {
     act(() => root.unmount());
     container.remove();
@@ -127,7 +156,7 @@ it("blocks removal during a reply and gives refresh guidance on a stale selectio
   }
 });
 
-it("retries an uncertain removal with the same request identity", async () => {
+it("retries an uncertain selection with the same request identity", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   api.select.mockRejectedValueOnce(new TypeError("Response lost")).mockResolvedValue(selection);
   const container = document.createElement("div");
@@ -151,20 +180,26 @@ it("retries an uncertain removal with the same request identity", async () => {
     render(true);
     await act(async () => {
       [...container.querySelectorAll("button")]
-        .find((button) => button.getAttribute("aria-label") === "Remove research")
+        .find((button) => button.getAttribute("aria-label") === "Choose interview skill")
+        ?.click();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      [...document.querySelectorAll("button")]
+        .find((button) => button.textContent.startsWith("research"))
         ?.click();
       await Promise.resolve();
     });
     render(false);
     expect(
       [...container.querySelectorAll("button")].find(
-        (button) => button.textContent === "Retry removal",
+        (button) => button.textContent === "Retry selection",
       )?.disabled,
     ).toBe(true);
     render(true);
     await act(async () => {
       [...container.querySelectorAll("button")]
-        .find((button) => button.textContent === "Retry removal")
+        .find((button) => button.textContent === "Retry selection")
         ?.click();
       await Promise.resolve();
     });

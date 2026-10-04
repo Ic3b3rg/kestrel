@@ -31,9 +31,9 @@ const command = {
 const feature: FeatureRow = {
   id: featureId,
   project_id: projectId,
-  title: "New plan",
+  title: "New interview",
   title_source: "pending",
-  initial_title: "New plan",
+  initial_title: "New interview",
   state: "planning",
   planning_context: null,
   skill_selection_version: 0,
@@ -56,7 +56,7 @@ it("reads the first reply and generated title consistently when naming finishes 
     }
     if (sql.includes("FROM factory_features") && sql.includes("AND id = $2")) {
       locked = sql.includes("FOR UPDATE") || sql.includes("FOR SHARE");
-      const row = { ...feature, title: completed ? "Saved report search" : "New plan" };
+      const row = { ...feature, title: completed ? "Saved report search" : "New interview" };
       // The completing worker needs the same Feature lock. Without it, its atomic
       // title/message/turn write becomes visible between this read's queries.
       if (locked) completionWaiting = true;
@@ -101,7 +101,7 @@ it("reads the first reply and generated title consistently when naming finishes 
     expect(duringCompletion.feature.title).toBe("Saved report search");
     expect(duringCompletion.messages.at(-1)?.role).toBe("assistant");
   } else {
-    expect(duringCompletion.feature.title).toBe("New plan");
+    expect(duringCompletion.feature.title).toBe("New interview");
     expect(duringCompletion.messages.map(({ role }) => role)).toEqual(["user"]);
   }
   const afterCompletion = await readFactoryChat(pool, projectId, featureId);
@@ -157,7 +157,7 @@ it("accepts the first message, merged Skill selection and queue job in one trans
   const first = { ...command, text: "$grilling Define search", skillDigests: [selected] };
   const result = await startPlanningFeature(fixture.pool, fixture.boss, projectId, actorId, first);
   expect(result).toMatchObject({
-    feature: { id: featureId, title: "New plan" },
+    feature: { id: featureId, title: "New interview" },
     messageId,
     turnId,
   });
@@ -254,7 +254,7 @@ it.each([{ text: "Changed prompt" }, { skillDigests: ["a".repeat(64)] }])(
 it.each(["pending", "operator"])(
   "saves a generated title only while its source is %s",
   async (source) => {
-    let title = source === "pending" ? "New plan" : "Operator's saved title";
+    let title = source === "pending" ? "New interview" : "Operator's saved title";
     const query = vi.fn((sql: string, parameters?: unknown[]) => {
       if (sql.includes("FROM factory_features") && sql.includes("FOR UPDATE"))
         return {

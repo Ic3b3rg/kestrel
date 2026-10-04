@@ -129,7 +129,7 @@ it("uses one snapshot read for local and provider cards with direct Project acti
   );
   await act(async () => {
     await Promise.resolve();
-    container.querySelector<HTMLButtonElement>('[aria-label="New plan"]')?.click();
+    container.querySelector<HTMLButtonElement>('[aria-label="New interview"]')?.click();
     [...container.querySelectorAll("button")]
       .find((button) => button.textContent.includes("Pull requests"))
       ?.click();
@@ -230,6 +230,47 @@ it("waits for a read before polling again and stops on navigation", async () => 
   expect(api.board.mock.calls[1]?.[1]?.aborted).toBe(true);
   await act(async () => vi.advanceTimersByTimeAsync(6_000));
   expect(api.board).toHaveBeenCalledTimes(2);
+});
+
+it("opens an individually started published issue as a flat activity conversation", async () => {
+  const feature = snapshot.planningFeatures[0];
+  if (feature === undefined) throw new Error("Missing interview fixture");
+  const executionFeatureId = "01991c36-7f90-7000-8000-000000000012";
+  api.board.mockResolvedValue({
+    ...snapshot,
+    workItems: [
+      {
+        feature,
+        item: {
+          id: "01991c36-7f90-7000-8000-000000000013",
+          featureId: feature.id,
+          key: "export",
+          order: 1,
+          title: "Published export",
+          dependsOn: [],
+          column: "in_progress",
+          blocking: null,
+          providerUrl: "https://github.com/example/reports/issues/42",
+          approvedVersion: 1,
+          executionFeatureId,
+        },
+      },
+    ],
+  });
+  await render();
+  act(() => {
+    container
+      .querySelector<HTMLButtonElement>(
+        '[aria-label="Open Work Item: Published export · Saved report search"]',
+      )
+      ?.click();
+  });
+  expect(navigate).toHaveBeenCalledWith({
+    kind: "feature",
+    projectId,
+    featureId: executionFeatureId,
+    view: "activity",
+  });
 });
 
 it("routes authentication failure to the session boundary", async () => {

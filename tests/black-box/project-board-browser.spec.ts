@@ -5,6 +5,7 @@ import { createServer, type ViteDevServer } from "vite";
 import { writeFile, rm, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
+import { dragIssueToInProgress } from "./support/board-gesture.js";
 
 // Browser acceptance for the actual board entry component. All provider/API traffic is fixture-owned.
 test("reads issues in-app, starts by drop, retains queued work, and supports narrow keyboard use", async ({
@@ -34,6 +35,8 @@ test("reads issues in-app, starts by drop, retains queued work, and supports nar
   let reads = 0;
   const firstBoard = Promise.withResolvers<undefined>();
   const firstIssue = Promise.withResolvers<undefined>();
+  const firstStart = Promise.withResolvers<undefined>();
+  const startRequested = Promise.withResolvers<undefined>();
   try {
     await writeFile(
       entry,
@@ -113,6 +116,10 @@ const auth=()=>false;createRoot(document.getElementById('root')).render(createEl
       }
       if (url.pathname.endsWith("/start")) {
         commands++;
+        if (commands === 1) {
+          startRequested.resolve(undefined);
+          await firstStart.promise;
+        }
         const body = z
           .object({ issueNumber: z.number(), requestId: z.uuid() })
           .parse(route.request().postDataJSON());
@@ -139,7 +146,7 @@ const auth=()=>false;createRoot(document.getElementById('root')).render(createEl
     });
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto(`http://127.0.0.1:${String(address.port)}/board-acceptance.html`);
-    await expect(page.getByRole("status")).toHaveText("Loading board…");
+    await expect(page.getByText("Loading board…", { exact: true })).toBeVisible();
     for (const column of ["To do", "In progress", "In review", "Completed"]) {
       await expect(
         page
@@ -187,7 +194,14 @@ const auth=()=>false;createRoot(document.getElementById('root')).render(createEl
     const card = page
       .getByRole("button", { name: "Open issue #42: Export saved reports", exact: true })
       .locator("..");
-    await card.dragTo(page.getByRole("region", { name: "In progress", exact: true }));
+    const inProgress = page.getByRole("region", { name: "In progress", exact: true });
+    await dragIssueToInProgress(page, card, inProgress);
+    await startRequested.promise;
+    await expect(inProgress).toContainText("Starting…");
+    await expect(page.getByRole("region", { name: "To do", exact: true })).not.toContainText(
+      "Export saved reports",
+    );
+    firstStart.resolve(undefined);
     await expect(page.getByRole("region", { name: "In progress", exact: true })).toContainText(
       "Waiting for development",
     );
@@ -226,6 +240,7 @@ const auth=()=>false;createRoot(document.getElementById('root')).render(createEl
     await page.screenshot({ path: testInfo.outputPath("issue-narrow.png"), fullPage: true });
     expect(reads).toBeGreaterThanOrEqual(2);
   } finally {
+    firstStart.resolve(undefined);
     firstBoard.resolve(undefined);
     firstIssue.resolve(undefined);
     await server?.close();

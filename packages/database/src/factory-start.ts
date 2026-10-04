@@ -111,7 +111,7 @@ export async function startPlanningFeature(
     if (Number(count.rows[0]?.count) >= 200) throw new FactoryError("feature_limit");
     const features = await client.query<FeatureRow>(
       `INSERT INTO factory_features (project_id, created_by, request_id, title, initial_title, title_source)
-       VALUES ($1,$2,$3,'New plan','New plan','pending') ON CONFLICT (created_by, request_id) DO NOTHING RETURNING *`,
+       VALUES ($1,$2,$3,'New interview','New interview','pending') ON CONFLICT (created_by, request_id) DO NOTHING RETURNING *`,
       [canonicalProjectId, actorId, command.requestId],
     );
     const feature = features.rows[0];

@@ -5,7 +5,7 @@ export type AppRoute =
       kind: "feature";
       projectId: string;
       featureId: string;
-      view?: "plan" | "board" | "review";
+      view?: "plan" | "board" | "review" | "activity";
       artifactId?: string;
     }
   | { kind: "not_found" }
@@ -102,7 +102,9 @@ export function readAppRoute(pathname: string, search = "", hash = ""): AppRoute
             kind: "feature",
             projectId: projectId.data,
             featureId: featureId.data,
-            ...(view === "plan" || view === "board" || view === "review" ? { view } : {}),
+            ...(view === "plan" || view === "board" || view === "review" || view === "activity"
+              ? { view }
+              : {}),
             ...(view === "review" && artifactId.success ? { artifactId: artifactId.data } : {}),
           }
         : { kind: "not_found" };

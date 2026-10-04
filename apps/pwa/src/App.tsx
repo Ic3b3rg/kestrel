@@ -833,7 +833,11 @@ export function App() {
               navigationProject === undefined ? "Project" : projectLabel(navigationProject)
             }
             featureId={route.featureId}
-            {...(route.view === undefined ? {} : { view: route.view })}
+            {...(route.view === "activity"
+              ? { issueConversation: true }
+              : route.view === undefined
+                ? {}
+                : { view: route.view })}
             {...(route.artifactId === undefined ? {} : { artifactId: route.artifactId })}
             onPlanDirtyChange={setPlanDirty}
             online={online}

@@ -35,10 +35,13 @@ export async function previewGitHubPlanningSkill(
   if (
     command.kind === "starter"
       ? bundle.name !== command.starter
-      : bundle.source.owner.toLowerCase() !== command.owner.toLowerCase() ||
-        bundle.source.repository.toLowerCase() !== command.repository.toLowerCase() ||
-        bundle.source.path !== command.path ||
-        bundle.source.requestedRef !== command.ref
+      : command.kind === "collection"
+        ? bundle.name !==
+          (command.collection === "matt-pocock" ? "grill-with-docs" : "brainstorming")
+        : bundle.source.owner.toLowerCase() !== command.owner.toLowerCase() ||
+          bundle.source.repository.toLowerCase() !== command.repository.toLowerCase() ||
+          bundle.source.path !== command.path ||
+          bundle.source.requestedRef !== command.ref
   )
     throw new InvalidServerResponseError("The server returned a different Skill source");
   return bundle;

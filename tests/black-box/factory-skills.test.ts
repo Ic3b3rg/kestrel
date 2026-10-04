@@ -10,12 +10,21 @@ describe("retained planning Skills", () => {
   afterAll(async () => {
     await stack?.close();
   });
-  it("exposes an authenticated empty catalog and explains an unconfigured host source", async () => {
+  it("exposes included collections and explains an unconfigured host source", async () => {
     if (stack === undefined) throw new Error("Skill fixture is unavailable");
     expect((await fetch(new URL("/api/v1/planning-skills", stack.apiUrl))).status).toBe(401);
     const catalog = await stack.fetchApi("/api/v1/planning-skills");
     expect(catalog.status, await catalog.clone().text()).toBe(200);
-    expect(await catalog.json()).toEqual({ schemaVersion: 1, skills: [] });
+    const included = PlanningSkillCatalogSchema.parse(await catalog.json());
+    expect(included.skills.map((skill) => skill.name).sort()).toEqual([
+      "brainstorming",
+      "grill-with-docs",
+    ]);
+    for (const skill of included.skills) {
+      if (skill.source.kind !== "github")
+        throw new Error("Included Skills must retain their source");
+      expect(skill.source.requestedRef).toBe(skill.source.commitId);
+    }
     const candidates = await stack.fetchApi("/api/v1/planning-skills/candidates");
     expect(candidates.status, await candidates.clone().text()).toBe(200);
     expect(await candidates.json()).toEqual({
@@ -107,6 +116,9 @@ describe("installing and using a host Skill", () => {
     await fixture?.close();
   });
   it("fails an incomplete import atomically without selecting partial instructions", async () => {
+    const before = PlanningSkillCatalogSchema.parse(
+      await (await requireStack().fetchApi("/api/v1/planning-skills")).json(),
+    );
     const candidates = PlanningSkillCandidatesSchema.parse(
       await (await requireStack().fetchApi("/api/v1/planning-skills/candidates")).json(),
     );
@@ -119,8 +131,8 @@ describe("installing and using a host Skill", () => {
     expect(
       PlanningSkillCatalogSchema.parse(
         await (await requireStack().fetchApi("/api/v1/planning-skills")).json(),
-      ).skills,
-    ).toEqual([]);
+      ),
+    ).toEqual(before);
   });
   it("denies rewriting or deleting accepted Skill and plan provenance", async () => {
     await expect(
@@ -140,6 +152,11 @@ describe("installing and using a host Skill", () => {
     const imported = await request("/api/v1/planning-skills/install", install);
     expect(imported.status, await imported.clone().text()).toBe(201);
     const original = PlanningSkillBundleSchema.parse(await imported.json());
+    const catalog = PlanningSkillCatalogSchema.parse(
+      await (await requireStack().fetchApi("/api/v1/planning-skills")).json(),
+    );
+    const defaultSkill = catalog.skills.find((skill) => skill.name === "grill-with-docs");
+    if (defaultSkill === undefined) throw new Error("Missing bundled default Skill");
     expect(original.files.map((file) => file.path)).toEqual([
       "SKILL.md",
       "references/checklist.md",
@@ -162,7 +179,16 @@ describe("installing and using a host Skill", () => {
     const invocation = FeatureChatSchema.parse(
       await (await requireStack().fetchApi(invocationPath)).json(),
     );
-    expect(invocation.turns[0]?.skills?.[0]?.contentDigest).toBe(original.contentDigest);
+    expect(invocation.turns[0]?.skills?.map((skill) => skill.contentDigest).sort()).toEqual(
+      [defaultSkill.contentDigest, original.contentDigest].sort(),
+    );
+    expect(
+      invocation.turns[0]?.skills?.find((skill) => skill.contentDigest === original.contentDigest),
+    ).toMatchObject({
+      name: original.name,
+      contentDigest: original.contentDigest,
+      source: original.source,
+    });
     const feature = FeatureSchema.parse(
       await (
         await request(`/api/v1/projects/${projectId}/features`, {

@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 import { z } from "zod";
 
 import { FactoryExecutionSchema } from "./factory-execution.js";
-import { ResolveFactoryGateCommandSchema } from "./factory-gates.js";
+import { FactoryGateSchema, ResolveFactoryGateCommandSchema } from "./factory-gates.js";
 import { FactoryActivitySchema } from "./factory-plan.js";
 
 const id = "01991c36-7f90-7000-8000-000000000001";
@@ -36,6 +36,32 @@ it("retains a concrete, versioned Human Gate in the execution read model", () =>
       gate,
     }),
   ).toHaveProperty("gate", gate);
+});
+
+it("distinguishes an automatic retry from an Operator answer", () => {
+  const gate = {
+    schemaVersion: 1,
+    id,
+    featureId: id,
+    workItemId: id,
+    runId: id,
+    approvedVersion: 2,
+    reason: "unavailable",
+    question: "Runtime unavailable",
+    requiredDecision: "retry_within_plan",
+    createdAt: "2026-09-08T12:00:00.000Z",
+    resolution: {
+      requestId: id,
+      operatorId: null,
+      decision: "resume_within_plan",
+      answer: "The runtime recovered; retrying automatically.",
+      resolvedAt: "2026-09-08T12:01:00.000Z",
+    },
+    successorRunId: null,
+    canResume: false,
+    resumeBlockedReason: "already_resolved",
+  };
+  expect(FactoryGateSchema.parse(gate).resolution?.operatorId).toBeNull();
 });
 
 const answer = {

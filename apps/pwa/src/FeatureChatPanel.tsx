@@ -1,4 +1,5 @@
-import { MarkdownContent } from "./MarkdownContent.js";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { usePlanningAttachments } from "./usePlanningAttachments.js";
 import { PlanningMessageAttachments } from "./PlanningAttachments.js";
 import { FormFeedback } from "./components/FormFeedback.js";
@@ -49,10 +50,10 @@ import { renameFactoryFeature } from "./factory-start-api.js";
 
 const ignoreDirtyChange = () => undefined;
 const featureStatus: Record<Feature["state"], string> = {
-  planning: "Planning · Define the outcome before implementation.",
-  queued: "Queued · Approved work is waiting to run.",
+  planning: "Interview · Define the outcome before implementation.",
+  queued: "Issues published · Start an issue from the project board.",
   implementing: "In progress · Approved work is running on the workstation.",
-  gated: "Decision needed · Review the blocked work on the board.",
+  gated: "Work paused · Open the issue activity for details.",
   in_review: "In review · Inspect the work and its verification results.",
   merging: "Merge gate · The exact reviewed pull request is being reconciled.",
   completed: "Completed · The Feature is merged and its project queue is released.",
@@ -191,6 +192,8 @@ export interface FeatureChatPanelProps {
   onFeatureRead: (feature: Feature) => void;
   onFeatureUnavailable: (projectId: string, featureId: string) => void;
   issueConversation?: boolean;
+  issueNumber?: number;
+  issueUrl?: string;
   loadChat?: typeof fetchFeatureChat;
   loadPlanVersion?: typeof fetchFeaturePlanVersion;
   sendMessage?: typeof sendPlanningMessage;
@@ -212,6 +215,8 @@ export function FeatureChatPanel({
   onFeatureRead,
   onFeatureUnavailable,
   issueConversation = false,
+  issueNumber,
+  issueUrl,
   loadChat = fetchFeatureChat,
   loadPlanVersion = fetchFeaturePlanVersion,
   sendMessage = sendPlanningMessage,
@@ -223,6 +228,7 @@ export function FeatureChatPanel({
   const [reading, setReading] = useState(true);
   const [readError, setReadError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [issueReviewArtifactId, setIssueReviewArtifactId] = useState<string | undefined>();
   const [planningSettings, setPlanningSettings] = useState<PlanningComposerSettings | undefined>();
   const [importsRevision, setImportsRevision] = useState(0);
   const [commandPending, setCommandPending] = useState(false);
@@ -235,10 +241,11 @@ export function FeatureChatPanel({
   const activeRead = useRef<AbortController | null>(null);
   const alive = useRef(true);
   const [profileReady, setProfileReady] = useState(false);
+  const [skillsReady, setSkillsReady] = useState(true);
   const submitting = useRef(false);
 
   const refresh = useCallback(async () => {
-    if (!online) return;
+    if (!online) return false;
     const controller = new AbortController();
     activeRead.current?.abort();
     activeRead.current = controller;
@@ -246,18 +253,21 @@ export function FeatureChatPanel({
     setReadError(null);
     try {
       const result = await loadChat(projectId, featureId, controller.signal);
-      if (!alive.current || controller.signal.aborted) return;
+      if (!alive.current || controller.signal.aborted) return false;
       if (result.feature.id !== featureId)
         throw new Error("The response contains a different feature");
       setChat(result);
       onFeatureRead(result.feature);
+      return true;
     } catch (failure) {
-      if (!alive.current || controller.signal.aborted || onAuthenticationError(failure)) return;
+      if (!alive.current || controller.signal.aborted || onAuthenticationError(failure))
+        return false;
       if (failure instanceof ApiClientError && failure.status === 404)
         onFeatureUnavailable(projectId, featureId);
       setReadError(
         planningRequestError(failure, "The conversation could not be loaded. Refresh to retry."),
       );
+      return false;
     } finally {
       if (alive.current && activeRead.current === controller) setReading(false);
     }
@@ -343,7 +353,7 @@ export function FeatureChatPanel({
     event.preventDefault();
     if (
       attachments.busy ||
-      !profileReady ||
+      (!issueConversation && (!profileReady || !skillsReady)) ||
       chat?.feature.state !== "planning" ||
       draft.trim() === "" ||
       commandError !== null ||
@@ -394,8 +404,33 @@ export function FeatureChatPanel({
       </section>
     );
 
-  const visibleMessages =
-    issueConversation && chat.feature.state !== "planning" ? [] : chat.messages;
+  const firstIssueMessage = chat.messages.find((message) => message.role === "user");
+  const needsIssueAnswer =
+    issueConversation &&
+    chat.feature.state === "planning" &&
+    latestTurn?.state === "failed" &&
+    latestTurn.failure === "input_required" &&
+    latestTurn.question !== null;
+  const visibleMessages = issueConversation
+    ? chat.messages
+        .filter((message) =>
+          message.role === "assistant"
+            ? message.generatedPlanVersion === undefined
+            : message.id === firstIssueMessage?.id ||
+              chat.turns.some((turn) => turn.messageId === message.id && turn.purpose !== "plan"),
+        )
+        .map((message) =>
+          message.id === firstIssueMessage?.id
+            ? {
+                ...message,
+                content:
+                  issueNumber !== undefined && issueUrl !== undefined
+                    ? `Implement [issue #${String(issueNumber)}](${issueUrl}).`
+                    : message.content,
+              }
+            : message,
+        )
+    : chat.messages;
   return (
     <section className="feature-planning" aria-labelledby="feature-title">
       <header className="feature-planning-header">
@@ -443,67 +478,73 @@ export function FeatureChatPanel({
           </Button>
         </div>
       </header>
-      <Tabs value={view} onValueChange={selectView} className="feature-tabs">
-        <TabsList aria-label="Feature views" className="feature-tab-list">
-          {(["chat", "plan", "board", "review"] as const).map((value) => {
-            const route = {
-              kind: "feature" as const,
-              projectId,
-              featureId,
-              ...(value === "chat" ? {} : { view: value }),
-            };
-            return (
-              <TabsTrigger
-                asChild
-                value={value}
-                key={value}
-                onMouseDown={(event) => {
-                  if (
-                    event.button !== 0 ||
-                    event.altKey ||
-                    event.ctrlKey ||
-                    event.metaKey ||
-                    event.shiftKey
-                  )
-                    event.preventDefault();
-                }}
-              >
-                <a
-                  href={appPath(route)}
-                  onClick={(event) =>
-                    handleFeatureLink(event, route, (next) => {
-                      if (view !== value) onNavigate(next);
-                    })
-                  }
+      <Tabs
+        value={issueConversation ? "chat" : view}
+        onValueChange={selectView}
+        className="feature-tabs"
+      >
+        {issueConversation ? null : editable && view === "chat" ? (
+          <div className="flex justify-end">
+            <Button variant="ghost" onClick={() => selectView("plan")}>
+              Review requirements
+            </Button>
+          </div>
+        ) : (
+          <TabsList aria-label="Feature views" className="feature-tab-list">
+            {(["chat", "plan", "board", "review"] as const).map((value) => {
+              const route = {
+                kind: "feature" as const,
+                projectId,
+                featureId,
+                ...(value === "chat" ? {} : { view: value }),
+              };
+              return (
+                <TabsTrigger
+                  asChild
+                  value={value}
+                  key={value}
+                  onMouseDown={(event) => {
+                    if (
+                      event.button !== 0 ||
+                      event.altKey ||
+                      event.ctrlKey ||
+                      event.metaKey ||
+                      event.shiftKey
+                    )
+                      event.preventDefault();
+                  }}
                 >
-                  {value === "chat"
-                    ? "Chat"
-                    : value === "plan"
-                      ? "Plan"
-                      : value === "board"
-                        ? "Board"
-                        : "Review"}
-                </a>
-              </TabsTrigger>
-            );
-          })}
-        </TabsList>
+                  <a
+                    href={appPath(route)}
+                    onClick={(event) =>
+                      handleFeatureLink(event, route, (next) => {
+                        if (view !== value) onNavigate(next);
+                      })
+                    }
+                  >
+                    {value === "chat"
+                      ? "Chat"
+                      : value === "plan"
+                        ? "Plan"
+                        : value === "board"
+                          ? "Board"
+                          : "Review"}
+                  </a>
+                </TabsTrigger>
+              );
+            })}
+          </TabsList>
+        )}
         <TabsContent value="chat" className="feature-chat-content">
           {readError === null ? null : (
             <FormFeedback className="planning-error" kind="error">
               {readError}
             </FormFeedback>
           )}
-          {chat.context?.notice === null || chat.context?.notice === undefined ? null : (
+          {issueConversation ||
+          chat.context?.notice === null ||
+          chat.context?.notice === undefined ? null : (
             <p className="planning-notice">{chat.context.notice}</p>
-          )}
-          {(chat.skills?.skills.length ?? 0) === 0 ? null : (
-            <p
-              className="text-xs text-muted-foreground"
-              aria-label="Skills guiding the next message"
-            >
-              Next message: {chat.skills?.skills.map((skill) => `$${skill.name}`).join(", ")}
-            </p>
           )}
           {chat.messages.length === 0 && editable ? (
             <div className="planning-empty">
@@ -516,7 +557,6 @@ export function FeatureChatPanel({
           ) : null}
           <ol
             className="planning-messages"
-            hidden={issueConversation && chat.feature.state !== "planning"}
             aria-label="Conversation"
             aria-live="polite"
             aria-relevant="additions text"
@@ -542,14 +582,32 @@ export function FeatureChatPanel({
                         })}
                       </time>
                     </header>
-                    <MarkdownContent body={message.content} />
+                    <div className="planning-message-content space-y-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_pre]:overflow-x-auto [&_pre]:rounded [&_pre]:bg-muted [&_pre]:p-3 [&_a]:underline">
+                      <Markdown
+                        remarkPlugins={[remarkGfm]}
+                        skipHtml
+                        disallowedElements={["img"]}
+                        components={{
+                          input: ({ checked }) => (
+                            <input
+                              type="checkbox"
+                              disabled
+                              checked={checked ?? false}
+                              aria-label={checked ? "Completed task" : "Incomplete task"}
+                            />
+                          ),
+                        }}
+                      >
+                        {message.content}
+                      </Markdown>
+                    </div>
                     <PlanningMessageAttachments
                       files={message.attachments ?? []}
                       projectId={projectId}
                       featureId={featureId}
                       messageId={message.id}
                     />
-                    {turn === undefined ? null : (
+                    {turn === undefined || issueConversation ? null : (
                       <LifecycleProfileRecord
                         profile={turn.lifecycleProfile}
                         effective={turn.runtimeProfileResult}
@@ -567,12 +625,15 @@ export function FeatureChatPanel({
                         loadVersion={loadPlanVersion}
                       />
                     )}
-                    <SkillProvenance
-                      skills={turn?.skills ?? []}
-                      onAuthenticationError={onAuthenticationError}
-                    />
+                    {issueConversation ? null : (
+                      <SkillProvenance
+                        skills={turn?.skills ?? []}
+                        onAuthenticationError={onAuthenticationError}
+                      />
+                    )}
                   </article>
-                  {message.role !== "user" ||
+                  {issueConversation ||
+                  message.role !== "user" ||
                   turn === undefined ||
                   turn.state === "completed" ? null : (
                     <div className="planning-turn-state" role="status">
@@ -604,7 +665,7 @@ export function FeatureChatPanel({
                               <Square aria-hidden="true" />
                               Stop planning
                             </Button>
-                          ) : issueConversation ? null : (
+                          ) : (
                             <Button
                               variant="outline"
                               disabled={
@@ -668,87 +729,100 @@ export function FeatureChatPanel({
               ) : null}
             </FormFeedback>
           )}
-          <form
-            className="planning-composer"
-            hidden={issueConversation && chat.feature.state !== "planning"}
-            onSubmit={submit}
-          >
-            <Label htmlFor="planning-message" className="sr-only">
-              Message
-            </Label>
-            <PlanningComposer
-              attachments={attachments}
-              project={projectName}
-              controls={
-                <PlanningModelControls
-                  projectId={projectId}
-                  online={online}
-                  {...(chat.planningSettings === undefined
-                    ? {}
-                    : { savedSettings: chat.planningSettings })}
-                  disabled={
+          {needsIssueAnswer &&
+          !chat.messages.some(
+            (message) => message.role === "assistant" && message.content === latestTurn.question,
+          ) ? (
+            <blockquote className="planning-question">{latestTurn.question}</blockquote>
+          ) : null}
+          {issueConversation && !needsIssueAnswer ? null : (
+            <form className="planning-composer" onSubmit={submit}>
+              <Label htmlFor="planning-message" className="sr-only">
+                Message
+              </Label>
+              <PlanningComposer
+                attachments={attachments}
+                project={projectName}
+                controls={
+                  issueConversation ? null : (
+                    <PlanningModelControls
+                      projectId={projectId}
+                      online={online}
+                      {...(chat.planningSettings === undefined
+                        ? {}
+                        : { savedSettings: chat.planningSettings })}
+                      disabled={
+                        !editable ||
+                        commandPending ||
+                        activeTurn !== undefined ||
+                        attempt.current !== null
+                      }
+                      onReady={setProfileReady}
+                      onSettingsChange={(settings) => {
+                        setPlanningSettings(settings);
+                        if (attempt.current === null) setCommandError(null);
+                      }}
+                    />
+                  )
+                }
+                skills={
+                  issueConversation ? null : (
+                    <PlanningSkillChips
+                      projectId={projectId}
+                      featureId={featureId}
+                      online={online}
+                      editable={editable && activeTurn === undefined && !commandPending}
+                      selection={chat.skills ?? { schemaVersion: 1, version: 0, skills: [] }}
+                      onChanged={async (skills) => {
+                        if (skills !== undefined)
+                          setChat((current) =>
+                            current === null ? current : { ...current, skills },
+                          );
+                        return refresh();
+                      }}
+                      onReadyChange={setSkillsReady}
+                      onAuthenticationError={onAuthenticationError}
+                    />
+                  )
+                }
+                input={{
+                  id: "planning-message",
+                  rows: 3,
+                  maxLength: 16_000,
+                  value: draft,
+                  online,
+                  onAuthenticationError,
+                  disabled:
+                    !online ||
                     !editable ||
                     commandPending ||
                     activeTurn !== undefined ||
-                    attempt.current !== null
-                  }
-                  onReady={setProfileReady}
-                  onSettingsChange={(settings) => {
-                    setPlanningSettings(settings);
+                    (commandError !== null && attempt.current !== null),
+                  onValueChange: (text) => {
+                    setDraft(text);
                     if (attempt.current === null) setCommandError(null);
-                  }}
-                />
-              }
-              skills={
-                <PlanningSkillChips
-                  projectId={projectId}
-                  featureId={featureId}
-                  online={online}
-                  editable={editable && activeTurn === undefined && !commandPending}
-                  selection={chat.skills ?? { schemaVersion: 1, version: 0, skills: [] }}
-                  onChanged={refresh}
-                  onAuthenticationError={onAuthenticationError}
-                />
-              }
-              input={{
-                id: "planning-message",
-                rows: 3,
-                maxLength: 16_000,
-                value: draft,
-                online,
-                onAuthenticationError,
-                disabled:
-                  !online ||
-                  !editable ||
-                  commandPending ||
-                  activeTurn !== undefined ||
-                  (commandError !== null && attempt.current !== null),
-                onValueChange: (text) => {
-                  setDraft(text);
-                  if (attempt.current === null) setCommandError(null);
-                },
-                placeholder: "Describe the change or answer Kestrel’s question…",
-                describedBy: "planning-message-help",
-              }}
-              sendLabel={commandPending && attemptKind === "send" ? "Sending…" : "Send message"}
-              canSend={
-                online &&
-                editable &&
-                !commandPending &&
-                activeTurn === undefined &&
-                commandError === null &&
-                profileReady &&
-                draft.trim() !== ""
-              }
-            />
-            <p id="planning-message-help" className="text-xs text-muted-foreground">
-              {editable
-                ? issueConversation
-                  ? "⌘/Ctrl + Enter to send. This issue was authorized when you started it from the board."
-                  : "⌘/Ctrl + Enter to send. Implementation starts after you approve a plan."
-                : "This conversation is read-only. Its saved messages remain available."}
-            </p>
-          </form>
+                  },
+                  placeholder: "Describe the change or answer Kestrel’s question…",
+                  ...(editable ? {} : { describedBy: "planning-message-help" }),
+                }}
+                sendLabel={commandPending && attemptKind === "send" ? "Sending…" : "Send message"}
+                canSend={
+                  online &&
+                  editable &&
+                  !commandPending &&
+                  activeTurn === undefined &&
+                  commandError === null &&
+                  (issueConversation || (profileReady && skillsReady)) &&
+                  draft.trim() !== ""
+                }
+              />
+              {!editable ? (
+                <p id="planning-message-help" className="text-xs text-muted-foreground">
+                  This conversation is read-only. Its saved messages remain available.
+                </p>
+              ) : null}
+            </form>
+          )}
           {issueConversation && chat.feature.state !== "planning" ? (
             <FeatureExecutionPanel
               projectId={projectId}
@@ -756,54 +830,93 @@ export function FeatureChatPanel({
               online={online}
               onAuthenticationError={onAuthenticationError}
               onGateResolved={() => void refresh()}
+              conversation
             />
           ) : null}
+          {issueConversation &&
+          ["in_review", "merging", "completed"].includes(chat.feature.state) ? (
+            <details open className="issue-review">
+              <summary>Review and results</summary>
+              <FeatureReviewPanel
+                projectId={projectId}
+                featureId={featureId}
+                online={online}
+                onAuthenticationError={onAuthenticationError}
+                onFeatureChanged={() => void refresh()}
+                {...(issueReviewArtifactId === undefined
+                  ? {}
+                  : { selectedArtifactId: issueReviewArtifactId })}
+                onSelectArtifact={setIssueReviewArtifactId}
+              />
+            </details>
+          ) : null}
         </TabsContent>
-        <TabsContent value="plan" forceMount className="data-[state=inactive]:hidden">
-          <FeaturePlanPanel
-            {...(chat.skills === undefined ? {} : { skillSelectionVersion: chat.skills.version })}
-            projectId={projectId}
-            featureId={featureId}
-            online={online}
-            visible={view === "plan"}
-            conversationPending={activeTurn !== undefined}
-            importsRevision={importsRevision}
-            onAuthenticationError={onAuthenticationError}
-            onChanged={() => void refresh()}
-            onApproved={() => selectView("board")}
-            onDirtyChange={onPlanDirtyChange}
-          />
-        </TabsContent>
-        <TabsContent value="board">
-          <FeatureBoardPanel
-            projectId={projectId}
-            featureId={featureId}
-            online={online}
-            onAuthenticationError={onAuthenticationError}
-            onViewPlan={() => selectView("plan")}
-            onOpenRevision={() => selectView("review")}
-            onFeatureChanged={() => void refresh()}
-          />
-        </TabsContent>
-        <TabsContent value="review">
-          <FeatureReviewPanel
-            projectId={projectId}
-            featureId={featureId}
-            online={online}
-            {...(artifactId === undefined ? {} : { selectedArtifactId: artifactId })}
-            onSelectArtifact={(selectedArtifactId) =>
-              onNavigate({
-                kind: "feature",
-                projectId,
-                featureId,
-                view: "review",
-                ...(selectedArtifactId === undefined ? {} : { artifactId: selectedArtifactId }),
-              })
-            }
-            onAuthenticationError={onAuthenticationError}
-            onFeatureChanged={() => void refresh()}
-          />
-        </TabsContent>
+        {issueConversation ? (
+          <details className="issue-requirements">
+            <summary>Requirements</summary>
+            <FeaturePlanPanel
+              visible={true}
+              conversationPending={activeTurn !== undefined}
+              projectId={projectId}
+              featureId={featureId}
+              online={online}
+              onAuthenticationError={onAuthenticationError}
+              onApproved={() => void refresh()}
+              onChanged={() => void refresh()}
+              onDirtyChange={onPlanDirtyChange}
+            />
+          </details>
+        ) : (
+          <>
+            <TabsContent value="plan" forceMount className="data-[state=inactive]:hidden">
+              <FeaturePlanPanel
+                {...(chat.skills === undefined
+                  ? {}
+                  : { skillSelectionVersion: chat.skills.version })}
+                projectId={projectId}
+                featureId={featureId}
+                online={online}
+                visible={view === "plan"}
+                conversationPending={activeTurn !== undefined}
+                importsRevision={importsRevision}
+                onAuthenticationError={onAuthenticationError}
+                onChanged={() => void refresh()}
+                onApproved={() => selectView("board")}
+                onDirtyChange={onPlanDirtyChange}
+              />
+            </TabsContent>
+            <TabsContent value="board">
+              <FeatureBoardPanel
+                projectId={projectId}
+                featureId={featureId}
+                online={online}
+                onAuthenticationError={onAuthenticationError}
+                onViewPlan={() => selectView("plan")}
+                onOpenRevision={() => selectView("review")}
+                onFeatureChanged={() => void refresh()}
+              />
+            </TabsContent>
+            <TabsContent value="review">
+              <FeatureReviewPanel
+                projectId={projectId}
+                featureId={featureId}
+                online={online}
+                {...(artifactId === undefined ? {} : { selectedArtifactId: artifactId })}
+                onSelectArtifact={(selectedArtifactId) =>
+                  onNavigate({
+                    kind: "feature",
+                    projectId,
+                    featureId,
+                    view: "review",
+                    ...(selectedArtifactId === undefined ? {} : { artifactId: selectedArtifactId }),
+                  })
+                }
+                onAuthenticationError={onAuthenticationError}
+                onFeatureChanged={() => void refresh()}
+              />
+            </TabsContent>
+          </>
+        )}
       </Tabs>
     </section>
   );

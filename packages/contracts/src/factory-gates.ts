@@ -50,7 +50,7 @@ const gate = z.strictObject({
   resolution: z
     .strictObject({
       requestId: z.uuid(),
-      operatorId: KestrelIdSchema,
+      operatorId: KestrelIdSchema.nullable(),
       decision: gateDecision,
       answer: gateAnswer,
       resolvedAt: z.iso.datetime(),

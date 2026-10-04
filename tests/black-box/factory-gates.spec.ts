@@ -56,6 +56,10 @@ test.describe("Human Gate decisions", () => {
         })
       ).json(),
     ).id;
+    // This fixture exercises the legacy authorized multi-item execution path.
+    await stack.executeSql(
+      `UPDATE factory_features SET execution_mode='authorized' WHERE id='${featureId}'`,
+    );
     const plan: FeaturePlanDocument = {
       objective: "Keep results in stable order",
       scope: { includes: ["Stable ordering"], excludes: ["New filters"] },

@@ -118,6 +118,7 @@ it("reads and retains the current complete conversation when queued work starts"
     }),
     { expectedVersion: null },
     {},
+    [],
   );
   expect(db.approve).not.toHaveBeenCalled();
 });
@@ -224,5 +225,37 @@ it("does not auto-approve a plan bound to a different imported issue", async () 
     start.id,
     "blocked",
     expect.stringContaining("selected issue"),
+  );
+});
+
+it("retains linked requirements and prerequisite state before preparing execution", async () => {
+  const referenced = {
+    ...issue,
+    id: "49",
+    number: 49,
+    url: "https://github.com/owner/reports/issues/49",
+    title: "Export contract",
+    body: "Preserve the complete Markdown body.",
+    state: "closed",
+    labels: [],
+  };
+  read.mockImplementation((_project: string, number: number) =>
+    Promise.resolve({
+      issue:
+        number === 42
+          ? { ...issue, body: issue.body + "\n\n## Source contracts\n- #49\n## Blocked by\n- #49" }
+          : referenced,
+      comments: [],
+      nextPage: null,
+    }),
+  );
+  await dispatch();
+  expect(read).toHaveBeenCalledWith(project, 49, 1, true);
+  expect(db.retain).toHaveBeenCalledWith(
+    pool,
+    start.id,
+    expect.objectContaining({
+      references: [expect.objectContaining({ issue: referenced })],
+    }),
   );
 });

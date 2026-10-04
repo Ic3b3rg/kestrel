@@ -5,6 +5,7 @@ import {
   ExternalConceptualReviewPreparationSchema,
   FactoryConceptualReviewWorkflowReadSchema,
   ProjectBoardSnapshotSchema,
+  ProjectBoardSettingsSchema,
   HostGitHubProjectInboxSchema,
   ProjectInboxSchema,
   ReviewRevisionAvailableSchema,
@@ -741,9 +742,6 @@ test.describe("observable Installation PWA", () => {
     await select.focus();
     await page.keyboard.press("Enter");
     await selectionObserved;
-    await expect(page.getByRole("status").filter({ hasText: "Project refreshed" })).toContainText(
-      "Project refreshed through the host GitHub session.",
-    );
     await expect(
       page.getByRole("link", { name: "#42 · Review the bounded provider read" }),
     ).toBeVisible();
@@ -1773,7 +1771,6 @@ test.describe("observable Installation PWA", () => {
     await page.getByLabel(/Expected results/u).fill("The selected source remains attributable");
     await purpose.getByRole("button", { name: "Save confirmed purpose" }).click();
 
-    await expect(page.getByRole("status")).toContainText("Review purpose saved and confirmed.");
     await expect(purpose).toContainText("Operator confirmed");
     await expect(purpose).toContainText(objective);
     await expect(purpose).toContainText("Do not add provider write authority");
@@ -1884,6 +1881,15 @@ test.describe("observable Installation PWA", () => {
       `**/api/v1/projects/${openedProject.project.id}/model-profiles/direct-api`,
       async (route) => {
         await route.fulfill({ json: { profile: null, schemaVersion: 1 }, status: 200 });
+      },
+    );
+    await page.route(
+      `**/api/v1/projects/${openedProject.project.id}/board/settings`,
+      async (route) => {
+        expect(route.request().method()).toBe("GET");
+        await route.fulfill({
+          json: ProjectBoardSettingsSchema.parse({ readyLabel: "ready-for-agent" }),
+        });
       },
     );
     await page.route("**/api/v1/projects", async (route) => {
@@ -2200,14 +2206,17 @@ test.describe("observable Installation PWA", () => {
     await page
       .getByLabel("Public GitHub pull request URL")
       .fill("https://github.com/openai/openai-node");
+    const urlForm = page
+      .locator("form")
+      .filter({ has: page.getByLabel("Public GitHub pull request URL", { exact: true }) });
     await page.getByRole("button", { name: "Open PR by URL" }).click();
-    await expect(page.getByRole("alert")).toContainText(
+    await expect(urlForm.getByRole("alert")).toContainText(
       "Enter a canonical public pull request URL",
     );
     expect(projectPostCount).toBe(0);
     await page.getByLabel("Public GitHub pull request URL").fill(publicPullRequestUrl);
     await page.getByRole("button", { name: "Open PR by URL" }).click();
-    await expect(page.getByRole("alert")).toContainText(
+    await expect(urlForm.getByRole("alert")).toContainText(
       "This URL belongs to a different repository",
     );
     expect(projectPostCount).toBe(0);

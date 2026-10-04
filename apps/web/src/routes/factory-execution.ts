@@ -1,8 +1,13 @@
+import { readLocalSourceConfig } from "@kestrel/local-source";
+import { readIssueStartContext } from "../factory-planning-source.js";
+import { renderFeaturePlanArtifacts } from "../factory-plan-artifacts.js";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 
 import {
   ApiErrorSchema,
+  StartFactoryWorkItemCommandSchema,
+  FactoryWorkItemStartSchema,
   FactoryExecutionSchema,
   FactoryExecutionRunSchema,
   FactoryGateSchema,
@@ -10,6 +15,7 @@ import {
   KestrelIdSchema,
 } from "@kestrel/contracts";
 import {
+  startFactoryWorkItem,
   readFactoryExecution,
   readFactoryExecutionRun,
   readFactoryGate,
@@ -36,6 +42,40 @@ const errors = {
 };
 
 export function registerFactoryExecutionRoutes(app: FastifyInstance, pool: DatabasePool): void {
+  const itemParams = featureParams.extend({ workItemId: KestrelIdSchema });
+  app.post(
+    "/api/v1/projects/:projectId/features/:featureId/work-items/:workItemId/start",
+    {
+      config: AUTHENTICATED_MUTATION_ROUTE_CONFIG,
+      schema: {
+        params: jsonSchema(itemParams),
+        body: jsonSchema(StartFactoryWorkItemCommandSchema),
+        response: { ...errors, 200: jsonSchema(FactoryWorkItemStartSchema) },
+      },
+    },
+    async (request, reply) => {
+      const { projectId, featureId, workItemId } = itemParams.parse(request.params);
+      const actorId = request.operatorSession?.operator.id;
+      if (actorId === undefined) throw new Error("Authenticated start has no Operator");
+      try {
+        return await startFactoryWorkItem(
+          pool,
+          projectId,
+          featureId,
+          workItemId,
+          actorId,
+          StartFactoryWorkItemCommandSchema.parse(request.body),
+          renderFeaturePlanArtifacts,
+          async (source, requiredCommits) =>
+            readIssueStartContext(await readLocalSourceConfig(), source, requiredCommits),
+        );
+      } catch (error) {
+        const failure = factoryError(request, error);
+        return reply.code(failure.status).send(failure.body);
+      }
+    },
+  );
+
   app.get(
     "/api/v1/projects/:projectId/features/:featureId/execution/gates/:gateId",
     {

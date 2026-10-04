@@ -32,6 +32,7 @@ const contextSchema = z.object({
   issue: FactoryGitHubIssueSchema,
   conversation: z.array(z.unknown()),
   readAt: z.string(),
+  references: z.array(z.unknown()).optional(),
 });
 
 export function createProjectIssueDispatcher(
@@ -68,7 +69,36 @@ export function createProjectIssueDispatcher(
             "This discussion exceeds the execution context limit. Split the issue before starting it.",
           );
       }
-      snapshot = { issue: first.issue, conversation, readAt: new Date().toISOString() };
+      // Capture the issue's cited contracts before the network-free implementation starts.
+      // References remain facts about this repository; they never authorize more work.
+      const numbers = new Set<number>();
+      for (const match of first.issue.body.matchAll(/(?:^|[\s(])#([1-9]\d*)\b/gu)) {
+        const number = Number(match[1]);
+        if (number !== start.issue_number) numbers.add(number);
+      }
+      const references = [];
+      for (const number of numbers) {
+        if (references.length >= 12)
+          throw new FactoryError(
+            "conflict",
+            "This issue cites more than twelve requirements sources. Narrow its source list before starting.",
+          );
+        const reference = await read(start.project_id, number, 1, true);
+        const comments = [...reference.comments];
+        let nextPage = reference.nextPage;
+        while (nextPage !== null) {
+          const page = await read(start.project_id, number, nextPage, true);
+          comments.push(...page.comments);
+          nextPage = page.nextPage;
+          if (Buffer.byteLength(JSON.stringify(comments)) > 160_000)
+            throw new FactoryError(
+              "conflict",
+              "A linked requirements discussion exceeds the context limit.",
+            );
+        }
+        references.push({ issue: reference.issue, conversation: comments });
+      }
+      snapshot = { issue: first.issue, conversation, references, readAt: new Date().toISOString() };
       if (Buffer.byteLength(JSON.stringify(snapshot)) > 180_000)
         throw new FactoryError(
           "conflict",
@@ -102,10 +132,11 @@ export function createProjectIssueDispatcher(
       feature.id,
       {
         requestId: start.plan_request_id,
-        text: `The Operator explicitly authorized development of ${context.issue.url} by starting it from the Project board. Prepare exactly one Work Item bound to imported issue ${imported.id}. Read the complete retained issue and conversation provided in issueExecutionContext, including its acceptance requirements. Derive the operational plan and concrete verification from the committed repository context. Do not create additional tracker issues or broaden the request. If consequential requirements or verification are unresolved, request input; never invent them. This command already authorizes execution under the Project implementation profile, without another approval dialog. Use limits ${JSON.stringify(DEFAULT_FACTORY_LIMITS)}.`,
+        text: `The Operator explicitly authorized development of ${context.issue.url} by starting it from the Project board. Prepare exactly one Work Item bound to imported issue ${imported.id}. Read the complete retained issue and conversation provided in issueExecutionContext, including its acceptance requirements. Derive the operational plan and concrete verification from the committed repository context. Do not create additional tracker issues or broaden the request. Use the retained linked contracts and prerequisite state, then use read_project to inspect relevant code, tests and omitted documents before requesting input. Resolve implementation details and verification commands from repository conventions yourself. Ask only for a consequential product choice that remains genuinely unresolved after these reads; a missing source or technical failure is not a product decision. Never invent requirements. This command already authorizes execution under the Project implementation profile, without another approval dialog. Use limits ${JSON.stringify(DEFAULT_FACTORY_LIMITS)}.`,
       },
       { expectedVersion },
       await runtime.readConnection(),
+      [],
     );
     await updateIssueDispatch(pool, start.id, "preparing");
   }
@@ -154,7 +185,7 @@ export function createProjectIssueDispatcher(
             throw new FactoryError(
               "conflict",
               plans.generation.question ??
-                "Planning needs attention. Open the work to resolve the question or retry.",
+                "Preparation stopped before producing a plan. Retry preparation.",
             );
           const items = plans.current.document.workItems;
           const imports = await readFactoryIssueImports(pool, start.project_id, start.feature_id);

@@ -128,7 +128,7 @@ export class CodexAppServerTransport {
   readonly #processExited: Promise<void>;
   readonly #profile: keyof typeof profiles;
   readonly #failed: Promise<never>;
-  readonly #timeout: NodeJS.Timeout;
+  readonly #timeout: NodeJS.Timeout | null;
   readonly #decoder = new StringDecoder("utf8");
   readonly #signal: AbortSignal | undefined;
   readonly #receive: (message: Record<string, unknown>) => void;
@@ -154,7 +154,7 @@ export class CodexAppServerTransport {
     arguments: readonly string[];
     cwd: string;
     env?: NodeJS.ProcessEnv;
-    timeoutMs: number;
+    timeoutMs: number | null;
     signal?: AbortSignal;
     receive(message: Record<string, unknown>): void;
   }) {
@@ -214,11 +214,11 @@ export class CodexAppServerTransport {
       if (this.#stderrBytes > profiles[this.#profile].stderrBytes)
         this.fail(new CodexFactoryError("invalid_response"));
     });
-    this.#timeout = setTimeout(
-      () => this.fail(new CodexFactoryError("timeout")),
-      options.timeoutMs,
-    );
-    if (this.#profile === "connection") this.#timeout.unref();
+    this.#timeout =
+      options.timeoutMs === null
+        ? null
+        : setTimeout(() => this.fail(new CodexFactoryError("timeout")), options.timeoutMs);
+    if (this.#profile === "connection") this.#timeout?.unref();
     options.signal?.addEventListener("abort", this.#onAbort, { once: true });
     if (options.signal?.aborted) this.#onAbort();
   }
@@ -326,7 +326,7 @@ export class CodexAppServerTransport {
   // This reports only the App Server process. It is NOT proof that tool descendants stopped.
   async close(interrupt?: { method: string; params: unknown }): Promise<{ exited: boolean }> {
     this.#closing = true;
-    clearTimeout(this.#timeout);
+    if (this.#timeout !== null) clearTimeout(this.#timeout);
     this.#signal?.removeEventListener("abort", this.#onAbort);
     if (interrupt !== undefined) this.send({ id: this.#nextId++, ...interrupt });
     this.#child.stdin.end();

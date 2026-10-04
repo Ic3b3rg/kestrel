@@ -5,6 +5,15 @@ import { appPath, readAppRoute } from "./app-route.js";
 const projectId = "018f0f89-949a-75a8-8f61-6df78a843b1e";
 
 describe("authenticated app routing", () => {
+  it("restores a published issue's flat activity conversation", () => {
+    const featureId = "018f0f89-9a21-7271-b92d-f1cb0d48bb47";
+    expect(readAppRoute(`/projects/${projectId}/features/${featureId}`, "?view=activity")).toEqual({
+      kind: "feature",
+      projectId,
+      featureId,
+      view: "activity",
+    });
+  });
   it("restores an issue conversation while its Feature is still being prepared", () => {
     const startId = "018f0f89-9a21-7271-b92d-f1cb0d48bb47";
     const route = { kind: "issue" as const, projectId, startId };

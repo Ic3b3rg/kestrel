@@ -75,7 +75,12 @@ it("keeps the same issue conversation while preparation creates a Feature", asyn
 });
 
 it("shows a blocked reason and retries from the same conversation", async () => {
-  api.read.mockResolvedValue({ ...start, state: "blocked", message: "Answer the scope question." });
+  api.read.mockResolvedValue({
+    ...start,
+    state: "blocked",
+    featureId,
+    message: "GitHub source could not be read.",
+  });
   await act(async () => {
     root.render(
       createElement(ProjectIssueConversation, {
@@ -91,7 +96,8 @@ it("shows a blocked reason and retries from the same conversation", async () => 
     );
     await Promise.resolve();
   });
-  expect(container.textContent).toContain("Answer the scope question.");
+  expect(container.textContent).toContain("GitHub source could not be read.");
+  expect(container.textContent).not.toContain("Answer the question");
   await act(async () => {
     [...container.querySelectorAll("button")]
       .find((button) => button.textContent.trim() === "Retry preparation")

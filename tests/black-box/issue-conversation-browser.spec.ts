@@ -301,12 +301,16 @@ createRoot(document.getElementById('root')).render(createElement(App));
     const answer = page.getByRole("textbox", { name: "Message" });
     await answer.fill("Include archived reports.");
     await page.getByRole("button", { name: "Send message" }).click();
-    await expect(page.getByText("Include archived reports.", { exact: true })).toBeVisible();
+    await expect(
+      page
+        .getByRole("list", { name: "Conversation", exact: true })
+        .getByText("Include archived reports.", { exact: true }),
+    ).toBeVisible();
     await page.getByRole("button", { name: "Retry preparation" }).click();
     planningQuestion = false;
     updateStart({ state: "running", featureId });
     await expect(page.getByRole("region", { name: "Feature execution" })).toContainText(
-      "Implementing the approved plan",
+      "Working on this issue…",
     );
     await expect(page.getByRole("region", { name: "Live activity" })).toContainText(
       "Checking export behavior",
@@ -315,7 +319,10 @@ createRoot(document.getElementById('root')).render(createElement(App));
     executionState = "verified";
     updateStart({ state: "done" });
     await expect(page.getByText("Export implemented and checked.")).toBeVisible();
-    await expect(page.getByRole("region", { name: "Live activity" })).toHaveCount(0);
+    await expect(page.getByRole("region", { name: "Live activity" })).toContainText(
+      "Checking export behavior",
+    );
+    await expect(page.getByRole("tablist", { name: "Feature views" })).toHaveCount(0);
     await expect(page.getByText("Temporary planning prompt")).toHaveCount(0);
     await expect(page.getByText("1 of 1 checks passed in the latest round.")).toBeVisible();
     await page.setViewportSize({ width: 390, height: 844 });

@@ -668,7 +668,7 @@ export function FeaturePlanEditor({
             </NativeSelect>
           </div>
           <div>
-            <Label htmlFor="plan-attempt-limit">Attempt limit (minutes)</Label>
+            <Label htmlFor="plan-attempt-limit">Verification command limit (minutes)</Label>
             <Input
               id="plan-attempt-limit"
               type="number"
@@ -718,9 +718,11 @@ export function VerificationSummary({ commands }: { commands: Verification[] }) 
 
 export function FeaturePlanDocumentView({
   plan,
+  showIssues = true,
   importedIssues = [],
 }: {
   plan: FeaturePlanDocument;
+  showIssues?: boolean;
   importedIssues?: ImportedFactoryIssue[];
 }) {
   return (
@@ -762,57 +764,59 @@ export function FeaturePlanDocumentView({
           ))}
         </dl>
       </section>
-      <section>
-        <h3>Ordered Work Items</h3>
-        <ol className="plan-work-items">
-          {plan.workItems.map((item, index) => (
-            <li key={item.key}>
-              <h4>
-                {index + 1}. {item.title} <span className="plan-key">{item.key}</span>
-              </h4>
-              <div>
-                <h5>GitHub issue</h5>
-                {item.importedIssueId === null ? (
-                  <p>A new issue will be published after approval.</p>
-                ) : (
-                  (() => {
-                    const source = importedIssues.find(
-                      (candidate) => candidate.id === item.importedIssueId,
-                    );
-                    return source === undefined ? (
-                      <p>Imported issue unavailable. Load the latest plan before approval.</p>
-                    ) : (
-                      <ImportedIssueReference source={source} />
-                    );
-                  })()
-                )}
-              </div>
-              <p className="planning-message-content">{item.description}</p>
-              <p>
-                Requirements:{" "}
-                {item.requirementKeys.map((key, position) => (
-                  <span key={key}>
-                    {position === 0 ? "" : ", "}
-                    <a href={`#requirement-${key}`}>{key}</a>
-                  </span>
-                ))}
-              </p>
-              <p>
-                Depends on:{" "}
-                {item.dependsOn.length === 0 ? "No dependencies" : item.dependsOn.join(", ")}
-              </p>
-              <h5>Acceptance</h5>
-              <ul>
-                {item.acceptance.map((value, position) => (
-                  <li key={position}>{value}</li>
-                ))}
-              </ul>
-              <h5>Verification</h5>
-              <VerificationSummary commands={item.verification} />
-            </li>
-          ))}
-        </ol>
-      </section>
+      {showIssues ? (
+        <section>
+          <h3>Issue drafts</h3>
+          <ol className="plan-work-items">
+            {plan.workItems.map((item, index) => (
+              <li key={item.key}>
+                <h4>
+                  {index + 1}. {item.title} <span className="plan-key">{item.key}</span>
+                </h4>
+                <div>
+                  <h5>GitHub issue</h5>
+                  {item.importedIssueId === null ? (
+                    <p>A new issue will be published after approval.</p>
+                  ) : (
+                    (() => {
+                      const source = importedIssues.find(
+                        (candidate) => candidate.id === item.importedIssueId,
+                      );
+                      return source === undefined ? (
+                        <p>Imported issue unavailable. Load the latest plan before approval.</p>
+                      ) : (
+                        <ImportedIssueReference source={source} />
+                      );
+                    })()
+                  )}
+                </div>
+                <p className="planning-message-content">{item.description}</p>
+                <p>
+                  Requirements:{" "}
+                  {item.requirementKeys.map((key, position) => (
+                    <span key={key}>
+                      {position === 0 ? "" : ", "}
+                      <a href={`#requirement-${key}`}>{key}</a>
+                    </span>
+                  ))}
+                </p>
+                <p>
+                  Depends on:{" "}
+                  {item.dependsOn.length === 0 ? "No dependencies" : item.dependsOn.join(", ")}
+                </p>
+                <h5>Acceptance</h5>
+                <ul>
+                  {item.acceptance.map((value, position) => (
+                    <li key={position}>{value}</li>
+                  ))}
+                </ul>
+                <h5>Verification</h5>
+                <VerificationSummary commands={item.verification} />
+              </li>
+            ))}
+          </ol>
+        </section>
+      ) : null}
       {(plan.proposedDocuments?.length ?? 0) === 0 ? null : (
         <section>
           <h3>Proposed Project documents</h3>
@@ -832,7 +836,7 @@ export function FeaturePlanDocumentView({
         <h3>Execution limits</h3>
         <p>
           {plan.limits.maxConcurrentProjects} concurrent Projects · 1 active feature per Project ·{" "}
-          {plan.limits.attemptTimeoutSeconds / 60} minutes per attempt
+          {plan.limits.attemptTimeoutSeconds / 60} minutes per verification command
         </p>
       </section>
     </div>

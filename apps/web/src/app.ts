@@ -297,7 +297,7 @@ export async function buildApp({
   registerFactoryPlanningRoutes(app, pool, boss, codexAgentRuntime);
   registerLifecycleProfileRoutes(app, pool, codexAgentRuntime);
   registerPlanningSkillRoutes(app, pool);
-  registerFactoryIssueRoutes(app, pool, factoryGitHub);
+  registerFactoryIssueRoutes(app, pool, factoryGitHub, { boss, runtime: codexAgentRuntime });
   registerProjectBoardRoutes(app, pool, factoryGitHub);
   registerFactoryExecutionRoutes(app, pool);
   registerFactoryFeaturePublicationRoutes(app, pool);

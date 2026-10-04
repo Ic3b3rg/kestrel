@@ -236,6 +236,92 @@ it("answers the visible gate once against its approved plan and preserves a lost
   expect(container.textContent).toContain("Answer saved");
 });
 
+it.each(["unavailable", "usage_limit", "timeout", "verification_failed"] as const)(
+  "handles %s as an automatic technical interruption without asking for input",
+  async (reason) => {
+    const technicalGate = {
+      ...gate,
+      reason,
+      requiredDecision: "retry_within_plan" as const,
+      question: "The Codex runtime is unavailable. Restore the connection before retrying.",
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockImplementation((url: string) =>
+          Promise.resolve(
+            Response.json(
+              requestUrl(url).endsWith(`/runs/${runId}`)
+                ? { ...run, failure: reason, gate: technicalGate }
+                : { ...execution, failure: reason, gate: technicalGate },
+            ),
+          ),
+        ),
+    );
+    await render({ conversation: true });
+    expect(container.textContent).toContain("Work paused by a technical problem.");
+    expect(container.textContent).toContain("Technical interruption");
+    expect(container.textContent).toContain("No answer is needed");
+    expect(container.querySelector("form")).toBeNull();
+    expect(container.textContent).not.toContain("Your answer applies");
+    expect(container.textContent).not.toContain("A product decision is needed");
+    expect(container.textContent).not.toContain("Answer the product question");
+  },
+);
+
+it.each(["timeout", "verification_failed"] as const)(
+  "retries %s without a written answer and retains the request after a lost response",
+  async (reason) => {
+    const sent: unknown[] = [];
+    let current = { ...gate, reason, requiredDecision: "retry_within_plan" as const };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof globalThis.fetch>((url, options) => {
+        if (options?.method === "POST") {
+          if (typeof options.body !== "string") throw new Error("Expected retry command");
+          const command = JSON.parse(options.body) as { requestId: string; answer: string };
+          sent.push(command);
+          if (sent.length === 1) return Promise.reject(new TypeError("Response lost"));
+          current = {
+            ...current,
+            canResume: false,
+            resumeBlockedReason: "already_resolved",
+            resolution: {
+              requestId: command.requestId,
+              answer: command.answer,
+              operatorId: projectId,
+              decision: "resume_within_plan",
+              resolvedAt: createdAt,
+            },
+          };
+          return Promise.resolve(Response.json(current));
+        }
+        return Promise.resolve(
+          Response.json(
+            requestUrl(url).endsWith(`/runs/${runId}`)
+              ? { ...run, failure: reason, gate: current }
+              : { ...execution, failure: reason, gate: current },
+          ),
+        );
+      }),
+    );
+    await render({ conversation: true });
+    expect(container.querySelector("textarea")).toBeNull();
+    await click("Retry execution");
+    expect(sent).toHaveLength(1);
+    expect(container.textContent).toContain("could not be confirmed");
+    await click("Retry execution");
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toEqual(sent[0]);
+    expect(sent[0]).toMatchObject({
+      expectedPlanVersion: 2,
+      decision: "resume_within_plan",
+      answer: "Retry the retained execution within the approved plan.",
+    });
+  },
+);
+
 it("explains an unconfirmed stop and prevents a gate answer from restarting the writer", async () => {
   vi.stubGlobal(
     "fetch",
@@ -332,6 +418,16 @@ it("opens the running attempt and shows public reasoning and tool output while w
         exitCode: 0,
         createdAt,
       },
+      {
+        id: runId,
+        kind: "command",
+        summary: "git status --short",
+        itemId: "1:command-2",
+        itemState: "completed",
+        detail: " M src/report.ts",
+        exitCode: 0,
+        createdAt,
+      },
     ],
   };
   const firstWorkItem = execution.workItems[0];
@@ -366,7 +462,14 @@ it("opens the running attempt and shows public reasoning and tool output while w
   expect(container.textContent).toContain("I will inspect the report path.");
   expect(container.textContent).toContain("node --test tests/export report.test.mjs");
   expect(container.textContent).toContain("2 tests passed");
-  expect(container.querySelectorAll('[aria-label="Live activity"] li')).toHaveLength(2);
+  expect(container.textContent).toContain("Ran 2 commands");
+  expect(container.querySelectorAll('[aria-label="Live activity"] > ol > li')).toHaveLength(2);
+  expect(
+    [
+      ...container.querySelectorAll<HTMLDetailsElement>('[aria-label="Live activity"] details'),
+    ].find((element) => element.querySelector("summary")?.textContent.includes("Ran 2 commands"))
+      ?.open,
+  ).toBe(false);
   expect(container.querySelector('button[aria-expanded="true"]')?.textContent).toContain(
     "Attempt 1",
   );
@@ -526,6 +629,65 @@ it("waits for a slow execution read before polling again and stops after verific
     await vi.advanceTimersByTimeAsync(5000);
   });
   expect(fetch).toHaveBeenCalledTimes(2);
+});
+
+it("follows new issue attempts while letting the Operator inspect and leave history", async () => {
+  vi.useFakeTimers();
+  const nextId = "018f0f89-949a-75a8-8f61-6df78a843b24";
+  const summary = execution.workItems[0]?.runs[0];
+  const activity = run.activity[0];
+  if (summary === undefined || activity === undefined) throw new Error("Attempt fixture missing");
+  let hasNext = false;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((url: RequestInfo | URL) => {
+      if (requestUrl(url).endsWith(`/runs/${runId}`))
+        return Promise.resolve(Response.json({ ...run, question: null }));
+      if (requestUrl(url).endsWith(`/runs/${nextId}`))
+        return Promise.resolve(
+          Response.json({
+            ...run,
+            id: nextId,
+            attempt: 2,
+            question: null,
+            activity: [{ ...activity, summary: "Checking the new implementation." }],
+          }),
+        );
+      return Promise.resolve(
+        Response.json({
+          ...execution,
+          state: "running",
+          question: null,
+          workItems: [
+            {
+              ...execution.workItems[0],
+              runs: hasNext
+                ? [
+                    summary,
+                    { ...summary, id: nextId, attempt: 2, createdAt: "2026-09-07T12:01:00.000Z" },
+                  ]
+                : [summary],
+            },
+          ],
+        }),
+      );
+    }),
+  );
+  await render({ conversation: true });
+  expect(container.textContent).toContain("Report export failed its declared check.");
+  hasNext = true;
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2000);
+  });
+  expect(container.textContent).toContain("Checking the new implementation.");
+  await click("Attempt 1");
+  expect(container.textContent).toContain("Report export failed its declared check.");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2000);
+  });
+  expect(container.textContent).toContain("Report export failed its declared check.");
+  await click("Follow current activity");
+  expect(container.textContent).toContain("Checking the new implementation.");
 });
 
 it("keeps an unconfirmed cancellation visibly reserved without offering a replay", async () => {

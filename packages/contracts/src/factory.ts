@@ -91,6 +91,7 @@ export const PlanningFailureSchema = z.enum([
 export type PlanningFailure = z.infer<typeof PlanningFailureSchema>;
 
 export const PlanningTurnSchema = z.strictObject({
+  purpose: z.enum(["conversation", "plan"]).optional(),
   lifecycleProfile: LifecycleProfileEvidenceSchema.nullable().optional(),
   runtimeProfileResult: z
     .strictObject({

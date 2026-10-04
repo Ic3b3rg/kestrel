@@ -1,3 +1,5 @@
+import { readBundledPlanningSkills } from "./factory-bundled-skills.js";
+import { bootstrapPlanningSkills } from "@kestrel/database";
 import { createHash } from "node:crypto";
 import { readFile, realpath } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
@@ -54,6 +56,7 @@ const credentialStore = new FileCredentialStore(modelProviderSecretRoot);
 await credentialStore.reconcile();
 const openAiTransport = createOpenAiTransport();
 const pool = createPool(config.databaseUrl, "kestrel-web");
+await bootstrapPlanningSkills(pool, await readBundledPlanningSkills());
 const eventPool = createPool(config.databaseUrl, "kestrel-web-events", {
   connectionTimeoutMillis: 2_000,
   max: 10,
@@ -160,6 +163,7 @@ const background = createFactoryBackgroundRuntime({
   transport: openAiTransport,
   conceptualReview: factoryConceptualReviewService,
   conceptualReviewRuntimeProfile: factoryConceptualReviewRuntimeProfile,
+  codexAgentRuntime,
   ...(factoryExecutionImage === undefined ? {} : { containerImage: factoryExecutionImage }),
   ...(factoryDockerExecutable === undefined ? {} : { dockerExecutable: factoryDockerExecutable }),
 });

@@ -26,7 +26,7 @@ const started: PlanningFeatureStarted = {
     id: "01991c36-7f90-7000-8000-000000000004",
     projectId,
     state: "planning",
-    title: "New plan",
+    title: "New interview",
     createdAt: "2026-09-08T12:00:00.000Z",
     updatedAt: "2026-09-08T12:00:00.000Z",
   },

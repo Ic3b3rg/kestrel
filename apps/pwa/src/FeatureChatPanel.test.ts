@@ -3,9 +3,10 @@ import { mockLifecycleProfileRequests } from "./lifecycle-profile.test-support.j
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { FeatureChat, FeaturePlanVersion } from "@kestrel/contracts";
+import type { FeatureChat, FeaturePlanVersion, FeaturePlanningSkills } from "@kestrel/contracts";
 import { FeatureChatPanel, type FeatureChatPanelProps } from "./FeatureChatPanel.js";
 import { ApiClientError } from "./api.js";
+import * as skillsApi from "./factory-skills-api.js";
 
 const projectId = "018f0f89-949a-75a8-8f61-6df78a843b1e";
 const featureId = "018f0f89-9192-755f-aa96-f72094c734df";
@@ -38,6 +39,10 @@ const initial: FeatureChat = {
   ],
   context: null,
 };
+const firstTurn = initial.turns[0];
+const firstMessage = initial.messages[0];
+if (firstTurn === undefined || firstMessage === undefined)
+  throw new Error("Incomplete conversation fixture");
 const generatedVersion: FeaturePlanVersion = {
   schemaVersion: 1,
   id: "018f0f89-949a-75a8-8f61-6df78a843b20",
@@ -135,6 +140,32 @@ describe("persistent planning conversation", () => {
     });
   }
 
+  it("opens as an interview with Markdown and no premature lifecycle tabs", async () => {
+    await render({
+      loadChat: () =>
+        Promise.resolve({
+          ...initial,
+          turns: [],
+          messages: [
+            {
+              id: messageId,
+              role: "assistant",
+              content: "**One question**\n\n- First fact\n\n```ts\nconst answer = 1;\n```",
+              createdAt,
+            },
+          ],
+        }),
+    });
+    expect(container.querySelector('[role="tablist"]')).toBeNull();
+    expect(container.querySelector(".planning-message-content strong")?.textContent).toBe(
+      "One question",
+    );
+    expect(container.querySelector(".planning-message-content pre code")?.textContent).toContain(
+      "const answer",
+    );
+    expect(container.textContent).not.toContain("Implementation starts after you approve a plan");
+  });
+
   it("renders Markdown in sent messages and Kestrel replies without activating embedded HTML", async () => {
     await render({
       loadChat: () =>
@@ -159,12 +190,210 @@ describe("persistent planning conversation", () => {
     expect(reply?.querySelector("h2")?.textContent).toBe("Proposed plan");
     expect(reply?.querySelector("table")?.textContent).toContain("Export");
     expect(reply?.querySelector('input[type="checkbox"]')?.hasAttribute("disabled")).toBe(true);
+    expect(reply?.querySelector('input[type="checkbox"]')?.getAttribute("aria-label")).toBe(
+      "Completed task",
+    );
     expect(reply?.querySelector("pre code")?.textContent).toContain("const ready = true;");
     expect(reply?.querySelector('a[href="https://example.com/guide"]')).not.toBeNull();
     expect(reply?.querySelector('a[href^="javascript:"]')).toBeNull();
     expect(reply?.querySelector("script")).toBeNull();
   });
-  it("replaces temporary planning text with the Agent Run in an issue conversation", async () => {
+  it("opens issue execution as one activity conversation without workflow tabs", async () => {
+    await render({
+      issueConversation: true,
+      issueNumber: 42,
+      issueUrl: "https://github.com/owner/reports/issues/42",
+      loadChat: () =>
+        Promise.resolve({
+          ...initial,
+          feature: { ...initial.feature, state: "queued" },
+          turns: [],
+          messages: [
+            { id: messageId, role: "user", content: "Temporary planning prompt", createdAt },
+            {
+              id: featureId,
+              role: "user",
+              content: "Internal retry prompt with implementation instructions",
+              createdAt,
+            },
+          ],
+        }),
+    });
+    expect(container.querySelector<HTMLOListElement>(".planning-messages")?.hidden).toBe(false);
+    expect(container.textContent).toContain("Implement issue #42.");
+    expect(
+      container.querySelector('a[href="https://github.com/owner/reports/issues/42"]'),
+    ).not.toBeNull();
+    expect(container.textContent).not.toContain("Temporary planning prompt");
+    expect(container.textContent).not.toContain("Internal retry prompt");
+    expect(container.querySelectorAll(".planning-messages > li")).toHaveLength(1);
+    expect(container.querySelector<HTMLFormElement>(".planning-composer")).toBeNull();
+    expect(container.textContent).toContain("Activity");
+    expect(container.querySelector('[role="tablist"]')).toBeNull();
+    expect(container.textContent).toContain("Requirements");
+  });
+
+  it("shows a real issue question and sends its answer without interview controls", async () => {
+    const question = "Should exports include archived reports?";
+    const sendMessage = vi.fn(() =>
+      Promise.resolve({ schemaVersion: 1 as const, turnId, messageId }),
+    );
+    await render({
+      issueConversation: true,
+      issueNumber: 42,
+      issueUrl: "https://github.com/owner/reports/issues/42",
+      sendMessage,
+      loadChat: () =>
+        Promise.resolve({
+          ...initial,
+          turns: [{ ...firstTurn, state: "failed", failure: "input_required", question }],
+        }),
+    });
+    expect(container.textContent).toContain(question);
+    expect(container.querySelector('[aria-label="Choose interview skill"]')).toBeNull();
+    const field = container.querySelector<HTMLTextAreaElement>("#planning-message");
+    expect(field).not.toBeNull();
+    await act(async () => {
+      if (!field) throw new Error("Missing question answer");
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
+        field,
+        "Include archived reports.",
+      );
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      field?.form?.requestSubmit();
+      await Promise.resolve();
+    });
+    expect(sendMessage).toHaveBeenCalledWith(
+      projectId,
+      featureId,
+      expect.objectContaining({ text: "Include archived reports." }),
+    );
+  });
+
+  it("retains question answers after implementation while omitting internal plan prompts", async () => {
+    await render({
+      issueConversation: true,
+      loadChat: () =>
+        Promise.resolve({
+          ...initial,
+          feature: { ...initial.feature, state: "queued" },
+          messages: [
+            firstMessage,
+            {
+              id: featureId,
+              role: "assistant",
+              content: "Should exports include archived reports?",
+              createdAt,
+            },
+            { id: turnId, role: "user", content: "Include archived reports.", createdAt },
+            { id: projectId, role: "user", content: "Internal plan generation prompt", createdAt },
+          ],
+          turns: [
+            { ...firstTurn, messageId: turnId, state: "completed" },
+            { ...firstTurn, messageId: projectId, state: "completed", purpose: "plan" },
+          ],
+        }),
+    });
+    expect(container.textContent).toContain("Should exports include archived reports?");
+    expect(container.textContent).toContain("Include archived reports.");
+    expect(container.textContent).not.toContain("Internal plan generation prompt");
+    expect(container.querySelector(".planning-composer")).toBeNull();
+  });
+
+  it("waits for the selected skill and refreshed version before sending the draft", async () => {
+    const selected: FeaturePlanningSkills = {
+      schemaVersion: 1,
+      version: 4,
+      skills: [
+        {
+          name: "research",
+          description: "Check sources",
+          contentDigest: "a".repeat(64),
+          source: { kind: "host", label: "workstation", candidateId: "b".repeat(64) },
+        },
+      ],
+    };
+    const selection = Promise.withResolvers<FeaturePlanningSkills>();
+    const refreshed = Promise.withResolvers<FeatureChat>();
+    const select = vi.spyOn(skillsApi, "selectPlanningSkills").mockReturnValue(selection.promise);
+    const catalog = vi
+      .spyOn(skillsApi, "fetchPlanningSkillCatalog")
+      .mockResolvedValue({ schemaVersion: 1, skills: selected.skills });
+    const sendMessage = vi.fn(() =>
+      Promise.resolve({ schemaVersion: 1 as const, turnId, messageId }),
+    );
+    let reads = 0;
+    try {
+      await render({
+        sendMessage,
+        loadChat: () =>
+          ++reads === 1
+            ? Promise.resolve({
+                ...initial,
+                turns: [],
+                skills: { schemaVersion: 1, version: 3, skills: [] },
+              })
+            : refreshed.promise,
+      });
+      const field = container.querySelector<HTMLTextAreaElement>("#planning-message");
+      await act(async () => {
+        if (!field) throw new Error("Missing composer");
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
+          field,
+          "Keep my draft",
+        );
+        field.dispatchEvent(new Event("input", { bubbles: true }));
+        container
+          .querySelector<HTMLButtonElement>('[aria-label="Choose interview skill"]')
+          ?.click();
+        await Promise.resolve();
+      });
+      await act(async () => {
+        [...document.querySelectorAll("button")]
+          .find((b) => b.textContent.startsWith("research"))
+          ?.click();
+        await Promise.resolve();
+      });
+      const send = container.querySelector<HTMLButtonElement>('button[aria-label="Send message"]');
+      expect(select).toHaveBeenCalledOnce();
+      expect(send?.disabled).toBe(true);
+      await act(async () => {
+        field?.form?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+        await Promise.resolve();
+      });
+      expect(sendMessage).not.toHaveBeenCalled();
+      await act(async () => {
+        selection.resolve(selected);
+        await Promise.resolve();
+      });
+      expect(send?.disabled).toBe(true);
+      expect(field?.value).toBe("Keep my draft");
+      await act(async () => {
+        refreshed.resolve({ ...initial, turns: [], skills: selected });
+        await Promise.resolve();
+      });
+      expect(send?.disabled).toBe(false);
+      await act(async () => {
+        field?.form?.requestSubmit();
+        await Promise.resolve();
+      });
+      expect(sendMessage).toHaveBeenCalledWith(
+        projectId,
+        featureId,
+        expect.objectContaining({ skillSelectionVersion: 4, text: "Keep my draft" }),
+      );
+    } finally {
+      selection.resolve(selected);
+      refreshed.resolve({ ...initial, turns: [], skills: selected });
+      select.mockRestore();
+      catalog.mockRestore();
+    }
+  });
+
+  it("retains the accepted linked start prompt for published issue activity", async () => {
     await render({
       issueConversation: true,
       loadChat: () =>
@@ -173,14 +402,129 @@ describe("persistent planning conversation", () => {
           feature: { ...initial.feature, state: "queued" },
           turns: [],
           messages: [
-            { id: messageId, role: "user", content: "Temporary planning prompt", createdAt },
+            {
+              id: messageId,
+              role: "user",
+              content: "Implement [issue #42](https://github.com/owner/reports/issues/42).",
+              createdAt,
+            },
           ],
         }),
     });
-    expect(container.querySelector<HTMLOListElement>(".planning-messages")?.hidden).toBe(true);
-    expect(container.textContent).not.toContain("Temporary planning prompt");
-    expect(container.querySelector<HTMLFormElement>(".planning-composer")?.hidden).toBe(true);
-    expect(container.textContent).toContain("Execution");
+    expect(container.textContent).toContain("Implement issue #42.");
+    expect(
+      container.querySelector('a[href="https://github.com/owner/reports/issues/42"]'),
+    ).not.toBeNull();
+    expect(container.querySelector('[role="tablist"]')).toBeNull();
+  });
+
+  it("keeps review history selection inside the issue conversation", async () => {
+    const onNavigate = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: RequestInfo | URL) => {
+        const path = typeof url === "string" ? url : url instanceof URL ? url.href : url.url;
+        if (path.endsWith("/review/preparation"))
+          return Promise.resolve(
+            Response.json({
+              schemaVersion: 1,
+              projectId,
+              featureId,
+              changeProposalId: null,
+              preparationDigest: null,
+              basis: null,
+              publication: null,
+              evidence: null,
+              configuration: {
+                model: { route: "codex_subscription", modelId: "gpt-6.1-sol" },
+                runtimePolicy: {
+                  kind: "retained_source_review",
+                  version: 1,
+                  adapter: "codex_app_server",
+                  adapterVersion: 1,
+                  containerImage: null,
+                  containerUser: null,
+                  codexExecutable: null,
+                  codexExecutableDigest: null,
+                  codexVersion: null,
+                  codexProtocol: "app_server_v2",
+                  sourceAccess: "retained_read_only",
+                  networkAccess: false,
+                  writeAccess: false,
+                  status: "unavailable",
+                },
+                resources: {
+                  maximumAttempts: 3,
+                  timeoutSeconds: 900,
+                  maximumEvidenceItems: 400,
+                  maximumWorkspaceFiles: 20000,
+                  maximumWorkspaceBytes: 268435456,
+                  maximumGraphNodes: 800,
+                  maximumOutputBytes: 131072,
+                  containerPidsLimit: 128,
+                  containerMemoryBytes: 1073741824,
+                  containerNanoCpus: 2000000000,
+                  containerTmpfsBytes: 67108864,
+                },
+              },
+              readiness: {
+                state: "blocked",
+                startAllowed: false,
+                blockers: ["review_runtime_unavailable"],
+              },
+            }),
+          );
+        if (path.includes("/review/artifacts?"))
+          return Promise.resolve(
+            Response.json({
+              schemaVersion: 1,
+              reviews: [
+                {
+                  artifactId: messageId,
+                  workflowId: turnId,
+                  status: "complete",
+                  headCommitId: "a".repeat(40),
+                  requestedAt: createdAt,
+                  finishedAt: createdAt,
+                  currency: "up_to_date",
+                },
+              ],
+              offset: 0,
+              total: 1,
+              nextOffset: null,
+            }),
+          );
+        if (path.endsWith("/review/workflows/current"))
+          return Promise.resolve(Response.json({ schemaVersion: 1, review: null }));
+        return Promise.resolve(new Response(null, { status: 404 }));
+      }),
+    );
+    await render({
+      issueConversation: true,
+      onNavigate,
+      loadChat: () =>
+        Promise.resolve({
+          ...initial,
+          feature: { ...initial.feature, state: "in_review" },
+          turns: [],
+        }),
+    });
+    const history = [...container.querySelectorAll("button")].find((entry) =>
+      entry.textContent.includes("Review 1"),
+    );
+    expect(history).toBeDefined();
+    await act(async () => {
+      if (history === undefined) throw new Error("Review history unavailable");
+      history.click();
+      await Promise.resolve();
+    });
+    expect(onNavigate).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="tablist"]')).toBeNull();
+    expect(
+      [...container.querySelectorAll("button")]
+        .find((entry) => entry.textContent.includes("Review 1"))
+        ?.getAttribute("aria-pressed"),
+    ).toBe("true");
   });
 
   it("allows sending after removing a server-rejected attachment without editing the message", async () => {

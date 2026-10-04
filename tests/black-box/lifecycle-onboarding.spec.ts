@@ -240,7 +240,10 @@ test("authorizes folders, recovers a clone and freezes a Project profile through
     await page.reload();
     await expect(page.getByLabel("Model", { exact: true })).toHaveValue("value:gpt-6-astra");
     await page.goto(projectUrl);
-    await page.getByRole("button", { name: "New plan", exact: true }).click();
+    await page
+      .getByRole("main")
+      .getByRole("button", { name: "New interview", exact: true })
+      .click();
     await page
       .getByLabel("Describe the change", { exact: true })
       .fill("/research Export all notes without changing them.");
@@ -251,7 +254,7 @@ test("authorizes folders, recovers a clone and freezes a Project profile through
       "/research Export all notes without changing them.",
     );
     await expect(
-      page.getByRole("main").getByRole("button", { name: "Start plan", exact: true }),
+      page.getByRole("main").getByRole("button", { name: "Start interview", exact: true }),
     ).toBeEnabled();
     await page.getByLabel("Project", { exact: true }).selectOption(projectId);
     await expect(page).toHaveURL(draftUrl);
@@ -286,9 +289,12 @@ test("authorizes folders, recovers a clone and freezes a Project profile through
       path: test.info().outputPath("composer-draft-desktop.png"),
       animations: "disabled",
     });
-    await page.getByRole("main").getByRole("button", { name: "Start plan", exact: true }).click();
+    await page
+      .getByRole("main")
+      .getByRole("button", { name: "Start interview", exact: true })
+      .click();
     await expect(
-      page.getByRole("heading", { name: "New plan", exact: true, level: 1 }),
+      page.getByRole("heading", { name: "New interview", exact: true, level: 1 }),
     ).toBeVisible();
     const frozen = await owner.query<{
       lifecycle_profile: { modelId: string; effort: string; serviceTier: string };
@@ -339,7 +345,7 @@ test("authorizes folders, recovers a clone and freezes a Project profile through
     if (!turn) throw new Error("Accepted turn missing");
     await completePlanningTurn(pool, turn, { text: "Which export format?", title: "Export notes" });
     await page.reload();
-    await expect(page.getByRole("region", { name: "Active Planning Skills" })).toContainText(
+    await expect(page.getByRole("region", { name: "Active interview skill" })).toContainText(
       "research",
     );
     await page.getByLabel("Message", { exact: true }).fill("Use Markdown and keep the same model.");

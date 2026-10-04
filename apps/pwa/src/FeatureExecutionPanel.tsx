@@ -20,7 +20,7 @@ type FactoryVerificationCommand = FactoryExecutionRun["acceptedCommands"][number
 type ExecutionActivity = FactoryExecutionRun["activity"][number];
 
 const phaseLabels: Record<FactoryExecution["state"], string> = {
-  not_approved: "Execution starts after plan approval",
+  not_approved: "No execution has been authorized",
   pending: "Waiting to start execution",
   running: "Implementing the approved plan",
   stopping: "Stopping execution",
@@ -200,7 +200,7 @@ function VerificationResult({ result }: { result: FactoryVerificationResult }) {
 
 function ActivityEntry({ event }: { event: ExecutionActivity }) {
   return (
-    <li className="min-w-0 rounded-md border bg-background p-3 text-sm">
+    <li className="min-w-0 border-b border-border/60 py-2 text-sm last:border-b-0">
       <p className="whitespace-pre-wrap break-words font-medium">{displayText(event.summary)}</p>
       {event.itemState === "started" ? <p className="text-muted-foreground">Running…</p> : null}
       {event.itemState === "failed" ? <p className="text-destructive">Failed</p> : null}
@@ -225,6 +225,68 @@ function ActivityEntry({ event }: { event: ExecutionActivity }) {
   );
 }
 
+function commandHeading(summary: string): string {
+  const firstLine = summary.split("\n")[0]?.trim() ?? "";
+  const executable = firstLine.split(/\s+/)[0] ?? "Command";
+  const name = executable.split("/").at(-1) ?? executable;
+  const argument = firstLine
+    .slice(executable.length)
+    .trim()
+    .replace(/^-c\s+["']?/, "");
+  const preview = argument.length > 88 ? `${argument.slice(0, 87)}…` : argument;
+  return `${name}${preview ? ` · ${preview}` : ""}`;
+}
+
+function CommandGroup({ events }: { events: ExecutionActivity[] }) {
+  const running = events.some((event) => event.itemState === "started");
+  return (
+    <li className="min-w-0 border-b border-border/60 py-2 text-sm last:border-b-0">
+      <details className="min-w-0">
+        <summary className="cursor-pointer rounded-sm font-medium focus-visible:outline focus-visible:outline-ring">
+          {running ? "Running" : "Ran"}{" "}
+          {events.length === 1 ? "a command" : `${String(events.length)} commands`}
+          {events.length === 1 ? ` · ${displayText(commandHeading(events[0]?.summary ?? ""))}` : ""}
+        </summary>
+        <ol className="mt-2 space-y-2 border-l border-border pl-3">
+          {events.map((event) => (
+            <li key={event.id} className="min-w-0">
+              <details>
+                <summary className="cursor-pointer break-all font-mono text-xs focus-visible:outline focus-visible:outline-ring">
+                  {displayText(commandHeading(event.summary))}
+                  {event.itemState === "started"
+                    ? " · running"
+                    : event.exitCode === undefined
+                      ? ""
+                      : ` · exit ${String(event.exitCode)}`}
+                </summary>
+                <div className="mt-2 min-w-0 space-y-2">
+                  <pre
+                    className="max-h-64 max-w-full overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-3 text-xs"
+                    tabIndex={0}
+                  >
+                    <code>{displayText(event.summary)}</code>
+                  </pre>
+                  {event.detail === undefined ? null : (
+                    <pre
+                      className="max-h-64 max-w-full overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-3 text-xs"
+                      tabIndex={0}
+                    >
+                      <code>{displayText(event.detail)}</code>
+                    </pre>
+                  )}
+                  {event.detail === undefined && event.itemState !== "started" ? (
+                    <p className="text-xs text-muted-foreground">No output recorded.</p>
+                  ) : null}
+                </div>
+              </details>
+            </li>
+          ))}
+        </ol>
+      </details>
+    </li>
+  );
+}
+
 function TimelineItems({
   events,
   parentPath,
@@ -234,12 +296,18 @@ function TimelineItems({
 }) {
   const seen = new Set<string>();
   const entries: Array<
-    { kind: "event"; event: ExecutionActivity } | { kind: "agent"; path: string }
+    | { kind: "event"; event: ExecutionActivity }
+    | { kind: "commands"; events: ExecutionActivity[] }
+    | { kind: "agent"; path: string }
   > = [];
   for (const event of events) {
     const path = event.agentPath ?? "/root";
     if (path === parentPath) {
-      if (event.kind !== "subagent") entries.push({ kind: "event", event });
+      if (event.kind === "command") {
+        const previous = entries.at(-1);
+        if (previous?.kind === "commands") previous.events.push(event);
+        else entries.push({ kind: "commands", events: [event] });
+      } else if (event.kind !== "subagent") entries.push({ kind: "event", event });
       continue;
     }
     if (!path.startsWith(`${parentPath}/`)) continue;
@@ -255,6 +323,8 @@ function TimelineItems({
       {entries.map((entry) => {
         if (entry.kind === "event")
           return <ActivityEntry key={entry.event.id} event={entry.event} />;
+        if (entry.kind === "commands")
+          return <CommandGroup key={entry.events[0]?.id} events={entry.events} />;
         const lifecycle = events.filter(
           (event) => event.kind === "subagent" && event.agentPath === entry.path,
         );
@@ -281,7 +351,13 @@ function TimelineItems({
   );
 }
 
-function RunDetails({ run }: { run: FactoryExecutionRun }) {
+function RunDetails({
+  run,
+  conversation = false,
+}: {
+  run: FactoryExecutionRun;
+  conversation?: boolean;
+}) {
   const live = ["queued", "running", "verifying", "stopping"].includes(run.state);
   const completedItems = new Set(
     run.activity.filter((event) => event.itemState === "completed").map((event) => event.itemId),
@@ -296,7 +372,23 @@ function RunDetails({ run }: { run: FactoryExecutionRun }) {
   const latestChecks = run.verification.filter((check) => check.round === latestRound);
   const passedChecks = latestChecks.filter((check) => check.outcome === "passed").length;
   return (
-    <div className="min-w-0 space-y-4 rounded-md border bg-muted/30 p-3">
+    <div
+      className={
+        conversation ? "issue-run space-y-4" : "min-w-0 space-y-4 rounded-md border bg-muted/30 p-3"
+      }
+    >
+      {live || conversation ? (
+        <section className="space-y-2" aria-label="Live activity">
+          {conversation ? null : <h5 className="text-sm font-semibold">Live activity</h5>}
+          {liveActivity.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No activity recorded yet.</p>
+          ) : (
+            <ol className="grid min-w-0 gap-2" aria-live="polite">
+              <TimelineItems events={liveActivity} parentPath="/root" />
+            </ol>
+          )}
+        </section>
+      ) : null}
       {live ? null : (
         <div className="space-y-2 rounded-md border bg-background p-3">
           <h5 className="text-sm font-semibold">Result</h5>
@@ -319,81 +411,74 @@ function RunDetails({ run }: { run: FactoryExecutionRun }) {
       )}
       <ExecutionProblem failure={live ? run.failure : null} question={run.question} />
       {run.gate == null ? null : <GateAnswer gate={run.gate} />}
-      {live ? (
-        <section className="space-y-2" aria-label="Live activity">
-          <h5 className="text-sm font-semibold">Live activity</h5>
-          {liveActivity.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No activity recorded yet.</p>
+      <details open={!conversation}>
+        <summary className="cursor-pointer text-sm text-muted-foreground">
+          Checks and execution details
+        </summary>
+        <p className="text-sm text-muted-foreground">
+          {run.writerStopped
+            ? "Execution environment stopped."
+            : "Execution environment stop has not been confirmed."}
+        </p>
+        <section className="space-y-2">
+          <h5 className="text-sm font-semibold">Accepted verification commands</h5>
+          <ol className="grid gap-3">
+            {run.acceptedCommands.map((command, index) => (
+              <li key={index}>
+                {run.purpose !== "feature_verification" ? null : (
+                  <p className="mb-2 break-words text-sm text-muted-foreground">
+                    {run.verificationManifest[index]?.origins
+                      .map(
+                        (origin) =>
+                          `${displayText(origin.workItemKey)} · command ${String(origin.position)}`,
+                      )
+                      .join("; ")}
+                  </p>
+                )}
+                <Command command={command} />
+              </li>
+            ))}
+          </ol>
+        </section>
+        <section className="space-y-2">
+          <h5 className="text-sm font-semibold">Verification results</h5>
+          {run.verification.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No verification results recorded yet.</p>
           ) : (
-            <ol className="grid min-w-0 gap-2" aria-live="polite">
-              <TimelineItems events={liveActivity} parentPath="/root" />
+            <ol className="grid gap-3">
+              {run.verification.map((result) => (
+                <VerificationResult key={result.id} result={result} />
+              ))}
             </ol>
           )}
         </section>
-      ) : null}
-      <p className="text-sm text-muted-foreground">
-        {run.writerStopped
-          ? "Execution environment stopped."
-          : "Execution environment stop has not been confirmed."}
-      </p>
-      <section className="space-y-2">
-        <h5 className="text-sm font-semibold">Accepted verification commands</h5>
-        <ol className="grid gap-3">
-          {run.acceptedCommands.map((command, index) => (
-            <li key={index}>
-              {run.purpose !== "feature_verification" ? null : (
-                <p className="mb-2 break-words text-sm text-muted-foreground">
-                  {run.verificationManifest[index]?.origins
-                    .map(
-                      (origin) =>
-                        `${displayText(origin.workItemKey)} · command ${String(origin.position)}`,
-                    )
-                    .join("; ")}
-                </p>
-              )}
-              <Command command={command} />
-            </li>
-          ))}
-        </ol>
-      </section>
-      <section className="space-y-2">
-        <h5 className="text-sm font-semibold">Verification results</h5>
-        {run.verification.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No verification results recorded yet.</p>
-        ) : (
-          <ol className="grid gap-3">
-            {run.verification.map((result) => (
-              <VerificationResult key={result.id} result={result} />
-            ))}
-          </ol>
+        {run.revision === null ? null : (
+          <details>
+            <summary className="cursor-pointer rounded-sm text-sm focus-visible:outline focus-visible:outline-ring">
+              Attempt revision
+            </summary>
+            <div className="mt-3">
+              <Revision revision={run.revision} />
+            </div>
+          </details>
         )}
-      </section>
-      {run.revision === null ? null : (
+        {run.runtime?.lifecycleProfile == null ? null : (
+          <LifecycleProfileRecord
+            profile={run.runtime.lifecycleProfile}
+            effective={run.runtime.effectiveProfile}
+          />
+        )}
+        {run.runtime === null ? null : (
+          <p className="break-words text-sm text-muted-foreground">
+            Codex · {displayText(run.runtime.model)}
+          </p>
+        )}
         <details>
           <summary className="cursor-pointer rounded-sm text-sm focus-visible:outline focus-visible:outline-ring">
-            Attempt revision
+            Plan and attempt details
           </summary>
-          <div className="mt-3">
-            <Revision revision={run.revision} />
-          </div>
+          <p className="mt-2 text-sm">Approved plan · version {run.approvedVersion}</p>
         </details>
-      )}
-      {run.runtime?.lifecycleProfile == null ? null : (
-        <LifecycleProfileRecord
-          profile={run.runtime.lifecycleProfile}
-          effective={run.runtime.effectiveProfile}
-        />
-      )}
-      {run.runtime === null ? null : (
-        <p className="break-words text-sm text-muted-foreground">
-          Codex · {displayText(run.runtime.model)}
-        </p>
-      )}
-      <details>
-        <summary className="cursor-pointer rounded-sm text-sm focus-visible:outline focus-visible:outline-ring">
-          Plan and attempt details
-        </summary>
-        <p className="mt-2 text-sm">Approved plan · version {run.approvedVersion}</p>
       </details>
     </div>
   );
@@ -402,6 +487,7 @@ function RunDetails({ run }: { run: FactoryExecutionRun }) {
 export interface FeatureExecutionPanelProps {
   projectId: string;
   featureId: string;
+  conversation?: boolean;
   online?: boolean;
   onGateResolved?: () => void;
   onAuthenticationError?: (error: unknown) => boolean;
@@ -417,6 +503,7 @@ function ExecutionPanel({
   projectId,
   featureId,
   online = true,
+  conversation = false,
   onGateResolved,
   onAuthenticationError = ignoreAuthenticationError,
 }: FeatureExecutionPanelProps) {
@@ -428,6 +515,7 @@ function ExecutionPanel({
   const detailId = useId();
   const [execution, setExecution] = useState<FactoryExecution | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [followLatest, setFollowLatest] = useState(true);
   const [run, setRun] = useState<FactoryExecutionRun | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -467,9 +555,15 @@ function ExecutionPanel({
         const latestVerified = summaries
           .filter((summary) => summary.state === "verified")
           .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-        const autoRun = activeRun ?? latestVerified;
-        if (selectedRunId === null && autoRun !== undefined) {
+        const latest = summaries.toSorted((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+        const autoRun = activeRun ?? (conversation ? latest : latestVerified);
+        if (
+          autoRun !== undefined &&
+          autoRun.id !== selectedRunId &&
+          (selectedRunId === null || (conversation && followLatest))
+        ) {
           setSelectedRunId(autoRun.id);
+          return;
         }
         if (selectedRunId !== null) {
           const selected = summaries.find((item) => item.id === selectedRunId);
@@ -523,7 +617,16 @@ function ExecutionPanel({
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [projectId, featureId, active, generation, selectedRunId, onAuthenticationError]);
+  }, [
+    projectId,
+    featureId,
+    active,
+    generation,
+    selectedRunId,
+    onAuthenticationError,
+    conversation,
+    followLatest,
+  ]);
   const stopUnconfirmed =
     execution?.failure === "stop_unconfirmed" ||
     [
@@ -533,6 +636,94 @@ function ExecutionPanel({
       (attempt) =>
         !attempt.writerStopped && ["blocked", "cancelled", "interrupted"].includes(attempt.state),
     );
+  if (conversation) {
+    const attempts = [
+      ...(execution?.workItems.flatMap((item) => item.runs) ?? []),
+      ...(execution?.finalVerification?.runs ?? []),
+    ].toSorted((a, b) => a.createdAt.localeCompare(b.createdAt));
+    return (
+      <section aria-label="Feature execution" className="issue-activity min-w-0 space-y-4">
+        <header className="flex items-center justify-between gap-3">
+          <h3 className="font-semibold">Activity</h3>
+          <Button
+            variant="ghost"
+            disabled={!active || loading}
+            onClick={() => {
+              cachedRun.current = null;
+              setGeneration((value) => value + 1);
+            }}
+          >
+            Refresh activity
+          </Button>
+        </header>
+        {error === null ? null : <FormFeedback kind="error">{error}</FormFeedback>}
+        {followLatest ? null : (
+          <Button variant="ghost" onClick={() => setFollowLatest(true)}>
+            Follow current activity
+          </Button>
+        )}
+        <p role="status" className="text-sm text-muted-foreground">
+          {execution == null
+            ? "Loading activity…"
+            : execution.state === "pending"
+              ? "Preparing the work…"
+              : execution.state === "running"
+                ? "Working on this issue…"
+                : execution.state === "verified"
+                  ? "Implementation checked. Preparing review."
+                  : execution.state === "cancelled"
+                    ? "Work stopped. Its history is saved."
+                    : execution.gate != null
+                      ? execution.gate.reason === "input_required"
+                        ? "A product decision is needed."
+                        : "Work paused by a technical problem."
+                      : "Work paused."}
+        </p>
+        {execution?.gate == null ? (
+          <ExecutionProblem
+            failure={execution?.failure ?? null}
+            question={execution?.question ?? null}
+          />
+        ) : (
+          <FactoryGatePanel
+            projectId={projectId}
+            gate={execution.gate}
+            active={active}
+            onAuthenticationError={onAuthenticationError}
+            onResolved={() => {
+              cachedRun.current = null;
+              setGeneration((value) => value + 1);
+              onGateResolved?.();
+            }}
+          />
+        )}
+        {run === null ? null : <RunDetails run={run} conversation />}
+        {attempts.length === 0 ? null : (
+          <details>
+            <summary className="cursor-pointer text-sm text-muted-foreground">
+              Attempt history · {attempts.length}
+            </summary>
+            <ol className="mt-3 space-y-2">
+              {attempts.map((attempt) => (
+                <li key={attempt.id}>
+                  <Button
+                    variant="ghost"
+                    aria-pressed={selectedRunId === attempt.id}
+                    onClick={() => {
+                      setFollowLatest(false);
+                      setSelectedRunId(attempt.id);
+                    }}
+                  >
+                    Attempt {attempt.attempt} · {runLabels[attempt.state]}
+                  </Button>
+                </li>
+              ))}
+            </ol>
+          </details>
+        )}
+      </section>
+    );
+  }
   return (
     <section
       className="min-w-0 space-y-4 rounded-xl border bg-card p-4 text-card-foreground"
@@ -688,7 +879,7 @@ function ExecutionPanel({
                           className="min-w-0"
                         >
                           {run?.id === summary.id ? (
-                            <RunDetails run={run} />
+                            <RunDetails run={run} conversation={conversation} />
                           ) : !active ? (
                             <p className="text-sm text-muted-foreground">
                               Reconnect to load attempt details.
@@ -751,7 +942,7 @@ function ExecutionPanel({
                               className="min-w-0"
                             >
                               {run?.id === summary.id ? (
-                                <RunDetails run={run} />
+                                <RunDetails run={run} conversation={conversation} />
                               ) : !active ? (
                                 <p className="text-sm text-muted-foreground">
                                   Reconnect to load attempt details.

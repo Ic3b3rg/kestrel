@@ -155,7 +155,11 @@ export async function createVerificationFixture(
           await source.close();
         }
       },
-      async approve(title: string, plan = verificationPlan()) {
+      async approve(
+        title: string,
+        plan = verificationPlan(),
+        executionMode: "authorized" | "individual" = "authorized",
+      ) {
         const feature = FeatureSchema.parse(
           await (
             await post(`/api/v1/projects/${project.id}/features`, {
@@ -164,6 +168,12 @@ export async function createVerificationFixture(
             })
           ).json(),
         );
+        // Legacy lifecycle tests explicitly retain their pre-upgrade group authority.
+        // New individual-start acceptance passes "individual" and uses the public board command.
+        if (executionMode === "authorized")
+          await stack.executeSql(
+            `UPDATE factory_features SET execution_mode = 'authorized' WHERE id = '${feature.id}'`,
+          );
         const saved = await post(`${path(feature.id)}/plans`, {
           requestId: randomUUID(),
           expectedVersion: null,
@@ -253,7 +263,7 @@ export function seedCertifiedVerificationHistory(stack: ModuleStack, templateFea
       for(let index=0;index<33;index++) {
         const historical=index<32;
         const projectId=(await client.query('INSERT INTO projects(installation_id) SELECT project.installation_id FROM projects project JOIN factory_features feature ON feature.project_id=project.id WHERE feature.id=$1 RETURNING id',[template])).rows[0].id;
-        const featureId=(await client.query("INSERT INTO factory_features(project_id,created_by,request_id,title,state,latest_plan_version,approved_plan_version) SELECT $2,created_by,uuidv7(),title,$3,1,1 FROM factory_features WHERE id=$1 RETURNING id",[template,projectId,historical?'in_review':'queued'])).rows[0].id;
+        const featureId=(await client.query("INSERT INTO factory_features(project_id,created_by,request_id,title,state,latest_plan_version,approved_plan_version,execution_mode) SELECT $2,created_by,uuidv7(),title,$3,1,1,'authorized' FROM factory_features WHERE id=$1 RETURNING id",[template,projectId,historical?'in_review':'queued'])).rows[0].id;
         await client.query("INSERT INTO factory_plan_versions(feature_id,version,request_id,document,source_context,plan_markdown,spec_markdown,author,created_by) SELECT $2,1,uuidv7(),document,source_context,plan_markdown,spec_markdown,'operator',created_by FROM factory_plan_versions WHERE feature_id=$1 AND version=1",[template,featureId]);
         await client.query("INSERT INTO factory_plan_approvals(feature_id,plan_version,request_id,operator_id,approved_at) SELECT $2,1,uuidv7(),operator_id,CASE WHEN $3 THEN approved_at-interval '1 day' ELSE clock_timestamp() END FROM factory_plan_approvals WHERE feature_id=$1 AND plan_version=1",[template,featureId,historical]);
         await client.query("INSERT INTO factory_feature_publications(feature_id,state) VALUES($1,'published')",[featureId]);

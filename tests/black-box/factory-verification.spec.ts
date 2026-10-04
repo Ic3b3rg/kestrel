@@ -137,10 +137,13 @@ test.describe("Final Feature verification evidence and decisions", () => {
       await expect(details.getByText("cat value.mjs", { exact: true })).toBeHidden();
       await delegated.focus();
       await delegated.press("Enter");
+      const commandGroup = details.getByText("Ran a command · cat · value.mjs", { exact: true });
+      await commandGroup.focus();
+      await commandGroup.press("Enter");
+      const command = details.getByText("cat · value.mjs · exit 0", { exact: true });
+      await command.focus();
+      await command.press("Enter");
       await expect(details.getByText("cat value.mjs", { exact: true })).toBeVisible();
-      const delegatedOutput = delegated.locator("..").getByText("Output", { exact: true });
-      await delegatedOutput.focus();
-      await delegatedOutput.press("Enter");
       await expect(details.getByText("export const value = 1;", { exact: true })).toBeVisible();
       await page.setViewportSize({ width: 390, height: 844 });
       expect(
@@ -160,18 +163,17 @@ test.describe("Final Feature verification evidence and decisions", () => {
     }
 
     await execution.getByRole("button", { name: "Refresh execution", exact: true }).click();
-    const gate = page.getByRole("region", { name: "Human gate", exact: true });
+    const gate = page.getByRole("region", { name: "Execution status", exact: true });
     await expect(
-      gate.getByRole("heading", { name: "Your decision is needed", exact: true }),
+      gate.getByRole("heading", { name: "Technical interruption", exact: true }),
     ).toBeVisible();
     await expect(
       gate.getByText("Final Feature verification · plan version 1", { exact: true }),
     ).toBeVisible();
     await expect(gate.getByText(/Final Feature verification failed checks 1/)).toBeVisible();
     await page.setViewportSize({ width: 390, height: 844 });
-    const answer =
-      "Restore ordering within approved plan version 1 and rerun every original check.";
-    await gate.getByLabel("Your answer", { exact: true }).fill(answer);
+    const answer = "Retry the retained execution within the approved plan.";
+    await expect(gate.getByLabel("Your answer", { exact: true })).toHaveCount(0);
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
     ).toBe(true);
@@ -183,7 +185,7 @@ test.describe("Final Feature verification evidence and decisions", () => {
       path: testInfo.outputPath("final-verification-gate-mobile.png"),
       fullPage: true,
     });
-    const resume = gate.getByRole("button", { name: "Save answer and resume", exact: true });
+    const resume = gate.getByRole("button", { name: "Retry execution", exact: true });
     await resume.focus();
     await resume.press("Enter");
     await expect

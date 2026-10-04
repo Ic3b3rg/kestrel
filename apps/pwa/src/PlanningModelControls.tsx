@@ -4,6 +4,7 @@ import {
   LifecycleSettingsSchema,
   type LifecycleProfileView,
   type PlanningComposerSettings,
+  type PlanningSkillSummary,
 } from "@kestrel/contracts";
 import { fetchLifecycleProfile } from "./LifecycleProfilePanel.js";
 import { FormFeedback } from "./components/FormFeedback.js";
@@ -17,6 +18,7 @@ export interface PlanningModelControlsProps {
   savedSettings?: PlanningComposerSettings;
   onSettingsChange: (settings: PlanningComposerSettings) => void;
   onReady: (ready: boolean) => void;
+  onSkillsResolved?: (skills: PlanningSkillSummary[]) => void;
 }
 
 export function PlanningModelControls({
@@ -26,6 +28,7 @@ export function PlanningModelControls({
   savedSettings,
   onSettingsChange,
   onReady,
+  onSkillsResolved,
 }: PlanningModelControlsProps) {
   const [view, setView] = useState<LifecycleProfileView | null>(null);
   const [draft, setDraft] = useState<PlanningComposerSettings | null>(null);
@@ -46,6 +49,9 @@ export function PlanningModelControls({
         });
     return () => controller.abort();
   }, [projectId, online, reload]);
+  useEffect(() => {
+    if (view?.resolved) onSkillsResolved?.(view.resolved.skills);
+  }, [view, onSkillsResolved]);
   const settings = draft ?? savedSettings ?? {};
   let blocked = error;
   let resolved: ReturnType<typeof resolveLifecycleProfile> | null = null;

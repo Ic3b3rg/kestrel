@@ -101,7 +101,7 @@ export function FeatureNavigation({
             onNavigate({ kind: "planning", projectId, requestId: crypto.randomUUID() })
           }
         >
-          <Plus aria-hidden="true" /> Start plan
+          <Plus aria-hidden="true" /> New interview
         </Button>
         {!online ? (
           <p className="project-rail-state">Reconnect to view feature chats.</p>

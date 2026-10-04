@@ -26,7 +26,10 @@ export function GateAnswer({ gate }: { gate: FactoryGate }) {
   if (gate.resolution === null) return null;
   return (
     <div className="space-y-2 text-sm">
-      <p className="font-medium">Answer saved · plan version {gate.approvedVersion}</p>
+      <p className="font-medium">
+        {gate.resolution.operatorId === null ? "Automatic retry" : "Answer saved"} · plan version{" "}
+        {gate.approvedVersion}
+      </p>
       {gate.purpose === "feature_verification" ? (
         <p>Only final verification resumes. Verified Work Item implementations are retained.</p>
       ) : null}
@@ -69,6 +72,10 @@ export function FactoryGatePanel({
   const controller = useRef<AbortController | null>(null);
   useEffect(() => () => controller.current?.abort(), []);
   const current = gate.resolution === null ? (confirmed ?? gate) : gate;
+  const productDecision = gate.reason === "input_required";
+  const automaticRecovery = gate.reason === "usage_limit" || gate.reason === "unavailable";
+  const technicalPause =
+    automaticRecovery || gate.reason === "timeout" || gate.reason === "verification_failed";
   const canAnswer = ![
     "cancelled",
     "stale_gate",
@@ -80,8 +87,10 @@ export function FactoryGatePanel({
     const command = pending.current ?? {
       requestId: crypto.randomUUID(),
       expectedPlanVersion: gate.approvedVersion,
-      decision,
-      answer: answer.trim(),
+      decision: technicalPause ? "resume_within_plan" : decision,
+      answer: technicalPause
+        ? "Retry the retained execution within the approved plan."
+        : answer.trim(),
     };
     if (!command.answer || (command.decision === "resume_within_plan" && !gate.canResume)) return;
     pending.current = command;
@@ -115,7 +124,9 @@ export function FactoryGatePanel({
         setError(
           planningRequestError(
             failure,
-            "The answer could not be confirmed. Retry sending the same answer to check its outcome.",
+            technicalPause
+              ? "The retry could not be confirmed. Retry execution again to check its outcome."
+              : "The answer could not be confirmed. Retry sending the same answer to check its outcome.",
           ),
         );
     } finally {
@@ -125,7 +136,7 @@ export function FactoryGatePanel({
   };
   return (
     <section
-      aria-label="Human gate"
+      aria-label={technicalPause ? "Execution status" : "Human gate"}
       className="min-w-0 space-y-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4"
     >
       {gate.purpose === "feature_verification" ? (
@@ -136,21 +147,52 @@ export function FactoryGatePanel({
       <h4 className="font-semibold">
         {current.resolution !== null
           ? "Recorded decision"
-          : canAnswer
-            ? "Your decision is needed"
-            : "Retained question"}
+          : technicalPause
+            ? "Technical interruption"
+            : canAnswer
+              ? productDecision
+                ? "Your decision is needed"
+                : "Technical interruption"
+              : "Retained question"}
       </h4>
       <p className="whitespace-pre-wrap break-words font-medium">{gate.question}</p>
       <p className="text-sm text-muted-foreground">
-        {canAnswer && current.resolution === null
-          ? "This feature holds its Project queue. Other projects can continue. Your answer applies to "
-          : "This question belongs to "}
-        approved plan version {gate.approvedVersion}.
+        {technicalPause && current.resolution === null
+          ? "This feature holds its Project queue. Other projects can continue."
+          : canAnswer && current.resolution === null
+            ? `This feature holds its Project queue. Other projects can continue. Your answer applies to approved plan version ${String(gate.approvedVersion)}.`
+            : `This question belongs to approved plan version ${String(gate.approvedVersion)}.`}
       </p>
       {current.resolution !== null ? (
         <FormFeedback kind="success">
           <GateAnswer gate={current} />
         </FormFeedback>
+      ) : technicalPause ? (
+        <div className="space-y-3 text-sm">
+          <p>
+            No answer is needed.{" "}
+            {automaticRecovery
+              ? "Kestrel retries recoverable runtime interruptions automatically."
+              : "Inspect the retained run and verification results, then retry within the approved plan."}
+          </p>
+          {current.resumeBlockedReason === null ? null : (
+            <p>{blockedText[current.resumeBlockedReason]}</p>
+          )}
+          {error === null ? null : (
+            <FormFeedback kind="error" focus>
+              {error}
+            </FormFeedback>
+          )}
+          {automaticRecovery || !canAnswer ? null : (
+            <Button
+              type="button"
+              disabled={!active || busy || !gate.canResume}
+              onClick={() => void send()}
+            >
+              {busy ? "Queuing retry…" : "Retry execution"}
+            </Button>
+          )}
+        </div>
       ) : !canAnswer ? (
         <p className="text-sm">
           {current.resumeBlockedReason === null ? null : blockedText[current.resumeBlockedReason]}
@@ -191,7 +233,7 @@ export function FactoryGatePanel({
           </div>
           <div className="space-y-1">
             <label htmlFor={`${id}-answer`} className="block text-sm font-medium">
-              Your answer
+              {productDecision ? "Your answer" : "Recovery note"}
             </label>
             <textarea
               id={`${id}-answer`}
@@ -206,7 +248,9 @@ export function FactoryGatePanel({
           <p className="text-sm text-muted-foreground">
             {decision === "requires_plan_change"
               ? "Record what must change. Execution will stay paused; this does not approve a new scope."
-              : "Clarify the technical choice or confirm the problem is resolved. Requirements, checks and authorized limits remain those in the approved plan."}
+              : productDecision
+                ? "Answer the product question above. Kestrel handles implementation choices and checks within the agreed requirements."
+                : "Confirm that the technical problem is resolved before retrying the same approved plan."}
           </p>
           {busy ? (
             <FormFeedback kind="pending">Saving your answer for this gate…</FormFeedback>

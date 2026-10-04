@@ -10,6 +10,7 @@ log({
   inheritedApiKey: Object.hasOwn(process.env, "OPENAI_API_KEY"),
 });
 let output = Promise.resolve();
+let projectReads = 0;
 function send(message) {
   output = output.then(async () => {
     const bytes = Buffer.from(`${JSON.stringify(message)}\n`);
@@ -26,6 +27,44 @@ const lines = createInterface({ input: process.stdin });
 lines.on("line", async (line) => {
   const message = JSON.parse(line);
   log(message);
+  if (String(message.id).startsWith("read-") && message.result) {
+    if (mode === "project_reads" && ++projectReads < 26) {
+      await send({
+        id: `read-${projectReads + 1}`,
+        method: "item/tool/call",
+        params: {
+          threadId: "thread-planning",
+          turnId: "turn-planning",
+          callId: `read-${projectReads + 1}`,
+          tool: "read_project",
+          arguments: {
+            operation: "read_file",
+            path: "src/export.ts",
+            offset: projectReads * 12000,
+          },
+        },
+      });
+      return;
+    }
+    await send({
+      method: "item/completed",
+      params: {
+        threadId: "thread-planning",
+        turnId: "turn-planning",
+        item: {
+          id: "reply",
+          type: "agentMessage",
+          phase: "final_answer",
+          text: message.result.contentItems[0].text,
+        },
+      },
+    });
+    await send({
+      method: "turn/completed",
+      params: { threadId: "thread-planning", turn: { id: "turn-planning", status: "completed" } },
+    });
+    return;
+  }
   if (message.method === "initialize") {
     await send({ id: message.id, result: { userAgent: "kestrel/0.153.4" } });
   } else if (message.method === "config/read") {
@@ -110,6 +149,20 @@ lines.on("line", async (line) => {
         id: "permission-1",
         method: "item/permissions/requestApproval",
         params: { threadId, turnId, permissions: { network: { enabled: true } } },
+      });
+      return;
+    }
+    if (mode === "project_read" || mode === "project_reads") {
+      await send({
+        id: "read-1",
+        method: "item/tool/call",
+        params: {
+          threadId,
+          turnId,
+          callId: "read-1",
+          tool: "read_project",
+          arguments: { operation: "read_file", path: "src/export.ts", offset: 0 },
+        },
       });
       return;
     }

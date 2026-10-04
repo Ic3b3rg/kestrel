@@ -91,3 +91,30 @@ and automatic repair of published review findings remain outside 0.1.
 Task-owned temporary repositories, execution containers, and test database services are removed at
 the end of their scenarios. The launcher's named database volume and Operator state remain intact
 unless the Operator explicitly requests a reset.
+
+## Skill-guided interview and individual issue start
+
+The interview acceptance journey in `tests/black-box/factory-interview.spec.ts` exercises both mouse
+drag and keyboard start through the real browser, HTTP routes and database. It configures
+`brainstorming` as the Project default, checks its actual accepted turn, replaces it with
+`grill-with-docs` without losing a draft, verifies Markdown and a 320px accessible layout, reviews
+requirements and issue drafts, and publishes without creating execution runs. Starting the chosen
+issue retains the other issue in To do and leaves the Project default unchanged.
+
+`factory-individual-start.test.ts` covers bundled bootstrap, historical version authority after an
+explicit update, existing GitHub issue identity, concurrent duplicate starts, publication and
+restart. `factory-individual-publication.test.ts` completes the selected issue's verification, PR
+and review with a deterministic provider while its dependent sibling has never started. The affected
+HTTP run passed all 16 scenarios, including the existing execution and requirements boundaries.
+
+A representative live Codex `read_project` turn retrieved a committed random marker and an existing
+GitHub issue with comments. The remaining tool limits, failures, authority checks and concurrency
+cases use deterministic fixtures. Included collections are explicitly bounded text adaptations; no
+upstream scripts, hooks or plugin installers execute.
+
+The final unit/integration suite passed 1,435 tests with eight live tests skipped. The acceptance
+provider protocol test also passed separately. Type checking, lint, contract drift, formatting and
+the production build passed. All 16 affected browser scenarios passed: the integrated run passed 15,
+then the complete six-scenario requirements suite passed after scoping a shared-fixture assertion to
+its own conversation. These are implementation acceptance results; they do not update or claim
+availability of the canonical application runtime.

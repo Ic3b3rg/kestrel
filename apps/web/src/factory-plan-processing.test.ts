@@ -21,6 +21,7 @@ import {
   FactoryError,
   isPlanningTurnRunning,
   readCodexReviewModelPreference,
+  readPlanningInputAttachments,
   savePlanningContext,
   savePlanningThread,
   type ClaimedPlanningTurn,
@@ -42,6 +43,7 @@ vi.mock("@kestrel/database", async (importOriginal) => ({
   completeGeneratedFactoryPlan: generated,
   isPlanningTurnRunning: vi.fn(),
   readCodexReviewModelPreference: vi.fn(),
+  readPlanningInputAttachments: vi.fn(),
   savePlanningContext: vi.fn(),
   savePlanningThread: vi.fn(),
 }));
@@ -218,6 +220,20 @@ it("asks for input instead of saving a placeholder board-start plan", async () =
 
 it("saves a complete board-start plan when the structured result is ready", async () => {
   turn.issueExecutionContext = { issue: { number: 142 }, conversation: [] };
+  turn.skills = [
+    {
+      name: "grill-with-docs",
+      description: "Interview before preparing a plan",
+      contentDigest: "a".repeat(64),
+      source: { kind: "host", label: "grill-with-docs", candidateId: "b".repeat(64) },
+      files: [
+        {
+          path: "SKILL.md",
+          content: "Ask the Operator questions and request approval before continuing.",
+        },
+      ],
+    },
+  ];
   const document = plan();
   runTurn.mockResolvedValue({
     threadId: "plan-thread",
@@ -225,14 +241,55 @@ it("saves a complete board-start plan when the structured result is ready", asyn
     text: JSON.stringify({ status: "ready", plan: document, question: null }),
   });
   await processor().process({ turnId: turn.id });
+  const prompt = runTurn.mock.calls[0]?.[0].prompt ?? "";
+  expect(prompt).toContain("Skip interview and approval checkpoints in selected Skills");
+  expect(prompt).not.toContain("If consequential decisions or verification details are missing");
   expect(generated).toHaveBeenCalledExactlyOnceWith(
     pool,
     turn,
     document,
-    context,
+    expect.objectContaining(context),
     renderFeaturePlanArtifacts,
   );
   expect(completePlanningTurn).not.toHaveBeenCalled();
+});
+
+it("lets authorized issue preparation finish after the interview time limit", async () => {
+  turn.issueExecutionContext = { issue: { number: 142 }, conversation: [] };
+  vi.useFakeTimers({ toFake: ["setTimeout", "setInterval", "clearInterval"] });
+  const timeout = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), ms);
+    return controller.signal;
+  });
+  const started = Promise.withResolvers<undefined>();
+  const finish = Promise.withResolvers<Awaited<ReturnType<typeof runTurn>>>();
+  runTurn.mockImplementation((input) => {
+    started.resolve(undefined);
+    return Promise.race([
+      finish.promise,
+      new Promise<never>((_, reject) =>
+        input.signal?.addEventListener("abort", () => reject(new CodexPlanningError("timeout")), {
+          once: true,
+        }),
+      ),
+    ]);
+  });
+  try {
+    const processing = processor().process({ turnId: turn.id });
+    await started.promise;
+    await vi.advanceTimersByTimeAsync(180001);
+    expect(completePlanningTurn).not.toHaveBeenCalled();
+    finish.resolve({
+      threadId: "plan-thread",
+      turnId: "runtime-turn",
+      text: JSON.stringify({ status: "ready", plan: plan(), question: null }),
+    });
+    await processing;
+    expect(generated).toHaveBeenCalledOnce();
+  } finally {
+    timeout.mockRestore();
+  }
 });
 
 it("rejects a board-start plan that also says input is required", async () => {
@@ -608,8 +665,25 @@ describe("structured Feature Plan processing", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("continues normal conversation turns with their existing thread and text completion", async () => {
+  it("replays prior conversation and attachments for fresh tool threads", async () => {
     turn.purpose = "conversation";
+    const first = turn.messages[0];
+    if (first === undefined) throw new Error("Initial message missing");
+    first.attachments = [
+      {
+        id: "01991c36-7f90-7000-8000-000000000099",
+        kind: "text",
+        name: "decisions.txt",
+        mediaType: "text/plain",
+        byteLength: 25,
+      },
+    ];
+    const file = {
+      kind: "text" as const,
+      name: "decisions.txt",
+      text: "Earlier accepted decision",
+    };
+    vi.mocked(readPlanningInputAttachments).mockResolvedValue([{ messageId: first.id, file }]);
     runTurn.mockResolvedValue({
       threadId: "conversation-thread",
       turnId: "runtime-turn",
@@ -620,10 +694,31 @@ describe("structured Feature Plan processing", () => {
     expect(input?.threadId).toBe("conversation-thread");
     expect(input?.outputSchema).toBeUndefined();
     expect(input?.prompt).toContain("Every saved note. Generate the plan.");
-    expect(input?.prompt).not.toContain("Use Markdown and preserve Unicode.");
+    expect(input?.prompt).toContain("Use Markdown and preserve Unicode.");
+    expect(input?.attachments?.[0]?.file).toEqual(file);
+    expect(readPlanningInputAttachments).toHaveBeenCalledWith(pool, turn.featureId, [first.id]);
     expect(generated).not.toHaveBeenCalled();
     expect(completePlanningTurn).toHaveBeenCalledExactlyOnceWith(pool, turn, {
       text: "Which filename should the download use?",
     });
+  });
+});
+
+it("records a missing source as a technical preparation failure without saving a plan", async () => {
+  turn.issueExecutionContext = { issue: { number: 142 }, conversation: [] };
+  runTurn.mockResolvedValue({
+    threadId: "plan-thread",
+    turnId: "runtime-turn",
+    text: JSON.stringify({
+      status: "source_unavailable",
+      plan: null,
+      question: "GitHub contract #49 could not be read. Retry when access is restored.",
+    }),
+  });
+  await processor().process({ turnId: turn.id });
+  expect(generated).not.toHaveBeenCalled();
+  expect(completePlanningTurn).toHaveBeenCalledExactlyOnceWith(pool, turn, {
+    failure: "source_unavailable",
+    question: "GitHub contract #49 could not be read. Retry when access is restored.",
   });
 });

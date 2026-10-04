@@ -16,7 +16,8 @@ const DEFAULT_WEB_PORT = 3_000;
 const DEFAULT_PWA_PORT = 5_173;
 const DEFAULT_STARTUP_TIMEOUT_MS = 60_000;
 // Container teardown has bounded Docker operations, followed by the queue drain.
-const PROCESS_STOP_TIMEOUT_MS = 90_000;
+// Source watchers give their application 90 seconds to drain before force stopping.
+const PROCESS_STOP_TIMEOUT_MS = 95_000;
 
 function readPositiveInteger(environment, key, defaultValue, maximum = 65_535) {
   const value = environment[key] ?? String(defaultValue);
@@ -320,29 +321,30 @@ async function main() {
     [...compose, "rm", "--stop", "--force", "web", "worker", "pwa"],
     dockerEnvironment,
   );
-  await run(docker, [...compose, "build", "migrate"], dockerEnvironment);
   await run(docker, [...compose, "up", "--detach", "--wait", "postgres"], dockerEnvironment);
-  await run(docker, [...compose, "run", "--rm", "--no-deps", "migrate"], dockerEnvironment);
-  await run(docker, [...compose, "run", "--rm", "--no-deps", "database-role"], dockerEnvironment);
-  await run(
-    docker,
-    [...compose, "run", "--rm", "--no-deps", "legacy-state-import"],
-    dockerEnvironment,
-  );
-  await Promise.all([
-    ensurePrivateDirectory(artifactRoot),
-    ensurePrivateDirectory(modelProviderSecretRoot),
-  ]);
   console.log("[kestrel] Building host applications...");
   await run(npm, ["run", "build"], hostEnvironment);
+  const databaseOwnerPassword = environment.KESTREL_MIGRATOR_DATABASE_PASSWORD ?? "kestrel_dev";
+  const preparationEnvironment = {
+    ...hostEnvironment,
+    DATABASE_URL: `postgres://kestrel:${encodeURIComponent(databaseOwnerPassword)}@${LOOPBACK}:${String(databasePort)}/kestrel`,
+    RUNTIME_DATABASE_URL: databaseUrl,
+  };
+  console.log("[kestrel] Preparing database from the host...");
+  await run(npm, ["run", "migrate", "-w", "@kestrel/database"], preparationEnvironment);
+  await run(
+    npm,
+    ["run", "prepare-runtime-role", "-w", "@kestrel/database"],
+    preparationEnvironment,
+  );
 
   const worker = startObservedHostProcess(
     npm,
-    ["--silent", "run", "start", "-w", "@kestrel/worker"],
+    ["--silent", "run", "dev", "-w", "@kestrel/worker"],
     serverEnvironment,
   );
   const children = [
-    startHostProcess(npm, ["--silent", "run", "start", "-w", "@kestrel/web"], webEnvironment),
+    startHostProcess(npm, ["--silent", "run", "dev", "-w", "@kestrel/web"], webEnvironment),
     worker.child,
     startHostProcess(
       npm,

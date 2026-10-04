@@ -105,7 +105,7 @@ export interface CodexExecutionRuntime {
 export interface CodexExecutionRuntimeOptions {
   executable?: string;
   arguments?: readonly string[];
-  timeoutMs?: number;
+  timeoutMs?: number | null;
   dockerExecutable?: string;
   containerImage: string;
   workspaceReadonly?: boolean;
@@ -126,7 +126,7 @@ export interface CodexExecutionRuntimeOptions {
 }
 export const DEFAULT_CODEX_CONTAINER_RESOURCES = {
   pidsLimit: 128,
-  memoryBytes: 1024 * 1024 * 1024,
+  memoryBytes: 2 * 1024 * 1024 * 1024,
   nanoCpus: 2_000_000_000,
   tmpfsBytes: 64 * 1024 * 1024,
 } as const;
@@ -194,7 +194,7 @@ const ENVIRONMENTS = [
 ];
 const OUTPUT_CAP = 64 * 1024;
 const CONTAINER_INSPECT =
-  '{"id":{{json .Id}},"name":{{json .Name}},"running":{{.State.Running}},"status":{{json .State.Status}},"exitCode":{{.State.ExitCode}},"image":{{json .Image}},"user":{{json .Config.User}},"network":{{json .HostConfig.NetworkMode}},"logDriver":{{json .HostConfig.LogConfig.Type}},"readonly":{{.HostConfig.ReadonlyRootfs}},"privileged":{{.HostConfig.Privileged}},"pidMode":{{json .HostConfig.PidMode}},"restart":{{json .HostConfig.RestartPolicy.Name}},"pidsLimit":{{.HostConfig.PidsLimit}},"memory":{{.HostConfig.Memory}},"memorySwap":{{.HostConfig.MemorySwap}},"nanoCpus":{{.HostConfig.NanoCpus}},"shmSize":{{.HostConfig.ShmSize}},"tmpfs":{{json .HostConfig.Tmpfs}},"capDrop":{{json .HostConfig.CapDrop}},"securityOpt":{{json .HostConfig.SecurityOpt}},"mounts":{{json .Mounts}},"labels":{{json .Config.Labels}}}';
+  '{"id":{{json .Id}},"name":{{json .Name}},"running":{{.State.Running}},"status":{{json .State.Status}},"exitCode":{{.State.ExitCode}},"image":{{json .Image}},"user":{{json .Config.User}},"network":{{json .HostConfig.NetworkMode}},"logDriver":{{json .HostConfig.LogConfig.Type}},"readonly":{{.HostConfig.ReadonlyRootfs}},"privileged":{{.HostConfig.Privileged}},"pidMode":{{json .HostConfig.PidMode}},"restart":{{json .HostConfig.RestartPolicy.Name}},"init":{{.HostConfig.Init}},"pidsLimit":{{.HostConfig.PidsLimit}},"memory":{{.HostConfig.Memory}},"memorySwap":{{.HostConfig.MemorySwap}},"nanoCpus":{{.HostConfig.NanoCpus}},"cpusetCpus":{{json .HostConfig.CpusetCpus}},"shmSize":{{.HostConfig.ShmSize}},"tmpfs":{{json .HostConfig.Tmpfs}},"capDrop":{{json .HostConfig.CapDrop}},"securityOpt":{{json .HostConfig.SecurityOpt}},"mounts":{{json .Mounts}},"labels":{{json .Config.Labels}}}';
 const FORWARD =
   "const n=require('node:net');const s=n.connect(8765,'127.0.0.1',()=>{process.stdin.pipe(s);s.pipe(process.stdout)});s.on('error',()=>process.exit(1));process.stdin.on('end',()=>s.end());";
 // This fixed probe waits for the executor socket. It never runs project code.
@@ -634,6 +634,11 @@ class ExecutionContainer {
       resources.tmpfsBytes < 1024 * 1024
     )
       throw new CodexExecutionError("invalid_response");
+    const availableCpus = Number(await this.cli(["info", "--format", "{{.NCPU}}"], signal));
+    if (!Number.isSafeInteger(availableCpus) || availableCpus < 1)
+      throw new CodexExecutionError("sandbox_unavailable");
+    const cpuCount = Math.min(availableCpus, Math.ceil(resources.nanoCpus / 1_000_000_000));
+    const cpuSet = cpuCount === 1 ? "0" : `0-${String(cpuCount - 1)}`;
     const containerUser =
       this.#options.containerUser ??
       `${String(process.getuid?.() ?? 1000)}:${String(process.getgid?.() ?? 1000)}`;
@@ -670,6 +675,7 @@ class ExecutionContainer {
         "none",
         "--restart",
         "no",
+        "--init",
         "--cap-drop",
         "ALL",
         "--security-opt",
@@ -682,6 +688,8 @@ class ExecutionContainer {
         String(resources.memoryBytes),
         "--cpus",
         String(resources.nanoCpus / 1_000_000_000),
+        "--cpuset-cpus",
+        cpuSet,
         "--shm-size",
         String(shmBytes),
         "--user",
@@ -698,8 +706,6 @@ class ExecutionContainer {
         commandCwd,
         "--env",
         "HOME=/home/codex",
-        "--env",
-        "PATH=/usr/local/bin:/usr/bin:/bin",
         "--entrypoint",
         program,
         image,
@@ -726,10 +732,12 @@ class ExecutionContainer {
       state.privileged !== false ||
       state.pidMode !== "" ||
       state.restart !== "no" ||
+      state.init !== true ||
       state.pidsLimit !== resources.pidsLimit ||
       state.memory !== resources.memoryBytes ||
       state.memorySwap !== resources.memoryBytes ||
       state.nanoCpus !== resources.nanoCpus ||
+      state.cpusetCpus !== cpuSet ||
       state.shmSize !== shmBytes ||
       Object.keys(actualTmpfs).length !== 2 ||
       actualTmpfs["/tmp"] !== temporaryTmpfs ||
@@ -974,7 +982,7 @@ class ExecutionTurn {
     hostCwd: string,
     url: string,
     signal: AbortSignal,
-    timeoutMs: number,
+    timeoutMs: number | null,
     hostProfile: IsolatedCodexProfile | null,
   ) {
     this.#input = input;
@@ -1341,13 +1349,15 @@ class ExecutionTurn {
           allow_login_shell: false,
           mcp_servers: disabledMcpServers,
           shell_environment_policy: {
-            inherit: "none",
-            set: { PATH: "/usr/local/bin:/usr/bin:/bin", HOME: "/home/codex", TMPDIR: "/tmp" },
+            // Shells inherit the remote executor's environment, not the host profile.
+            // Keep configured toolchain variables, including Git's GIT_CONFIG_KEY_*.
+            inherit: "all",
+            ignore_default_excludes: true,
           },
         },
         developerInstructions:
           this.#options.developerInstructions ??
-          "Implement only the approved scope in the selected remote workspace. That environment is contained externally. Do not access host tools, external services, privileges, or Git metadata writes. Ask when requirements or authorization must change.",
+          "Implement only the approved scope in the selected remote workspace. That environment is contained externally. Use only the remote shell to work or wait for its commands; do not call host tools such as clock.sleep. Do not access external services, privileges, or Git metadata writes. Ask when requirements or authorization must change.",
       })
       .then(record);
     const sandbox = record(thread.sandbox);
@@ -1407,14 +1417,17 @@ async function isolated<T>(
   input: CodexExecutionLifecycle & { signal?: AbortSignal; gitDirectory?: string },
   workspacePath: string,
   requestId: string,
-  timeoutMs: number,
+  timeoutMs: number | null,
   operation: (container: ExecutionContainer, control: string, signal: AbortSignal) => Promise<T>,
 ): Promise<T> {
   boundedString(requestId);
-  timeout(timeoutMs);
+  if (timeoutMs !== null) timeout(timeoutMs);
   if (input.signal?.aborted) throw new CodexExecutionError("cancelled");
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(new CodexExecutionError("timeout")), timeoutMs);
+  const timer =
+    timeoutMs === null
+      ? null
+      : setTimeout(() => controller.abort(new CodexExecutionError("timeout")), timeoutMs);
   const signal =
     input.signal === undefined
       ? controller.signal
@@ -1442,7 +1455,7 @@ async function isolated<T>(
     checkAbort(signal);
     throw executionError(error);
   } finally {
-    clearTimeout(timer);
+    if (timer !== null) clearTimeout(timer);
     await container?.stop();
     if (control !== undefined) await rm(control, { recursive: true, force: true });
   }
@@ -1462,7 +1475,7 @@ export function createCodexExecutionRuntime(
           Buffer.byteLength(JSON.stringify(input.outputSchema)) > 64 * 1024
         )
           throw new CodexExecutionError("invalid_response");
-        const limit = timeout(options.timeoutMs ?? 120_000);
+        const limit = options.timeoutMs === null ? null : timeout(options.timeoutMs ?? 120_000);
         return await isolated(
           options,
           input,

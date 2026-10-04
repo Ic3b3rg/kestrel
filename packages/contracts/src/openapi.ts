@@ -71,6 +71,8 @@ import {
 } from "./project-board.js";
 
 import {
+  FactoryWorkItemStartSchema,
+  StartFactoryWorkItemCommandSchema,
   FeaturePlanDocumentSchema,
   FeaturePlanVersionSchema,
   FeaturePlansSchema,
@@ -244,6 +246,8 @@ const factoryComponents = {
   FactoryExecutionRun: asComponentSchema(asJsonSchema(FactoryExecutionRunSchema)),
   FactoryGate: asComponentSchema(asJsonSchema(FactoryGateSchema)),
   ResolveFactoryGateCommand: asComponentSchema(asJsonSchema(ResolveFactoryGateCommandSchema)),
+  FactoryWorkItemStart: asComponentSchema(asJsonSchema(FactoryWorkItemStartSchema)),
+  StartFactoryWorkItemCommand: asComponentSchema(asJsonSchema(StartFactoryWorkItemCommandSchema)),
   FactoryGitHubIssues: asComponentSchema(asJsonSchema(FactoryGitHubIssuesSchema)),
   ProjectBoardSnapshot: asComponentSchema(asJsonSchema(ProjectBoardSnapshotSchema)),
   ProjectBoardSettings: asComponentSchema(asJsonSchema(ProjectBoardSettingsSchema)),
@@ -1314,6 +1318,30 @@ export const openApiDocument = sortJson({
         },
       ],
       get: factoryRead("readFactoryGitHubIssues", "FactoryGitHubIssues"),
+    },
+    "/api/v1/projects/{projectId}/github-issues/{number}/start": {
+      parameters: [
+        { in: "path", name: "projectId", required: true, schema: asJsonSchema(KestrelIdSchema) },
+        { in: "path", name: "number", required: true, schema: { type: "integer", minimum: 1 } },
+      ],
+      post: factoryTurnMutation(
+        "prepareFactoryIssueInterview",
+        "RetryFactoryPublicationCommand",
+        "Feature",
+        200,
+      ),
+    },
+    "/api/v1/projects/{projectId}/features/{featureId}/work-items/{workItemId}/start": {
+      parameters: [
+        ...factoryParameters(),
+        { in: "path", name: "workItemId", required: true, schema: asJsonSchema(KestrelIdSchema) },
+      ],
+      post: factoryTurnMutation(
+        "startFactoryWorkItem",
+        "StartFactoryWorkItemCommand",
+        "FactoryWorkItemStart",
+        200,
+      ),
     },
     "/api/v1/projects/{projectId}/board": {
       parameters: [

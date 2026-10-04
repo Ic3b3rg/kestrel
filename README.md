@@ -46,22 +46,31 @@ and Vite PWA with one command:
 npm run dev
 ```
 
-PostgreSQL, migrations, and runtime-role preparation run in Kestrel-owned containers. The three
-long-running applications run as the current Operator and inherit the host `PATH`, so the launcher
-can resolve the existing `git`, `gh`, and `codex` executables without copying credentials into a
-container. `git` is required; unavailable optional tools are reported without preventing startup.
-The launcher prints the loopback URLs only after the API and PWA are ready, then remains attached
-and streams the host-process logs until `Ctrl-C` stops all three processes.
+Only PostgreSQL runs in Docker. Migrations and runtime-role preparation run once on the host at
+startup. Vite updates the frontend as files are saved; the API and worker run TypeScript directly
+and restart automatically when application or imported shared-package sources change. Fixing a
+syntax error restarts the affected service without restarting the launcher. API/worker restarts
+briefly interrupt requests or background work; this is development behavior, not zero-downtime
+reload.
+
+The applications inherit the host `PATH`, so the launcher resolves `git`, `gh`, and `codex` without
+copying credentials into a container. `git` is required; unavailable optional tools are reported
+without preventing startup. The launcher prints the loopback URLs only after the API, worker and PWA
+are ready, then remains attached and streams logs until `Ctrl-C` stops all three processes.
+Production `start` scripts continue to run the compiled applications.
+
+Restart `npm run dev` after adding SQL migrations, changing environment variables or dependencies;
+SQL migrations are applied at startup, not on source reload. Run `npm ci` after lockfile changes.
 
 Development artifacts, model-provider secrets, and the stable session-signing key live under the
 ignored, owner-only `.kestrel/development` directory by default. Set `KESTREL_STATE_ROOT` to another
 absolute Operator-owned path when needed. PostgreSQL listens only on
 `127.0.0.1:${KESTREL_DATABASE_PORT:-54320}` for the host processes.
 
-On the first start after upgrading from the Compose-only lifecycle, the launcher stops and removes
-the old application containers, then imports retained model-provider secrets and Review Revisions
-from their named volumes without overwriting newer host files. PostgreSQL and its named volume stay
-in place throughout the transition.
+Startup stops retired Kestrel application containers to avoid port conflicts. PostgreSQL and its
+named volume remain in place. Legacy container-only artifacts and secrets are not imported
+implicitly: installations migrating from that older layout must transfer their retained state to the
+configured host state directory before starting local development. Existing host state is reused.
 
 Create the first Operator from the trusted host. The password prompts are hidden, and rerunning the
 command leaves the existing Operator unchanged:
@@ -625,14 +634,14 @@ Selected correction runs and merge approval are bound to that reviewed head, and
 revision makes the older review ineligible. TLS/Caddy and Repository Provider Connections are
 outside the local-first V1 contract.
 
-The development Compose files keep database ownership out of the host-native long-running services.
-The one-shot migration and role-preparation containers use the database owner; host web and worker
-connect over loopback as `kestrel_runtime`, which cannot alter schema or update, delete, truncate,
-or disable protection on Installation Audit records. Review-domain grants are similarly narrow:
-Change Intent is select/insert-only and the Project, proposal, source, and revision lifecycle tables
-expose no DELETE authority. The runtime may update Review Workflow lifecycle fields and its own
-attempt checkpoints, while a trigger rejects any change to frozen workflow inputs; published
-Conceptual Review artifacts are select/insert-only and reject update, delete, and truncate. Database
+Startup keeps database-owner credentials out of the long-running services. The one-shot host
+migration and role-preparation processes use the database owner; host web and worker connect over
+loopback as `kestrel_runtime`, which cannot alter schema or update, delete, truncate, or disable
+protection on Installation Audit records. Review-domain grants are similarly narrow: Change Intent
+is select/insert-only and the Project, proposal, source, and revision lifecycle tables expose no
+DELETE authority. The runtime may update Review Workflow lifecycle fields and its own attempt
+checkpoints, while a trigger rejects any change to frozen workflow inputs; published Conceptual
+Review artifacts are select/insert-only and reject update, delete, and truncate. Database
 constraints preserve immutable revisions and canonical-family associations. The loopback-only
 development defaults can be overridden with `KESTREL_MIGRATOR_DATABASE_PASSWORD` and
 `KESTREL_RUNTIME_DATABASE_PASSWORD`; a certified release must supply generated values.

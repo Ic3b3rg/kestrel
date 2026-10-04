@@ -9,6 +9,14 @@ import {
 import { startStack, TEST_OPERATOR_CREDENTIALS, type RunningStack } from "./support/compose.js";
 import { createGitFixture, type GitFixture } from "./support/git-fixture.js";
 
+async function reviewIssueDrafts(page: Page) {
+  const action = page.getByRole("button", { name: "Review issue drafts", exact: true });
+  await expect(
+    action.or(page.getByRole("button", { name: "Publish issues", exact: true })),
+  ).toBeVisible();
+  if (await action.isVisible()) await action.click();
+}
+
 const plan: FeaturePlanDocument = {
   objective: "Find saved reports by their title.",
   scope: { includes: ["Search local report titles"], excludes: ["Search report contents"] },
@@ -79,11 +87,14 @@ async function openFeature(page: Page, title: string): Promise<void> {
   await repositoryDialog.getByLabel("Repository", { exact: true }).selectOption(repositoryId);
   await repositoryDialog.getByRole("button", { name: "Open selected Project" }).click();
   await expect(repositoryDialog).toHaveCount(0);
-  await page.getByRole("button", { name: "New plan", exact: true }).click();
+  await page.getByRole("main").getByRole("button", { name: "New interview", exact: true }).click();
   await page.getByLabel("Describe the change", { exact: true }).fill(title);
-  await page.getByRole("main").getByRole("button", { name: "Start plan", exact: true }).click();
+  await page
+    .getByRole("main")
+    .getByRole("button", { name: "Start interview", exact: true })
+    .click();
   await expect(
-    page.getByRole("heading", { level: 1, name: "New plan", exact: true }),
+    page.getByRole("heading", { level: 1, name: "New interview", exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Rename feature", exact: true }).click();
   const featureDialog = page.getByRole("dialog", { name: "Rename feature", exact: true });
@@ -122,9 +133,8 @@ async function seedPlan(
   const version = (expectedVersion ?? 0) + 1;
   expect(FeaturePlanVersionSchema.parse(saved).version).toBe(version);
   await page.getByRole("button", { name: "Load latest version", exact: true }).click();
-  await expect(
-    page.getByRole("heading", { name: `Plan · version ${String(version)}`, exact: true }),
-  ).toBeVisible();
+  await expect(page.getByLabel("Saved version", { exact: true })).toHaveValue(String(version));
+  await reviewIssueDrafts(page);
   return endpoint;
 }
 
@@ -150,7 +160,10 @@ test.describe("Feature plan approval", () => {
     if (glossary === undefined) throw new Error("No glossary fixture");
     await login(page, stack.pwaUrl);
     await openFeature(page, "Retain agreed report terminology");
-    await page.getByRole("tab", { name: "Plan", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Review requirements", exact: true })
+      .or(page.getByRole("tab", { name: "Plan", exact: true }))
+      .click();
     await seedPlan(page);
     const featureId = KestrelIdSchema.parse(new URL(page.url()).pathname.split("/")[4]);
     const context = {
@@ -230,8 +243,13 @@ test.describe("Feature plan approval", () => {
     if (stack === undefined) throw new Error("The planning stack is unavailable");
     await login(page, stack.pwaUrl);
     await openFeature(page, "Find a saved report");
-    await expect(page.getByRole("tab", { name: "Plan", exact: true })).toBeVisible();
-    await page.getByRole("tab", { name: "Plan", exact: true }).click();
+    await expect(
+      page.getByRole("button", { name: "Review requirements", exact: true }),
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: "Review requirements", exact: true })
+      .or(page.getByRole("tab", { name: "Plan", exact: true }))
+      .click();
     const planUrl = page.url();
     expect(new URL(planUrl).searchParams.get("view")).toBe("plan");
     const endpoint = await seedPlan(page);
@@ -252,9 +270,12 @@ test.describe("Feature plan approval", () => {
     await page
       .getByLabel("Objective", { exact: true })
       .fill("Find saved reports by a case-insensitive title search.");
-    await page.getByLabel("Attempt limit (minutes)", { exact: true }).fill("20");
+    await page.getByLabel("Verification command limit (minutes)", { exact: true }).fill("20");
     await page.getByRole("tab", { name: "Chat", exact: true }).click();
-    await page.getByRole("tab", { name: "Plan", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Review requirements", exact: true })
+      .or(page.getByRole("tab", { name: "Plan", exact: true }))
+      .click();
     await expect(page.getByLabel("Objective", { exact: true })).toHaveValue(
       "Find saved reports by a case-insensitive title search.",
     );
@@ -262,9 +283,7 @@ test.describe("Feature plan approval", () => {
     await page.getByRole("link", { name: "Settings", exact: true }).click();
     await expect(page).toHaveURL(planUrl);
     await page.getByRole("button", { name: "Save new version", exact: true }).click();
-    await expect(
-      page.getByRole("heading", { name: "Plan · version 2", exact: true }),
-    ).toBeVisible();
+    await expect(page.getByLabel("Saved version", { exact: true })).toHaveValue("2");
     await page.getByRole("button", { name: "Proposed documents", exact: true }).click();
     const revisedProposals = page.getByRole("dialog", {
       name: "Proposed documents · version 2",
@@ -296,27 +315,25 @@ test.describe("Feature plan approval", () => {
     expect(original.document.proposedDocuments).toEqual(plan.proposedDocuments);
     const stalePage = await page.context().newPage();
     await stalePage.goto(planUrl);
+    await reviewIssueDrafts(stalePage);
     await expect(
-      stalePage.getByRole("button", { name: "Approve version 2", exact: true }),
+      stalePage.getByRole("button", { name: "Publish issues", exact: true }),
     ).toBeEnabled();
     await page.getByRole("button", { name: "Edit draft", exact: true }).click();
     await page
       .getByLabel("Objective", { exact: true })
       .fill("Find saved reports by a case-insensitive title search, including archived reports.");
     await page.getByRole("button", { name: "Save new version", exact: true }).click();
-    await expect(
-      page.getByRole("heading", { name: "Plan · version 3", exact: true }),
-    ).toBeVisible();
-    await stalePage.getByRole("button", { name: "Approve version 2", exact: true }).click();
+    await expect(page.getByLabel("Saved version", { exact: true })).toHaveValue("3");
+    await reviewIssueDrafts(stalePage);
+    await stalePage.getByRole("button", { name: "Publish issues", exact: true }).click();
     await expect(stalePage.getByRole("alert")).toBeVisible();
     await expect(stalePage.getByRole("tab", { name: "Plan", exact: true })).toHaveAttribute(
       "aria-selected",
       "true",
     );
     await stalePage.getByRole("button", { name: "Load latest version", exact: true }).click();
-    await expect(
-      stalePage.getByRole("heading", { name: "Plan · version 3", exact: true }),
-    ).toBeVisible();
+    await expect(stalePage.getByLabel("Saved version", { exact: true })).toHaveValue("3");
     const routeParts = new URL(planUrl).pathname.split("/");
     const projectId = KestrelIdSchema.parse(routeParts[2]);
     const featureId = KestrelIdSchema.parse(routeParts[4]);
@@ -331,9 +348,7 @@ test.describe("Feature plan approval", () => {
       "aria-selected",
       "true",
     );
-    await expect(
-      stalePage.getByRole("heading", { name: "Plan · version 3", exact: true }),
-    ).toBeVisible();
+    await expect(stalePage.getByLabel("Saved version", { exact: true })).toHaveValue("3");
     await stalePage.screenshot({
       path: test.info().outputPath("factory-plan-desktop.png"),
       fullPage: true,
@@ -353,7 +368,8 @@ test.describe("Feature plan approval", () => {
     ).toBe(true);
     expect((await new AxeBuilder({ page: stalePage }).analyze()).violations).toEqual([]);
     await stalePage.setViewportSize({ width: 1024, height: 800 });
-    await stalePage.getByRole("button", { name: "Approve version 3", exact: true }).click();
+    await reviewIssueDrafts(stalePage);
+    await stalePage.getByRole("button", { name: "Publish issues", exact: true }).click();
     await expect(stalePage.getByRole("tab", { name: "Board", exact: true })).toHaveAttribute(
       "aria-selected",
       "true",
@@ -364,13 +380,15 @@ test.describe("Feature plan approval", () => {
     }
     await expect(
       stalePage.getByRole("region", { name: "Feature execution", exact: true }),
-    ).toBeVisible();
+    ).toHaveCount(0);
     await stalePage
       .getByRole("navigation", { name: "Projects", exact: true })
       .getByRole("link", { name: /kestrel/u })
       .click();
     await expect(stalePage).toHaveURL(`${stack.pwaUrl}/projects/${projectId}`);
-    await expect(stalePage.getByRole("button", { name: /^Open planning chat:/u })).toHaveCount(0);
+    await expect(
+      stalePage.getByRole("button", { name: /^Open planning chat: Find a saved report/u }),
+    ).toHaveCount(0);
     const projectItem = stalePage.getByRole("button", {
       name: /^Open Work Item: Search saved reports ·/u,
     });
@@ -435,9 +453,12 @@ test.describe("Feature plan approval", () => {
     if (stack === undefined) throw new Error("The planning stack is unavailable");
     await login(page, stack.pwaUrl);
     await openFeature(page, "Define a report export plan");
-    await page.getByRole("tab", { name: "Plan", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Review requirements", exact: true })
+      .or(page.getByRole("tab", { name: "Plan", exact: true }))
+      .click();
     const endpoint = `/api/v1${new URL(page.url()).pathname}/plans`;
-    await page.getByRole("button", { name: "Generate plan", exact: true }).click();
+    await page.getByRole("button", { name: "Prepare requirements", exact: true }).click();
     await expect(page.getByText("Codex is unavailable", { exact: true })).toBeVisible();
     const readPlans = async () =>
       FeaturePlansSchema.parse(
@@ -457,7 +478,7 @@ test.describe("Feature plan approval", () => {
       .not.toBe(failed.generation?.id);
     await expect(page.getByText("Codex is unavailable", { exact: true })).toBeVisible();
     expect((await readPlans()).current).toBeNull();
-    await expect(page.getByRole("button", { name: /^Approve version/u })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^Publish issues/u })).toHaveCount(0);
   });
 
   test("preserves unsaved edits and an uncertain save through reconnection, then clears them on sign-out", async ({
@@ -466,7 +487,10 @@ test.describe("Feature plan approval", () => {
     if (stack === undefined) throw new Error("The planning stack is unavailable");
     await login(page, stack.pwaUrl);
     await openFeature(page, "Keep a report search draft");
-    await page.getByRole("tab", { name: "Plan", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Review requirements", exact: true })
+      .or(page.getByRole("tab", { name: "Plan", exact: true }))
+      .click();
     const endpoint = await seedPlan(page);
     await page.getByRole("button", { name: "Edit draft", exact: true }).click();
     const objective = page.getByLabel("Objective", { exact: true });
@@ -506,9 +530,7 @@ test.describe("Feature plan approval", () => {
     await page.getByRole("button", { name: "Retry session check", exact: true }).click();
     await expect(objective).toHaveValue(draftObjective);
     await page.getByRole("button", { name: "Retry request", exact: true }).click();
-    await expect(
-      page.getByRole("heading", { name: "Plan · version 2", exact: true }),
-    ).toBeVisible();
+    await expect(page.getByLabel("Saved version", { exact: true })).toHaveValue("2");
     expect(saveRequests).toHaveLength(2);
     expect(saveRequests[1]).toBe(saveRequests[0]);
     const saved = FeaturePlansSchema.parse(
@@ -549,9 +571,7 @@ test.describe("Feature plan approval", () => {
     await page.getByLabel("Username").fill(TEST_OPERATOR_CREDENTIALS.username);
     await page.getByLabel("Password", { exact: true }).fill(TEST_OPERATOR_CREDENTIALS.password);
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
-    await expect(
-      page.getByRole("heading", { name: "Plan · version 2", exact: true }),
-    ).toBeVisible();
+    await expect(page.getByLabel("Saved version", { exact: true })).toHaveValue("2");
     await expect(objective).toHaveCount(0);
     await expect(page.getByText(draftObjective, { exact: true })).toBeVisible();
   });
@@ -563,7 +583,10 @@ test.describe("Feature plan approval", () => {
     await login(page, stack.pwaUrl);
     const title = "Keep report planning history";
     await openFeature(page, title);
-    await page.getByRole("tab", { name: "Plan", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Review requirements", exact: true })
+      .or(page.getByRole("tab", { name: "Plan", exact: true }))
+      .click();
     await seedPlan(page);
     await page.getByRole("link", { name: "Settings", exact: true }).click();
     const settingsUrl = page.url();
@@ -573,15 +596,21 @@ test.describe("Feature plan approval", () => {
       .click();
     await page.getByRole("link", { name: title, exact: true }).click();
     const chatUrl = page.url();
-    await page.getByRole("tab", { name: "Plan", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Review requirements", exact: true })
+      .or(page.getByRole("tab", { name: "Plan", exact: true }))
+      .click();
     const planUrl = page.url();
     await page.getByRole("button", { name: "Edit draft", exact: true }).click();
     await page
       .getByLabel("Objective", { exact: true })
       .fill("Retain this draft across browser history.");
     await page.getByRole("tab", { name: "Chat", exact: true }).click();
+    await page.getByRole("button", { name: "Review requirements", exact: true }).click();
     await page.getByRole("tab", { name: "Board", exact: true }).click();
     const boardUrl = page.url();
+    await page.goBack();
+    await expect(page).toHaveURL(planUrl);
     await page.goBack();
     await expect(page).toHaveURL(chatUrl);
     await page.goBack();
@@ -598,9 +627,11 @@ test.describe("Feature plan approval", () => {
     await page.goForward();
     await expect(page).toHaveURL(chatUrl);
     await page.goForward();
+    await expect(page).toHaveURL(planUrl);
+    await page.goForward();
     await expect(page).toHaveURL(boardUrl);
     const acceptedDiscardPrompt = page.waitForEvent("dialog");
-    await page.evaluate(() => window.history.go(-5));
+    await page.evaluate(() => window.history.go(-6));
     await (await acceptedDiscardPrompt).accept();
     await expect(page).toHaveURL(settingsUrl);
     await page
@@ -608,10 +639,11 @@ test.describe("Feature plan approval", () => {
       .getByRole("link", { name: /kestrel/u })
       .click();
     await page.getByRole("link", { name: title, exact: true }).click();
-    await page.getByRole("tab", { name: "Plan", exact: true }).click();
-    await expect(
-      page.getByRole("heading", { name: "Plan · version 1", exact: true }),
-    ).toBeVisible();
+    await page
+      .getByRole("button", { name: "Review requirements", exact: true })
+      .or(page.getByRole("tab", { name: "Plan", exact: true }))
+      .click();
+    await expect(page.getByLabel("Saved version", { exact: true })).toHaveValue("1");
     await expect(page.getByLabel("Objective", { exact: true })).toHaveCount(0);
   });
 
@@ -621,7 +653,10 @@ test.describe("Feature plan approval", () => {
     if (stack === undefined) throw new Error("The planning stack is unavailable");
     await login(page, stack.pwaUrl);
     await openFeature(page, "Keep a draft behind its document inspector");
-    await page.getByRole("tab", { name: "Plan", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Review requirements", exact: true })
+      .or(page.getByRole("tab", { name: "Plan", exact: true }))
+      .click();
     await seedPlan(page);
 
     const reconnectWithDialog = async (name: string) => {

@@ -64,11 +64,12 @@ it("starts exactly one chat and first turn across simultaneous submissions, relo
   expect(second.messageId).toBe(first.messageId);
   expect(second.turnId).toBe(first.turnId);
   const feature = FeatureSchema.parse(first.feature);
-  expect(feature.title).toBe("New plan");
+  expect(feature.title).toBe("New interview");
   const path = `/api/v1/projects/${projectId}/features/${feature.id}`;
   const read = async () => FeatureChatSchema.parse(await (await running().fetchApi(path)).json());
   expect((await read()).messages.map(({ content }) => content)).toEqual([command.text]);
   expect((await read()).turns).toHaveLength(1);
+  expect((await read()).turns[0]?.purpose).toBe("conversation");
   expect((await read()).feature.state).toBe("planning");
   expect((await post(collection, { ...command, text: "A different request" })).status).toBe(409);
   const rename = { requestId: randomUUID(), title: "Saved report search" };

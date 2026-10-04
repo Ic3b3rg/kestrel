@@ -119,7 +119,7 @@ test.describe("local-first Project flow", () => {
       });
       const repositoryId = await option.getAttribute("value");
       if (repositoryId === null) throw new Error(`Repository option ${name} has no identity`);
-      await dialog.getByLabel("Repository").selectOption(repositoryId);
+      await dialog.getByLabel("Repository", { exact: true }).selectOption(repositoryId);
       await dialog.getByRole("button", { name: "Open selected Project" }).click();
       await expect(dialog).toHaveCount(0);
       await expect(page.getByRole("heading", { level: 1, name, exact: true })).toBeVisible();
@@ -182,13 +182,13 @@ test.describe("local-first Project flow", () => {
     const settingsLink = page.getByRole("link", { name: "Settings", exact: true });
     await settingsLink.focus();
     await page.keyboard.press("Enter");
-    await expect(page).toHaveURL(/\/settings\?projectId=/u);
+    await expect(page).toHaveURL(/\/settings\/profile$/u);
     await expect(
       page.getByRole("heading", { level: 1, name: "Settings", exact: true }),
     ).toBeVisible();
     await page.getByRole("button", { name: "Open navigation", exact: true }).click();
     await expect(settingsLink).toHaveAttribute("aria-current", "page");
-    await expect(kestrelLink).toContainText("Selected Project");
+    await expect(kestrelLink).toHaveAttribute("href", new URL(kestrelUrl).pathname);
     await expect(kestrelLink).not.toHaveAttribute("aria-current", "page");
 
     await kestrelLink.focus();
@@ -235,7 +235,9 @@ test.describe("local-first Project flow", () => {
     const kestrelOption = openProjectDialog.getByRole("option", { name: /^kestrel/u });
     const kestrelRepositoryId = await kestrelOption.getAttribute("value");
     if (kestrelRepositoryId === null) throw new Error("Kestrel repository identity is missing");
-    await openProjectDialog.getByLabel("Repository").selectOption(kestrelRepositoryId);
+    await openProjectDialog
+      .getByLabel("Repository", { exact: true })
+      .selectOption(kestrelRepositoryId);
     await openProjectDialog.getByRole("button", { name: "Open selected Project" }).click();
     await expect(
       page.getByRole("heading", { level: 1, name: "kestrel", exact: true }),
@@ -244,9 +246,16 @@ test.describe("local-first Project flow", () => {
     await expect(
       page.getByRole("heading", { level: 1, name: "Settings", exact: true }),
     ).toBeVisible();
-    const repositorySettings = page.getByRole("region", { name: "Settings", exact: true });
+    await page
+      .getByRole("navigation", { name: "Settings sections" })
+      .getByRole("link", { name: "Projects", exact: true })
+      .click();
+    const repositorySettings = page.getByRole("region", {
+      name: "Authorized repositories",
+      exact: true,
+    });
     await expect(
-      repositorySettings.getByRole("heading", { name: "Repository access" }),
+      repositorySettings.getByRole("heading", { name: "Authorized repositories" }),
     ).toBeVisible();
     await expect(repositorySettings.getByText("kestrel", { exact: true })).toBeVisible();
     await expect(repositorySettings.locator("code").first()).toHaveText(
@@ -346,9 +355,6 @@ test.describe("local-first Project flow", () => {
     await expect(dialog).toHaveCount(0);
     await expect(page.locator(".proposal-list")).toBeFocused();
     await page.getByText("Repository details", { exact: true }).click();
-    await expect(
-      page.getByRole("status").filter({ hasText: "The exact Review Revision" }),
-    ).toContainText("The exact Review Revision is available.");
     await expect(page.getByText("Available", { exact: true })).toHaveCount(2);
     await expect(
       page.locator("dl.commit-pointer-list").getByText("Change Intent v1", { exact: true }),

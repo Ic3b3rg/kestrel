@@ -42,7 +42,7 @@ async function fixture(mode = "happy", runtimeOptions: Partial<CodexExecutionRun
   await writeFile(daemonPath, JSON.stringify(daemonId));
   await writeFile(
     dockerPath,
-    `#!${process.execPath}\nif (process.argv[2] === "info") { const {readFile}=await import("node:fs/promises"); console.log(JSON.parse(await readFile(${JSON.stringify(daemonPath)}, "utf8"))); } else { process.env.KESTREL_TEST_ROOT=${JSON.stringify(cwd)};process.env.KESTREL_TEST_MODE=${JSON.stringify(mode)};await import(${JSON.stringify(dockerFixturePath)}); }\n`,
+    `#!${process.execPath}\nif (process.argv[2] === "info") { const {readFile}=await import("node:fs/promises"); console.log(process.argv.includes("{{.NCPU}}") ? "12" : JSON.parse(await readFile(${JSON.stringify(daemonPath)}, "utf8"))); } else { process.env.KESTREL_TEST_ROOT=${JSON.stringify(cwd)};process.env.KESTREL_TEST_MODE=${JSON.stringify(mode)};await import(${JSON.stringify(dockerFixturePath)}); }\n`,
     { mode: 0o700 },
   );
   return {
@@ -69,6 +69,37 @@ it("delivers the approved model controls to the contained execution turn", async
     effort: "high",
     serviceTierForTurn: "default",
   });
+});
+
+it("inherits the remote executor environment without replacing toolchain variables", async () => {
+  const { cwd, runtime, logPath } = await fixture();
+  await runtime.runTurn(input(cwd));
+  const messages = await protocolMessages(logPath);
+  expect(messages.find((message) => message.method === "thread/start")?.params).toMatchObject({
+    config: { shell_environment_policy: { inherit: "all", ignore_default_excludes: true } },
+  });
+  const params = z
+    .object({ config: z.object({ shell_environment_policy: z.record(z.string(), z.unknown()) }) })
+    .parse(messages.find((message) => message.method === "thread/start")?.params);
+  expect(params.config.shell_environment_policy.set).toBeUndefined();
+  const create = (await dockerCalls(cwd)).find((args) => args[0] === "create");
+  expect(create).not.toContain("PATH=/usr/local/bin:/usr/bin:/bin");
+  expect(create).toContain("HOME=/home/codex");
+});
+
+it("preserves the image toolchain PATH for controller verification", async () => {
+  const { cwd, runtime } = await fixture();
+  await runtime.runVerification({
+    ...input(cwd),
+    workspaceCwd: cwd,
+    cwd: ".",
+    command: ["custom-toolchain-check"],
+    processId: "environment-verification",
+    timeoutMs: 10_000,
+  });
+  const create = (await dockerCalls(cwd)).find((args) => args[0] === "create");
+  expect(create).toContain("custom-toolchain-check");
+  expect(create).not.toContain("PATH=/usr/local/bin:/usr/bin:/bin");
 });
 
 it("emits public reasoning summaries and bounded command results", async () => {
@@ -532,6 +563,8 @@ it.each([
   "limit_memory",
   "limit_swap",
   "limit_cpu",
+  "limit_cpuset",
+  "limit_init",
   "limit_shm",
   "limit_tmpfs",
   "limit_log",
@@ -690,6 +723,9 @@ it("runs exact verification argv in a separate container and preserves nonzero o
   });
   const create = (await dockerCalls(cwd)).find((args) => args[0] === "create");
   if (create === undefined) throw new Error("Expected container creation");
+  expect(create).toContain("--init");
+  expect(create[create.indexOf("--memory") + 1]).toBe(String(2 * 1024 * 1024 * 1024));
+  expect(create[create.indexOf("--cpuset-cpus") + 1]).toBe("0-1");
   expect(create.slice(create.indexOf("--entrypoint") + 1)).toEqual([
     command[0],
     `sha256:${"1".repeat(64)}`,

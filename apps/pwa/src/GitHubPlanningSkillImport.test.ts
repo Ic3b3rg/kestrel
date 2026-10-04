@@ -10,7 +10,7 @@ import { GitHubPlanningSkillImport } from "./GitHubPlanningSkillImport.js";
 import { ApiClientError } from "./api.js";
 
 const bundle: GitHubPlanningSkillBundle = {
-  name: "grilling-starter",
+  name: "grill-with-docs",
   description: "Ask grounded questions and propose a plan.",
   contentDigest: "a".repeat(64),
   source: {
@@ -125,7 +125,7 @@ it("previews full provenance and inert files, then retries exactly the reviewed 
   expect(requests).toEqual([
     {
       url: "/api/v1/planning-skills/github/preview",
-      body: { kind: "starter", starter: "grilling-starter" },
+      body: { kind: "collection", collection: "matt-pocock" },
     },
   ]);
   expect(container.textContent).toContain(bundle.source.commitId);

@@ -186,7 +186,6 @@ export interface FactorySandboxOptions {
   prepareContainerImage?: (signal: AbortSignal) => Promise<string>;
   dockerExecutable?: string;
   signal: AbortSignal;
-  deadline: number;
 }
 
 type ImplementationInput = Pick<
@@ -330,7 +329,7 @@ export function createFactorySandbox(options: FactorySandboxOptions) {
           options.runtime ??
           createCodexExecutionRuntime({
             containerImage: containerImage ?? "",
-            timeoutMs: run.plan.limits.attemptTimeoutSeconds * 1000,
+            timeoutMs: null,
             ...(options.dockerExecutable === undefined
               ? {}
               : { dockerExecutable: options.dockerExecutable }),
@@ -436,10 +435,7 @@ export function createFactorySandbox(options: FactorySandboxOptions) {
             cwd: command.cwd,
             command: [command.program, ...command.args],
             processId,
-            timeoutMs: Math.max(
-              1,
-              Math.min(command.timeoutSeconds * 1000, options.deadline - Date.now()),
-            ),
+            timeoutMs: command.timeoutSeconds * 1000,
             signal,
           });
           verification.assertStopped();

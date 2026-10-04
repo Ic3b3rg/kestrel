@@ -247,11 +247,11 @@ The first complete local Kestrel lifecycle from in-product planning and approved
 _Avoid_: Review First V1, autonomous merge, workflow editor
 
 **Feature**:
-The Project-scoped change delivered through one approved Feature Plan, ordered Work Items, one cumulative branch and pull request, and a current Conceptual Review. It completes only after confirmed integration.
+The Project-scoped requirements context containing a versioned Feature Plan and its Work Items. New interviews publish issues without execution authority. An explicitly started Work Item receives an internal single-item execution Feature, branch, PR and Conceptual Review; its original board identity and requirements context remain linked. Historical authorized Features retain their cumulative lifecycle.
 _Avoid_: Work Item, pull request, Agent Run
 
 **Feature Plan**:
-A versioned statement of one Feature's objective, scope, acceptance outcomes, ordered Work Items and dependencies, verification, and execution limits. The Operator's approval freezes one version and authorizes its eligible work.
+A versioned statement of one Feature's objective, scope, acceptance outcomes, ordered Work Items and dependencies, verification, and execution limits. Publication approval freezes one version for issue publication. Starting a selected Work Item separately authorizes only its retained scope and limits.
 _Avoid_: Chat transcript, mutable issue body, runtime prompt
 
 **Issue Tracker Connection**:
@@ -283,7 +283,8 @@ A future provider-side interaction by an authorized human, such as a command or 
 _Avoid_: Provider Review Input, Provider Synchronization, Run Trigger, webhook delivery
 
 **Run Trigger**:
-The Operator's approval of an exact Feature Plan, or explicit start of an eligible Tracker Issue from the Project board, that authorizes bounded development. A board start retains the current issue conversation when its queued work begins and authorizes Kestrel to derive the operational Feature Plan within that request and the Project limits. Receiving or synchronizing provider activity is never sufficient.
+The Operator's explicit board drag to In progress, or equivalent Start issue action, authorizing one Work Item from an exact published Feature Plan version. The immutable start receipt survives retries and points to its isolated execution lifecycle. Publication, restart, dependencies and provider activity never supply a Run Trigger. Previously authorized Features retain their historical trigger.
+The existing ready-issue board path retains an explicit Operator start and the issue conversation, then derives and authorizes exactly one Work Item bound to that selected issue. Issues without the configured ready label can enter requirements review first.
 _Avoid_: Provider Invocation, issue event, automatic issue execution
 
 **Agent Run**:

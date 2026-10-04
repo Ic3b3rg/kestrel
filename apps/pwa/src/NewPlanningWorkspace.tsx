@@ -1,9 +1,11 @@
+import { InterviewSkillPicker } from "./InterviewSkillPicker.js";
 import { FormFeedback } from "./components/FormFeedback.js";
 import { PlanningModelControls } from "./PlanningModelControls.js";
 import { NativeSelect } from "./components/ui/native-select.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   Feature,
+  PlanningSkillSummary,
   PlanningComposerSettings,
   PlanningAttachment,
   StartPlanningFeatureCommand,
@@ -38,6 +40,9 @@ export function NewPlanningWorkspace({
   onAuthenticationError,
   onDraftDirtyChange,
 }: NewPlanningWorkspaceProps) {
+  const [defaultSkills, setDefaultSkills] = useState<PlanningSkillSummary[]>([]);
+  const [chosenSkills, setChosenSkills] = useState<PlanningSkillSummary[] | null>(null);
+  const activeSkills = chosenSkills ?? defaultSkills;
   const [planningSettings, setPlanningSettings] = useState<PlanningComposerSettings | undefined>();
   const [profileReady, setProfileReady] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -119,7 +124,7 @@ export function NewPlanningWorkspace({
       attempt.current ??= {
         requestId,
         text: text.trim(),
-        skillDigests: [],
+        skillDigests: activeSkills.map((skill) => skill.contentDigest),
         ...(attachments.length === 0 ? {} : { attachments }),
         ...(planningSettings === undefined ? {} : { planningSettings }),
       };
@@ -158,6 +163,15 @@ export function NewPlanningWorkspace({
         </FormFeedback>
       )}
       <NewPlanningChatPanel
+        skills={
+          <InterviewSkillPicker
+            skills={activeSkills}
+            online={online}
+            disabled={pending || checking || attempt.current !== null}
+            onSelect={(skill) => setChosenSkills([skill])}
+            onAuthenticationError={onAuthenticationError}
+          />
+        }
         controls={
           <PlanningModelControls
             key={projectId}
@@ -165,6 +179,7 @@ export function NewPlanningWorkspace({
             online={online}
             disabled={pending || checking || attempt.current !== null}
             onReady={setProfileReady}
+            onSkillsResolved={setDefaultSkills}
             onSettingsChange={setPlanningSettings}
           />
         }
@@ -182,6 +197,8 @@ export function NewPlanningWorkspace({
                   onNavigate({ kind: "planning", projectId: project.id, requestId });
                   setPlanningSettings(undefined);
                   setProfileReady(false);
+                  setChosenSkills(null);
+                  setDefaultSkills([]);
                 }
               }}
             >

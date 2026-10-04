@@ -62,6 +62,7 @@ export class FactoryError extends Error {
 }
 
 export interface FeatureRow {
+  execution_mode?: "individual" | "authorized";
   planning_settings?: unknown;
   id: string;
   project_id: string;
@@ -96,21 +97,41 @@ export interface ClaimedPlanningTurn {
   source: { repositoryId: string; identity: string } | null;
 }
 
+export const PLANNING_TURN_TIMEOUT_MS = {
+  conversation: 180_000,
+  plan: 600_000,
+} as const;
+
+const PLANNING_TURN_RECOVERY_GRACE_MS = 60_000;
+
 export async function reconcilePlanningTurns(pool: DatabasePool): Promise<void> {
-  // Runtime turns are bounded to three minutes. Uncertain work is never silently replayed.
+  // Reconcile only after the runtime deadline and a grace period for persistence.
   await inTransaction(pool, async (client) => {
     // Use the same Feature-before-turn lock order as sends, completion, and cancellation.
-    const expired = await client.query<{ id: string }>(`
+    const expired = await client.query<{ id: string }>(
+      `
       SELECT id FROM factory_features WHERE EXISTS (
         SELECT 1 FROM factory_planning_turns WHERE feature_id = factory_features.id
-          AND state = 'running' AND started_at < clock_timestamp() - interval '4 minutes'
-      ) ORDER BY id FOR UPDATE`);
+          AND state = 'running' AND started_at < clock_timestamp() -
+            (CASE WHEN purpose = 'plan' THEN $1::integer ELSE $2::integer END) * interval '1 millisecond'
+      ) ORDER BY id FOR UPDATE`,
+      [
+        PLANNING_TURN_TIMEOUT_MS.plan + PLANNING_TURN_RECOVERY_GRACE_MS,
+        PLANNING_TURN_TIMEOUT_MS.conversation + PLANNING_TURN_RECOVERY_GRACE_MS,
+      ],
+    );
     if (expired.rows.length === 0) return;
     const interrupted = await client.query<{ feature_id: string }>(
       `UPDATE factory_planning_turns SET state = 'failed', failure = 'interrupted', completed_at = clock_timestamp()
        WHERE feature_id = ANY($1::uuid[]) AND state = 'running'
-         AND started_at < clock_timestamp() - interval '4 minutes' RETURNING feature_id`,
-      [expired.rows.map(({ id }) => id)],
+         AND started_at < clock_timestamp() -
+           (CASE WHEN purpose = 'plan' THEN $2::integer ELSE $3::integer END) * interval '1 millisecond'
+       RETURNING feature_id`,
+      [
+        expired.rows.map(({ id }) => id),
+        PLANNING_TURN_TIMEOUT_MS.plan + PLANNING_TURN_RECOVERY_GRACE_MS,
+        PLANNING_TURN_TIMEOUT_MS.conversation + PLANNING_TURN_RECOVERY_GRACE_MS,
+      ],
     );
     await client.query(
       "UPDATE factory_features SET runtime_thread_id = NULL, updated_at = clock_timestamp() WHERE id = ANY($1::uuid[])",
@@ -384,7 +405,7 @@ export async function createFactoryFeature(
       return mapFactoryFeature(duplicate);
     }
     const count = await client.query<{ count: string }>(
-      `SELECT count(*) FROM factory_features WHERE (${FEATURE_FAMILY}) = $1`,
+      `SELECT count(*) FROM factory_features WHERE (${FEATURE_FAMILY}) = $1 AND NOT EXISTS (SELECT 1 FROM factory_work_item_starts WHERE execution_feature_id = factory_features.id)`,
       [canonicalProjectId],
     );
     if (Number(count.rows[0]?.count) >= 200) throw new FactoryError("feature_limit");
@@ -406,7 +427,7 @@ export async function listFactoryFeatures(
   const project = await pool.query("SELECT id FROM projects WHERE id = $1", [projectId]);
   if (project.rowCount === 0) throw new FactoryError("not_found");
   const result = await pool.query<FeatureRow>(
-    `SELECT *, (${FEATURE_FAMILY}) AS project_id FROM factory_features WHERE (${FEATURE_FAMILY}) = (${PROJECT_FAMILY}) ORDER BY created_at, id LIMIT 200`,
+    `SELECT *, (${FEATURE_FAMILY}) AS project_id FROM factory_features WHERE (${FEATURE_FAMILY}) = (${PROJECT_FAMILY}) AND NOT EXISTS (SELECT 1 FROM factory_work_item_starts WHERE execution_feature_id = factory_features.id) ORDER BY created_at, id LIMIT 200`,
     [projectId],
   );
   return result.rows.map(mapFactoryFeature);
@@ -458,6 +479,7 @@ export async function readFactoryChat(
       ),
       turns: turns.rows.map((turn) =>
         PlanningTurnSchema.parse({
+          purpose: turn.purpose,
           lifecycleProfile:
             turn.lifecycle_profile == null
               ? null
@@ -491,9 +513,18 @@ export async function acceptPlanningMessage(
   command: SendPlanningMessageCommand,
   planIntent?: { expectedVersion: number | null },
   connection?: CodexSubscriptionConnection,
+  initialSkillDigests?: string[],
 ): Promise<PlanningTurnAccepted> {
   return withFactoryFeature(pool, projectId, featureId, (client, row) =>
-    acceptPlanningMessageForFeature(client, boss, row, command, planIntent, undefined, connection),
+    acceptPlanningMessageForFeature(
+      client,
+      boss,
+      row,
+      command,
+      planIntent,
+      initialSkillDigests,
+      connection,
+    ),
   );
 }
 
@@ -605,11 +636,13 @@ export async function acceptPlanningMessageForFeature(
   const invokedSkillDigests = await resolvePlanningSkillInvocation(
     client,
     command.text,
-    initialSkillDigests ?? selected,
+    initialSkillDigests !== undefined
+      ? initialSkillDigests
+      : row.skill_selection_version > 0
+        ? selected
+        : (lifecycleProfile?.requested.skillDigests ?? selected),
   );
-  const skillDigests = [
-    ...new Set([...(lifecycleProfile?.requested.skillDigests ?? []), ...invokedSkillDigests]),
-  ];
+  const skillDigests = invokedSkillDigests;
   if (JSON.stringify(selected) !== JSON.stringify(invokedSkillDigests)) {
     if (row.skill_selection_version >= 1000)
       throw new FactoryError("conflict", "The Skill selection limit was reached");
@@ -627,8 +660,10 @@ export async function acceptPlanningMessageForFeature(
       [featureId],
     );
   }
-  if (lifecycleProfile !== null)
+  if (lifecycleProfile !== null) {
+    lifecycleProfile.requested.skillDigests = skillDigests;
     lifecycleProfile.skills = await readPlanningSkills(client, skillDigests);
+  }
   const inserted = await client.query<{ id: string }>(
     "INSERT INTO factory_planning_messages (feature_id, role, content, attachment_fingerprint) VALUES ($1, 'user', $2, $3) RETURNING id",
     [featureId, command.text, fingerprint],

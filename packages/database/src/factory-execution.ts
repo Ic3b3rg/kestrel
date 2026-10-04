@@ -119,6 +119,7 @@ export async function queueFactoryExecutions(
        JOIN factory_plan_approvals approval ON approval.feature_id = feature.id AND approval.plan_version = feature.approved_plan_version
        JOIN factory_feature_publications publication ON publication.feature_id = feature.id AND publication.state = 'published'
        WHERE feature.state IN ('queued', 'implementing', 'in_review')
+         AND feature.execution_mode = 'authorized'
          AND NOT EXISTS (SELECT 1 FROM factory_review_corrections correction
            WHERE correction.feature_id = feature.id
              AND correction.state IN ('executing','gated','publishing','blocked','uncertain','reviewing'))
@@ -136,6 +137,7 @@ export async function queueFactoryExecutions(
            JOIN projects prior_owner ON prior_owner.id = prior.project_id
            JOIN factory_plan_approvals prior_approval ON prior_approval.feature_id = prior.id AND prior_approval.plan_version = prior.approved_plan_version
            WHERE COALESCE(prior_owner.canonical_project_id, prior_owner.id) = COALESCE(owner.canonical_project_id, owner.id)
+             AND prior.execution_mode = 'authorized'
              AND prior.state IN ('queued', 'implementing', 'gated')
              AND (prior_approval.approved_at, prior.id) < (approval.approved_at, feature.id))
        ORDER BY approval.approved_at, feature.id LIMIT 32 FOR UPDATE OF feature`,
@@ -145,6 +147,7 @@ export async function queueFactoryExecutions(
     for (const candidate of candidates.rows) {
       if (available <= 0) break;
       if (reservedProjects.has(candidate.project_id)) continue;
+      if (candidate.execution_mode === "individual") continue;
       const version = await client.query<{ version: number; document: unknown }>(
         `SELECT plan.version, plan.document FROM factory_plan_versions plan JOIN factory_features feature
          ON feature.id = plan.feature_id AND feature.approved_plan_version = plan.version WHERE feature.id = $1`,
@@ -213,9 +216,12 @@ export async function queueFactoryExecutions(
       let source = prior?.source ?? null;
       if (prior === undefined) {
         const sources = await client.query<{ repository_id: string; source_identity: string }>(
-          `SELECT source.repository_id, source.source_identity FROM local_repository_sources source JOIN projects owner ON owner.id = source.project_id
-         WHERE COALESCE(owner.canonical_project_id, owner.id) = $1 AND source.attachment_state = 'attached' ORDER BY source.project_id LIMIT 1`,
-          [candidate.project_id],
+          `SELECT execution_source->>'repositoryId' AS repository_id, execution_source->>'identity' AS source_identity FROM factory_work_item_starts WHERE execution_feature_id = $2
+         UNION ALL
+         SELECT source.repository_id::text, source.source_identity FROM local_repository_sources source JOIN projects owner ON owner.id = source.project_id
+         WHERE COALESCE(owner.canonical_project_id, owner.id) = $1 AND source.attachment_state = 'attached'
+           AND NOT EXISTS (SELECT 1 FROM factory_work_item_starts WHERE execution_feature_id = $2) LIMIT 1`,
+          [candidate.project_id, candidate.id],
         );
         const attached = sources.rows[0];
         if (attached !== undefined)
