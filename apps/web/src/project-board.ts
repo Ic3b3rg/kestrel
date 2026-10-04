@@ -172,11 +172,13 @@ export function createProjectBoardService(
       const approved = new Set(visibleBoards.map(({ feature }) => feature.id));
       const workItems = visibleBoards.flatMap((board) =>
         board.columns.flatMap((column) =>
-          column.items.map((item) =>
-            ProjectBoardWorkItemSchema.parse({
-              queued:
-                item.column === "todo" &&
-                activeStarts.some((start) => start.featureId === board.feature.id),
+          column.items.map((item) => {
+            const queued =
+              item.column === "todo" &&
+              (item.executionFeatureId != null ||
+                activeStarts.some((start) => start.featureId === board.feature.id));
+            return ProjectBoardWorkItemSchema.parse({
+              queued,
               feature: {
                 id: board.feature.id,
                 projectId: board.feature.projectId,
@@ -189,18 +191,14 @@ export function createProjectBoardService(
                 order: item.order,
                 title: item.title,
                 dependsOn: item.dependsOn,
-                column:
-                  item.column === "todo" &&
-                  activeStarts.some((start) => start.featureId === board.feature.id)
-                    ? "in_progress"
-                    : item.column,
+                column: queued ? "in_progress" : item.column,
                 blocking: item.blocking,
                 providerUrl: item.providerUrl,
                 executionFeatureId: item.executionFeatureId,
                 approvedVersion: item.approvedVersion,
               },
-            }),
-          ),
+            });
+          }),
         ),
       );
       const linked = new Set([

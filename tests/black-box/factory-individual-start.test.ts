@@ -12,6 +12,7 @@ import {
   FactoryExecutionSchema,
   FactoryBoardSchema,
   FactoryWorkItemStartSchema,
+  ProjectBoardSnapshotSchema,
   type FeaturePlanDocument,
 } from "@kestrel/contracts";
 import { startStack, type RunningStack } from "./support/compose.js";
@@ -216,6 +217,22 @@ describe("Individual issue execution authority", () => {
     expect(receipts[0]?.workItemId).toBe(chosen.id);
     const receipt = receipts[0];
     if (receipt === undefined) throw new Error("Start receipt missing");
+    const projectBoard = ProjectBoardSnapshotSchema.parse(
+      await (await stack.fetchApi(`/api/v1/projects/${projectId}/board`)).json(),
+    );
+    expect(projectBoard.workItems.find(({ item }) => item.id === chosen.id)).toMatchObject({
+      queued: true,
+      item: { column: "in_progress", executionFeatureId: receipt.executionFeatureId },
+    });
+    expect(
+      projectBoard.workItems
+        .filter(({ item }) => item.featureId === featureId && item.id !== chosen.id)
+        .map(({ item }) => ({
+          key: item.key,
+          column: item.column,
+          executionFeatureId: item.executionFeatureId,
+        })),
+    ).toEqual([{ key: "first", column: "todo", executionFeatureId: null }]);
     const childChat = FeatureChatSchema.parse(
       await (
         await stack.fetchApi(`/api/v1/projects/${projectId}/features/${receipt.executionFeatureId}`)
@@ -257,6 +274,15 @@ describe("Individual issue execution authority", () => {
     expect(cancelledItem?.column).toBe("todo");
     expect(cancelledItem?.blocking).toBeNull();
     expect(cancelledItem?.executionFeatureId).toBeNull();
+    const cancelledProjectBoard = ProjectBoardSnapshotSchema.parse(
+      await (await stack.fetchApi(`/api/v1/projects/${projectId}/board`)).json(),
+    );
+    expect(cancelledProjectBoard.workItems.find(({ item }) => item.id === chosen.id)).toMatchObject(
+      {
+        queued: false,
+        item: { column: "todo", executionFeatureId: null },
+      },
+    );
     const restartCommand = { requestId: randomUUID(), expectedVersion: 1 };
     const restartedResponse = await post(`${path}/work-items/${chosen.id}/start`, restartCommand);
     expect(restartedResponse.status, await restartedResponse.clone().text()).toBe(200);

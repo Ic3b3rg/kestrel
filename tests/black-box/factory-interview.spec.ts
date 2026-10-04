@@ -164,7 +164,12 @@ for (const gesture of ["drag", "keyboard"] as const) {
       }
       await expect(
         inProgress.locator("li").filter({ hasText: "Retain original order" }),
-      ).toContainText("Start requested");
+      ).toContainText("Waiting for development");
+      await expect(todo.locator("li").filter({ hasText: "Add the consumer" })).toBeVisible();
+      await page.reload();
+      await expect(
+        inProgress.locator("li").filter({ hasText: "Retain original order" }),
+      ).toContainText("Waiting for development");
       await expect(todo.locator("li").filter({ hasText: "Add the consumer" })).toBeVisible();
       await page.screenshot({
         path: test.info().outputPath("individual-start-board.png"),

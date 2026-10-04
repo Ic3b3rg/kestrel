@@ -146,6 +146,60 @@ it("uses approved state and suppresses provider cards already linked to Work Ite
   expect(result.github.issues).toEqual([]);
 });
 
+it("projects an accepted individual issue into In progress and restores To do after cancellation", async () => {
+  const item: FactoryBoard["columns"][number]["items"][number] = {
+    id: "01991c36-7f90-7000-8000-000000000003",
+    featureId: feature.id,
+    key: "export",
+    order: 1,
+    title: "Export reports",
+    description: "Export saved reports",
+    importedIssueId: null,
+    requirementKeys: ["export"],
+    acceptance: ["Reports export"],
+    dependsOn: [],
+    verification: [],
+    column: "todo" as const,
+    blocking: null,
+    providerUrl: issue.url,
+    activity: [],
+    executionFeatureId: "01991c36-7f90-7000-8000-000000000004",
+  };
+  const sibling = {
+    ...item,
+    id: "01991c36-7f90-7000-8000-000000000005",
+    key: "download",
+    order: 2,
+    executionFeatureId: null,
+  };
+  const board: FactoryBoard = {
+    schemaVersion: 1,
+    feature: { ...feature, state: "queued" },
+    approvedVersion: 1,
+    executionReadiness: { state: "enabled", reason: "automatic_execution" },
+    activity: [],
+    columns: [{ id: "todo", items: [item, sibling] }],
+  };
+  database.local.mockResolvedValue({ projectId, features: [], boards: [board] });
+  const service = createProjectBoardService(pool, github);
+  const signal = new AbortController().signal;
+  const started = await service.read(projectId, signal);
+  expect(started.workItems[0]).toMatchObject({
+    queued: true,
+    item: { column: "in_progress", executionFeatureId: item.executionFeatureId },
+  });
+  expect(started.workItems[1]).toMatchObject({
+    queued: false,
+    item: { column: "todo", executionFeatureId: null },
+  });
+  item.executionFeatureId = null;
+  const cancelled = await service.read(projectId, signal);
+  expect(cancelled.workItems[0]).toMatchObject({
+    queued: false,
+    item: { column: "todo", executionFeatureId: null },
+  });
+});
+
 it("refreshes local facts on every read without polling GitHub every two seconds", async () => {
   const service = createProjectBoardService(pool, github);
   const signal = new AbortController().signal;
