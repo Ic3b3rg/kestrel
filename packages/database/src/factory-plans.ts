@@ -77,10 +77,12 @@ async function boardFor(
     execution_feature_id: string | null;
     execution_state: string | null;
   }>(
-    `SELECT item.*, COALESCE(execution.board_column, item.board_column) AS board_column,
+    `SELECT item.*, CASE WHEN execution_feature.state='cancelled' THEN 'todo'
+       ELSE COALESCE(execution.board_column, item.board_column) END AS board_column,
        start.execution_feature_id, execution_feature.state AS execution_state, publication.issue AS provider_issue, publication.published_at
      FROM factory_work_items item LEFT JOIN factory_issue_publications publication ON publication.work_item_id = item.id
-     LEFT JOIN factory_work_item_starts start ON start.work_item_id = item.id
+     LEFT JOIN LATERAL (SELECT * FROM factory_work_item_starts start WHERE start.work_item_id=item.id
+       ORDER BY start.created_at DESC,start.execution_feature_id DESC LIMIT 1) start ON true
      LEFT JOIN factory_work_items execution ON execution.id = start.execution_work_item_id
      LEFT JOIN factory_features execution_feature ON execution_feature.id = start.execution_feature_id
      WHERE item.feature_id = $1 AND item.plan_version = $2 ORDER BY item.position`,
@@ -143,13 +145,10 @@ async function boardFor(
       order: row.position,
       column: item.column,
       blocking:
-        row.execution_state === "gated" || row.execution_state === "cancelled"
+        row.execution_state === "gated"
           ? {
-              kind: row.execution_state === "gated" ? "human_gate" : "cancelled",
-              explanation:
-                row.execution_state === "gated"
-                  ? "Execution needs your decision. Open this issue to inspect the saved attempt."
-                  : "This issue execution was cancelled. Open it to inspect the saved work.",
+              kind: "human_gate",
+              explanation: "Execution is paused. Open this issue to inspect the saved attempt.",
             }
           : feature.execution_mode === "individual" &&
               item.column === "todo" &&
@@ -165,7 +164,8 @@ async function boardFor(
               }
             : item.blocking,
       providerUrl: row.provider_issue?.url ?? null,
-      executionFeatureId: row.execution_feature_id ?? null,
+      executionFeatureId:
+        row.execution_state === "cancelled" ? null : (row.execution_feature_id ?? null),
       approvedVersion: feature.approved_plan_version,
       activity: events
         .filter(({ workItemId }) => workItemId === row.id)

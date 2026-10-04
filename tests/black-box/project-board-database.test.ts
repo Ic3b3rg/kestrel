@@ -202,6 +202,20 @@ it("migrates a clean database, persists board state, deduplicates starts and dis
     const next = ready.find((row) => row.project_id === project && row.id !== restarted);
     if (next === undefined) throw new Error("Missing next Project issue");
     expect(await issueProjectBusy(pool, next)).toBe(false);
+    const interview = await createFactoryFeature(pool, project, actor, {
+      requestId: randomUUID(),
+      title: "Published but unstarted interview",
+    });
+    await pool.query(
+      "UPDATE factory_features SET state='queued',execution_mode='individual' WHERE id=$1",
+      [interview.id],
+    );
+    expect(await issueProjectBusy(pool, next)).toBe(false);
+    await pool.query("UPDATE factory_features SET execution_mode='authorized' WHERE id=$1", [
+      interview.id,
+    ]);
+    expect(await issueProjectBusy(pool, next)).toBe(true);
+    await pool.query("UPDATE factory_features SET state='cancelled' WHERE id=$1", [interview.id]);
     await pool.query("UPDATE factory_features SET state='implementing' WHERE id=$1", [feature.id]);
     expect(await issueProjectBusy(pool, next)).toBe(true);
   } finally {

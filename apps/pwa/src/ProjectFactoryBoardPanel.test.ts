@@ -129,7 +129,18 @@ describe("Project Factory board", () => {
     ];
     await render({ snapshot: board, onStartWorkItem: onStartIssue });
     await act(async () => {
-      button("Start issue: " + firstItem.title).click();
+      const start = button("Start issue: " + firstItem.title);
+      for (const code of ["Enter", "Space"]) {
+        const event = new KeyboardEvent("keydown", {
+          code,
+          key: code === "Enter" ? "Enter" : " ",
+          bubbles: true,
+          cancelable: true,
+        });
+        start.dispatchEvent(event);
+        expect(event.defaultPrevented).toBe(false);
+      }
+      start.click();
       await Promise.resolve();
     });
     expect(onStartIssue).toHaveBeenCalledExactlyOnceWith(board.workItems[0]);
@@ -140,6 +151,24 @@ describe("Project Factory board", () => {
       `${firstItem.title}Starting…`,
     );
   });
+
+  it.each(["shiftKey", "altKey"] as const)(
+    "preserves %s on linked issue navigation",
+    async (modifier) => {
+      const onOpenIssue = vi.fn();
+      await render({ onOpenIssue });
+      const link = container.querySelector<HTMLAnchorElement>(
+        `[aria-label="Open linked issue for ${firstItem.title}"]`,
+      );
+      if (link === null) throw new Error("Missing issue link");
+      const event = new MouseEvent("click", { bubbles: true, cancelable: true, [modifier]: true });
+      await act(() => {
+        link.dispatchEvent(event);
+      });
+      expect(event.defaultPrevented).toBe(false);
+      expect(onOpenIssue).not.toHaveBeenCalled();
+    },
+  );
 
   it("combines planning Features and approved Work Items without inventing completion or issue links", async () => {
     await render();

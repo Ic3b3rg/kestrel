@@ -134,7 +134,7 @@ The planning model has a single host tool, `read_project`, with four operations:
 paths, read a paginated file, list issue summaries, and read a linked issue with comments. Reads use
 the captured source identity and commit, or the Project's linked GitHub repository and host
 authentication. Dirty worktree files, traversal, symlinks, arbitrary repositories, shell execution
-and provider writes are unavailable. The host enforces 16 calls and 128,000 response bytes per turn;
+and provider writes are unavailable. The host enforces 64 calls and 512,000 response bytes per turn;
 files paginate at 12,000 characters, issues at provider pages, comments at 20 per page with an
 explicit 4,000-character/per-comment and ten-page limit. Failures return bounded source-unavailable
 messages. Tool results are untrusted reference material and never execution authority.

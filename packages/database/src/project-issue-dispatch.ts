@@ -119,7 +119,7 @@ export async function issueProjectBusy(pool: DatabasePool, start: IssueDispatch)
   const result = await pool.query(
     `SELECT 1 FROM factory_features feature JOIN projects owner ON owner.id=feature.project_id
     WHERE COALESCE(owner.canonical_project_id,owner.id)=$1 AND feature.id IS DISTINCT FROM $2
-    AND (feature.state IN ('queued','implementing','gated') OR EXISTS (
+    AND ((feature.execution_mode='authorized' AND feature.state IN ('queued','implementing','gated')) OR EXISTS (
       SELECT 1 FROM factory_execution_runs run WHERE run.feature_id=feature.id AND run.reservation_released_at IS NULL)) LIMIT 1`,
     [start.project_id, start.feature_id],
   );

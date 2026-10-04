@@ -178,13 +178,20 @@ function ProjectFactoryWorkspaceContent({
         }
         onOpenFeature={(featureId, view) => {
           const issue = snapshot?.starts?.find((start) => start.featureId === featureId);
+          const individualIssue = snapshot?.workItems.some(
+            (entry) => entry.item.executionFeatureId === featureId,
+          );
           onNavigate(
             issue === undefined
               ? {
                   kind: "feature",
                   projectId: snapshot?.projectId ?? projectId,
                   featureId,
-                  ...(view === "chat" ? {} : { view }),
+                  ...(individualIssue
+                    ? { view: "activity" as const }
+                    : view === "chat"
+                      ? {}
+                      : { view }),
                 }
               : { kind: "issue", projectId, startId: issue.id },
           );

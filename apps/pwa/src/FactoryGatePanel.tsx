@@ -74,6 +74,8 @@ export function FactoryGatePanel({
   const current = gate.resolution === null ? (confirmed ?? gate) : gate;
   const productDecision = gate.reason === "input_required";
   const automaticRecovery = gate.reason === "usage_limit" || gate.reason === "unavailable";
+  const technicalPause =
+    automaticRecovery || gate.reason === "timeout" || gate.reason === "verification_failed";
   const canAnswer = ![
     "cancelled",
     "stale_gate",
@@ -130,7 +132,7 @@ export function FactoryGatePanel({
   };
   return (
     <section
-      aria-label={automaticRecovery ? "Execution status" : "Human gate"}
+      aria-label={technicalPause ? "Execution status" : "Human gate"}
       className="min-w-0 space-y-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4"
     >
       {gate.purpose === "feature_verification" ? (
@@ -141,7 +143,7 @@ export function FactoryGatePanel({
       <h4 className="font-semibold">
         {current.resolution !== null
           ? "Recorded decision"
-          : automaticRecovery
+          : technicalPause
             ? "Technical interruption"
             : canAnswer
               ? productDecision
@@ -151,7 +153,7 @@ export function FactoryGatePanel({
       </h4>
       <p className="whitespace-pre-wrap break-words font-medium">{gate.question}</p>
       <p className="text-sm text-muted-foreground">
-        {automaticRecovery && current.resolution === null
+        {technicalPause && current.resolution === null
           ? "This feature holds its Project queue. Other projects can continue."
           : canAnswer && current.resolution === null
             ? `This feature holds its Project queue. Other projects can continue. Your answer applies to approved plan version ${String(gate.approvedVersion)}.`
@@ -161,10 +163,12 @@ export function FactoryGatePanel({
         <FormFeedback kind="success">
           <GateAnswer gate={current} />
         </FormFeedback>
-      ) : automaticRecovery ? (
+      ) : technicalPause ? (
         <p className="text-sm">
-          No answer is needed. Kestrel retries recoverable runtime interruptions automatically.
-          Failed verification checks require technical repair; inspect the run details.
+          No answer is needed.{" "}
+          {automaticRecovery
+            ? "Kestrel retries recoverable runtime interruptions automatically."
+            : "Inspect the retained run and verification results for the technical repair needed."}
         </p>
       ) : !canAnswer ? (
         <p className="text-sm">

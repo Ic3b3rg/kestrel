@@ -202,12 +202,10 @@ describe("Individual issue execution authority", () => {
       .flatMap((column) => column.items)
       .find((item) => item.key === "chosen");
     if (chosen === undefined) throw new Error("Chosen issue missing");
-    const start = () =>
-      post(`${path}/work-items/${chosen.id}/start`, {
-        requestId: randomUUID(),
-        expectedVersion: 1,
-      });
-    const responses = await Promise.all([start(), start()]);
+    const commands = [0, 1].map(() => ({ requestId: randomUUID(), expectedVersion: 1 }));
+    const responses = await Promise.all(
+      commands.map((command) => post(`${path}/work-items/${chosen.id}/start`, command)),
+    );
     for (const response of responses)
       expect(response.status, await response.clone().text()).toBe(200);
     const receipts = await Promise.all(
@@ -235,5 +233,52 @@ describe("Individual issue execution authority", () => {
       await (await stack.fetchApi(`${path}/execution`)).json(),
     );
     expect(original.workItems.flatMap((item) => item.runs)).toEqual([]);
+    const cancellation = await post(
+      `/api/v1/projects/${projectId}/features/${receipt.executionFeatureId}/cancel`,
+      { requestId: randomUUID(), expectedVersion: 1 },
+    );
+    expect(cancellation.status, await cancellation.clone().text()).toBe(200);
+    const cancelledBoard = FactoryBoardSchema.parse(
+      await (await stack.fetchApi(`${path}/board`)).json(),
+    );
+    const cancelledItem = cancelledBoard.columns
+      .flatMap((column) => column.items)
+      .find((item) => item.id === chosen.id);
+    expect(cancelledItem?.column).toBe("todo");
+    expect(cancelledItem?.blocking).toBeNull();
+    expect(cancelledItem?.executionFeatureId).toBeNull();
+    const restartCommand = { requestId: randomUUID(), expectedVersion: 1 };
+    const restartedResponse = await post(`${path}/work-items/${chosen.id}/start`, restartCommand);
+    expect(restartedResponse.status, await restartedResponse.clone().text()).toBe(200);
+    const restarted = FactoryWorkItemStartSchema.parse(await restartedResponse.json());
+    expect(restarted.executionFeatureId).not.toBe(receipt.executionFeatureId);
+    expect(
+      FactoryWorkItemStartSchema.parse(
+        await (await post(`${path}/work-items/${chosen.id}/start`, restartCommand)).json(),
+      ),
+    ).toEqual(restarted);
+    for (const command of commands)
+      expect(
+        FactoryWorkItemStartSchema.parse(
+          await (await post(`${path}/work-items/${chosen.id}/start`, command)).json(),
+        ),
+      ).toEqual(receipt);
+    const retained = FactoryExecutionSchema.parse(
+      await (
+        await stack.fetchApi(
+          `/api/v1/projects/${projectId}/features/${receipt.executionFeatureId}/execution`,
+        )
+      ).json(),
+    );
+    expect(retained.state).toBe("cancelled");
+    expect(retained.workItems.flatMap((item) => item.runs).length).toBeGreaterThanOrEqual(1);
+    const restartedBoard = FactoryBoardSchema.parse(
+      await (await stack.fetchApi(`${path}/board`)).json(),
+    );
+    expect(
+      restartedBoard.columns
+        .flatMap((column) => column.items)
+        .filter((item) => item.id === chosen.id),
+    ).toHaveLength(1);
   }, 90_000);
 });

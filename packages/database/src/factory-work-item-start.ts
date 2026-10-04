@@ -43,18 +43,57 @@ export function startFactoryWorkItem(
   ) => Promise<PlanningContext>,
 ): Promise<FactoryWorkItemStart> {
   return withFactoryFeature(pool, projectId, featureId, async (client, feature) => {
-    const existing = await client.query<{
+    const replay = await client.query<{
       work_item_id: string;
+      feature_id: string;
       execution_feature_id: string;
       plan_version: number;
-    }>("SELECT * FROM factory_work_item_starts WHERE work_item_id = $1", [workItemId]);
-    const receipt = existing.rows[0];
+    }>(
+      `SELECT start.* FROM factory_work_item_start_requests request
+       JOIN factory_work_item_starts start USING (work_item_id,execution_feature_id)
+       WHERE request.operator_id=$1 AND request.request_id=$2`,
+      [actorId, command.requestId],
+    );
+    const receipt = replay.rows[0];
     if (receipt !== undefined) {
-      if (receipt.plan_version !== command.expectedVersion) throw new FactoryError("conflict");
+      if (
+        receipt.work_item_id !== workItemId ||
+        receipt.feature_id !== featureId ||
+        receipt.plan_version !== command.expectedVersion
+      )
+        throw new FactoryError("conflict");
       return {
         workItemId,
         executionFeatureId: receipt.execution_feature_id,
         approvedVersion: receipt.plan_version,
+      };
+    }
+    const existing = await client.query<{
+      execution_feature_id: string;
+      plan_version: number;
+      state: string;
+    }>(
+      `SELECT start.*,execution.state FROM factory_work_item_starts start
+       JOIN factory_features execution ON execution.id=start.execution_feature_id
+       WHERE start.work_item_id=$1 AND start.feature_id=$2
+       ORDER BY start.created_at DESC,start.execution_feature_id DESC LIMIT 1`,
+      [workItemId, featureId],
+    );
+    const latest = existing.rows[0];
+    const retainRequest = async (executionFeatureId: string) => {
+      await client.query(
+        `INSERT INTO factory_work_item_start_requests (operator_id,request_id,work_item_id,execution_feature_id)
+        VALUES ($1,$2,$3,$4)`,
+        [actorId, command.requestId, workItemId, executionFeatureId],
+      );
+    };
+    if (latest !== undefined && latest.state !== "cancelled") {
+      if (latest.plan_version !== command.expectedVersion) throw new FactoryError("conflict");
+      await retainRequest(latest.execution_feature_id);
+      return {
+        workItemId,
+        executionFeatureId: latest.execution_feature_id,
+        approvedVersion: latest.plan_version,
       };
     }
     if (
@@ -63,12 +102,6 @@ export function startFactoryWorkItem(
       feature.approved_plan_version !== command.expectedVersion
     )
       throw new FactoryError("conflict", "Refresh the board before starting this issue.");
-    const duplicate = await client.query(
-      "SELECT 1 FROM factory_work_item_starts WHERE operator_id = $1 AND request_id = $2",
-      [actorId, command.requestId],
-    );
-    if (duplicate.rowCount !== 0)
-      throw new FactoryError("conflict", "This start request belongs to another issue.");
     const publication = await client.query(
       "SELECT 1 FROM factory_feature_publications WHERE feature_id = $1 AND state = 'published'",
       [featureId],
@@ -90,12 +123,15 @@ export function startFactoryWorkItem(
       issue: unknown;
       published_at: Date | null;
     }>(
-      `SELECT item.id, item.key, COALESCE(execution.board_column, item.board_column) AS board_column,
+      `SELECT item.id, item.key, CASE WHEN execution_feature.state='cancelled' THEN 'todo'
+         ELSE COALESCE(execution.board_column, item.board_column) END AS board_column,
         publication.issue, publication.published_at
        FROM factory_work_items item
        LEFT JOIN factory_issue_publications publication ON publication.work_item_id = item.id
-       LEFT JOIN factory_work_item_starts start ON start.work_item_id = item.id
+       LEFT JOIN LATERAL (SELECT * FROM factory_work_item_starts start WHERE start.work_item_id=item.id
+         ORDER BY start.created_at DESC,start.execution_feature_id DESC LIMIT 1) start ON true
        LEFT JOIN factory_work_items execution ON execution.id = start.execution_work_item_id
+       LEFT JOIN factory_features execution_feature ON execution_feature.id=start.execution_feature_id
        WHERE item.feature_id = $1 AND item.plan_version = $2`,
       [featureId, version],
     );
@@ -140,7 +176,8 @@ export function startFactoryWorkItem(
     };
     const dependencies = await client.query<{ merge_commit_id: string }>(
       `SELECT merged.merge_commit_id FROM factory_work_items item
-       JOIN factory_work_item_starts start ON start.work_item_id = item.id
+       JOIN LATERAL (SELECT * FROM factory_work_item_starts start WHERE start.work_item_id=item.id
+         ORDER BY start.created_at DESC,start.execution_feature_id DESC LIMIT 1) start ON true
        JOIN factory_feature_merges merged ON merged.feature_id = start.execution_feature_id AND merged.state = 'completed'
        WHERE item.feature_id = $1 AND item.key = ANY($2::text[])`,
       [featureId, definition.dependsOn],
@@ -221,6 +258,7 @@ export function startFactoryWorkItem(
       "INSERT INTO factory_activity (feature_id, work_item_id, kind, summary) VALUES ($1,$2,'execution_queued',$3)",
       [featureId, workItemId, `Start requested for ${item.key}; waiting for capacity.`],
     );
+    await retainRequest(executionFeatureId);
     return { workItemId, executionFeatureId, approvedVersion: version };
   });
 }

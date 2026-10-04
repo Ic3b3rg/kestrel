@@ -151,9 +151,12 @@ powered-off workstation cannot execute work.
   blocks execution; a worktree alone is not a security boundary. Repository instructions inform work
   but cannot override Kestrel authority.
 - The approved plan contains concrete verification commands and declared bounds. Initial defaults
-  are two concurrent Projects, one active feature per Project, and a 30-minute limit per execution
-  attempt, editable before approval. Timeout or unresolved runtime permission requests create a
-  visible gate instead of an unbounded retry.
+  are two concurrent Projects and one active feature per Project. The retained
+  `attemptTimeoutSeconds` field bounds individual verification commands; it is not an aggregate
+  execution deadline. Implementations can remain active beyond 30 minutes while ownership and
+  liveness are known. Command deadlines and bounded technical repairs remain enforced; a technical
+  pause shows retained evidence without demanding a product answer. Unresolved scope or authority
+  questions remain explicit gates.
 - Use the host GitHub session for issue and PR operations. Reconcile persisted operation identity
   before retrying uncertain writes. GitHub body text, comments, and labels cannot independently
   start or expand a run.

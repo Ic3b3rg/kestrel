@@ -12,7 +12,14 @@ import {
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
-import { ArrowUpRight, GitPullRequest, Plus, RefreshCw, Settings } from "lucide-react";
+import {
+  ArrowUpRight,
+  GitPullRequest,
+  GripVertical,
+  Plus,
+  RefreshCw,
+  Settings,
+} from "lucide-react";
 import type { ProjectBoardSnapshot, ProjectBoardWorkItem } from "@kestrel/contracts";
 import { Button } from "./components/ui/button.js";
 import { FactoryProviderProblem } from "./FeatureGitHubIssuesPanel.js";
@@ -85,18 +92,33 @@ function DraggableCard({
   enabled: boolean;
   children: ReactNode;
 }) {
-  const { attributes, listeners, isDragging, setNodeRef } = useDraggable({
+  const { attributes, listeners, isDragging, setNodeRef, setActivatorNodeRef } = useDraggable({
     id,
     disabled: !enabled,
   });
   return (
     <li
       ref={setNodeRef}
-      {...(enabled ? attributes : {})}
-      {...(enabled ? listeners : {})}
+      onPointerDown={(event) => {
+        if (enabled) listeners?.onPointerDown?.(event);
+      }}
       data-draggable={enabled || undefined}
       className={`min-w-0 rounded-lg border border-border bg-card ${isDragging ? "opacity-35" : ""}`}
     >
+      {enabled ? (
+        <button
+          type="button"
+          ref={setActivatorNodeRef}
+          {...attributes}
+          onKeyDown={(event) => {
+            listeners?.onKeyDown?.(event);
+          }}
+          aria-label="Drag to In progress"
+          className="m-1 rounded p-2 text-muted-foreground hover:bg-muted focus-visible:outline-ring"
+        >
+          <GripVertical className="size-4" aria-hidden="true" />
+        </button>
+      ) : null}
       {children}
     </li>
   );
@@ -286,8 +308,11 @@ function WorkItemCard({
                 if (
                   onOpenIssue &&
                   Number.isSafeInteger(number) &&
+                  event.button === 0 &&
                   !event.metaKey &&
-                  !event.ctrlKey
+                  !event.ctrlKey &&
+                  !event.shiftKey &&
+                  !event.altKey
                 ) {
                   event.preventDefault();
                   onOpenIssue(number);
