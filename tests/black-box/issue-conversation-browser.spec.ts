@@ -301,7 +301,11 @@ createRoot(document.getElementById('root')).render(createElement(App));
     const answer = page.getByRole("textbox", { name: "Message" });
     await answer.fill("Include archived reports.");
     await page.getByRole("button", { name: "Send message" }).click();
-    await expect(page.getByText("Include archived reports.", { exact: true })).toBeVisible();
+    await expect(
+      page
+        .getByRole("list", { name: "Conversation", exact: true })
+        .getByText("Include archived reports.", { exact: true }),
+    ).toBeVisible();
     await page.getByRole("button", { name: "Retry preparation" }).click();
     planningQuestion = false;
     updateStart({ state: "running", featureId });

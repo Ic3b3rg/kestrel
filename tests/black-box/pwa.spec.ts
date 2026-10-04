@@ -2206,14 +2206,17 @@ test.describe("observable Installation PWA", () => {
     await page
       .getByLabel("Public GitHub pull request URL")
       .fill("https://github.com/openai/openai-node");
+    const urlForm = page
+      .locator("form")
+      .filter({ has: page.getByLabel("Public GitHub pull request URL", { exact: true }) });
     await page.getByRole("button", { name: "Open PR by URL" }).click();
-    await expect(page.getByRole("alert")).toContainText(
+    await expect(urlForm.getByRole("alert")).toContainText(
       "Enter a canonical public pull request URL",
     );
     expect(projectPostCount).toBe(0);
     await page.getByLabel("Public GitHub pull request URL").fill(publicPullRequestUrl);
     await page.getByRole("button", { name: "Open PR by URL" }).click();
-    await expect(page.getByRole("alert")).toContainText(
+    await expect(urlForm.getByRole("alert")).toContainText(
       "This URL belongs to a different repository",
     );
     expect(projectPostCount).toBe(0);
