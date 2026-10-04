@@ -706,8 +706,6 @@ class ExecutionContainer {
         commandCwd,
         "--env",
         "HOME=/home/codex",
-        "--env",
-        "PATH=/usr/local/bin:/usr/bin:/bin",
         "--entrypoint",
         program,
         image,
@@ -1351,8 +1349,10 @@ class ExecutionTurn {
           allow_login_shell: false,
           mcp_servers: disabledMcpServers,
           shell_environment_policy: {
-            inherit: "none",
-            set: { PATH: "/usr/local/bin:/usr/bin:/bin", HOME: "/home/codex", TMPDIR: "/tmp" },
+            // Shells inherit the remote executor's environment, not the host profile.
+            // Keep configured toolchain variables, including Git's GIT_CONFIG_KEY_*.
+            inherit: "all",
+            ignore_default_excludes: true,
           },
         },
         developerInstructions:

@@ -63,6 +63,22 @@ produce an inspectable blocker. The Operator's ignored `node_modules`, caches or
 are never copied into a Feature checkout. An installation may configure another immutable
 image ID with the required toolchain and the same compatible executor.
 
+Agent shells inherit the selected remote executor's environment, including the image's `PATH` and
+toolchain variables. Controller verification containers use the same image environment. Kestrel
+keeps `HOME=/home/codex` for its writable, task-owned temporary home, but does not reconstruct an
+environment from a fixed list of tool names or overwrite the image's `PATH`. Variables containing
+`KEY`, `SECRET` or `TOKEN` are preserved when they are already configured in that remote
+environment; this also preserves Git's `GIT_CONFIG_KEY_*`. The host's model credentials and
+arbitrary environment variables are not forwarded to it. Persistent settings belong in the execution
+image's environment before the executor starts; an `export` in one shell invocation remains local to
+that invocation.
+
+The opt-in native conformance test verifies two separate agent shell calls and a fresh controller
+verification container against Docker, Node heap, Flutter, Git and custom SDK variables, a custom
+`PATH` executable, and an absent host-only canary. It prints only boolean checks, never an
+environment or credential dump. This checks environment propagation; it does not claim to run Docker
+services or a Flutter emulator.
+
 The initial real probe used a disposable source file, a real host-authenticated Codex turn,
 and verification in a second container. It checked inside writes, outside and symlink writes,
 Git metadata writes, external networking, and detached-child lifetime. The implementation's

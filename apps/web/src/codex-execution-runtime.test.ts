@@ -71,6 +71,37 @@ it("delivers the approved model controls to the contained execution turn", async
   });
 });
 
+it("inherits the remote executor environment without replacing toolchain variables", async () => {
+  const { cwd, runtime, logPath } = await fixture();
+  await runtime.runTurn(input(cwd));
+  const messages = await protocolMessages(logPath);
+  expect(messages.find((message) => message.method === "thread/start")?.params).toMatchObject({
+    config: { shell_environment_policy: { inherit: "all", ignore_default_excludes: true } },
+  });
+  const params = z
+    .object({ config: z.object({ shell_environment_policy: z.record(z.string(), z.unknown()) }) })
+    .parse(messages.find((message) => message.method === "thread/start")?.params);
+  expect(params.config.shell_environment_policy.set).toBeUndefined();
+  const create = (await dockerCalls(cwd)).find((args) => args[0] === "create");
+  expect(create).not.toContain("PATH=/usr/local/bin:/usr/bin:/bin");
+  expect(create).toContain("HOME=/home/codex");
+});
+
+it("preserves the image toolchain PATH for controller verification", async () => {
+  const { cwd, runtime } = await fixture();
+  await runtime.runVerification({
+    ...input(cwd),
+    workspaceCwd: cwd,
+    cwd: ".",
+    command: ["custom-toolchain-check"],
+    processId: "environment-verification",
+    timeoutMs: 10_000,
+  });
+  const create = (await dockerCalls(cwd)).find((args) => args[0] === "create");
+  expect(create).toContain("custom-toolchain-check");
+  expect(create).not.toContain("PATH=/usr/local/bin:/usr/bin:/bin");
+});
+
 it("emits public reasoning summaries and bounded command results", async () => {
   const { cwd, runtime } = await fixture("activity");
   const turn: CodexExecutionTurnInput = input(cwd);

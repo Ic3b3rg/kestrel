@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import { createCodexAppServerAgentRuntime } from "./codex-app-server.js";
 import {
   createCodexExecutionRuntime,
+  type CodexExecutionActivity,
   type CodexExecutionLifecycle,
 } from "./codex-execution-runtime.js";
 
@@ -20,6 +21,178 @@ const exec = promisify(execFile);
 describe.runIf(process.env.KESTREL_LIVE_CODEX_EXECUTION === "1")(
   "Codex execution live conformance",
   () => {
+    it("preserves executor variables and custom PATH across agent shells and verification without inheriting the host", async () => {
+      const baseImage = process.env.KESTREL_FACTORY_EXECUTION_IMAGE;
+      if (baseImage === undefined) throw new Error("Set KESTREL_FACTORY_EXECUTION_IMAGE");
+      const docker = process.env.KESTREL_DOCKER_EXECUTABLE ?? "docker";
+      const { stdout } = await exec("/usr/bin/which", ["codex"], { timeout: 5_000 });
+      const executable = await realpath(process.env.KESTREL_CODEX_EXECUTABLE ?? stdout.trim());
+      const connection = await createCodexAppServerAgentRuntime({ executable }).readConnection();
+      const model = connection.models.find((candidate) => candidate.isDefault)?.id;
+      if (model === undefined) throw new Error("No available default ChatGPT model");
+      const root = await realpath(await mkdtemp(join(tmpdir(), "kestrel-live-environment-")));
+      const cwd = join(root, "workspace");
+      const gitDirectory = join(root, "repository.git");
+      const imageName = `kestrel-environment-test:${randomUUID()}`;
+      const baseName = `${imageName}-base`;
+      const names: string[] = [];
+      const commands: CodexExecutionActivity[] = [];
+      const lifecycle: CodexExecutionLifecycle = {
+        beforeContainerCreate: (name) => {
+          names.push(name);
+          return Promise.resolve();
+        },
+        onContainer: () => Promise.resolve(),
+        onStopped: () => Promise.resolve(),
+      };
+      const previousCanary = process.env.KESTREL_HOST_ONLY_CANARY;
+      process.env.KESTREL_HOST_ONLY_CANARY = randomUUID();
+      try {
+        await mkdir(cwd);
+        await exec(
+          "git",
+          ["init", "--initial-branch=main", "--separate-git-dir", gitDirectory, cwd],
+          { timeout: 5_000 },
+        );
+        await writeFile(
+          join(root, "kestrel-env-check"),
+          "#!/bin/sh\nexec node /workspace/environment-check.mjs\n",
+        );
+        await exec(docker, ["image", "tag", baseImage, baseName], { timeout: 5_000 });
+        await writeFile(
+          join(root, "Dockerfile"),
+          `FROM ${baseName}
+COPY --chmod=755 kestrel-env-check /opt/kestrel-tools/kestrel-env-check
+ENV PATH="/opt/kestrel-tools:$PATH" DOCKER_HOST="unix:///runner/docker.sock" NODE_OPTIONS="--max-old-space-size=256" FLUTTER_ROOT="/opt/flutter" CUSTOM_SDK_ROOT="/opt/custom-sdk" GIT_CONFIG_COUNT="1" GIT_CONFIG_KEY_0="kestrel.environment" GIT_CONFIG_VALUE_0="remote-fixture"
+`,
+        );
+        await exec(
+          docker,
+          [
+            "build",
+            "--network",
+            "none",
+            "--pull=false",
+            "--label",
+            `kestrel.test=${imageName}`,
+            "--tag",
+            imageName,
+            root,
+          ],
+          { timeout: 60_000, maxBuffer: 8192 },
+        );
+        const { stdout: imageId } = await exec(
+          docker,
+          ["image", "inspect", "--format", "{{.Id}}", imageName],
+          { timeout: 5_000 },
+        );
+        const checks = `import {appendFileSync} from 'node:fs';
+import {execFileSync} from 'node:child_process';
+import {getHeapStatistics} from 'node:v8';
+const checks = {
+  path: process.env.PATH?.split(':').includes('/opt/kestrel-tools') === true,
+  docker: process.env.DOCKER_HOST === 'unix:///runner/docker.sock',
+  node: process.env.NODE_OPTIONS === '--max-old-space-size=256' && getHeapStatistics().heap_size_limit < 400 * 1024 * 1024,
+  flutter: process.env.FLUTTER_ROOT === '/opt/flutter',
+  custom: process.env.CUSTOM_SDK_ROOT === '/opt/custom-sdk',
+  git: process.env.GIT_CONFIG_KEY_0 === 'kestrel.environment' && execFileSync('git', ['config','--get','kestrel.environment'], {encoding:'utf8'}).trim() === 'remote-fixture',
+  host: process.env.KESTREL_HOST_ONLY_CANARY === undefined,
+  home: process.env.HOME === '/home/codex',
+};
+appendFileSync('/workspace/environment-results.jsonl', JSON.stringify(checks) + '\\n');
+console.log(JSON.stringify(checks));
+process.exitCode = Object.values(checks).every(Boolean) ? 0 : 1;
+`;
+        await writeFile(join(cwd, "environment-check.mjs"), checks);
+        const runtime = createCodexExecutionRuntime({
+          executable,
+          dockerExecutable: docker,
+          containerImage: imageId.trim(),
+          timeoutMs: 120_000,
+        });
+        await runtime.runTurn({
+          ...lifecycle,
+          cwd,
+          gitDirectory,
+          model,
+          requestId: randomUUID(),
+          prompt:
+            "This is an environment conformance fixture. Execute exactly `kestrel-env-check` twice in TWO separate shell tool calls, even if the first command fails. Do not export or set variables, edit files, install anything, or repair failures. Report the two command results briefly and finish.",
+          onThread: () => Promise.resolve(),
+          onTurn: () => Promise.resolve(),
+          onActivity: (activity) => {
+            if (activity.kind === "command" && activity.state === "completed")
+              commands.push(activity);
+            return Promise.resolve();
+          },
+          onQuestion: () => Promise.reject(new Error("Unexpected environment fixture question")),
+        });
+        expect(
+          commands.filter((activity) => activity.summary.includes("kestrel-env-check")),
+        ).toHaveLength(2);
+        expect(commands.every((activity) => activity.exitCode === 0)).toBe(true);
+        const result = await runtime.runVerification({
+          ...lifecycle,
+          workspaceCwd: cwd,
+          gitDirectory,
+          cwd: ".",
+          command: ["kestrel-env-check"],
+          processId: randomUUID(),
+          timeoutMs: 10_000,
+        });
+        expect(result.exitCode).toBe(0);
+        const expected = {
+          path: true,
+          docker: true,
+          node: true,
+          flutter: true,
+          custom: true,
+          git: true,
+          host: true,
+          home: true,
+        };
+        const results = (await readFile(join(cwd, "environment-results.jsonl"), "utf8"))
+          .trim()
+          .split("\n")
+          .map((line): unknown => JSON.parse(line));
+        expect(results).toEqual([expected, expected, expected]);
+        expect(await readFile(join(cwd, "environment-check.mjs"), "utf8")).toBe(checks);
+      } finally {
+        if (previousCanary === undefined) delete process.env.KESTREL_HOST_ONLY_CANARY;
+        else process.env.KESTREL_HOST_ONLY_CANARY = previousCanary;
+        try {
+          for (const name of names) {
+            const { stdout: remaining } = await exec(
+              docker,
+              ["container", "ls", "--all", "--filter", `name=${name}`, "--format", "{{.Names}}"],
+              { timeout: 10_000 },
+            );
+            if (remaining.trim().split("\n").includes(name))
+              await exec(docker, ["rm", "--force", name], { timeout: 10_000 });
+          }
+          const { stdout: images } = await exec(
+            docker,
+            [
+              "image",
+              "ls",
+              "--filter",
+              "reference=kestrel-environment-test:*",
+              "--format",
+              "{{.Repository}}:{{.Tag}}",
+            ],
+            { timeout: 10_000 },
+          );
+          for (const image of images
+            .trim()
+            .split("\n")
+            .filter((name) => name === imageName || name === baseName))
+            await exec(docker, ["image", "rm", image], { timeout: 10_000 });
+        } finally {
+          await rm(root, { recursive: true, force: true });
+        }
+      }
+    }, 180_000);
+
     it("implements a real change, checks it with node --test, and removes all container writers", async () => {
       const image = process.env.KESTREL_FACTORY_EXECUTION_IMAGE;
       if (image === undefined)
