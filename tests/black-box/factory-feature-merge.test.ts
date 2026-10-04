@@ -150,7 +150,7 @@ describe("approved exact-head merge through GitHub and the project queue", () =>
           .filter(({ number }) => publication.issues.some(({ issue }) => issue.number === number))
           .every(({ state }) => state === "open"),
       ).toBe(true);
-      expect(await journey.queue(waitingFeatureId)).toEqual([]);
+      expect(await journey.queue(waitingFeatureId)).toEqual(releasedRuns);
 
       await journey.stack.restart("web");
       const retryAfterRestart = await journey.retryMerge(featureId, randomUUID());
@@ -166,7 +166,7 @@ describe("approved exact-head merge through GitHub and the project queue", () =>
       });
       expect(closing.merge?.issues.some(({ state }) => state === "failed")).toBe(true);
       expect(closing.merge?.issues.some(({ state }) => state === "closed")).toBe(true);
-      expect(await journey.queue(waitingFeatureId)).toEqual([]);
+      expect(await journey.queue(waitingFeatureId)).toEqual(releasedRuns);
       expect(
         (await journey.execution(waitingFeatureId)).workItems.flatMap((item) => item.runs),
       ).toEqual([expect.objectContaining({ id: releasedRuns[0], state: "queued" })]);
