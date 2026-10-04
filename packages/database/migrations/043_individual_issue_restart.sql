@@ -18,3 +18,12 @@ INSERT INTO factory_work_item_start_requests
   FROM factory_work_item_starts;
 GRANT SELECT, INSERT ON factory_work_item_start_requests TO kestrel_runtime;
 REVOKE UPDATE, DELETE ON factory_work_item_start_requests FROM kestrel_runtime;
+
+-- Existing child conversations retain the same explicit board action as new starts.
+INSERT INTO factory_planning_messages (feature_id, role, content)
+  SELECT start.execution_feature_id, 'user',
+    'Implement [issue #' || (publication.issue->>'number') || '](' || (publication.issue->>'url') || ').'
+  FROM factory_work_item_starts start
+  JOIN factory_issue_publications publication ON publication.work_item_id=start.execution_work_item_id
+  WHERE NOT EXISTS (SELECT 1 FROM factory_planning_messages message
+    WHERE message.feature_id=start.execution_feature_id AND message.role='user');

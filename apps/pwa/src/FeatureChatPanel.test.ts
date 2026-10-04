@@ -225,6 +225,31 @@ describe("persistent planning conversation", () => {
     expect(container.textContent).toContain("Requirements");
   });
 
+  it("retains the accepted linked start prompt for published issue activity", async () => {
+    await render({
+      issueConversation: true,
+      loadChat: () =>
+        Promise.resolve({
+          ...initial,
+          feature: { ...initial.feature, state: "queued" },
+          turns: [],
+          messages: [
+            {
+              id: messageId,
+              role: "user",
+              content: "Implement [issue #42](https://github.com/owner/reports/issues/42).",
+              createdAt,
+            },
+          ],
+        }),
+    });
+    expect(container.textContent).toContain("Implement issue #42.");
+    expect(
+      container.querySelector('a[href="https://github.com/owner/reports/issues/42"]'),
+    ).not.toBeNull();
+    expect(container.querySelector('[role="tablist"]')).toBeNull();
+  });
+
   it("keeps review history selection inside the issue conversation", async () => {
     const onNavigate = vi.fn();
     vi.stubGlobal(

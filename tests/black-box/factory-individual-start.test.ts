@@ -6,6 +6,7 @@ import {
   FactoryIssueImportsSchema,
   FactoryIssuePublicationSchema,
   FeatureSchema,
+  FeatureChatSchema,
   LocalRepositoryInventorySchema,
   ProjectUpsertedSchema,
   FactoryExecutionSchema,
@@ -215,6 +216,15 @@ describe("Individual issue execution authority", () => {
     expect(receipts[0]?.workItemId).toBe(chosen.id);
     const receipt = receipts[0];
     if (receipt === undefined) throw new Error("Start receipt missing");
+    const childChat = FeatureChatSchema.parse(
+      await (
+        await stack.fetchApi(`/api/v1/projects/${projectId}/features/${receipt.executionFeatureId}`)
+      ).json(),
+    );
+    expect(childChat.messages).toHaveLength(1);
+    expect(childChat.messages[0]?.content).toContain("Implement [issue #");
+    expect(childChat.messages[0]?.content).toContain(chosen.providerUrl);
+    expect(childChat.turns).toHaveLength(0);
     await stack.restart("web");
     await expect
       .poll(

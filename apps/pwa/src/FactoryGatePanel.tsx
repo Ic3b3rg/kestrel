@@ -87,8 +87,10 @@ export function FactoryGatePanel({
     const command = pending.current ?? {
       requestId: crypto.randomUUID(),
       expectedPlanVersion: gate.approvedVersion,
-      decision,
-      answer: answer.trim(),
+      decision: technicalPause ? "resume_within_plan" : decision,
+      answer: technicalPause
+        ? "Retry the retained execution within the approved plan."
+        : answer.trim(),
     };
     if (!command.answer || (command.decision === "resume_within_plan" && !gate.canResume)) return;
     pending.current = command;
@@ -122,7 +124,9 @@ export function FactoryGatePanel({
         setError(
           planningRequestError(
             failure,
-            "The answer could not be confirmed. Retry sending the same answer to check its outcome.",
+            technicalPause
+              ? "The retry could not be confirmed. Retry execution again to check its outcome."
+              : "The answer could not be confirmed. Retry sending the same answer to check its outcome.",
           ),
         );
     } finally {
@@ -164,12 +168,31 @@ export function FactoryGatePanel({
           <GateAnswer gate={current} />
         </FormFeedback>
       ) : technicalPause ? (
-        <p className="text-sm">
-          No answer is needed.{" "}
-          {automaticRecovery
-            ? "Kestrel retries recoverable runtime interruptions automatically."
-            : "Inspect the retained run and verification results for the technical repair needed."}
-        </p>
+        <div className="space-y-3 text-sm">
+          <p>
+            No answer is needed.{" "}
+            {automaticRecovery
+              ? "Kestrel retries recoverable runtime interruptions automatically."
+              : "Inspect the retained run and verification results, then retry within the approved plan."}
+          </p>
+          {current.resumeBlockedReason === null ? null : (
+            <p>{blockedText[current.resumeBlockedReason]}</p>
+          )}
+          {error === null ? null : (
+            <FormFeedback kind="error" focus>
+              {error}
+            </FormFeedback>
+          )}
+          {automaticRecovery || !canAnswer ? null : (
+            <Button
+              type="button"
+              disabled={!active || busy || !gate.canResume}
+              onClick={() => void send()}
+            >
+              {busy ? "Queuing retry…" : "Retry execution"}
+            </Button>
+          )}
+        </div>
       ) : !canAnswer ? (
         <p className="text-sm">
           {current.resumeBlockedReason === null ? null : blockedText[current.resumeBlockedReason]}

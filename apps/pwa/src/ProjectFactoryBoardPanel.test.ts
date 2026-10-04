@@ -162,7 +162,7 @@ describe("Project Factory board", () => {
       );
       if (link === null) throw new Error("Missing issue link");
       const event = new MouseEvent("click", { bubbles: true, cancelable: true, [modifier]: true });
-      await act(() => {
+      act(() => {
         link.dispatchEvent(event);
       });
       expect(event.defaultPrevented).toBe(false);

@@ -270,6 +270,58 @@ it.each(["unavailable", "usage_limit", "timeout", "verification_failed"] as cons
   },
 );
 
+it.each(["timeout", "verification_failed"] as const)(
+  "retries %s without a written answer and retains the request after a lost response",
+  async (reason) => {
+    const sent: unknown[] = [];
+    let current = { ...gate, reason, requiredDecision: "retry_within_plan" as const };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof globalThis.fetch>((url, options) => {
+        if (options?.method === "POST") {
+          if (typeof options.body !== "string") throw new Error("Expected retry command");
+          const command = JSON.parse(options.body) as { requestId: string; answer: string };
+          sent.push(command);
+          if (sent.length === 1) return Promise.reject(new TypeError("Response lost"));
+          current = {
+            ...current,
+            canResume: false,
+            resumeBlockedReason: "already_resolved",
+            resolution: {
+              requestId: command.requestId,
+              answer: command.answer,
+              operatorId: projectId,
+              decision: "resume_within_plan",
+              resolvedAt: createdAt,
+            },
+          };
+          return Promise.resolve(Response.json(current));
+        }
+        return Promise.resolve(
+          Response.json(
+            requestUrl(url).endsWith(`/runs/${runId}`)
+              ? { ...run, failure: reason, gate: current }
+              : { ...execution, failure: reason, gate: current },
+          ),
+        );
+      }),
+    );
+    await render({ conversation: true });
+    expect(container.querySelector("textarea")).toBeNull();
+    await click("Retry execution");
+    expect(sent).toHaveLength(1);
+    expect(container.textContent).toContain("could not be confirmed");
+    await click("Retry execution");
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toEqual(sent[0]);
+    expect(sent[0]).toMatchObject({
+      expectedPlanVersion: 2,
+      decision: "resume_within_plan",
+      answer: "Retry the retained execution within the approved plan.",
+    });
+  },
+);
+
 it("explains an unconfirmed stop and prevents a gate answer from restarting the writer", async () => {
   vi.stubGlobal(
     "fetch",

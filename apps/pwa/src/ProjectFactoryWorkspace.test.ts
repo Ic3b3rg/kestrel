@@ -258,7 +258,7 @@ it("opens an individually started published issue as a flat activity conversatio
     ],
   });
   await render();
-  await act(() => {
+  act(() => {
     container
       .querySelector<HTMLButtonElement>(
         '[aria-label="Open Work Item: Published export · Saved report search"]',

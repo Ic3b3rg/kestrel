@@ -415,7 +415,7 @@ export function FeatureChatPanel({
                 content:
                   issueNumber !== undefined && issueUrl !== undefined
                     ? `Implement [issue #${String(issueNumber)}](${issueUrl}).`
-                    : "Implement this issue.",
+                    : firstIssueMessage.content,
               },
             ]),
         ...(latestIssueReply === undefined ? [] : [latestIssueReply]),

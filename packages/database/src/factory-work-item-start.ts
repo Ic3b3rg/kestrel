@@ -1,6 +1,7 @@
 import {
   FeaturePlanDocumentSchema,
   PlanningContextSchema,
+  FactoryGitHubIssueSchema,
   type FeaturePlanDocument,
   type PlanningContext,
   type StartFactoryWorkItemCommand,
@@ -140,6 +141,7 @@ export function startFactoryWorkItem(
     if (item === undefined || definition === undefined) throw new FactoryError("not_found");
     if (item.published_at === null || item.issue === null || item.board_column !== "todo")
       throw new FactoryError("conflict", "Issue publication must finish before it can start.");
+    const issue = FactoryGitHubIssueSchema.parse(item.issue);
     const blocked = definition.dependsOn.filter(
       (key) =>
         !items.rows.some(
@@ -206,6 +208,10 @@ export function startFactoryWorkItem(
       `INSERT INTO factory_features (id, project_id, created_by, request_id, title, initial_title, state, latest_plan_version, approved_plan_version, execution_mode)
        VALUES ($1,$2,$3,$4,$5,$5,'queued',1,1,'authorized')`,
       [executionFeatureId, feature.project_id, actorId, command.requestId, definition.title],
+    );
+    await client.query(
+      "INSERT INTO factory_planning_messages (feature_id,role,content) VALUES ($1,'user',$2)",
+      [executionFeatureId, `Implement [issue #${String(issue.number)}](${issue.url}).`],
     );
     await client.query(
       `INSERT INTO factory_plan_versions (feature_id, version, request_id, document, source_context, plan_markdown, spec_markdown, author, created_by)
