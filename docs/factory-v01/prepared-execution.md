@@ -5,9 +5,10 @@
 Outcome: an authorized issue can prepare its development environment, implement and verify without
 asking the Operator to resolve routine technical failures. Issue: conversation-authorized work; no
 new tracker issue. The existing documentation-capability issue is the integrated acceptance case.
-Branch: `fix/factory-prepared-execution` in the dedicated prepared-execution worktree. PR: pending.
-Next gate: focused regression. Verification tier: contained runtime, controller, board and one real
-persisted task. Runtime owner: the canonical Kestrel runtime supervisor.
+Branch: `fix/factory-prepared-execution` in the dedicated prepared-execution worktree. PR:
+[#321](https://github.com/Ic3b3rg/kestrel/pull/321), draft pending integrated acceptance. Next gate:
+HTTP acceptance and the measured persisted task. Verification tier: contained runtime, controller,
+board and one real persisted task. Runtime owner: the canonical Kestrel runtime supervisor.
 
 ## Triage
 
