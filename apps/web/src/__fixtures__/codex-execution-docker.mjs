@@ -7,6 +7,14 @@ const path = join(root, "container.json");
 const args = process.argv.slice(2);
 appendFileSync(join(root, "docker.jsonl"), JSON.stringify(args) + "\n");
 const id = "a".repeat(64);
+const privateVolume = {
+  Name: "e".repeat(64),
+  CreatedAt: "2026-10-05T14:00:00Z",
+  Driver: "local",
+  Scope: "local",
+  Mountpoint: "/var/lib/docker/volumes/" + "e".repeat(64) + "/_data",
+};
+const volumePath = join(root, "private-volume.json");
 const state = () => JSON.parse(readFileSync(path, "utf8"));
 const save = (value) => writeFileSync(path, JSON.stringify(value));
 const value = (flag) => args[args.indexOf(flag) + 1];
@@ -20,6 +28,8 @@ if (args[0] === "image") {
       ? [Object.fromEntries(args[index + 1].split(",").map((part) => part.split("=")))]
       : [],
   );
+  if (mounts.some((mount) => mount.type === "volume"))
+    writeFileSync(volumePath, JSON.stringify(privateVolume));
   save({
     id,
     name: "/" + value("--name"),
@@ -54,11 +64,16 @@ if (args[0] === "image") {
     securityOpt: [value("--security-opt")],
     mounts: mounts.map((mount) => ({
       Type: mount.type,
-      Source: mount.source,
+      Source: mount.type === "volume" ? privateVolume.Mountpoint : mount.source,
+      ...(mount.type === "volume"
+        ? { Name: privateVolume.Name, Driver: privateVolume.Driver }
+        : {}),
       Destination: mount.target,
       RW: !Object.hasOwn(mount, "readonly"),
     })),
-    labels: { "kestrel.factory.execution": value("--label").split("=")[1] },
+    labels: Object.fromEntries(
+      args.flatMap((arg, index) => (arg === "--label" ? [args[index + 1].split("=")] : [])),
+    ),
   });
   if (mode === "create_uncertain") process.exit(1);
   console.log(id);
@@ -73,6 +88,11 @@ if (args[0] === "image") {
 } else if (args[0] === "start") {
   const current = state();
   if (args.includes("--attach")) {
+    if (mode === "volume_replaced" && existsSync(volumePath))
+      writeFileSync(
+        volumePath,
+        JSON.stringify({ ...privateVolume, CreatedAt: "2026-10-05T15:00:00Z" }),
+      );
     if (mode === "slow_preparation") await new Promise((resolve) => setTimeout(resolve, 750));
     if (mode === "verification_start_rejected") process.exit(1);
     const exitCode = mode === "prepared_timeout" ? 124 : mode === "verification_failed" ? 7 : 0;
@@ -98,6 +118,18 @@ if (args[0] === "image") {
 } else if (args[0] === "rm") {
   if (mode === "shutdown_uncertain") process.exit(1);
   if (existsSync(path)) save({ ...state(), running: false, removed: true });
+  if (args.includes("--volumes") && !["volume_left", "volume_busy"].includes(mode))
+    rmSync(volumePath, { force: true });
+} else if (args[0] === "volume") {
+  if (args[1] === "inspect") {
+    if (!existsSync(volumePath)) process.exit(1);
+    console.log(readFileSync(volumePath, "utf8"));
+  } else if (args[1] === "ls") {
+    if (existsSync(volumePath)) console.log(privateVolume.Name);
+  } else if (args[1] === "rm") {
+    if (mode === "volume_busy") process.exit(1);
+    rmSync(volumePath, { force: true });
+  } else process.exit(2);
 } else if (args[0] === "container" && args[1] === "ls") {
   if (existsSync(path) && !state().removed) console.log(id);
 } else {

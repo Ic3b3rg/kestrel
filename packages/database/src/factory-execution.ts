@@ -10,6 +10,8 @@ import {
   FactoryVerificationResultSchema,
   FactoryAcceptedVerificationCommandsSchema,
   FactoryExecutionFailureSchema,
+  FactoryPrivateDockerStorageSchema,
+  type FactoryPrivateDockerStorage,
   FactoryVerificationManifestSchema,
   FactoryReviewCorrectionSchema,
   factoryVerificationManifest,
@@ -745,6 +747,7 @@ export function reserveFactoryExecutionContainer(
   name: string,
   phase: "implementation" | "verification",
   daemonId?: string,
+  privateStorageRequired = false,
 ): Promise<void> {
   return withRun(pool, run, async (client, feature, row) => {
     assertRunning(feature, row);
@@ -760,8 +763,8 @@ export function reserveFactoryExecutionContainer(
     )
       throw new FactoryError("conflict", "The attempt environment limit was reached");
     await client.query(
-      "INSERT INTO factory_execution_containers (name, run_id, phase, daemon_id) VALUES ($1,$2,$3,$4)",
-      [name, run.id, phase, daemonId ?? null],
+      "INSERT INTO factory_execution_containers (name, run_id, phase, daemon_id, private_storage_required) VALUES ($1,$2,$3,$4,$5)",
+      [name, run.id, phase, daemonId ?? null, privateStorageRequired],
     );
     if (phase === "implementation")
       await client.query("UPDATE factory_execution_runs SET state = 'running' WHERE id = $1", [
@@ -814,13 +817,23 @@ export function claimFactoryExecutionHeavySlot(
 export async function identifyFactoryExecutionContainer(
   pool: DatabasePool,
   run: ClaimedFactoryExecution,
-  container: { name: string; id: string },
+  container: { name: string; id: string; privateStorage?: FactoryPrivateDockerStorage },
 ): Promise<void> {
   const active = await withRun(pool, run, async (client, feature, row) => {
     if (row.reservation_released_at !== null) throw new FactoryError("conflict");
     const result = await client.query(
-      "UPDATE factory_execution_containers SET container_id = $3 WHERE name = $1 AND run_id = $2 AND stopped_at IS NULL AND (container_id IS NULL OR container_id = $3)",
-      [container.name, run.id, container.id],
+      `UPDATE factory_execution_containers SET container_id = $3, private_storage = COALESCE(private_storage, $4::jsonb)
+       WHERE name = $1 AND run_id = $2 AND stopped_at IS NULL AND (container_id IS NULL OR container_id = $3)
+         AND (NOT private_storage_required OR $4::jsonb IS NOT NULL)
+         AND (private_storage IS NULL OR private_storage IS NOT DISTINCT FROM $4::jsonb)`,
+      [
+        container.name,
+        run.id,
+        container.id,
+        container.privateStorage === undefined
+          ? null
+          : JSON.stringify(FactoryPrivateDockerStorageSchema.parse(container.privateStorage)),
+      ],
     );
     if (result.rowCount !== 1) throw new FactoryError("conflict");
     return (
@@ -841,7 +854,8 @@ export function stopFactoryExecutionContainer(
   return withRun(pool, run, async (client) => {
     const result = await client.query(
       `UPDATE factory_execution_containers SET container_id = COALESCE(container_id, $3), stopped_at = COALESCE(stopped_at, clock_timestamp())
-       WHERE name = $1 AND run_id = $2 AND (container_id IS NULL OR container_id = $3)`,
+       WHERE name = $1 AND run_id = $2 AND (container_id IS NULL OR container_id = $3)
+         AND (NOT private_storage_required OR private_storage IS NOT NULL OR (container_id IS NULL AND $3::text IS NULL))`,
       [container.name, run.id, container.id],
     );
     if (result.rowCount !== 1) throw new FactoryError("conflict");

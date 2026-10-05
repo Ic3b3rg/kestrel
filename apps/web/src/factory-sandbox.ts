@@ -260,7 +260,7 @@ export function createFactorySandbox(options: FactorySandboxOptions) {
       stopped: false,
     };
     const callbacks: CodexExecutionLifecycle = {
-      beforeContainerCreate: async (name, daemonId) => {
+      beforeContainerCreate: async (name, daemonId, privateStorageRequired) => {
         if (proof.name !== null || pending.size > 0)
           throw new FactoryExecutionError("stop_unconfirmed");
         signal.throwIfAborted();
@@ -268,7 +268,14 @@ export function createFactorySandbox(options: FactorySandboxOptions) {
         // when its response is lost, and another callback must never race this intent.
         proof.name = name;
         pending.add(name);
-        await reserveFactoryExecutionContainer(pool, run, name, phase, daemonId);
+        await reserveFactoryExecutionContainer(
+          pool,
+          run,
+          name,
+          phase,
+          daemonId,
+          privateStorageRequired,
+        );
         signal.throwIfAborted();
       },
       onContainer: async (container) => {

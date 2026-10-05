@@ -16,6 +16,16 @@ export {
 
 export { FactoryExecutionFailureSchema, type FactoryExecutionFailure } from "./factory-gates.js";
 
+/** Internal custody receipt for anonymous daemon storage; never an Operator input. */
+export const FactoryPrivateDockerStorageSchema = z
+  .object({
+    name: z.string().regex(/^[a-f0-9]{64}$/u),
+    driver: z.literal("local"),
+    createdAt: z.iso.datetime(),
+  })
+  .strict();
+export type FactoryPrivateDockerStorage = z.infer<typeof FactoryPrivateDockerStorageSchema>;
+
 const runSummary = z.strictObject({
   id: KestrelIdSchema,
   attempt: z.int().min(1).max(20),

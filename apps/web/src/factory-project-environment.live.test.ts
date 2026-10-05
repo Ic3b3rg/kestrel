@@ -3,7 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import { z } from "zod";
-import { createCodexExecutionRuntime } from "./codex-execution-runtime.js";
+import type { FactoryPrivateDockerStorage } from "@kestrel/contracts";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import {
+  createCodexExecutionRuntime,
+  createCodexExecutionContainerRecovery,
+} from "./codex-execution-runtime.js";
 
 const image = process.env.KESTREL_PREPARED_ENVIRONMENT_TEST_IMAGE;
 it.skipIf(image === undefined)(
@@ -11,6 +17,46 @@ it.skipIf(image === undefined)(
   async () => {
     const cwd = await realpath(await mkdtemp(join(tmpdir(), "kestrel-prepared-live-")));
     const events: string[] = [];
+    const storageNames: string[] = [];
+    const owned = new Map<
+      string,
+      {
+        name: string;
+        id: string | null;
+        daemonId?: string;
+        privateStorageRequired: true;
+        privateStorage?: FactoryPrivateDockerStorage;
+      }
+    >();
+    const reserve = (name: string, daemonId?: string) => {
+      owned.set(name, {
+        name,
+        id: null,
+        ...(daemonId === undefined ? {} : { daemonId }),
+        privateStorageRequired: true,
+      });
+      return Promise.resolve();
+    };
+    const stopped = ({ name }: { name: string }) => {
+      owned.delete(name);
+      return Promise.resolve();
+    };
+    const retainStorage = ({
+      name,
+      id,
+      privateStorage,
+    }: {
+      name: string;
+      id: string;
+      privateStorage?: FactoryPrivateDockerStorage;
+    }) => {
+      if (privateStorage === undefined) throw new Error("Private storage receipt missing");
+      const intent = owned.get(name);
+      if (intent === undefined) throw new Error("Container intent missing");
+      owned.set(name, { ...intent, id, privateStorage });
+      storageNames.push(privateStorage.name);
+      return Promise.resolve();
+    };
     try {
       await writeFile(join(cwd, ".git"), "gitdir: /controller-owned-live-fixture\n");
       await writeFile(
@@ -48,22 +94,22 @@ it.skipIf(image === undefined)(
         cwd: ".",
         processId: `prepared-live:${String(Date.now())}`,
         timeoutMs: 1_000,
-        beforeContainerCreate: () => {
+        beforeContainerCreate: (name, daemonId) => {
           events.push("reserved");
-          return Promise.resolve();
+          return reserve(name, daemonId);
         },
-        onContainer: () => {
+        onContainer: (container) => {
           events.push("identified");
-          return Promise.resolve();
+          return retainStorage(container);
         },
-        onStopped: () => {
+        onStopped: (container) => {
           events.push("stopped");
-          return Promise.resolve();
+          return stopped(container);
         },
         command: [
           "node",
           "-e",
-          `const {execFileSync}=require('node:child_process'); const fs=require('node:fs'); const temp=fs.mkdtempSync(require('node:path').join(require('node:os').tmpdir(),'git-fixture-')); const fixture=require('node:path').join(temp,'git'); let tempExecutable; try { fs.writeFileSync(fixture,${JSON.stringify("#!/bin/sh\necho fixture-ready\n")},{mode:0o700}); tempExecutable=execFileSync(fixture,{encoding:'utf8'}).trim()==='fixture-ready'; } finally {fs.rmSync(temp,{recursive:true,force:true});} console.log(JSON.stringify({tempExecutable,docker:JSON.parse(execFileSync('docker',['info','--format','{{json .}}'],{encoding:'utf8'})).ServerVersion,heap:require('node:v8').getHeapStatistics().heap_size_limit,cpus:require('node:os').availableParallelism(),memory:fs.readFileSync('/sys/fs/cgroup/memory.max','utf8').trim(),pids:fs.readFileSync('/sys/fs/cgroup/pids.max','utf8').trim(),chromium:fs.readdirSync('/opt/playwright').some(x=>x.startsWith('chromium-'))}));`,
+          `const {execFileSync}=require('node:child_process'); const fs=require('node:fs'); const temp=fs.mkdtempSync(require('node:path').join(require('node:os').tmpdir(),'git-fixture-')); const fixture=require('node:path').join(temp,'git'); let tempExecutable; try { fs.writeFileSync(fixture,${JSON.stringify("#!/bin/sh\necho fixture-ready\n")},{mode:0o700}); tempExecutable=execFileSync(fixture,{encoding:'utf8'}).trim()==='fixture-ready'; } finally {fs.rmSync(temp,{recursive:true,force:true});} console.log(JSON.stringify({tempExecutable,driver:execFileSync('docker',['info','--format','{{.Driver}}'],{encoding:'utf8'}).trim(),docker:JSON.parse(execFileSync('docker',['info','--format','{{json .}}'],{encoding:'utf8'})).ServerVersion,heap:require('node:v8').getHeapStatistics().heap_size_limit,cpus:require('node:os').availableParallelism(),memory:fs.readFileSync('/sys/fs/cgroup/memory.max','utf8').trim(),pids:fs.readFileSync('/sys/fs/cgroup/pids.max','utf8').trim(),chromium:fs.readdirSync('/opt/playwright').some(x=>x.startsWith('chromium-'))}));`,
         ],
       });
       expect(result.exitCode, result.stderr).toBe(0);
@@ -71,6 +117,7 @@ it.skipIf(image === undefined)(
         .object({
           heap: z.number(),
           docker: z.string(),
+          driver: z.string(),
           cpus: z.number(),
           memory: z.string(),
           pids: z.string(),
@@ -79,6 +126,7 @@ it.skipIf(image === undefined)(
         })
         .parse(JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "{}"));
       expect(facts).toMatchObject({
+        driver: "overlay2",
         cpus: 2,
         memory: String(5.5 * 1024 ** 3),
         pids: "512",
@@ -93,9 +141,9 @@ it.skipIf(image === undefined)(
         cwd: ".",
         processId: `prepared-docker:${String(Date.now())}`,
         timeoutMs: 60_000,
-        beforeContainerCreate: () => Promise.resolve(),
-        onContainer: () => Promise.resolve(),
-        onStopped: () => Promise.resolve(),
+        beforeContainerCreate: reserve,
+        onContainer: retainStorage,
+        onStopped: stopped,
         command: [
           "node",
           "-e",
@@ -113,13 +161,40 @@ it.skipIf(image === undefined)(
           cwd: ".",
           processId: `prepared-timeout:${String(Date.now())}`,
           timeoutMs: 100,
-          beforeContainerCreate: () => Promise.resolve(),
-          onContainer: () => Promise.resolve(),
-          onStopped: () => Promise.resolve(),
+          beforeContainerCreate: reserve,
+          onContainer: retainStorage,
+          onStopped: stopped,
           command: ["node", "-e", "setTimeout(()=>{},2000)"],
         }),
       ).resolves.toMatchObject({ exitCode: 124, timedOut: true });
+      expect(storageNames).toHaveLength(3);
+      for (const name of storageNames) {
+        const result = await promisify(execFile)(
+          process.env.DOCKER_BIN ?? "docker",
+          ["volume", "ls", "--filter", `name=^${name}$`, "--format", "{{.Name}}"],
+          { timeout: 5000 },
+        );
+        expect(result.stdout.trim()).toBe("");
+      }
     } finally {
+      const recover = createCodexExecutionContainerRecovery({
+        dockerExecutable: process.env.DOCKER_BIN ?? "docker",
+      });
+      for (const container of owned.values()) {
+        await recover(
+          { ...container, image: image ?? null },
+          (id, privateStorage) => {
+            owned.set(container.name, {
+              ...container,
+              id,
+              ...(privateStorage === undefined ? {} : { privateStorage }),
+            });
+            return Promise.resolve();
+          },
+          AbortSignal.timeout(10_000),
+        );
+        owned.delete(container.name);
+      }
       await rm(cwd, { recursive: true, force: true });
     }
   },

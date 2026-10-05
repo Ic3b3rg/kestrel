@@ -16,6 +16,11 @@ import { createServer, type Server, type Socket } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import {
+  FactoryPrivateDockerStorageSchema,
+  type FactoryPrivateDockerStorage,
+} from "@kestrel/contracts";
+import { privateDockerStorageFor, removePrivateDockerStorage } from "./private-docker-storage.js";
 
 import {
   CodexFactoryError,
@@ -56,8 +61,16 @@ export interface CodexExecutionQuestion {
   question: string;
 }
 export interface CodexExecutionLifecycle {
-  beforeContainerCreate(name: string, daemonId?: string): Promise<void>;
-  onContainer(container: { name: string; id: string }): Promise<void>;
+  beforeContainerCreate(
+    name: string,
+    daemonId?: string,
+    privateStorageRequired?: true,
+  ): Promise<void>;
+  onContainer(container: {
+    name: string;
+    id: string;
+    privateStorage?: FactoryPrivateDockerStorage;
+  }): Promise<void>;
   onStopped(container: { name: string; id: string | null }): Promise<void>;
 }
 export interface CodexExecutionTurnInput extends CodexExecutionLifecycle {
@@ -440,8 +453,10 @@ export function createCodexExecutionContainerRecovery(
     id: string | null;
     daemonId?: string | null;
     image?: string | null;
+    privateStorage?: FactoryPrivateDockerStorage | null;
+    privateStorageRequired?: true;
   },
-  onIdentified: (id: string) => Promise<void>,
+  onIdentified: (id: string, privateStorage?: FactoryPrivateDockerStorage) => Promise<void>,
   signal: AbortSignal,
 ) => Promise<{ name: string; id: string }> {
   return async (container, onIdentified, signal) => {
@@ -482,6 +497,8 @@ export function createCodexExecutionContainerRecovery(
       };
       let byName = await find(`name=^/${container.name}$`);
       let id = container.id ?? byName;
+      if (byName === null && container.privateStorageRequired && container.privateStorage == null)
+        throw new Error("Required private storage was never identified");
       if (id === null && container.image != null) {
         const barrier = await cli(nameBarrierArguments(container.name, container.image)).catch(
           () => "",
@@ -498,6 +515,10 @@ export function createCodexExecutionContainerRecovery(
         throw new Error("Container identity was not confirmed");
       const byId = await find(`id=${id}`);
       if (byId !== null && byId !== id) throw new Error("Container identity changed");
+      let privateStorage =
+        container.privateStorage == null
+          ? null
+          : FactoryPrivateDockerStorageSchema.parse(container.privateStorage);
       if (byId !== null) {
         const state = record(JSON.parse(await cli(["inspect", "--format", CONTAINER_INSPECT, id])));
         if (
@@ -507,16 +528,31 @@ export function createCodexExecutionContainerRecovery(
           record(state.labels)["kestrel.factory.execution"] !== container.name
         )
           throw new Error("Container ownership changed");
+        if (record(state.labels)["kestrel.factory.private-docker-storage"] === "anonymous") {
+          const actual = await privateDockerStorageFor(cli, state.mounts);
+          if (
+            privateStorage !== null &&
+            (actual.name !== privateStorage.name || actual.createdAt !== privateStorage.createdAt)
+          )
+            throw new Error("Private Docker storage identity changed");
+          privateStorage = actual;
+        } else if (privateStorage !== null || container.privateStorageRequired)
+          throw new Error("Private Docker storage ownership changed");
       } else if (container.id === null || byName !== null || container.daemonId == null) {
         throw new Error("Discovered container disappeared before ownership was verified");
       }
       // Commit this witness before the irreversible removal. A restarted reconciler can
       // then prove this same ID absent if the process dies before recording stopped_at.
-      await withCancellation(onIdentified(id), deadline);
+      await withCancellation(
+        privateStorage === null ? onIdentified(id) : onIdentified(id, privateStorage),
+        deadline,
+      );
       await assertDaemon();
-      if (byId !== null) await cli(["rm", "--force", id]);
+      if (byId !== null)
+        await cli(["rm", "--force", id, ...(privateStorage === null ? [] : ["--volumes"])]);
       if ((await find(`name=^/${container.name}$`)) !== null || (await find(`id=${id}`)) !== null)
         throw new Error("Container teardown was not confirmed");
+      if (privateStorage !== null) await removePrivateDockerStorage(cli, privateStorage);
       await assertDaemon();
       return { name: container.name, id };
     } catch {
@@ -537,6 +573,8 @@ class ExecutionContainer {
   #daemonId: string | null = null;
   #reserved = false;
   #createMayHaveBeenIssued = false;
+  #privateStorage: FactoryPrivateDockerStorage | null = null;
+  #storageRecorded = false;
   #mounts: { source: string; target: string; readonly: boolean }[] = [];
 
   constructor(
@@ -665,7 +703,9 @@ class ExecutionContainer {
     const homeTmpfs = `rw,nosuid,nodev,size=${String(homeTmpfsBytes)},mode=1777`;
     this.#reserved = true;
     await withCancellation(
-      this.#lifecycle.beforeContainerCreate(this.name, this.#daemonId),
+      preparedProject
+        ? this.#lifecycle.beforeContainerCreate(this.name, this.#daemonId, true)
+        : this.#lifecycle.beforeContainerCreate(this.name, this.#daemonId),
       signal,
     );
     checkAbort(signal);
@@ -712,6 +752,14 @@ class ExecutionContainer {
           "--mount",
           `type=bind,source=${mount.source},target=${mount.target}${mount.readonly ? ",readonly" : ""}`,
         ]),
+        ...(preparedProject
+          ? [
+              "--mount",
+              "type=volume,target=/var/lib/docker,volume-driver=local,volume-nocopy",
+              "--label",
+              "kestrel.factory.private-docker-storage=anonymous",
+            ]
+          : []),
         "--workdir",
         commandCwd,
         "--env",
@@ -739,7 +787,29 @@ class ExecutionContainer {
     if (!/^[a-f0-9]{64}$/u.test(id)) throw new CodexExecutionError("invalid_response");
     this.#id = id;
     await this.assertDaemon(signal);
-    await withCancellation(this.#lifecycle.onContainer({ name: this.name, id }), signal);
+    if (preparedProject) {
+      const owned = await this.inspect();
+      if (
+        owned.id !== id ||
+        owned.name !== `/${this.name}` ||
+        record(owned.labels)["kestrel.factory.execution"] !== this.name ||
+        record(owned.labels)["kestrel.factory.private-docker-storage"] !== "anonymous"
+      )
+        throw new CodexExecutionError("permission_required");
+      this.#privateStorage = await privateDockerStorageFor(
+        (args) => this.cli(args, signal),
+        owned.mounts,
+      );
+    }
+    await withCancellation(
+      this.#lifecycle.onContainer({
+        name: this.name,
+        id,
+        ...(this.#privateStorage === null ? {} : { privateStorage: this.#privateStorage }),
+      }),
+      signal,
+    );
+    this.#storageRecorded = true;
     const state = await this.inspect();
     const actualMounts = state.mounts;
     const actualTmpfs = record(state.tmpfs);
@@ -772,8 +842,10 @@ class ExecutionContainer {
           !Array.isArray(state.securityOpt) ||
           !state.securityOpt.includes("no-new-privileges:true"))) ||
       record(state.labels)["kestrel.factory.execution"] !== this.name ||
+      (preparedProject &&
+        record(state.labels)["kestrel.factory.private-docker-storage"] !== "anonymous") ||
       !Array.isArray(actualMounts) ||
-      actualMounts.length !== this.#mounts.length ||
+      actualMounts.length !== this.#mounts.length + (preparedProject ? 1 : 0) ||
       this.#mounts.some(
         (mount) =>
           !actualMounts.some(
@@ -931,6 +1003,8 @@ class ExecutionContainer {
           if (!/^[a-f0-9]{64}$/u.test(id)) throw new Error("Ambiguous container");
           this.#id = id;
         } else {
+          if (this.#options.projectEnvironment === "node_docker")
+            throw new Error("Required private storage was never identified");
           stage = "claim_reserved_name";
           const barrier = await this.cli(
             nameBarrierArguments(this.name, this.#options.containerImage),
@@ -952,12 +1026,36 @@ class ExecutionContainer {
         record(state.labels)["kestrel.factory.execution"] !== this.name
       )
         throw new Error("Container identity changed");
+      if (record(state.labels)["kestrel.factory.private-docker-storage"] === "anonymous") {
+        const actual = await privateDockerStorageFor((args) => this.cli(args), state.mounts);
+        if (
+          this.#privateStorage !== null &&
+          (actual.name !== this.#privateStorage.name ||
+            actual.createdAt !== this.#privateStorage.createdAt)
+        )
+          throw new Error("Private Docker storage identity changed");
+        this.#privateStorage = actual;
+        if (!this.#storageRecorded) {
+          await this.#lifecycle.onContainer({
+            name: this.name,
+            id: this.#id,
+            privateStorage: actual,
+          });
+          this.#storageRecorded = true;
+        }
+      } else if (this.#options.projectEnvironment === "node_docker")
+        throw new Error("Private Docker storage ownership changed");
       // Removing the exact private PID namespace is the writer-lifetime boundary.
       // Stopping only Codex, its socket, or a docker-exec client is insufficient.
       stage = "daemon_before_remove";
       await this.assertDaemon();
       stage = "remove_owned_container";
-      await this.cli(["rm", "--force", this.#id]);
+      await this.cli([
+        "rm",
+        "--force",
+        this.#id,
+        ...(this.#privateStorage === null ? [] : ["--volumes"]),
+      ]);
       stage = "confirm_name_absent";
       const remaining = await this.cli([
         "container",
@@ -970,6 +1068,8 @@ class ExecutionContainer {
         "{{.ID}}",
       ]);
       if (remaining !== "") throw new Error("Container still present");
+      if (this.#privateStorage !== null)
+        await removePrivateDockerStorage((args) => this.cli(args), this.#privateStorage);
       stage = "daemon_after_remove";
       await this.assertDaemon();
       stage = "persist_stopped";

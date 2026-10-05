@@ -31,29 +31,42 @@ test fixtures, while retaining `nosuid` and `nodev`. The default executor keeps 
 network and temporary mount policy.
 
 The trusted environment uses a privileged outer container with a private cgroup namespace and a
-private inner Docker daemon. Its daemon state is in the outer writable layer; it mounts neither the
-host daemon socket nor host devices explicitly and publishes no outer ports. The task runs as the
-configured unprivileged execution user. Privileged Docker remains a substantially weaker isolation
-boundary than the default executor: this route is for trusted code on a dedicated local Docker VM,
-not hostile or multi-tenant workloads. It is not a promise that privileged code cannot escape its
-resource boundary. That limitation is part of its installation authorization.
+private inner Docker daemon. Its daemon state uses an anonymous local Docker volume attached only to
+that outer container; it mounts neither the host daemon socket nor host devices explicitly and
+publishes no outer ports. The task runs as the configured unprivileged execution user. Privileged
+Docker remains a substantially weaker isolation boundary than the default executor: this route is
+for trusted code on a dedicated local Docker VM, not hostile or multi-tenant workloads. It is not a
+promise that privileged code cannot escape its resource boundary. That limitation is part of its
+installation authorization.
 
-The private daemon explicitly uses the classic `vfs` storage driver. A real nested build reproduced
-the default containerd snapshotter's overlay-on-overlay mount failure; a FUSE trial mounted layers
-but failed to execute their binaries on this Docker VM. The same network-free build and run passed
-with VFS. VFS copies complete layers and therefore trades storage and I/O for compatibility; its
-cost must be measured on the representative Project. Docker state stays inside the disposable outer
-container. Separate daemon-state volumes, used by Dev Containers to avoid overlay backing storage,
-would require additional durable custody and cleanup and are outside this slice.
+The private daemon uses classic `overlay2` on private native Docker storage. A real nested build
+reproduced the default containerd snapshotter's overlay-on-overlay mount failure; a FUSE trial
+failed to execute its binaries on this VM. VFS passed the small capability probe, but the
+representative execution read approximately 25 GB and wrote 39 GB before multiple HTTP/browser
+startup deadlines. Images reached Created state while complete filesystem copies accumulated. The
+earlier VFS compatibility fallback therefore did not establish a usable Project environment.
+
+An anonymous `local` volume provides non-overlay backing storage without a shared daemon or cache.
+Docker creates it as part of the already-reserved outer container, avoiding an independently delayed
+volume-create request. The ledger records required storage before issuing container creation. A lost
+create response with neither parent nor storage receipt retains the stop fence: an inert container
+name barrier cannot prove anonymous storage absent. Before start, the controller inspects its exact
+mount and records volume name, driver and creation time with the container identity. Teardown
+removes the exact container with its anonymous volumes and confirms storage absence. Restart
+recovery can finish an interrupted removal only with the retained storage receipt, unchanged daemon
+identity and confirmed absent parent. Changed, busy or uncertain storage keeps the existing stop
+fence. The volume is disposable per operation; there is no cross-run writable cache or separate
+persistent daemon.
 
 Preparation builds and runs an installation-owned scratch image using the installed static Docker
 CLI, without network access, before implementation or verification. Daemon readiness alone is not a
 usable-environment certificate. The temporary context and successful probe image are removed in
-`finally`; remaining daemon cache is removed with the owned outer container.
+`finally`; remaining daemon cache is removed with the owned outer container and its private storage.
 
 Sources: [Docker storage drivers](https://docs.docker.com/engine/storage/drivers/vfs-driver/),
 [daemon feature configuration](https://docs.docker.com/reference/cli/dockerd/), and
-[Dev Containers daemon-state storage](https://github.com/devcontainers/features/blob/main/src/docker-in-docker/NOTES.md).
+[Dev Containers daemon-state storage](https://github.com/devcontainers/features/blob/main/src/docker-in-docker/NOTES.md),
+and [Moby create-error cleanup](https://github.com/moby/moby/blob/master/daemon/create.go).
 
 The existing durable outer container ledger owns creation, exact identity and stop witnesses.
 Stopping and removing that outer container stops its private daemon and inner workloads together. No

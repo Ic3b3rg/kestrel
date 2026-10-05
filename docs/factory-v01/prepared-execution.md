@@ -7,9 +7,9 @@ asking the Operator to resolve routine technical failures. Issue: conversation-a
 new tracker issue. The existing documentation-capability issue is the integrated acceptance case.
 Branch: `fix/factory-prepared-execution` in the dedicated prepared-execution worktree. PR:
 [#321](https://github.com/Ic3b3rg/kestrel/pull/321), draft pending integrated acceptance. Next gate:
-the measured persisted task; HTTP and regression acceptance passed. Verification tier: contained
-runtime, controller, board and one real persisted task. Runtime owner: the canonical Kestrel runtime
-supervisor.
+the measured persisted task; the private native-storage live probe passes and HTTP acceptance is
+being repeated on the repair. Verification tier: contained runtime, controller, board and one real
+persisted task. Runtime owner: the canonical Kestrel runtime supervisor.
 
 ## Triage
 
@@ -43,9 +43,9 @@ repository.
   conversation for the Docker experiment and its implementation. Never mount the host Docker socket,
   publish executor ports, or execute project commands in the Operator checkout.
 - The prepared environment owns its inner Docker daemon inside the same outer execution resource
-  boundary. Persist outer container custody before starting it; teardown confirms the entire outer
-  boundary before checkpoint or release. Implementation and controller verification remain separate
-  operations and separate containers.
+  boundary. Persist outer container and private anonymous-storage custody before starting it;
+  teardown confirms the entire outer boundary and storage cleanup before checkpoint or release.
+  Implementation and controller verification remain separate operations and separate containers.
 - Preparation must install locked dependencies and required browser tools, preserve image
   environment variables, probe required capabilities and report real failures. It must not alter
   acceptance commands or mark skipped/failed checks successful.
@@ -95,3 +95,23 @@ constraints.
 Kestrel adopts preparation as a separate responsibility, not Sandcastle's whole lifecycle: Kestrel
 must preserve its database custody, stopped-writer checkpoint ordering and fresh verification
 evidence.
+
+## Measured environment boundary
+
+The VFS attempt (`01a10c56-55be-709e-853e-cfb65eeb7a31`) remained alive beyond 31 minutes. Its owned
+phases peaked at 4.513 GiB and 162 PIDs, with zero observed OOM kills on this 24 GiB host and 7.748
+GiB Docker VM. The implementation boundary recorded approximately 25 GB read and 39 GB written while
+the Docker-backed tests timed out before reaching their assertions. VFS deep copies made this a
+startup/I/O limit; removing the memory cap would not address that evidence. The run was interrupted
+for the storage repair, not certified successful.
+
+The replacement uses classic `overlay2` on an anonymous local volume owned by each outer container.
+The real prepared-environment probe passed in 34.6 seconds, including a nested build and execution,
+command timeout and absence of all three owned volumes. This proves the capability on this machine;
+the persisted issue still needs its unchanged acceptance checks. Unknown storage after a lost create
+acknowledgement retains custody and a technical interruption.
+
+Raw measurements and diagnostics are retained outside worktrees under the installation state root,
+in `measurements/background-execution-20261005`. Diagnostic reads contribute to the I/O counters;
+timed-out disk-footprint probes remain unknown. These results do not certify 16 GiB hosts,
+concurrent local inference, Flutter or Android emulators.

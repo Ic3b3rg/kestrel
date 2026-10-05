@@ -121,6 +121,80 @@ it("runs trusted Docker verification inside one owned resource boundary without 
   expect(create?.join(" ")).not.toContain("source=/var/run/docker.sock");
 });
 
+it("retains and removes private Docker storage with its verification container", async () => {
+  const { cwd, runtime } = await fixture("happy", { projectEnvironment: "node_docker" });
+  const onContainer = vi.fn(async () => {
+    const calls = await dockerCalls(cwd);
+    expect(calls.some((args) => args[0] === "volume" && args[1] === "inspect")).toBe(true);
+    expect(calls.some((args) => args[0] === "start")).toBe(false);
+  });
+  await runtime.runVerification({
+    ...input(cwd),
+    onContainer,
+    workspaceCwd: cwd,
+    cwd: ".",
+    command: ["node", "--test"],
+    processId: "private-docker-storage",
+    timeoutMs: 10_000,
+  });
+  expect(onContainer).toHaveBeenCalledWith(
+    expect.objectContaining({
+      privateStorage: { name: "e".repeat(64), driver: "local", createdAt: "2026-10-05T14:00:00Z" },
+    }),
+  );
+  const calls = await dockerCalls(cwd);
+  expect(calls.find((args) => args[0] === "create")).toContain(
+    "type=volume,target=/var/lib/docker,volume-driver=local,volume-nocopy",
+  );
+  expect(calls.find((args) => args[0] === "rm")).toContain("--volumes");
+  expect(calls.at(-1)).toEqual([
+    "volume",
+    "ls",
+    "--filter",
+    `name=^${"e".repeat(64)}$`,
+    "--format",
+    "{{.Name}}",
+  ]);
+});
+
+it.each(["volume_replaced", "volume_busy"])(
+  "does not release a passed check with %s storage",
+  async (mode) => {
+    const { cwd, runtime } = await fixture(mode, { projectEnvironment: "node_docker" });
+    const onStopped = vi.fn(() => Promise.resolve());
+    await expect(
+      runtime.runVerification({
+        ...input(cwd),
+        onStopped,
+        workspaceCwd: cwd,
+        cwd: ".",
+        command: ["node", "--test"],
+        processId: mode,
+        timeoutMs: 10_000,
+      }),
+    ).rejects.toMatchObject({ code: "stop_unconfirmed" });
+    expect(onStopped).not.toHaveBeenCalled();
+    if (mode === "volume_replaced")
+      expect((await dockerCalls(cwd)).some((args) => args[0] === "rm")).toBe(false);
+  },
+);
+
+it("finishes exact storage cleanup after the container removal leaves its volume", async () => {
+  const { cwd, runtime } = await fixture("volume_left", { projectEnvironment: "node_docker" });
+  const result = await runtime.runVerification({
+    ...input(cwd),
+    workspaceCwd: cwd,
+    cwd: ".",
+    command: ["node", "--test"],
+    processId: "partial-storage-cleanup",
+    timeoutMs: 10_000,
+  });
+  expect(result.exitCode).toBe(0);
+  expect(
+    (await dockerCalls(cwd)).filter((args) => args[0] === "volume" && args[1] === "rm"),
+  ).toEqual([["volume", "rm", "e".repeat(64)]]);
+});
+
 it("permits required downloads only inside the authorized prepared environment", async () => {
   const { cwd, runtime, logPath } = await fixture("happy", { projectEnvironment: "node_docker" });
   await runtime.runTurn(input(cwd));
@@ -702,6 +776,19 @@ it("reconciles a lost create response without ever starting or creating a second
   expect(calls.filter((args) => args[0] === "create")).toHaveLength(1);
   expect(calls.some((args) => args[0] === "start")).toBe(false);
   expect(calls.filter((args) => args[0] === "rm")).toHaveLength(1);
+});
+
+it("keeps the stop fence when prepared creation loses its storage identity", async () => {
+  const { cwd, runtime } = await fixture("create_uncertain_absent", {
+    projectEnvironment: "node_docker",
+  });
+  const turn = input(cwd);
+  await expect(runtime.runTurn(turn)).rejects.toMatchObject({ code: "stop_unconfirmed" });
+  expect(turn.beforeContainerCreate).toHaveBeenCalledWith(expect.any(String), daemonId, true);
+  expect(turn.onStopped).not.toHaveBeenCalled();
+  const calls = await dockerCalls(cwd);
+  expect(calls.filter((args) => args[0] === "create")).toHaveLength(1);
+  expect(calls.some((args) => args[0] === "start" || args[0] === "rm")).toBe(false);
 });
 
 it("claims the reserved name before reporting an uncertain absent create as stopped", async () => {
