@@ -272,7 +272,7 @@ describe("Factory Human Gates over HTTP and PostgreSQL", () => {
         ),
       ).toBe(false);
       await module(
-        `await db.recordFactoryExecutionActivity(pool,${JSON.stringify(original)},'lifecycle','Prerequisite probe failed',{detail:'npm run build\nexit 1',exitCode:1,retainDetail:true}); console.log('null');`,
+        `await db.recordFactoryExecutionActivity(pool,${JSON.stringify(original)},'lifecycle','Prerequisite probe failed',{detail:${JSON.stringify("npm run build\nexit 1")},exitCode:1,retainDetail:true}); console.log('null');`,
       );
       gate = await block(original);
       const retained = FactoryExecutionRunSchema.parse(
