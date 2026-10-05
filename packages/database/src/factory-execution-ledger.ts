@@ -247,7 +247,7 @@ export async function finishExecutionRun(
     ],
   );
   await client.query(
-    "UPDATE factory_execution_activity SET detail = NULL WHERE run_id = $1 AND detail IS NOT NULL",
+    "UPDATE factory_execution_activity SET detail = NULL WHERE run_id = $1 AND detail IS NOT NULL AND NOT retain_detail",
     [row.id],
   );
   const certificate =
@@ -310,7 +310,7 @@ export async function recoverExecutionRun(
     [run.id, cancelled ? "cancelled" : "blocked", failure],
   );
   await client.query(
-    "UPDATE factory_execution_activity SET detail = NULL WHERE run_id = $1 AND detail IS NOT NULL",
+    "UPDATE factory_execution_activity SET detail = NULL WHERE run_id = $1 AND detail IS NOT NULL AND NOT retain_detail",
     [run.id],
   );
   await applyExecutionOutcome(client, feature, run, {
@@ -352,7 +352,7 @@ export async function interruptExecutionRun(
     [row.id, writerStopped ? "blocked" : "interrupted", question, writerStopped],
   );
   await client.query(
-    "UPDATE factory_execution_activity SET detail = NULL WHERE run_id = $1 AND detail IS NOT NULL",
+    "UPDATE factory_execution_activity SET detail = NULL WHERE run_id = $1 AND detail IS NOT NULL AND NOT retain_detail",
     [row.id],
   );
   await applyExecutionOutcome(client, feature, row, {

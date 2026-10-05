@@ -14,6 +14,7 @@ import {
   readFactoryFeatureWorkspace,
   reconcileFactoryExecutions,
   recordFactoryExecutionCheckpoint,
+  recordFactoryExecutionActivity,
   reserveFactoryExecutionContainer,
   saveFactoryExecutionRuntime,
   saveFactoryVerification,
@@ -45,6 +46,10 @@ import {
   type CodexExecutionTurnInput,
   type CodexVerificationResult,
 } from "./codex-execution-runtime.js";
+import type {
+  FactoryProjectEnvironment,
+  FactoryProjectEnvironmentPreparer,
+} from "./factory-project-environment.js";
 
 export class FactoryExecutionError extends Error {
   constructor(
@@ -184,6 +189,7 @@ export interface FactorySandboxOptions {
   runtime?: CodexExecutionRuntime;
   containerImage?: string;
   prepareContainerImage?: (signal: AbortSignal) => Promise<string>;
+  prepareProjectEnvironment?: FactoryProjectEnvironmentPreparer;
   dockerExecutable?: string;
   signal: AbortSignal;
 }
@@ -204,6 +210,7 @@ export function createFactorySandbox(options: FactorySandboxOptions) {
   const pending = new Set<string>();
   let prepared: Awaited<ReturnType<typeof prepareWorkspace>> | undefined;
   let runtime: CodexExecutionRuntime | undefined;
+  let environment: FactoryProjectEnvironment | null = null;
   let paths = [homedir()];
   let busy = false;
   let unconfirmed = false;
@@ -253,7 +260,7 @@ export function createFactorySandbox(options: FactorySandboxOptions) {
       stopped: false,
     };
     const callbacks: CodexExecutionLifecycle = {
-      beforeContainerCreate: async (name, daemonId) => {
+      beforeContainerCreate: async (name, daemonId, privateStorageRequired) => {
         if (proof.name !== null || pending.size > 0)
           throw new FactoryExecutionError("stop_unconfirmed");
         signal.throwIfAborted();
@@ -261,7 +268,14 @@ export function createFactorySandbox(options: FactorySandboxOptions) {
         // when its response is lost, and another callback must never race this intent.
         proof.name = name;
         pending.add(name);
-        await reserveFactoryExecutionContainer(pool, run, name, phase, daemonId);
+        await reserveFactoryExecutionContainer(
+          pool,
+          run,
+          name,
+          phase,
+          daemonId,
+          privateStorageRequired,
+        );
         signal.throwIfAborted();
       },
       onContainer: async (container) => {
@@ -335,7 +349,69 @@ export function createFactorySandbox(options: FactorySandboxOptions) {
               : { dockerExecutable: options.dockerExecutable }),
           });
         prepared = await prepareWorkspace(pool, run, config, signal);
+        environment =
+          (await options.prepareProjectEnvironment?.(
+            { projectId: run.projectId, runId: run.id },
+            signal,
+            (summary) => recordFactoryExecutionActivity(pool, run, "lifecycle", summary),
+          )) ?? null;
+        if (environment !== null) {
+          runtime =
+            options.runtime ??
+            createCodexExecutionRuntime({
+              ...environment.runtimeOptions,
+              timeoutMs: null,
+              ...(options.dockerExecutable === undefined
+                ? {}
+                : { dockerExecutable: options.dockerExecutable }),
+            });
+          const preparation = lifecycle("implementation");
+          await recordFactoryExecutionActivity(
+            pool,
+            run,
+            "lifecycle",
+            "Installing and checking Project prerequisites.",
+          );
+          const result = await runtime.runVerification({
+            ...preparation.callbacks,
+            workspaceCwd: prepared.workspace.workspacePath,
+            gitDirectory: prepared.workspace.gitDirectory,
+            cwd: ".",
+            command: ["true"],
+            retainStderrTail: true,
+            processId: `${run.id}:preparation`,
+            timeoutMs: 900_000,
+            signal,
+          });
+          preparation.assertStopped();
+          await recordFactoryExecutionActivity(
+            pool,
+            run,
+            "lifecycle",
+            result.exitCode === 0
+              ? "Execution tools ready. Project checks still required."
+              : "Project prerequisite preparation failed.",
+            {
+              // Preserve the final warning summary before noisy build progress fills the budget.
+              detail: publicText(
+                `${result.stderr.slice(-1000)}\n${result.stdoutTruncated || result.stderrTruncated ? "[Preparation output truncated]\n" : ""}${result.stdout}`,
+                8192,
+              ),
+              exitCode: result.exitCode,
+              retainDetail: true,
+            },
+          );
+          if (result.exitCode !== 0)
+            throw new FactoryExecutionError(
+              "sandbox_unavailable",
+              "Project environment preparation failed. Inspect the prerequisite commands and output; no product decision is required.",
+            );
+        }
       });
+    },
+    close(): void {
+      // Unknown teardown retains the heavy slot until the runtime is reconciled.
+      if (!busy && !unconfirmed && pending.size === 0) environment?.release();
     },
     async implement(input: ImplementationInput) {
       return exclusive(async () => {
@@ -448,7 +524,7 @@ export function createFactorySandbox(options: FactorySandboxOptions) {
           checkFailure = factoryExecutionFailure(error, signal, true);
         }
         const outcome =
-          checkFailure?.code === "timeout"
+          checkFailure?.code === "timeout" || checked?.timedOut === true
             ? "timeout"
             : checkFailure?.code === "cancelled" || checkFailure?.code === "interrupted"
               ? "cancelled"

@@ -154,6 +154,10 @@ const app = await buildApp({
   reviewRevisionService: createReviewRevisionService(pool, localRepositoryService, boss),
 });
 const background = createFactoryBackgroundRuntime({
+  trustedDockerProjects: (process.env.KESTREL_FACTORY_TRUSTED_DOCKER_PROJECTS ?? "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean),
   pool,
   boss,
   log: app.log,

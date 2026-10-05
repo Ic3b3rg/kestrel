@@ -1,4 +1,5 @@
 import type { Feature } from "./factory.js";
+import type { FactoryGate } from "./factory-gates.js";
 import {
   validateFeaturePlan,
   type FactoryWorkItem,
@@ -13,7 +14,7 @@ interface WorkItemFact {
 interface ExecutionFacts {
   featureState: Feature["state"];
   items: readonly WorkItemFact[];
-  gate?: { question: string; decision: string | null };
+  gate?: { question: string; decision: string | null; reason?: FactoryGate["reason"] };
 }
 
 /** Pure approved-plan facts. Reservations and exact verification certificates remain database authority. */
@@ -42,7 +43,9 @@ export function projectFeaturePlan(plan: FeaturePlanDocument, facts: ExecutionFa
           kind: "human_gate",
           explanation: (facts.gate?.decision === "requires_plan_change"
             ? "The approved plan must change. Execution remains paused. "
-            : "Your decision is needed: "
+            : facts.gate?.reason !== undefined && facts.gate.reason !== "input_required"
+              ? "Technical interruption: "
+              : "Your decision is needed: "
           )
             .concat(facts.gate?.question ?? "Open execution to inspect the retained attempt.")
             .slice(0, 2000),

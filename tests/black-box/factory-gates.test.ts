@@ -49,6 +49,7 @@ describe("Factory Human Gates over HTTP and PostgreSQL", () => {
   let queued: string;
   let other: string;
   let third: string;
+  let owlHead: string;
   let gate: FactoryGate;
   let original: ClaimedFactoryExecution;
   const path = (project: string, feature: string) =>
@@ -146,7 +147,7 @@ describe("Factory Human Gates over HTTP and PostgreSQL", () => {
     const fixture = await createGitFixture();
     cleanup.push(() => fixture.close());
     await fixture.createSibling("falcon");
-    await fixture.createSibling("owl");
+    owlHead = (await fixture.createSibling("owl")).headObjectId;
     stack = await startStack({
       connectedCodexFixture: true,
       repositoryRoot: fixture.rootPath,
@@ -259,8 +260,36 @@ describe("Factory Human Gates over HTTP and PostgreSQL", () => {
       expect(claims.map((run) => run.featureId).sort()).toEqual([first, other].sort());
       original = required(claims.find((run) => run.featureId === first));
       expect(original.key).toBe("order");
+      const competing = required(claims.find((run) => run.featureId === other));
+      // Each module opens a fresh database connection, as a restarted host would.
+      expect(
+        await module<boolean>(
+          `console.log(JSON.stringify(await db.claimFactoryExecutionHeavySlot(pool,${JSON.stringify(original.id)})));`,
+        ),
+      ).toBe(true);
+      expect(
+        await module<boolean>(
+          `console.log(JSON.stringify(await db.claimFactoryExecutionHeavySlot(pool,${JSON.stringify(competing.id)})));`,
+        ),
+      ).toBe(false);
+      await module(
+        `await db.recordFactoryExecutionActivity(pool,${JSON.stringify(original)},'lifecycle','Prerequisite probe failed',{detail:${JSON.stringify("npm run build\nexit 1")},exitCode:1,retainDetail:true}); console.log('null');`,
+      );
       gate = await block(original);
-      await verify(required(claims.find((run) => run.featureId === other)));
+      const retained = FactoryExecutionRunSchema.parse(
+        await (
+          await stack.fetchApi(`${path(projects.kestrel, first)}/execution/runs/${original.id}`)
+        ).json(),
+      );
+      expect(
+        retained.activity.find((event) => event.summary === "Prerequisite probe failed")?.detail,
+      ).toBe("npm run build\nexit 1");
+      expect(
+        await module<boolean>(
+          `console.log(JSON.stringify(await db.claimFactoryExecutionHeavySlot(pool,${JSON.stringify(competing.id)})));`,
+        ),
+      ).toBe(true);
+      await verify(competing);
       const final = required((await claim([other]))[0]);
       expect(final.purpose).toBe("feature_verification");
       await verify(final);
@@ -446,4 +475,80 @@ describe("Factory Human Gates over HTTP and PostgreSQL", () => {
       ).state,
     ).toBe("cancelled");
   });
+  it(
+    "checks restored source on the server before retrying the same saved revision",
+    { timeout: 90_000 },
+    async () => {
+      const featureId = await approve(projects.owl, "Recover a restored workspace");
+      const endpoint = path(projects.owl, featureId);
+      const run = required((await claim([featureId]))[0]);
+      const open = `
+      const {readLocalSourceConfig,resolveRepository,inspectRepository,openFeatureWorkspace,snapshotFeatureWorkspace}=await import('@kestrel/local-source');
+      const {readFile,writeFile}=await import('node:fs/promises');
+      const run=${JSON.stringify(run)};
+      const config=await readLocalSourceConfig();
+      const inspection=await inspectRepository(config,await resolveRepository(config,run.source.repositoryId));
+      const identity={projectId:run.projectId,featureId:run.featureId,repositoryId:run.source.repositoryId,sourceIdentity:run.source.identity,baseCommitId:${JSON.stringify(owlHead)},objectFormat:inspection.objectFormat,branch:'refs/heads/kestrel/feature/'+run.featureId};
+      const workspace=await openFeatureWorkspace(config,identity);
+    `;
+      const saved = await module<string>(`${open}
+      const snapshot=await snapshotFeatureWorkspace(workspace,{expectedHead:identity.baseCommitId});
+      await db.initializeFactoryFeatureWorkspace(pool,run,{...identity,...snapshot});
+      const saved=await readFile(workspace.workspacePath+'/review.txt','utf8');
+      await writeFile(workspace.workspacePath+'/review.txt','unfinished implementation\\n');
+      await db.finishFactoryExecution(pool,run,{verified:false,writerStopped:true,failure:'source_changed',question:null});
+      console.log(JSON.stringify(saved));
+    `);
+      const paused = FactoryExecutionSchema.parse(
+        await (await stack.fetchApi(`${endpoint}/execution`)).json(),
+      );
+      const stopped = paused.gate;
+      if (stopped == null) throw new Error("Missing source recovery gate");
+      expect(stopped).toMatchObject({
+        reason: "source_changed",
+        canResume: false,
+        resumeBlockedReason: "workspace_uncertain",
+      });
+      const retry = {
+        requestId: randomUUID(),
+        expectedPlanVersion: 1,
+        decision: "resume_within_plan",
+        answer: "Retry the retained execution within the approved plan.",
+      };
+      expect((await post(`${endpoint}/execution/gates/${stopped.id}/resolve`, retry)).status).toBe(
+        409,
+      );
+      expect(
+        FactoryExecutionSchema.parse(await (await stack.fetchApi(`${endpoint}/execution`)).json())
+          .state,
+      ).toBe("blocked");
+      await module(`${open}
+      await writeFile(workspace.workspacePath+'/review.txt',${JSON.stringify(saved)});
+      console.log('null');
+    `);
+      const responses = await Promise.all([
+        post(`${endpoint}/execution/gates/${stopped.id}/resolve`, retry),
+        post(`${endpoint}/execution/gates/${stopped.id}/resolve`, retry),
+      ]);
+      expect(responses.map((response) => response.status)).toEqual([200, 200]);
+      const receipts = await Promise.all(
+        responses.map(async (response) => FactoryGateSchema.parse(await response.json())),
+      );
+      expect(receipts[0]).toEqual(receipts[1]);
+      const next = required((await claim([featureId]))[0]);
+      expect(next.source).toEqual(run.source);
+      const proof = await module<{ head: string; tree: string }>(`
+      const result=await pool.query('SELECT workspace_restoration FROM factory_human_gates WHERE id=$1',[${JSON.stringify(stopped.id)}]);
+      console.log(JSON.stringify({head:result.rows[0].workspace_restoration.headCommitId,tree:result.rows[0].workspace_restoration.treeId}));
+    `);
+      expect(proof.head).toBe(owlHead);
+      expect(proof.tree).toMatch(/^[a-f0-9]{40}$/u);
+      await module(
+        `await db.finishFactoryExecution(pool,${JSON.stringify(next)},{verified:false,writerStopped:true,failure:'interrupted',question:null});console.log('null');`,
+      );
+      expect(
+        (await post(`${endpoint}/cancel`, { requestId: randomUUID(), expectedVersion: 1 })).status,
+      ).toBe(200);
+    },
+  );
 });

@@ -8,7 +8,10 @@ const runId = "01991c36-7f90-7000-8000-000000000003";
 const itemId = "01991c36-7f90-7000-8000-000000000004";
 const gateId = "01991c36-7f90-7000-8000-000000000005";
 
-it("returns bounded live item details while an execution is active", async () => {
+it.each([
+  { state: "running", retained: false },
+  { state: "blocked", retained: true },
+])("returns bounded inspectable details for $state execution", async ({ state, retained }) => {
   const now = new Date("2026-09-08T12:00:00.000Z");
   const run = {
     id: runId,
@@ -17,7 +20,7 @@ it("returns bounded live item details while an execution is active", async () =>
     work_item_id: itemId,
     attempt: 1,
     plan_version: 1,
-    state: "running",
+    state,
     failure: null,
     question: null,
     final_summary: null,
@@ -49,6 +52,7 @@ it("returns bounded live item details while an execution is active", async () =>
             item_state: "completed",
             agent_path: "/root/alpha",
             detail: "1 test passed\n",
+            retain_detail: retained,
             exit_code: 0,
             created_at: now,
           },

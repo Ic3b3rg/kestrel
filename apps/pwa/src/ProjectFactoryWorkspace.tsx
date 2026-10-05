@@ -179,7 +179,11 @@ function ProjectFactoryWorkspaceContent({
         onOpenFeature={(featureId, view) => {
           const issue = snapshot?.starts?.find((start) => start.featureId === featureId);
           const individualIssue = snapshot?.workItems.some(
-            (entry) => entry.item.executionFeatureId === featureId,
+            (entry) =>
+              entry.item.executionFeatureId === featureId ||
+              (view === "board" &&
+                entry.feature.id === featureId &&
+                entry.item.providerUrl !== null),
           );
           onNavigate(
             issue === undefined

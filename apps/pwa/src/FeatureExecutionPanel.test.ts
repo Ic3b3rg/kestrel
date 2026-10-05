@@ -236,7 +236,16 @@ it("answers the visible gate once against its approved plan and preserves a lost
   expect(container.textContent).toContain("Answer saved");
 });
 
-it.each(["unavailable", "usage_limit", "timeout", "verification_failed"] as const)(
+it.each([
+  "unavailable",
+  "usage_limit",
+  "timeout",
+  "verification_failed",
+  "sandbox_unavailable",
+  "permission_required",
+  "authentication",
+  "source_unavailable",
+] as const)(
   "handles %s as an automatic technical interruption without asking for input",
   async (reason) => {
     const technicalGate = {

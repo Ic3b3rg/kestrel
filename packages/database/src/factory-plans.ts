@@ -16,6 +16,7 @@ import {
   type PlanningContext,
   type SaveFeaturePlanCommand,
   type FactoryBoard,
+  type FactoryGate,
   type FactoryWorkItem,
   type ImportedFactoryIssue,
 } from "@kestrel/contracts";
@@ -116,8 +117,12 @@ async function boardFor(
   const gate =
     feature.state === "gated"
       ? (
-          await client.query<{ question: string; decision: string | null }>(
-            "SELECT question, decision FROM factory_human_gates WHERE feature_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1",
+          await client.query<{
+            question: string;
+            decision: string | null;
+            reason: FactoryGate["reason"];
+          }>(
+            "SELECT question, decision, reason FROM factory_human_gates WHERE feature_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1",
             [feature.id],
           )
         ).rows[0]

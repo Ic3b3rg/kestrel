@@ -4,18 +4,20 @@ A Feature holds its Project queue from approval through review. Other Projects m
 concurrently, up to the approved limit (two by default). The queue uses persisted approval order and
 verified Work Item dependencies. GitHub labels do not grant execution authority.
 
-When execution needs a decision, the Work Item returns to **To do**. Its card shows the concrete
-question; **Execution** shows the reason, approved plan version, previous attempts and captured
-verification output. Kestrel releases the execution slot after confirming that the previous
-environment has stopped. The paused Feature still blocks later Features in that Project.
+Only an unresolved product question (`input_required`) asks for an answer. Environment, resource,
+provider and verification failures show a technical interruption with retained commands and output;
+they do not ask the Operator to write a product decision. The issue card opens its flat activity
+conversation, including historical authorized issues. Kestrel releases the execution slot after
+confirming that the previous environment has stopped. The paused Feature still blocks later Features
+in that Project.
 
 ## Answering a gate
 
-Choose **Continue within the approved plan** to clarify the technical choice or confirm that the
-reported cause has been resolved. **Save answer and resume** saves an immutable answer and
-authorizes one successor attempt of the affected Work Item. Repeated delivery of the same request
-does not create more attempts. A different answer, stale gate or mismatched approved version
-requires a fresh read; the previous decision cannot be overwritten.
+Choose **Continue within the approved plan** to clarify the unresolved product requirement. **Save
+answer and resume** saves an immutable answer and authorizes one successor attempt of the affected
+Work Item. Repeated delivery of the same request does not create more attempts. A different answer,
+stale gate or mismatched approved version requires a fresh read; the previous decision cannot be
+overwritten.
 
 The successor receives the original question and answer in a fresh execution context. It retains the
 approved source identity, requirements, checks and limits. Verified Work Items are not replayed;

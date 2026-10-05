@@ -1,12 +1,22 @@
 import type { PoolClient } from "pg";
+import {
+  FactoryPrivateDockerStorageSchema,
+  type FactoryPrivateDockerStorage,
+} from "@kestrel/contracts";
 
 import { recoverExecutionRun } from "./factory-execution-ledger.js";
 import { FactoryError, withFactoryFeature, type FeatureRow } from "./factory-planning.js";
 import type { DatabasePool } from "./pool.js";
 
 export type FactoryExecutionContainerRecovery = (
-  container: { name: string; id: string | null; daemonId: string | null },
-  onIdentified: (id: string) => Promise<void>,
+  container: {
+    name: string;
+    id: string | null;
+    daemonId: string | null;
+    privateStorage?: FactoryPrivateDockerStorage | null;
+    privateStorageRequired?: true;
+  },
+  onIdentified: (id: string, privateStorage?: FactoryPrivateDockerStorage) => Promise<void>,
   signal: AbortSignal,
 ) => Promise<{ name: string; id: string }>;
 
@@ -31,6 +41,8 @@ interface ContainerRow {
   container_id: string | null;
   daemon_id: string | null;
   stopped_at: Date | null;
+  private_storage?: FactoryPrivateDockerStorage | null;
+  private_storage_required?: boolean;
 }
 
 async function withFencedRun<T>(
@@ -68,7 +80,7 @@ async function withFencedRun<T>(
 
 async function containersFor(client: PoolClient, runId: string): Promise<ContainerRow[]> {
   const result = await client.query<ContainerRow>(
-    "SELECT name, container_id, daemon_id, stopped_at FROM factory_execution_containers WHERE run_id = $1 AND stopped_at IS NULL ORDER BY created_at, name LIMIT 40 FOR UPDATE",
+    "SELECT name, container_id, daemon_id, private_storage, private_storage_required, stopped_at FROM factory_execution_containers WHERE run_id = $1 AND stopped_at IS NULL ORDER BY created_at, name LIMIT 40 FOR UPDATE",
     [runId],
   );
   return result.rows;
@@ -102,15 +114,30 @@ export async function recoverFactoryExecutions(
             name: container.name,
             id: container.container_id,
             daemonId: container.daemon_id ?? null,
+            ...(container.private_storage == null
+              ? {}
+              : { privateStorage: container.private_storage }),
+            ...(container.private_storage_required
+              ? { privateStorageRequired: true as const }
+              : {}),
           },
-          async (id) => {
+          async (id, privateStorage) => {
             if (!/^[a-f0-9]{64}$/u.test(id)) throw new FactoryError("conflict");
             const identified = await withFencedRun(pool, candidate, async (client, run) => {
               const result = await client.query(
-                `UPDATE factory_execution_containers SET container_id = $3
+                `UPDATE factory_execution_containers SET container_id = $3, private_storage = COALESCE(private_storage, $4::jsonb)
                  WHERE name = $1 AND run_id = $2 AND stopped_at IS NULL
-                   AND (container_id IS NULL OR container_id = $3)`,
-                [container.name, run.id, id],
+                   AND (container_id IS NULL OR container_id = $3)
+                   AND (NOT private_storage_required OR $4::jsonb IS NOT NULL)
+                   AND (private_storage IS NULL OR private_storage IS NOT DISTINCT FROM $4::jsonb)`,
+                [
+                  container.name,
+                  run.id,
+                  id,
+                  privateStorage === undefined
+                    ? null
+                    : JSON.stringify(FactoryPrivateDockerStorageSchema.parse(privateStorage)),
+                ],
               );
               return result.rowCount === 1;
             });
@@ -129,7 +156,8 @@ export async function recoverFactoryExecutions(
           // adopt a returned ID here or overwrite another owner's stopped witness.
           await client.query(
             `UPDATE factory_execution_containers SET stopped_at = COALESCE(stopped_at, clock_timestamp())
-             WHERE name = $1 AND run_id = $2 AND container_id = $3`,
+             WHERE name = $1 AND run_id = $2 AND container_id = $3
+               AND (NOT private_storage_required OR private_storage IS NOT NULL)`,
             [container.name, run.id, stopped.id],
           );
         });

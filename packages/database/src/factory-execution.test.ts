@@ -46,7 +46,7 @@ it("stores the Docker Engine identity with the durable create reservation", asyn
   );
   expect(
     query.mock.calls.find(([sql]) => sql.includes("INSERT INTO factory_execution_containers"))?.[1],
-  ).toEqual([name, runId, "implementation", daemonId]);
+  ).toEqual([name, runId, "implementation", daemonId, false]);
 });
 
 it.each([null, new Date("2026-09-08T12:00:00.000Z")])(
@@ -193,7 +193,7 @@ it("atomically retains the actual consequential question and approved identity w
     ]),
   );
   expect(query.mock.calls).toContainEqual([
-    "UPDATE factory_execution_activity SET detail = NULL WHERE run_id = $1 AND detail IS NOT NULL",
+    "UPDATE factory_execution_activity SET detail = NULL WHERE run_id = $1 AND detail IS NOT NULL AND NOT retain_detail",
     [runId],
   ]);
   expect(query.mock.calls.at(-1)?.[0]).toBe("COMMIT");
@@ -247,7 +247,7 @@ it.each([
       expect.arrayContaining([runId, "interrupted", "inspect_environment"]),
     );
     expect(calls).toContainEqual([
-      "UPDATE factory_execution_activity SET detail = NULL WHERE run_id = $1 AND detail IS NOT NULL",
+      "UPDATE factory_execution_activity SET detail = NULL WHERE run_id = $1 AND detail IS NOT NULL AND NOT retain_detail",
       [runId],
     ]);
   },
@@ -400,9 +400,11 @@ it.each([1, 2])(
 
 it.each([
   { purpose: "work_item", count: 38, allowed: true },
-  { purpose: "work_item", count: 39, allowed: false },
+  { purpose: "work_item", count: 39, allowed: true },
+  { purpose: "work_item", count: 40, allowed: false },
   { purpose: "feature_verification", count: 1441, allowed: true },
-  { purpose: "feature_verification", count: 1442, allowed: false },
+  { purpose: "feature_verification", count: 1442, allowed: true },
+  { purpose: "feature_verification", count: 1443, allowed: false },
 ])(
   "keeps separate finite environment bounds for each purpose: %j",
   async ({ purpose, count, allowed }) => {

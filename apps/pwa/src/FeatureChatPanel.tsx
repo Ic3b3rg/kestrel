@@ -405,6 +405,12 @@ export function FeatureChatPanel({
     );
 
   const firstIssueMessage = chat.messages.find((message) => message.role === "user");
+  const linkedIssueUrl =
+    issueUrl ??
+    firstIssueMessage?.content.match(/https:\/\/github\.com\/[^\s/]+\/[^\s/]+\/issues\/\d+/u)?.[0];
+  const linkedIssueNumber =
+    issueNumber ??
+    (linkedIssueUrl === undefined ? undefined : Number(linkedIssueUrl.split("/").at(-1)));
   const needsIssueAnswer =
     issueConversation &&
     chat.feature.state === "planning" &&
@@ -424,8 +430,8 @@ export function FeatureChatPanel({
             ? {
                 ...message,
                 content:
-                  issueNumber !== undefined && issueUrl !== undefined
-                    ? `Implement [issue #${String(issueNumber)}](${issueUrl}).`
+                  linkedIssueNumber !== undefined && linkedIssueUrl !== undefined
+                    ? `Implement [issue #${String(linkedIssueNumber)}](${linkedIssueUrl}).`
                     : message.content,
               }
             : message,

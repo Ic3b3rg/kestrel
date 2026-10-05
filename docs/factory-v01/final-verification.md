@@ -19,11 +19,13 @@ argument vector, working directory and timeout all match. Every original Work It
 position remains attached to its manifest entry.
 
 The initial pass runs checks before requesting a model. A failed pass can receive at most two
-technical repair turns within the approved scope and original attempt deadline. Each repair uses the
-existing isolated runtime, records a new checkpoint and reruns the entire manifest. Earlier results
-remain readable but cannot count toward the new revision's progress or final record. Unresolved
-failures become a concrete Human Gate; published conceptual-review findings belong to the later
-review phase and do not enter this repair loop.
+technical repair turns within the approved scope and the original command deadlines. There is no
+aggregate 30-minute implementation deadline; preparation has its own bounded startup allowance. Each
+repair uses the existing isolated runtime, records a new checkpoint and reruns the entire manifest.
+Earlier results remain readable but cannot count toward the new revision's progress or final record.
+Unresolved technical failures expose a technical interruption and retry without a product-answer
+form. Only unresolved product direction asks the Operator for an answer. Published conceptual-review
+findings belong to the later review phase and do not enter this repair loop.
 
 The per-Work Item bounds remain 12 commands, 36 results and 39 execution environments. Final
 verification supports at most 480 distinct commands, 1,440 results and 1,442 environments across its
@@ -43,9 +45,10 @@ checkpoints to share the actual workspace's immutable base and branch; runs with
 must also match its repository and identity. The final attempt binds the actual retained workspace.
 Missing or inconsistent proof is an explicit blocker and cannot silently select a new source.
 
-A final-verification gate preserves the original purpose, manifest, source and approved version. One
-accepted answer can create one successor final attempt. It does not replay verified Work Items,
-change the plan, release an environment without stop evidence, or authorize a provider write.
+A final-verification gate preserves the original purpose, manifest, source and approved version. A
+technical retry can create one successor final attempt. An answer is required only for a product
+decision that is not covered by the approved requirements. Neither path replays verified Work Items,
+changes the plan, releases an environment without stop evidence, or authorizes a provider write.
 
 Verification leaves Work Items **In review** and the Feature active in its Project. The cumulative
 PR, conceptual review and explicit merge consume this evidence in subsequent steps; certification

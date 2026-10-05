@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as realDelay } from "node:timers/promises";
+import type * as TimersPromises from "node:timers/promises";
 
 import { afterEach, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -23,6 +24,15 @@ import {
 } from "./codex-execution-runtime.js";
 
 const directories: string[] = [];
+const readinessClock = vi.hoisted(() => ({ skipDelay: false }));
+vi.mock("node:timers/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof TimersPromises>();
+  return {
+    ...actual,
+    setTimeout: (...args: Parameters<typeof actual.setTimeout>) =>
+      readinessClock.skipDelay ? Promise.resolve() : actual.setTimeout(...args),
+  };
+});
 const daemonId = "c20f7230-59a2-4824-a2f4-fda71c982ee6";
 vi.setConfig({ testTimeout: 20_000 });
 const fixturePath = fileURLToPath(
@@ -100,6 +110,163 @@ it("preserves the image toolchain PATH for controller verification", async () =>
   const create = (await dockerCalls(cwd)).find((args) => args[0] === "create");
   expect(create).toContain("custom-toolchain-check");
   expect(create).not.toContain("PATH=/usr/local/bin:/usr/bin:/bin");
+});
+
+it("runs trusted Docker verification inside one owned resource boundary without the host socket", async () => {
+  const { cwd, runtime } = await fixture("happy", { projectEnvironment: "node_docker" });
+  await runtime.runVerification({
+    ...input(cwd),
+    workspaceCwd: cwd,
+    cwd: ".",
+    command: ["npm", "run", "test:black-box"],
+    processId: "prepared-verification",
+    timeoutMs: 10_000,
+  });
+  const create = (await dockerCalls(cwd)).find((args) => args[0] === "create");
+  expect(create).toContain("/usr/local/bin/kestrel-project-entrypoint");
+  expect(create).toContain("--privileged");
+  expect(create).toContain("private");
+  expect(create).toContain("DOCKER_HOST=unix:///run/kestrel-docker.sock");
+  expect(create).not.toContain("--publish");
+  expect(create?.join(" ")).not.toContain("source=/var/run/docker.sock");
+});
+
+it("starts implementation after a prepared environment needs more than the legacy readiness allowance", async () => {
+  const { cwd, runtime } = await fixture("delayed_executor", {
+    projectEnvironment: "node_docker",
+    timeoutMs: null,
+  });
+  readinessClock.skipDelay = true;
+  const turn = input(cwd);
+  try {
+    const result = await runtime.runTurn(turn);
+    expect(result.text).toBe("Implemented. 🪶");
+    expect(turn.onQuestion).not.toHaveBeenCalled();
+    expect(turn.onStopped).toHaveBeenCalledOnce();
+  } finally {
+    readinessClock.skipDelay = false;
+  }
+}, 90_000);
+
+it("retains and removes private Docker storage with its verification container", async () => {
+  const { cwd, runtime } = await fixture("happy", { projectEnvironment: "node_docker" });
+  const onContainer = vi.fn(async () => {
+    const calls = await dockerCalls(cwd);
+    expect(calls.some((args) => args[0] === "volume" && args[1] === "inspect")).toBe(true);
+    expect(calls.some((args) => args[0] === "start")).toBe(false);
+  });
+  await runtime.runVerification({
+    ...input(cwd),
+    onContainer,
+    workspaceCwd: cwd,
+    cwd: ".",
+    command: ["node", "--test"],
+    processId: "private-docker-storage",
+    timeoutMs: 10_000,
+  });
+  expect(onContainer).toHaveBeenCalledWith(
+    expect.objectContaining({
+      privateStorage: { name: "e".repeat(64), driver: "local", createdAt: "2026-10-05T14:00:00Z" },
+    }),
+  );
+  const calls = await dockerCalls(cwd);
+  expect(calls.find((args) => args[0] === "create")).toContain(
+    "type=volume,target=/var/lib/docker,volume-driver=local,volume-nocopy",
+  );
+  expect(calls.find((args) => args[0] === "rm")).toContain("--volumes");
+  expect(calls.at(-1)).toEqual([
+    "volume",
+    "ls",
+    "--filter",
+    `name=^${"e".repeat(64)}$`,
+    "--format",
+    "{{.Name}}",
+  ]);
+});
+
+it.each(["volume_replaced", "volume_busy"])(
+  "does not release a passed check with %s storage",
+  async (mode) => {
+    const { cwd, runtime } = await fixture(mode, { projectEnvironment: "node_docker" });
+    const onStopped = vi.fn(() => Promise.resolve());
+    await expect(
+      runtime.runVerification({
+        ...input(cwd),
+        onStopped,
+        workspaceCwd: cwd,
+        cwd: ".",
+        command: ["node", "--test"],
+        processId: mode,
+        timeoutMs: 10_000,
+      }),
+    ).rejects.toMatchObject({ code: "stop_unconfirmed" });
+    expect(onStopped).not.toHaveBeenCalled();
+    if (mode === "volume_replaced")
+      expect((await dockerCalls(cwd)).some((args) => args[0] === "rm")).toBe(false);
+  },
+);
+
+it("finishes exact storage cleanup after the container removal leaves its volume", async () => {
+  const { cwd, runtime } = await fixture("volume_left", { projectEnvironment: "node_docker" });
+  const result = await runtime.runVerification({
+    ...input(cwd),
+    workspaceCwd: cwd,
+    cwd: ".",
+    command: ["node", "--test"],
+    processId: "partial-storage-cleanup",
+    timeoutMs: 10_000,
+  });
+  expect(result.exitCode).toBe(0);
+  expect(
+    (await dockerCalls(cwd)).filter((args) => args[0] === "volume" && args[1] === "rm"),
+  ).toEqual([["volume", "rm", "e".repeat(64)]]);
+});
+
+it("permits required downloads only inside the authorized prepared environment", async () => {
+  const { cwd, runtime, logPath } = await fixture("happy", { projectEnvironment: "node_docker" });
+  await runtime.runTurn(input(cwd));
+  const messages = await protocolMessages(logPath);
+  expect(messages.find((message) => message.method === "thread/start")?.params).toMatchObject({
+    sandbox: "read-only",
+  });
+  expect(messages.find((message) => message.method === "turn/start")?.params).toMatchObject({
+    sandboxPolicy: { type: "externalSandbox", networkAccess: "enabled" },
+  });
+  expect(messages.find((message) => message.method === "thread/start")?.params).toHaveProperty(
+    "developerInstructions",
+    expect.stringContaining("package downloads and Docker image pulls"),
+  );
+});
+
+it("gives a verification command its full deadline after slow environment preparation", async () => {
+  const { cwd, runtime } = await fixture("slow_preparation", { projectEnvironment: "node_docker" });
+  const result = await runtime.runVerification({
+    ...input(cwd),
+    workspaceCwd: cwd,
+    cwd: ".",
+    command: ["node", "--test"],
+    processId: "prepared-deadline",
+    timeoutMs: 500,
+  });
+  expect(result.exitCode).toBe(0);
+});
+
+it("retains partial command output when a prepared verification times out", async () => {
+  const { cwd, runtime } = await fixture("prepared_timeout", { projectEnvironment: "node_docker" });
+  const result = await runtime.runVerification({
+    ...input(cwd),
+    workspaceCwd: cwd,
+    cwd: ".",
+    command: ["node", "--test"],
+    processId: "prepared-timeout-output",
+    timeoutMs: 1000,
+  });
+  expect(result).toMatchObject({
+    exitCode: 124,
+    timedOut: true,
+    stdout: "verified 🪶\n",
+    stderr: "check details\n",
+  });
 });
 
 it("emits public reasoning summaries and bounded command results", async () => {
@@ -636,6 +803,19 @@ it("reconciles a lost create response without ever starting or creating a second
   expect(calls.filter((args) => args[0] === "create")).toHaveLength(1);
   expect(calls.some((args) => args[0] === "start")).toBe(false);
   expect(calls.filter((args) => args[0] === "rm")).toHaveLength(1);
+});
+
+it("keeps the stop fence when prepared creation loses its storage identity", async () => {
+  const { cwd, runtime } = await fixture("create_uncertain_absent", {
+    projectEnvironment: "node_docker",
+  });
+  const turn = input(cwd);
+  await expect(runtime.runTurn(turn)).rejects.toMatchObject({ code: "stop_unconfirmed" });
+  expect(turn.beforeContainerCreate).toHaveBeenCalledWith(expect.any(String), daemonId, true);
+  expect(turn.onStopped).not.toHaveBeenCalled();
+  const calls = await dockerCalls(cwd);
+  expect(calls.filter((args) => args[0] === "create")).toHaveLength(1);
+  expect(calls.some((args) => args[0] === "start" || args[0] === "rm")).toBe(false);
 });
 
 it("claims the reserved name before reporting an uncertain absent create as stopped", async () => {

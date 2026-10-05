@@ -63,6 +63,7 @@ await writeFile(
   `${JSON.stringify({ kind: "start", at: new Date().toISOString(), runtimePid, dockerInfo })}\n`,
 );
 let stopping = false;
+let sampleIndex = 0;
 process.on("SIGINT", () => {
   stopping = true;
 });
@@ -93,7 +94,7 @@ while (!stopping) {
       : [];
   const cgroups = await Promise.all(
     factoryNames.map(async (name) => {
-      const [memory, pids] = await Promise.all([
+      const [memory, pids, diskKiB] = await Promise.all([
         command(docker, [
           "exec",
           name,
@@ -108,10 +109,26 @@ while (!stopping) {
           "-c",
           "cat /sys/fs/cgroup/pids.current /sys/fs/cgroup/pids.peak /sys/fs/cgroup/pids.max /sys/fs/cgroup/pids.events",
         ]),
+        // Measure layer-copy storage less frequently than memory/PID counters.
+        sampleIndex % 12 === 0
+          ? command(docker, [
+              "exec",
+              name,
+              "timeout",
+              "--signal=TERM",
+              "--kill-after=1s",
+              "8s",
+              "du",
+              "-sk",
+              "/var/lib/docker",
+              "/workspace/node_modules",
+            ])
+          : Promise.resolve(null),
       ]);
-      return { name, memory, pids };
+      return { name, memory, pids, diskKiB };
     }),
   );
+  sampleIndex += 1;
   await appendFile(
     output,
     `${JSON.stringify({ kind: "sample", at, vmStat, pressure, processes: processMemory(processes), stats, cgroups })}\n`,

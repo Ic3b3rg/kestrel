@@ -254,7 +254,7 @@ function WorkItemCard({
         <span className="text-xs font-normal text-muted-foreground">
           {item.order} · {item.key}
         </span>
-        {queued ? (
+        {queued && item.blocking === null ? (
           <span className="text-xs text-muted-foreground">Waiting for development</span>
         ) : null}
         {hasContext ? (

@@ -10,6 +10,8 @@ import {
   FactoryVerificationResultSchema,
   FactoryAcceptedVerificationCommandsSchema,
   FactoryExecutionFailureSchema,
+  FactoryPrivateDockerStorageSchema,
+  type FactoryPrivateDockerStorage,
   FactoryVerificationManifestSchema,
   FactoryReviewCorrectionSchema,
   factoryVerificationManifest,
@@ -475,6 +477,7 @@ export async function claimFactoryExecution(
       }
       let gateResolution: ClaimedFactoryExecution["gateResolution"] = null;
       if (row.resume_gate_id !== null) {
+        const retainedWorkspace = await workspaceFor(client, row.feature_id);
         const gates = await client.query<{
           id: string;
           run_id: string;
@@ -492,8 +495,11 @@ export async function claimFactoryExecution(
              AND previous.source IS NOT DISTINCT FROM $6::jsonb AND previous.accepted_commands = $7::jsonb
              AND previous.purpose = $8 AND gate.purpose = $8
              AND previous.verification_manifest IS NOT DISTINCT FROM $9::jsonb
-             AND gate.reason NOT IN ('source_changed', 'revision_changed')
-             AND previous.failure NOT IN ('source_changed', 'revision_changed')
+             AND ((gate.reason NOT IN ('source_changed', 'revision_changed')
+                   AND previous.failure NOT IN ('source_changed', 'revision_changed'))
+               OR (gate.workspace_restoration = $10::jsonb
+                   AND gate.workspace_restoration->>'repositoryId' = $6::jsonb->>'repositoryId'
+                   AND gate.workspace_restoration->>'sourceIdentity' = $6::jsonb->>'identity'))
              AND NOT EXISTS (SELECT 1 FROM factory_execution_containers WHERE run_id = previous.id AND stopped_at IS NULL)`,
           [
             row.resume_gate_id,
@@ -505,6 +511,7 @@ export async function claimFactoryExecution(
             JSON.stringify(row.accepted_commands),
             row.purpose ?? "work_item",
             row.verification_manifest == null ? null : JSON.stringify(row.verification_manifest),
+            retainedWorkspace === null ? null : JSON.stringify(retainedWorkspace),
           ],
         );
         const gate = gates.rows[0];
@@ -651,14 +658,14 @@ export function recordFactoryExecutionActivity(
   item: Pick<
     FactoryExecutionRun["activity"][number],
     "itemId" | "itemState" | "agentPath" | "detail" | "exitCode"
-  > = {},
+  > & { retainDetail?: boolean } = {},
 ): Promise<void> {
   return withRun(pool, run, async (client, _feature, row) => {
     if (row.reservation_released_at !== null) throw new FactoryError("conflict");
     await client.query(
       `INSERT INTO factory_execution_activity
-         (run_id, kind, summary, item_id, item_state, agent_path, detail, exit_code)
-       SELECT $1,$2,$3,$4,$5,$6,$7,$8
+         (run_id, kind, summary, item_id, item_state, agent_path, detail, exit_code, retain_detail)
+       SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9
        WHERE (SELECT count(*) FROM factory_execution_activity WHERE run_id = $1) < 1000`,
       [
         run.id,
@@ -671,6 +678,7 @@ export function recordFactoryExecutionActivity(
           ? item.detail.slice(0, 8192)
           : null,
         item.exitCode ?? null,
+        item.retainDetail === true && kind === "lifecycle",
       ],
     );
   });
@@ -739,6 +747,7 @@ export function reserveFactoryExecutionContainer(
   name: string,
   phase: "implementation" | "verification",
   daemonId?: string,
+  privateStorageRequired = false,
 ): Promise<void> {
   return withRun(pool, run, async (client, feature, row) => {
     assertRunning(feature, row);
@@ -750,12 +759,12 @@ export function reserveFactoryExecutionContainer(
     );
     if (
       Number(count.rows[0]?.count) >=
-      (row.purpose === "feature_verification" || row.purpose === "correction" ? 1442 : 39)
+      (row.purpose === "feature_verification" || row.purpose === "correction" ? 1443 : 40)
     )
       throw new FactoryError("conflict", "The attempt environment limit was reached");
     await client.query(
-      "INSERT INTO factory_execution_containers (name, run_id, phase, daemon_id) VALUES ($1,$2,$3,$4)",
-      [name, run.id, phase, daemonId ?? null],
+      "INSERT INTO factory_execution_containers (name, run_id, phase, daemon_id, private_storage_required) VALUES ($1,$2,$3,$4,$5)",
+      [name, run.id, phase, daemonId ?? null, privateStorageRequired],
     );
     if (phase === "implementation")
       await client.query("UPDATE factory_execution_runs SET state = 'running' WHERE id = $1", [
@@ -771,16 +780,60 @@ export function reserveFactoryExecutionContainer(
   });
 }
 
+/** Read-only stop/release proof for the installation's retained resource lease. */
+export async function isFactoryExecutionReservationReleased(
+  pool: DatabasePool,
+  runId: string,
+): Promise<boolean> {
+  const result = await pool.query<{ released: boolean }>(
+    "SELECT reservation_released_at IS NOT NULL AS released FROM factory_execution_runs WHERE id=$1",
+    [runId],
+  );
+  return result.rows[0]?.released === true;
+}
+
+/** Claim installation capacity atomically; only retained stop proof releases it. */
+export function claimFactoryExecutionHeavySlot(
+  pool: DatabasePool,
+  runId: string,
+): Promise<boolean> {
+  return transaction(pool, async (client) => {
+    await client.query(
+      "SELECT pg_advisory_xact_lock(hashtextextended('factory-heavy-slot-v1', 0))",
+    );
+    const result = await client.query(
+      `UPDATE factory_execution_runs SET heavy_slot_claimed_at = COALESCE(heavy_slot_claimed_at, clock_timestamp())
+       WHERE id = $1 AND reservation_released_at IS NULL AND stop_requested_at IS NULL
+         AND state IN ('queued','running','verifying')
+         AND NOT EXISTS (SELECT 1 FROM factory_execution_runs other
+           WHERE other.id <> $1 AND other.heavy_slot_claimed_at IS NOT NULL AND other.reservation_released_at IS NULL)
+       RETURNING id`,
+      [runId],
+    );
+    return result.rowCount === 1;
+  });
+}
+
 export async function identifyFactoryExecutionContainer(
   pool: DatabasePool,
   run: ClaimedFactoryExecution,
-  container: { name: string; id: string },
+  container: { name: string; id: string; privateStorage?: FactoryPrivateDockerStorage },
 ): Promise<void> {
   const active = await withRun(pool, run, async (client, feature, row) => {
     if (row.reservation_released_at !== null) throw new FactoryError("conflict");
     const result = await client.query(
-      "UPDATE factory_execution_containers SET container_id = $3 WHERE name = $1 AND run_id = $2 AND stopped_at IS NULL AND (container_id IS NULL OR container_id = $3)",
-      [container.name, run.id, container.id],
+      `UPDATE factory_execution_containers SET container_id = $3, private_storage = COALESCE(private_storage, $4::jsonb)
+       WHERE name = $1 AND run_id = $2 AND stopped_at IS NULL AND (container_id IS NULL OR container_id = $3)
+         AND (NOT private_storage_required OR $4::jsonb IS NOT NULL)
+         AND (private_storage IS NULL OR private_storage IS NOT DISTINCT FROM $4::jsonb)`,
+      [
+        container.name,
+        run.id,
+        container.id,
+        container.privateStorage === undefined
+          ? null
+          : JSON.stringify(FactoryPrivateDockerStorageSchema.parse(container.privateStorage)),
+      ],
     );
     if (result.rowCount !== 1) throw new FactoryError("conflict");
     return (
@@ -801,7 +854,8 @@ export function stopFactoryExecutionContainer(
   return withRun(pool, run, async (client) => {
     const result = await client.query(
       `UPDATE factory_execution_containers SET container_id = COALESCE(container_id, $3), stopped_at = COALESCE(stopped_at, clock_timestamp())
-       WHERE name = $1 AND run_id = $2 AND (container_id IS NULL OR container_id = $3)`,
+       WHERE name = $1 AND run_id = $2 AND (container_id IS NULL OR container_id = $3)
+         AND (NOT private_storage_required OR private_storage IS NOT NULL OR (container_id IS NULL AND $3::text IS NULL))`,
       [container.name, run.id, container.id],
     );
     if (result.rowCount !== 1) throw new FactoryError("conflict");

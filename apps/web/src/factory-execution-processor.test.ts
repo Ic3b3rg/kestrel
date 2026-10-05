@@ -317,6 +317,63 @@ afterAll(async () => {
   await pool.end();
 });
 
+it("prepares the authorized environment before implementation and releases capacity after verified teardown", async () => {
+  const release = vi.fn(() => events.push("capacity-released"));
+  await processor({
+    prepareProjectEnvironment: () =>
+      Promise.resolve({
+        runtimeOptions: {
+          containerImage: `sha256:${"b".repeat(64)}`,
+          projectEnvironment: "node_docker",
+        },
+        release,
+      }),
+  }).process({ runId: run.id });
+  expect(vi.mocked(finishFactoryExecution).mock.calls.at(-1)?.[2].question).toBeNull();
+  expect(vi.mocked(finishFactoryExecution).mock.calls.at(-1)?.[2]).toMatchObject({
+    verified: true,
+    writerStopped: true,
+  });
+  expect(events.indexOf("verification")).toBeLessThan(events.indexOf("implementation"));
+  expect(runVerification.mock.calls[0]?.[0].command).toEqual(["true"]);
+  expect(release).toHaveBeenCalledOnce();
+  expect(events.at(-1)).toBe("capacity-released");
+});
+
+it("retains source build warnings for the board despite verbose preparation output", async () => {
+  const verify = runVerification.getMockImplementation();
+  if (verify === undefined) throw new Error("Missing verification fixture");
+  runVerification.mockImplementationOnce(async (input) => ({
+    ...(await verify(input)),
+    stdout: "Build progress\n".repeat(2000),
+    stderr:
+      "Compiler diagnostic\n".repeat(1000) +
+      "Project source warm-up failures: npm (exit 9); docker (exit 1). Required verification still applies.\n",
+  }));
+  await processor({
+    prepareProjectEnvironment: () =>
+      Promise.resolve({
+        runtimeOptions: {
+          containerImage: `sha256:${"b".repeat(64)}`,
+          projectEnvironment: "node_docker",
+        },
+        release: () => {},
+      }),
+  }).process({ runId: run.id });
+  const activity = vi
+    .mocked(recordFactoryExecutionActivity)
+    .mock.calls.find(
+      (call) => call[3] === "Execution tools ready. Project checks still required.",
+    )?.[4];
+  expect(activity?.detail).toContain("npm (exit 9); docker (exit 1)");
+  expect(activity?.retainDetail).toBe(true);
+  expect(vi.mocked(finishFactoryExecution).mock.calls.at(-1)?.[2]).toMatchObject({
+    verified: true,
+    writerStopped: true,
+    question: null,
+  });
+});
+
 it("blocks a legacy approval before opening a workspace or starting a model", async () => {
   run.lifecycleProfile = null;
   await processor().process({ runId: run.id });
@@ -682,7 +739,11 @@ it("resumes only the recorded question in a fresh turn while retaining the froze
   expect(context.gateResolution).toEqual(run.gateResolution);
   expect(context.requirements).toEqual(run.plan.acceptance);
   expect(context.workItem).toEqual(run.plan.workItems[0]);
-  expect(context.limits).toEqual(run.plan.limits);
+  expect(context.limits).toEqual({
+    maxConcurrentProjects: 2,
+    maxActiveFeaturesPerProject: 1,
+    maxVerificationCommandTimeoutSeconds: 60,
+  });
   expect(input).not.toHaveProperty("threadId");
   expect(runVerification).toHaveBeenCalledOnce();
   expect(finishFactoryExecution).toHaveBeenCalledWith(
@@ -1245,6 +1306,21 @@ it("gates persistent verification failures after at most three technical rounds"
       failure: "verification_failed",
     }),
   );
+});
+
+it("does not give implementation an aggregate deadline from legacy plan limits", async () => {
+  run.plan.limits.attemptTimeoutSeconds = 1800;
+  await processor().process({ runId: run.id });
+  const input = runTurn.mock.calls[0]?.[0];
+  if (input === undefined) throw new Error("No implementation turn started");
+  const context = JSON.parse(input.prompt.split("\n").at(-1) ?? "null") as { limits: unknown };
+  expect(context.limits).not.toHaveProperty("attemptTimeoutSeconds");
+  expect(context.limits).toMatchObject({ maxVerificationCommandTimeoutSeconds: 1800 });
+  expect(input.prompt).toContain("There is no aggregate implementation deadline.");
+  expect(input.prompt).toContain(
+    "The legacy attemptTimeoutSeconds in the retained plan is a per-command verification ceiling",
+  );
+  expect(runVerification.mock.calls[0]?.[0].timeoutMs).toBe(10_000);
 });
 
 it("keeps a legacy execution alive beyond the plan's elapsed-time limit", async () => {

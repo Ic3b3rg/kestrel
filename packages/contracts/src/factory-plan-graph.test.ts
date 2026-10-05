@@ -32,6 +32,18 @@ function facts(columns: FactoryWorkItem["column"][] = ["todo", "todo", "todo"]) 
 }
 
 describe("approved Feature Plan graph", () => {
+  it("presents failed verification as a technical interruption without asking for a product decision", () => {
+    const graph = projectFeaturePlan(plan(), {
+      featureState: "gated",
+      items: facts(),
+      gate: { reason: "verification_failed", question: "Check 2 failed.", decision: null },
+    });
+    expect(graph.workItems[0]?.blocking?.explanation).toBe(
+      "Technical interruption: Check 2 failed.",
+    );
+    expect(graph.nextWorkItemKey).toBeNull();
+  });
+
   it("projects the ordered dependency frontier without mutating its inputs", () => {
     const approved = plan();
     const state = facts();

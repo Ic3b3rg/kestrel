@@ -15,6 +15,12 @@ import {
 import { createServer, type Server, type Socket } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, relative, sep } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import {
+  FactoryPrivateDockerStorageSchema,
+  type FactoryPrivateDockerStorage,
+} from "@kestrel/contracts";
+import { privateDockerStorageFor, removePrivateDockerStorage } from "./private-docker-storage.js";
 
 import {
   CodexFactoryError,
@@ -55,8 +61,16 @@ export interface CodexExecutionQuestion {
   question: string;
 }
 export interface CodexExecutionLifecycle {
-  beforeContainerCreate(name: string, daemonId?: string): Promise<void>;
-  onContainer(container: { name: string; id: string }): Promise<void>;
+  beforeContainerCreate(
+    name: string,
+    daemonId?: string,
+    privateStorageRequired?: true,
+  ): Promise<void>;
+  onContainer(container: {
+    name: string;
+    id: string;
+    privateStorage?: FactoryPrivateDockerStorage;
+  }): Promise<void>;
   onStopped(container: { name: string; id: string | null }): Promise<void>;
 }
 export interface CodexExecutionTurnInput extends CodexExecutionLifecycle {
@@ -87,6 +101,8 @@ export interface CodexVerificationInput extends CodexExecutionLifecycle {
   command: readonly string[];
   processId: string;
   timeoutMs: number;
+  /** Preparation diagnostics only: keep a bounded stderr tail for its final warning summary. */
+  retainStderrTail?: true;
   signal?: AbortSignal;
 }
 export interface CodexVerificationResult {
@@ -97,12 +113,15 @@ export interface CodexVerificationResult {
   stdoutTruncated: boolean;
   stderrTruncated: boolean;
   durationMs: number;
+  timedOut?: boolean;
 }
 export interface CodexExecutionRuntime {
   runTurn(input: CodexExecutionTurnInput): Promise<CodexExecutionTurnResult>;
   runVerification(input: CodexVerificationInput): Promise<CodexVerificationResult>;
 }
 export interface CodexExecutionRuntimeOptions {
+  /** Installation-authorized trusted Project only; never inferred from repository content. */
+  projectEnvironment?: "node_docker";
   executable?: string;
   arguments?: readonly string[];
   timeoutMs?: number | null;
@@ -193,8 +212,10 @@ const ENVIRONMENTS = [
   { environmentId: "remote", cwd: "/workspace", runtimeWorkspaceRoots: ["/workspace"] },
 ];
 const OUTPUT_CAP = 64 * 1024;
+// Private daemon (60s), project preparation (840s), and termination grace (10s).
+const PREPARED_STARTUP_TIMEOUT_MS = 910_000;
 const CONTAINER_INSPECT =
-  '{"id":{{json .Id}},"name":{{json .Name}},"running":{{.State.Running}},"status":{{json .State.Status}},"exitCode":{{.State.ExitCode}},"image":{{json .Image}},"user":{{json .Config.User}},"network":{{json .HostConfig.NetworkMode}},"logDriver":{{json .HostConfig.LogConfig.Type}},"readonly":{{.HostConfig.ReadonlyRootfs}},"privileged":{{.HostConfig.Privileged}},"pidMode":{{json .HostConfig.PidMode}},"restart":{{json .HostConfig.RestartPolicy.Name}},"init":{{.HostConfig.Init}},"pidsLimit":{{.HostConfig.PidsLimit}},"memory":{{.HostConfig.Memory}},"memorySwap":{{.HostConfig.MemorySwap}},"nanoCpus":{{.HostConfig.NanoCpus}},"cpusetCpus":{{json .HostConfig.CpusetCpus}},"shmSize":{{.HostConfig.ShmSize}},"tmpfs":{{json .HostConfig.Tmpfs}},"capDrop":{{json .HostConfig.CapDrop}},"securityOpt":{{json .HostConfig.SecurityOpt}},"mounts":{{json .Mounts}},"labels":{{json .Config.Labels}}}';
+  '{"id":{{json .Id}},"name":{{json .Name}},"running":{{.State.Running}},"status":{{json .State.Status}},"exitCode":{{.State.ExitCode}},"image":{{json .Image}},"user":{{json .Config.User}},"network":{{json .HostConfig.NetworkMode}},"logDriver":{{json .HostConfig.LogConfig.Type}},"readonly":{{.HostConfig.ReadonlyRootfs}},"privileged":{{.HostConfig.Privileged}},"pidMode":{{json .HostConfig.PidMode}},"cgroupns":{{json .HostConfig.CgroupnsMode}},"restart":{{json .HostConfig.RestartPolicy.Name}},"init":{{.HostConfig.Init}},"pidsLimit":{{.HostConfig.PidsLimit}},"memory":{{.HostConfig.Memory}},"memorySwap":{{.HostConfig.MemorySwap}},"nanoCpus":{{.HostConfig.NanoCpus}},"cpusetCpus":{{json .HostConfig.CpusetCpus}},"shmSize":{{.HostConfig.ShmSize}},"tmpfs":{{json .HostConfig.Tmpfs}},"capDrop":{{json .HostConfig.CapDrop}},"securityOpt":{{json .HostConfig.SecurityOpt}},"mounts":{{json .Mounts}},"labels":{{json .Config.Labels}}}';
 const FORWARD =
   "const n=require('node:net');const s=n.connect(8765,'127.0.0.1',()=>{process.stdin.pipe(s);s.pipe(process.stdout)});s.on('error',()=>process.exit(1));process.stdin.on('end',()=>s.end());";
 // This fixed probe waits for the executor socket. It never runs project code.
@@ -330,6 +351,7 @@ async function processOutput(
   args: readonly string[],
   signal: AbortSignal,
   env = safeEnvironment(),
+  retainStderrTail = false,
 ): Promise<Omit<CodexVerificationResult, "processId" | "durationMs">> {
   checkAbort(signal);
   return new Promise((resolve, reject) => {
@@ -351,6 +373,17 @@ async function processOutput(
     signal.addEventListener("abort", abort, { once: true });
     for (const stream of ["stdout", "stderr"] as const)
       child[stream].on("data", (chunk: Buffer) => {
+        if (stream === "stderr" && retainStderrTail) {
+          const captured = Buffer.concat([output.stderr, chunk]);
+          if (captured.length > OUTPUT_CAP) {
+            output.stderrTruncated = true;
+            output.stderr = Buffer.concat([
+              captured.subarray(0, OUTPUT_CAP / 2),
+              captured.subarray(-OUTPUT_CAP / 2),
+            ]);
+          } else output.stderr = captured;
+          return;
+        }
         const available = OUTPUT_CAP - output[stream].length;
         if (chunk.length > available) output[`${stream}Truncated`] = true;
         if (available > 0)
@@ -436,8 +469,10 @@ export function createCodexExecutionContainerRecovery(
     id: string | null;
     daemonId?: string | null;
     image?: string | null;
+    privateStorage?: FactoryPrivateDockerStorage | null;
+    privateStorageRequired?: true;
   },
-  onIdentified: (id: string) => Promise<void>,
+  onIdentified: (id: string, privateStorage?: FactoryPrivateDockerStorage) => Promise<void>,
   signal: AbortSignal,
 ) => Promise<{ name: string; id: string }> {
   return async (container, onIdentified, signal) => {
@@ -478,6 +513,8 @@ export function createCodexExecutionContainerRecovery(
       };
       let byName = await find(`name=^/${container.name}$`);
       let id = container.id ?? byName;
+      if (byName === null && container.privateStorageRequired && container.privateStorage == null)
+        throw new Error("Required private storage was never identified");
       if (id === null && container.image != null) {
         const barrier = await cli(nameBarrierArguments(container.name, container.image)).catch(
           () => "",
@@ -494,6 +531,10 @@ export function createCodexExecutionContainerRecovery(
         throw new Error("Container identity was not confirmed");
       const byId = await find(`id=${id}`);
       if (byId !== null && byId !== id) throw new Error("Container identity changed");
+      let privateStorage =
+        container.privateStorage == null
+          ? null
+          : FactoryPrivateDockerStorageSchema.parse(container.privateStorage);
       if (byId !== null) {
         const state = record(JSON.parse(await cli(["inspect", "--format", CONTAINER_INSPECT, id])));
         if (
@@ -503,16 +544,31 @@ export function createCodexExecutionContainerRecovery(
           record(state.labels)["kestrel.factory.execution"] !== container.name
         )
           throw new Error("Container ownership changed");
+        if (record(state.labels)["kestrel.factory.private-docker-storage"] === "anonymous") {
+          const actual = await privateDockerStorageFor(cli, state.mounts);
+          if (
+            privateStorage !== null &&
+            (actual.name !== privateStorage.name || actual.createdAt !== privateStorage.createdAt)
+          )
+            throw new Error("Private Docker storage identity changed");
+          privateStorage = actual;
+        } else if (privateStorage !== null || container.privateStorageRequired)
+          throw new Error("Private Docker storage ownership changed");
       } else if (container.id === null || byName !== null || container.daemonId == null) {
         throw new Error("Discovered container disappeared before ownership was verified");
       }
       // Commit this witness before the irreversible removal. A restarted reconciler can
       // then prove this same ID absent if the process dies before recording stopped_at.
-      await withCancellation(onIdentified(id), deadline);
+      await withCancellation(
+        privateStorage === null ? onIdentified(id) : onIdentified(id, privateStorage),
+        deadline,
+      );
       await assertDaemon();
-      if (byId !== null) await cli(["rm", "--force", id]);
+      if (byId !== null)
+        await cli(["rm", "--force", id, ...(privateStorage === null ? [] : ["--volumes"])]);
       if ((await find(`name=^/${container.name}$`)) !== null || (await find(`id=${id}`)) !== null)
         throw new Error("Container teardown was not confirmed");
+      if (privateStorage !== null) await removePrivateDockerStorage(cli, privateStorage);
       await assertDaemon();
       return { name: container.name, id };
     } catch {
@@ -533,6 +589,8 @@ class ExecutionContainer {
   #daemonId: string | null = null;
   #reserved = false;
   #createMayHaveBeenIssued = false;
+  #privateStorage: FactoryPrivateDockerStorage | null = null;
+  #storageRecorded = false;
   #mounts: { source: string; target: string; readonly: boolean }[] = [];
 
   constructor(
@@ -566,8 +624,10 @@ class ExecutionContainer {
       throw new CodexExecutionError("sandbox_unavailable", undefined, "docker_operation_failed");
     return result.stdout.trim();
   }
-  async inspect(): Promise<Record<string, unknown>> {
-    return record(JSON.parse(await this.cli(["inspect", "--format", CONTAINER_INSPECT, this.id])));
+  async inspect(signal?: AbortSignal): Promise<Record<string, unknown>> {
+    return record(
+      JSON.parse(await this.cli(["inspect", "--format", CONTAINER_INSPECT, this.id], signal)),
+    );
   }
   async assertDaemon(signal?: AbortSignal): Promise<void> {
     if (
@@ -576,7 +636,12 @@ class ExecutionContainer {
     )
       throw new CodexExecutionError("sandbox_unavailable", undefined, "daemon_identity_changed");
   }
-  async create(command: readonly string[], commandCwd: string, signal: AbortSignal): Promise<void> {
+  async create(
+    command: readonly string[],
+    commandCwd: string,
+    signal: AbortSignal,
+    commandTimeoutMs?: number,
+  ): Promise<void> {
     const program = command[0];
     if (program === undefined) throw new CodexExecutionError("invalid_response");
     if (!/^sha256:[a-f0-9]{64}$/u.test(this.#options.containerImage))
@@ -639,22 +704,26 @@ class ExecutionContainer {
       throw new CodexExecutionError("sandbox_unavailable");
     const cpuCount = Math.min(availableCpus, Math.ceil(resources.nanoCpus / 1_000_000_000));
     const cpuSet = cpuCount === 1 ? "0" : `0-${String(cpuCount - 1)}`;
-    const containerUser =
+    const executionUser =
       this.#options.containerUser ??
       `${String(process.getuid?.() ?? 1000)}:${String(process.getgid?.() ?? 1000)}`;
-    if (!/^[1-9]\d{0,9}:[1-9]\d{0,9}$/u.test(containerUser))
+    if (!/^[1-9]\d{0,9}:[1-9]\d{0,9}$/u.test(executionUser))
       throw new CodexExecutionError("invalid_response");
+    const preparedProject = this.#options.projectEnvironment === "node_docker";
+    const containerUser = preparedProject ? "0:0" : executionUser;
     const shmBytes = Math.max(64 * 1024, Math.floor(resources.tmpfsBytes / 8));
     const remainingTmpfsBytes = resources.tmpfsBytes - shmBytes;
     const homeTmpfsBytes = Math.floor(remainingTmpfsBytes / 2);
     const temporaryTmpfsBytes = remainingTmpfsBytes - homeTmpfsBytes;
     if (homeTmpfsBytes < 1 || temporaryTmpfsBytes < 1)
       throw new CodexExecutionError("invalid_response");
-    const temporaryTmpfs = `rw,nosuid,nodev,size=${String(temporaryTmpfsBytes)},mode=1777`;
+    const temporaryTmpfs = `rw,nosuid,nodev,${preparedProject ? "exec," : ""}size=${String(temporaryTmpfsBytes)},mode=1777`;
     const homeTmpfs = `rw,nosuid,nodev,size=${String(homeTmpfsBytes)},mode=1777`;
     this.#reserved = true;
     await withCancellation(
-      this.#lifecycle.beforeContainerCreate(this.name, this.#daemonId),
+      preparedProject
+        ? this.#lifecycle.beforeContainerCreate(this.name, this.#daemonId, true)
+        : this.#lifecycle.beforeContainerCreate(this.name, this.#daemonId),
       signal,
     );
     checkAbort(signal);
@@ -668,18 +737,17 @@ class ExecutionContainer {
         this.name,
         "--label",
         `kestrel.factory.execution=${this.name}`,
-        "--read-only",
+        ...(preparedProject ? ["--privileged", "--cgroupns", "private"] : ["--read-only"]),
         "--network",
-        "none",
+        preparedProject ? "bridge" : "none",
         "--log-driver",
         "none",
         "--restart",
         "no",
         "--init",
-        "--cap-drop",
-        "ALL",
-        "--security-opt",
-        "no-new-privileges:true",
+        ...(preparedProject
+          ? []
+          : ["--cap-drop", "ALL", "--security-opt", "no-new-privileges:true"]),
         "--pids-limit",
         String(resources.pidsLimit),
         "--memory",
@@ -702,21 +770,64 @@ class ExecutionContainer {
           "--mount",
           `type=bind,source=${mount.source},target=${mount.target}${mount.readonly ? ",readonly" : ""}`,
         ]),
+        ...(preparedProject
+          ? [
+              "--mount",
+              "type=volume,target=/var/lib/docker,volume-driver=local,volume-nocopy",
+              "--label",
+              "kestrel.factory.private-docker-storage=anonymous",
+            ]
+          : []),
         "--workdir",
         commandCwd,
         "--env",
         "HOME=/home/codex",
+        ...(preparedProject
+          ? [
+              "--env",
+              "DOCKER_HOST=unix:///run/kestrel-docker.sock",
+              "--env",
+              "DOCKER_BIN=/usr/local/bin/docker",
+              "--env",
+              `KESTREL_EXECUTION_USER=${executionUser}`,
+              ...(commandTimeoutMs === undefined
+                ? []
+                : ["--env", `KESTREL_VERIFICATION_TIMEOUT_MS=${String(commandTimeoutMs)}`]),
+            ]
+          : []),
         "--entrypoint",
-        program,
+        preparedProject ? "/usr/local/bin/kestrel-project-entrypoint" : program,
         image,
-        ...command.slice(1),
+        ...(preparedProject ? command : command.slice(1)),
       ],
       signal,
     );
     if (!/^[a-f0-9]{64}$/u.test(id)) throw new CodexExecutionError("invalid_response");
     this.#id = id;
     await this.assertDaemon(signal);
-    await withCancellation(this.#lifecycle.onContainer({ name: this.name, id }), signal);
+    if (preparedProject) {
+      const owned = await this.inspect();
+      if (
+        owned.id !== id ||
+        owned.name !== `/${this.name}` ||
+        record(owned.labels)["kestrel.factory.execution"] !== this.name ||
+        record(owned.labels)["kestrel.factory.private-docker-storage"] !== "anonymous"
+      )
+        throw new CodexExecutionError("permission_required");
+      this.#privateStorage = await privateDockerStorageFor(
+        (args) => this.cli(args, signal),
+        owned.mounts,
+      );
+    }
+    await withCancellation(
+      this.#lifecycle.onContainer({
+        name: this.name,
+        id,
+        ...(this.#privateStorage === null ? {} : { privateStorage: this.#privateStorage }),
+      }),
+      signal,
+    );
+    this.#storageRecorded = true;
     const state = await this.inspect();
     const actualMounts = state.mounts;
     const actualTmpfs = record(state.tmpfs);
@@ -726,11 +837,12 @@ class ExecutionContainer {
       state.image !== image ||
       state.user !== containerUser ||
       state.running !== false ||
-      state.network !== "none" ||
+      state.network !== (preparedProject ? "bridge" : "none") ||
       state.logDriver !== "none" ||
-      state.readonly !== true ||
-      state.privileged !== false ||
+      state.readonly !== !preparedProject ||
+      state.privileged !== preparedProject ||
       state.pidMode !== "" ||
+      (preparedProject && state.cgroupns !== "private") ||
       state.restart !== "no" ||
       state.init !== true ||
       state.pidsLimit !== resources.pidsLimit ||
@@ -742,13 +854,16 @@ class ExecutionContainer {
       Object.keys(actualTmpfs).length !== 2 ||
       actualTmpfs["/tmp"] !== temporaryTmpfs ||
       actualTmpfs["/home/codex"] !== homeTmpfs ||
-      !Array.isArray(state.capDrop) ||
-      !state.capDrop.includes("ALL") ||
-      !Array.isArray(state.securityOpt) ||
-      !state.securityOpt.includes("no-new-privileges:true") ||
+      (!preparedProject &&
+        (!Array.isArray(state.capDrop) ||
+          !state.capDrop.includes("ALL") ||
+          !Array.isArray(state.securityOpt) ||
+          !state.securityOpt.includes("no-new-privileges:true"))) ||
       record(state.labels)["kestrel.factory.execution"] !== this.name ||
+      (preparedProject &&
+        record(state.labels)["kestrel.factory.private-docker-storage"] !== "anonymous") ||
       !Array.isArray(actualMounts) ||
-      actualMounts.length !== this.#mounts.length ||
+      actualMounts.length !== this.#mounts.length + (preparedProject ? 1 : 0) ||
       this.#mounts.some(
         (mount) =>
           !actualMounts.some(
@@ -766,6 +881,40 @@ class ExecutionContainer {
   }
   async startExecutor(signal: AbortSignal): Promise<void> {
     await this.assertDaemon(signal);
+    if (this.#options.projectEnvironment === "node_docker") {
+      const preparation = new AbortController();
+      const preparationSignal = AbortSignal.any([signal, preparation.signal]);
+      const timer = setTimeout(
+        () =>
+          preparation.abort(
+            new CodexExecutionError("sandbox_unavailable", undefined, "project_preparation_failed"),
+          ),
+        PREPARED_STARTUP_TIMEOUT_MS,
+      );
+      try {
+        await this.cli(["start", this.id], preparationSignal);
+        while (!preparationSignal.aborted) {
+          try {
+            await this.cli(["exec", this.id, "node", "-e", READY], preparationSignal);
+            return;
+          } catch {
+            checkAbort(preparationSignal);
+            if ((await this.inspect(preparationSignal)).running !== true) break;
+            await delay(1000, undefined, { signal: preparationSignal });
+          }
+        }
+        throw new CodexExecutionError(
+          "sandbox_unavailable",
+          undefined,
+          "project_preparation_failed",
+        );
+      } catch (error) {
+        checkAbort(preparationSignal);
+        throw error;
+      } finally {
+        clearTimeout(timer);
+      }
+    }
     await this.cli(["start", this.id], signal);
     await this.cli(["exec", this.id, "node", "-e", READY], signal).catch(() => {
       throw new CodexExecutionError("sandbox_unavailable", undefined, "executor_unavailable");
@@ -773,9 +922,16 @@ class ExecutionContainer {
   }
   async verify(
     signal: AbortSignal,
+    retainStderrTail = false,
   ): Promise<Omit<CodexVerificationResult, "processId" | "durationMs">> {
     await this.assertDaemon(signal);
-    const output = await processOutput(this.#docker, ["start", "--attach", this.id], signal);
+    const output = await processOutput(
+      this.#docker,
+      ["start", "--attach", this.id],
+      signal,
+      undefined,
+      retainStderrTail,
+    );
     await this.assertDaemon(signal);
     const state = await this.inspect();
     if (state.status !== "exited")
@@ -893,6 +1049,8 @@ class ExecutionContainer {
           if (!/^[a-f0-9]{64}$/u.test(id)) throw new Error("Ambiguous container");
           this.#id = id;
         } else {
+          if (this.#options.projectEnvironment === "node_docker")
+            throw new Error("Required private storage was never identified");
           stage = "claim_reserved_name";
           const barrier = await this.cli(
             nameBarrierArguments(this.name, this.#options.containerImage),
@@ -914,12 +1072,36 @@ class ExecutionContainer {
         record(state.labels)["kestrel.factory.execution"] !== this.name
       )
         throw new Error("Container identity changed");
+      if (record(state.labels)["kestrel.factory.private-docker-storage"] === "anonymous") {
+        const actual = await privateDockerStorageFor((args) => this.cli(args), state.mounts);
+        if (
+          this.#privateStorage !== null &&
+          (actual.name !== this.#privateStorage.name ||
+            actual.createdAt !== this.#privateStorage.createdAt)
+        )
+          throw new Error("Private Docker storage identity changed");
+        this.#privateStorage = actual;
+        if (!this.#storageRecorded) {
+          await this.#lifecycle.onContainer({
+            name: this.name,
+            id: this.#id,
+            privateStorage: actual,
+          });
+          this.#storageRecorded = true;
+        }
+      } else if (this.#options.projectEnvironment === "node_docker")
+        throw new Error("Private Docker storage ownership changed");
       // Removing the exact private PID namespace is the writer-lifetime boundary.
       // Stopping only Codex, its socket, or a docker-exec client is insufficient.
       stage = "daemon_before_remove";
       await this.assertDaemon();
       stage = "remove_owned_container";
-      await this.cli(["rm", "--force", this.#id]);
+      await this.cli([
+        "rm",
+        "--force",
+        this.#id,
+        ...(this.#privateStorage === null ? [] : ["--volumes"]),
+      ]);
       stage = "confirm_name_absent";
       const remaining = await this.cli([
         "container",
@@ -932,6 +1114,8 @@ class ExecutionContainer {
         "{{.ID}}",
       ]);
       if (remaining !== "") throw new Error("Container still present");
+      if (this.#privateStorage !== null)
+        await removePrivateDockerStorage((args) => this.cli(args), this.#privateStorage);
       stage = "daemon_after_remove";
       await this.assertDaemon();
       stage = "persist_stopped";
@@ -1357,7 +1541,9 @@ class ExecutionTurn {
         },
         developerInstructions:
           this.#options.developerInstructions ??
-          "Implement only the approved scope in the selected remote workspace. That environment is contained externally. Use only the remote shell to work or wait for its commands; do not call host tools such as clock.sleep. Do not access external services, privileges, or Git metadata writes. Ask when requirements or authorization must change.",
+          (this.#options.projectEnvironment === "node_docker"
+            ? "Implement only the approved scope in the selected remote workspace. The installation authorized package downloads and Docker image pulls needed for this Project's development and approved checks inside the externally contained environment. Run dependency installation, builds and integrated checks sequentially within the selected memory, CPU and process limits. Use only the remote shell to work or wait for commands; do not call host tools such as clock.sleep. Do not access unrelated external services, credentials, privileges or Git metadata writes. Resolve routine technical failures from the available requirements, code and command output; ask only when product requirements or authorization must change."
+            : "Implement only the approved scope in the selected remote workspace. That environment is contained externally. Use only the remote shell to work or wait for its commands; do not call host tools such as clock.sleep. Do not access external services, privileges, or Git metadata writes. Ask when requirements or authorization must change."),
       })
       .then(record);
     const sandbox = record(thread.sandbox);
@@ -1385,7 +1571,11 @@ class ExecutionTurn {
         input: [{ type: "text", text: this.#input.prompt }],
         approvalPolicy: "never",
         approvalsReviewer: "user",
-        sandboxPolicy: { type: "externalSandbox", networkAccess: "restricted" },
+        sandboxPolicy: {
+          type: "externalSandbox",
+          networkAccess:
+            this.#options.projectEnvironment === "node_docker" ? "enabled" : "restricted",
+        },
         environments: ENVIRONMENTS,
         ...(this.#input.outputSchema === undefined
           ? {}
@@ -1421,7 +1611,11 @@ async function isolated<T>(
   operation: (container: ExecutionContainer, control: string, signal: AbortSignal) => Promise<T>,
 ): Promise<T> {
   boundedString(requestId);
-  if (timeoutMs !== null) timeout(timeoutMs);
+  if (
+    timeoutMs !== null &&
+    (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 8_110_000)
+  )
+    throw new CodexExecutionError("invalid_response");
   if (input.signal?.aborted) throw new CodexExecutionError("cancelled");
   const controller = new AbortController();
   const timer =
@@ -1526,6 +1720,8 @@ export function createCodexExecutionRuntime(
     },
     async runVerification(input) {
       try {
+        const commandTimeout = timeout(input.timeoutMs);
+        const prepared = options.projectEnvironment === "node_docker";
         if (
           input.command.length < 1 ||
           input.command.length > 128 ||
@@ -1546,17 +1742,21 @@ export function createCodexExecutionRuntime(
           input,
           workspace,
           input.processId,
-          input.timeoutMs,
+          prepared ? PREPARED_STARTUP_TIMEOUT_MS + commandTimeout : commandTimeout,
           async (container, _control, signal) => {
             await container.create(
               input.command,
               path === "" ? "/workspace" : `/workspace/${path.split(sep).join("/")}`,
               signal,
+              prepared ? commandTimeout : undefined,
             );
             const started = performance.now();
-            const result = await container.verify(signal);
+            const result = await container.verify(signal, input.retainStderrTail === true);
             return {
               ...result,
+              ...(prepared && (result.exitCode === 124 || result.exitCode === 137)
+                ? { timedOut: true }
+                : {}),
               processId: input.processId,
               durationMs: Math.round(performance.now() - started),
             };
