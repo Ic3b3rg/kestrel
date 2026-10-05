@@ -6,9 +6,9 @@ Outcome: an authorized issue can prepare its development environment, implement 
 asking the Operator to resolve routine technical failures. Issue: conversation-authorized work; no
 new tracker issue. The existing documentation-capability issue is the integrated acceptance case.
 Branch: `fix/factory-prepared-execution` in the dedicated prepared-execution worktree. PR:
-[#321](https://github.com/Ic3b3rg/kestrel/pull/321), draft pending integrated acceptance. Next gate:
-the measured persisted task; the private native-storage live probe passes and HTTP acceptance is
-being repeated on the repair. Verification tier: contained runtime, controller, board and one real
+[#321](https://github.com/Ic3b3rg/kestrel/pull/321). The measured persisted task and its final
+verification both passed all nine original commands. Next gate: final repository checks, merge and
+canonical runtime handoff. Verification tier: contained runtime, controller, board and one real
 persisted task. Runtime owner: the canonical Kestrel runtime supervisor.
 
 ## Triage
@@ -59,6 +59,9 @@ repository.
 - Classify product ambiguity separately from environment, resource, provider and code-check
   failures. Repair within approved scope; exhausted technical recovery remains visible as a
   technical interruption, without a product-answer form.
+- A failing source build must not prevent the implementation or repair agent from starting.
+  Source-build warm-ups retain failures without certifying the revision; toolchain installation and
+  independent capability probes remain mandatory. Approved verification keeps its real result.
 - Preserve all historical attempts and failed evidence. Prove success with a new persisted execution
   and exact-revision results, never a database status edit.
 - A source interruption may retry after the server proves that the stopped workspace matches its
@@ -129,3 +132,31 @@ Raw measurements and diagnostics are retained outside worktrees under the instal
 in `measurements/background-execution-20261005`. Diagnostic reads contribute to the I/O counters;
 timed-out disk-footprint probes remain unknown. These results do not certify 16 GiB hosts,
 concurrent local inference, Flutter or Android emulators.
+
+## Completed implementation and verification case
+
+On runtime commit `5350660`, Work Item attempt 10 (`01a10cca-1950-7220-82ff-ef93afc70a9b`) completed
+in 66 minutes 37 seconds, then final Feature verification (`01a10d07-16f5-7dae-a68e-131900391a8d`)
+completed in 37 minutes 36 seconds. Both are `verified`: each ran all nine original approved
+commands unchanged, including HTTP and browser tests, on saved head
+`f42bd0df2f9ddf2ecb54b29b72b5ba5ab518ab3a`, tree `d3809d04288aa6c145429070c3a8ffb8ad470b67`. The
+final certificate is `01a10d29-86de-794e-a3e8-e42112639c61`; no product-answer gate or database
+success edit was used. The board reached In review. Publication remains blocked by `target_changed`
+because the captured base differs from the current default branch: verification is complete, issue
+shipment is not.
+
+Across 910 observations, the largest owned cgroup high-water mark was 4.186 GiB, the PID peak was
+342, and observed OOM kills were zero. The selected envelope was 5.5 GiB, 512 PIDs and two CPUs.
+Runtime descendants peaked at 747 MiB RSS and the Docker backend at 339 MiB RSS. The Docker VM
+physical footprint was 8.0 GiB at inspected points, with an 8.1 GiB **VM lifetime** peak. The VM
+already includes executor memory: these figures must not be summed or presented as a measured
+task-specific VM peak. All 21 owned containers and 21 private volumes were confirmed absent and both
+execution reservations released. Repeated fresh preparation added latency and approximately 30.4 GB
+of observed block writes across those operations; private caches remain disposable.
+
+An observer Docker CLI call changed ownership of one buildx state file during the agent's HTTP test.
+The agent recovered autonomously with a private Docker configuration; ownership was restored, and
+both independent controller passes succeeded with the original commands in fresh containers. This
+interference is disclosed in the measurement artifacts. The later build-before-agent regression uses
+a real prepared container with a deterministic model protocol fixture, separately from this
+representative live model run.

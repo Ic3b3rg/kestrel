@@ -1,5 +1,5 @@
 // Runs only in the installation-authorized trusted Project execution container.
-// Preparation is not an acceptance certificate. Its failures stop execution.
+// Toolchain failures stop execution. Source builds are warm-ups, not acceptance checks.
 import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { access, copyFile, readFile, writeFile, mkdir, mkdtemp, rm } from "node:fs/promises";
@@ -7,22 +7,28 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 process.chdir("/workspace");
+const warmupFailures = [];
 async function exists(path) {
   return access(path).then(
     () => true,
     () => false,
   );
 }
-async function command(program, args) {
+async function command(program, args, { warmup = false } = {}) {
   console.log(`Preparing environment: ${program} ${args.join(" ")}`);
   const child = spawn(program, args, { stdio: "inherit", shell: false });
-  await new Promise((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     child.once("error", reject);
-    child.once("close", (code, signal) =>
-      code === 0
-        ? resolve()
-        : reject(new Error(`Environment preparation failed: ${program} (${signal ?? code})`)),
-    );
+    child.once("close", (code, signal) => {
+      if (code === 0) resolve(true);
+      else if (warmup && signal === null && code !== null) {
+        warmupFailures.push(`${program} (exit ${code})`);
+        console.warn(
+          `Project warm-up failed: ${program} (exit ${code}). Required verification still applies.`,
+        );
+        resolve(false);
+      } else reject(new Error(`Environment preparation failed: ${program} (${signal ?? code})`));
+    });
   });
 }
 if (!(await exists("package-lock.json")))
@@ -41,11 +47,11 @@ if (previous !== lock || !(await exists("node_modules/.package-lock.json"))) {
 }
 if (await exists("node_modules/.bin/playwright"))
   await command("node_modules/.bin/playwright", ["install", "chromium"]);
-// Compiled workspace packages are prerequisites of the tests in this project.
-// Rebuild after every new committed checkpoint; never reuse another revision's build.
+// Warm compiled packages on this checkpoint; a source defect must remain repairable
+// by the implementation agent. Only the approved checks certify the saved revision.
 const packageJson = JSON.parse(await readFile("package.json", "utf8"));
 if (packageJson.scripts?.build) {
-  await command("npm", ["run", "build"]);
+  await command("npm", ["run", "build"], { warmup: true });
 }
 await command("docker", ["info", "--format", "Docker daemon ready (storage: {{.Driver}})"]);
 // Daemon readiness alone does not prove that its backing filesystem can run a workload.
@@ -74,6 +80,19 @@ try {
 // inside a test's short setup deadline. Prepare the declared root image first.
 // Its cache remains private to this operation and is removed with the outer volume.
 if (await exists("Dockerfile")) {
-  await command("docker", ["build", "--tag", `kestrel-preparation-project:${randomUUID()}`, "."]);
-  console.log("Project container image ready");
+  if (
+    await command(
+      "docker",
+      ["build", "--tag", `kestrel-preparation-project:${randomUUID()}`, "."],
+      {
+        warmup: true,
+      },
+    )
+  )
+    console.log("Project container image ready");
 }
+if (warmupFailures.length > 0)
+  console.warn(
+    `Project source warm-up failures: ${warmupFailures.join("; ")}. Required verification still applies.`,
+  );
+console.log("Execution environment ready; project verification remains required");

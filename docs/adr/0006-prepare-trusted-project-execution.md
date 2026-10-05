@@ -12,9 +12,9 @@ Keep the existing controller and Sandbox as owners of authority and custody. Add
 installation-owned Project environment preparer. For an explicitly authorized trusted Node Project,
 it prepares a content-derived immutable image with Docker and Chromium, admits one heavy execution
 against the Docker VM capacity, and returns a resource lease to the Sandbox. Preparation runs locked
-dependency installation, build and capability probes before the implementation turn. Every
-verification operation uses the same environment preparation and preserves its original program,
-arguments and deadline.
+dependency installation and capability probes before the implementation turn, with source-build
+warm-up. Every verification operation uses the same environment preparation and preserves its
+original program, arguments and deadline.
 
 Dependency preparation has a separate bounded budget. A controller-selected timeout wrapper starts
 the approved verification deadline after preparation; an outer failsafe covers preparation, command
@@ -52,6 +52,19 @@ declared root Dockerfile, when present, before the approved command clock starts
 retained source and resource boundary; it neither replaces tests nor shares writable cache across
 operations. Each fresh environment pays the cold build cost, within preparation's separate budget.
 Other Docker contexts and toolchains are not certified by this first profile.
+
+Source builds cannot be a mandatory admission gate: a broken build is precisely what an
+implementation or repair turn may need to fix. Nonzero exits from the npm build and root Dockerfile
+warm-ups are retained as warnings and execution proceeds. Spawn failures, signals, dependency
+installation, browser installation and the independent Docker build/run probe remain preparation
+failures. Environment readiness never substitutes for approved verification: each original check
+still executes and retains its own exit status on the saved revision.
+
+The preparer emits a final aggregate warning summary. For the prerequisite probe only, controller
+capture keeps a bounded stderr head and tail (64 KiB total), and persisted activity prioritizes its
+final diagnostics within the existing 8 KiB budget. Truncation remains explicit. Ordinary accepted
+verification commands keep their existing output capture policy. This preserves preparation warnings
+even after verbose builds without introducing an unbounded log buffer.
 
 An anonymous `local` volume provides non-overlay backing storage without a shared daemon or cache.
 Docker creates it as part of the already-reserved outer container, avoiding an independently delayed

@@ -1,7 +1,8 @@
 import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, it } from "vitest";
+import { fileURLToPath } from "node:url";
+import { expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { FactoryPrivateDockerStorage } from "@kestrel/contracts";
 import { execFile } from "node:child_process";
@@ -83,6 +84,12 @@ it.skipIf(image === undefined)(
         }),
       );
       const runtime = createCodexExecutionRuntime({
+        executable: process.execPath,
+        arguments: [
+          fileURLToPath(new URL("./__fixtures__/codex-execution-runtime.mjs", import.meta.url)),
+          "happy",
+          join(cwd, "protocol.jsonl"),
+        ],
         containerImage: image ?? "",
         projectEnvironment: "node_docker",
         dockerExecutable: process.env.DOCKER_BIN ?? "docker",
@@ -117,6 +124,7 @@ it.skipIf(image === undefined)(
         ],
       });
       expect(result.exitCode, result.stderr).toBe(0);
+      expect(result.stdout).toContain("Project container image ready");
       const facts = z
         .object({
           heap: z.number(),
@@ -173,7 +181,70 @@ it.skipIf(image === undefined)(
           command: ["node", "-e", "setTimeout(()=>{},2000)"],
         }),
       ).resolves.toMatchObject({ exitCode: 124, timedOut: true });
-      expect(storageNames).toHaveLength(3);
+      // A source regression is the agent's job to repair, not an unusable toolchain.
+      await writeFile(
+        join(cwd, "package.json"),
+        JSON.stringify({
+          name: "environment-probe",
+          version: "1.0.0",
+          private: true,
+          scripts: {
+            build: "node -e \"require('node:fs').writeSync(2,'x'.repeat(100000));process.exit(9)\"",
+          },
+        }),
+      );
+      await writeFile(join(cwd, "Dockerfile"), "FROM scratch\nCOPY missing-file /missing-file\n");
+      const onTurn = vi.fn(() => Promise.resolve());
+      const onQuestion = vi.fn(() => Promise.resolve());
+      const repairedTurn = await runtime.runTurn({
+        cwd,
+        model: "fixture-model",
+        requestId: `prepared-repair:${String(Date.now())}`,
+        prompt: "Repair the broken project build within the approved scope.",
+        beforeContainerCreate: reserve,
+        onContainer: retainStorage,
+        onStopped: stopped,
+        onThread: () => Promise.resolve(),
+        onTurn,
+        onActivity: () => Promise.resolve(),
+        onQuestion,
+      });
+      expect(repairedTurn.text).toBe("Implemented. 🪶");
+      expect(onTurn).toHaveBeenCalled();
+      expect(onQuestion).not.toHaveBeenCalled();
+      const preparation = await runtime.runVerification({
+        workspaceCwd: cwd,
+        cwd: ".",
+        processId: `prepared-warnings:${String(Date.now())}`,
+        timeoutMs: 1_000,
+        retainStderrTail: true,
+        beforeContainerCreate: reserve,
+        onContainer: retainStorage,
+        onStopped: stopped,
+        command: ["true"],
+      });
+      expect(preparation.exitCode).toBe(0);
+      expect(preparation.stderrTruncated).toBe(true);
+      expect(Buffer.byteLength(preparation.stderr)).toBeLessThanOrEqual(64 * 1024);
+      expect(preparation.stderr).toContain(
+        "Project source warm-up failures: npm (exit 9); docker (exit 1)",
+      );
+      const failedCheck = await runtime.runVerification({
+        workspaceCwd: cwd,
+        cwd: ".",
+        processId: `prepared-failed-check:${String(Date.now())}`,
+        timeoutMs: 1_000,
+        beforeContainerCreate: reserve,
+        onContainer: retainStorage,
+        onStopped: stopped,
+        command: ["node", "-e", "console.log('Original check executed'); process.exit(7)"],
+      });
+      expect(failedCheck.exitCode).toBe(7);
+      expect(failedCheck.timedOut).not.toBe(true);
+      expect(failedCheck.stdout).toContain("Docker build and workload ready");
+      expect(failedCheck.stdout).toContain("Original check executed");
+      expect(failedCheck.stderrTruncated).toBe(true);
+      expect(storageNames).toHaveLength(6);
       for (const name of storageNames) {
         const result = await promisify(execFile)(
           process.env.DOCKER_BIN ?? "docker",

@@ -101,6 +101,8 @@ export interface CodexVerificationInput extends CodexExecutionLifecycle {
   command: readonly string[];
   processId: string;
   timeoutMs: number;
+  /** Preparation diagnostics only: keep a bounded stderr tail for its final warning summary. */
+  retainStderrTail?: true;
   signal?: AbortSignal;
 }
 export interface CodexVerificationResult {
@@ -349,6 +351,7 @@ async function processOutput(
   args: readonly string[],
   signal: AbortSignal,
   env = safeEnvironment(),
+  retainStderrTail = false,
 ): Promise<Omit<CodexVerificationResult, "processId" | "durationMs">> {
   checkAbort(signal);
   return new Promise((resolve, reject) => {
@@ -370,6 +373,17 @@ async function processOutput(
     signal.addEventListener("abort", abort, { once: true });
     for (const stream of ["stdout", "stderr"] as const)
       child[stream].on("data", (chunk: Buffer) => {
+        if (stream === "stderr" && retainStderrTail) {
+          const captured = Buffer.concat([output.stderr, chunk]);
+          if (captured.length > OUTPUT_CAP) {
+            output.stderrTruncated = true;
+            output.stderr = Buffer.concat([
+              captured.subarray(0, OUTPUT_CAP / 2),
+              captured.subarray(-OUTPUT_CAP / 2),
+            ]);
+          } else output.stderr = captured;
+          return;
+        }
         const available = OUTPUT_CAP - output[stream].length;
         if (chunk.length > available) output[`${stream}Truncated`] = true;
         if (available > 0)
@@ -908,9 +922,16 @@ class ExecutionContainer {
   }
   async verify(
     signal: AbortSignal,
+    retainStderrTail = false,
   ): Promise<Omit<CodexVerificationResult, "processId" | "durationMs">> {
     await this.assertDaemon(signal);
-    const output = await processOutput(this.#docker, ["start", "--attach", this.id], signal);
+    const output = await processOutput(
+      this.#docker,
+      ["start", "--attach", this.id],
+      signal,
+      undefined,
+      retainStderrTail,
+    );
     await this.assertDaemon(signal);
     const state = await this.inspect();
     if (state.status !== "exited")
@@ -1730,7 +1751,7 @@ export function createCodexExecutionRuntime(
               prepared ? commandTimeout : undefined,
             );
             const started = performance.now();
-            const result = await container.verify(signal);
+            const result = await container.verify(signal, input.retainStderrTail === true);
             return {
               ...result,
               ...(prepared && (result.exitCode === 124 || result.exitCode === 137)

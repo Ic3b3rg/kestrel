@@ -378,6 +378,7 @@ export function createFactorySandbox(options: FactorySandboxOptions) {
             gitDirectory: prepared.workspace.gitDirectory,
             cwd: ".",
             command: ["true"],
+            retainStderrTail: true,
             processId: `${run.id}:preparation`,
             timeoutMs: 900_000,
             signal,
@@ -388,10 +389,14 @@ export function createFactorySandbox(options: FactorySandboxOptions) {
             run,
             "lifecycle",
             result.exitCode === 0
-              ? "Project prerequisites ready."
+              ? "Execution tools ready. Project checks still required."
               : "Project prerequisite preparation failed.",
             {
-              detail: publicText(`${result.stdout}\n${result.stderr}`, 8192),
+              // Preserve the final warning summary before noisy build progress fills the budget.
+              detail: publicText(
+                `${result.stderr.slice(-1000)}\n${result.stdoutTruncated || result.stderrTruncated ? "[Preparation output truncated]\n" : ""}${result.stdout}`,
+                8192,
+              ),
               exitCode: result.exitCode,
               retainDetail: true,
             },

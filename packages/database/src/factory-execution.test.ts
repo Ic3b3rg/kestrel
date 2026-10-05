@@ -46,7 +46,7 @@ it("stores the Docker Engine identity with the durable create reservation", asyn
   );
   expect(
     query.mock.calls.find(([sql]) => sql.includes("INSERT INTO factory_execution_containers"))?.[1],
-  ).toEqual([name, runId, "implementation", daemonId]);
+  ).toEqual([name, runId, "implementation", daemonId, false]);
 });
 
 it.each([null, new Date("2026-09-08T12:00:00.000Z")])(
