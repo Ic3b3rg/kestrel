@@ -15,6 +15,7 @@ import {
 import { createServer, type Server, type Socket } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, relative, sep } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
 import {
   CodexFactoryError,
@@ -103,6 +104,8 @@ export interface CodexExecutionRuntime {
   runVerification(input: CodexVerificationInput): Promise<CodexVerificationResult>;
 }
 export interface CodexExecutionRuntimeOptions {
+  /** Installation-authorized trusted Project only; never inferred from repository content. */
+  projectEnvironment?: "node_docker";
   executable?: string;
   arguments?: readonly string[];
   timeoutMs?: number | null;
@@ -194,7 +197,7 @@ const ENVIRONMENTS = [
 ];
 const OUTPUT_CAP = 64 * 1024;
 const CONTAINER_INSPECT =
-  '{"id":{{json .Id}},"name":{{json .Name}},"running":{{.State.Running}},"status":{{json .State.Status}},"exitCode":{{.State.ExitCode}},"image":{{json .Image}},"user":{{json .Config.User}},"network":{{json .HostConfig.NetworkMode}},"logDriver":{{json .HostConfig.LogConfig.Type}},"readonly":{{.HostConfig.ReadonlyRootfs}},"privileged":{{.HostConfig.Privileged}},"pidMode":{{json .HostConfig.PidMode}},"restart":{{json .HostConfig.RestartPolicy.Name}},"init":{{.HostConfig.Init}},"pidsLimit":{{.HostConfig.PidsLimit}},"memory":{{.HostConfig.Memory}},"memorySwap":{{.HostConfig.MemorySwap}},"nanoCpus":{{.HostConfig.NanoCpus}},"cpusetCpus":{{json .HostConfig.CpusetCpus}},"shmSize":{{.HostConfig.ShmSize}},"tmpfs":{{json .HostConfig.Tmpfs}},"capDrop":{{json .HostConfig.CapDrop}},"securityOpt":{{json .HostConfig.SecurityOpt}},"mounts":{{json .Mounts}},"labels":{{json .Config.Labels}}}';
+  '{"id":{{json .Id}},"name":{{json .Name}},"running":{{.State.Running}},"status":{{json .State.Status}},"exitCode":{{.State.ExitCode}},"image":{{json .Image}},"user":{{json .Config.User}},"network":{{json .HostConfig.NetworkMode}},"logDriver":{{json .HostConfig.LogConfig.Type}},"readonly":{{.HostConfig.ReadonlyRootfs}},"privileged":{{.HostConfig.Privileged}},"pidMode":{{json .HostConfig.PidMode}},"cgroupns":{{json .HostConfig.CgroupnsMode}},"restart":{{json .HostConfig.RestartPolicy.Name}},"init":{{.HostConfig.Init}},"pidsLimit":{{.HostConfig.PidsLimit}},"memory":{{.HostConfig.Memory}},"memorySwap":{{.HostConfig.MemorySwap}},"nanoCpus":{{.HostConfig.NanoCpus}},"cpusetCpus":{{json .HostConfig.CpusetCpus}},"shmSize":{{.HostConfig.ShmSize}},"tmpfs":{{json .HostConfig.Tmpfs}},"capDrop":{{json .HostConfig.CapDrop}},"securityOpt":{{json .HostConfig.SecurityOpt}},"mounts":{{json .Mounts}},"labels":{{json .Config.Labels}}}';
 const FORWARD =
   "const n=require('node:net');const s=n.connect(8765,'127.0.0.1',()=>{process.stdin.pipe(s);s.pipe(process.stdout)});s.on('error',()=>process.exit(1));process.stdin.on('end',()=>s.end());";
 // This fixed probe waits for the executor socket. It never runs project code.
@@ -639,11 +642,13 @@ class ExecutionContainer {
       throw new CodexExecutionError("sandbox_unavailable");
     const cpuCount = Math.min(availableCpus, Math.ceil(resources.nanoCpus / 1_000_000_000));
     const cpuSet = cpuCount === 1 ? "0" : `0-${String(cpuCount - 1)}`;
-    const containerUser =
+    const executionUser =
       this.#options.containerUser ??
       `${String(process.getuid?.() ?? 1000)}:${String(process.getgid?.() ?? 1000)}`;
-    if (!/^[1-9]\d{0,9}:[1-9]\d{0,9}$/u.test(containerUser))
+    if (!/^[1-9]\d{0,9}:[1-9]\d{0,9}$/u.test(executionUser))
       throw new CodexExecutionError("invalid_response");
+    const preparedProject = this.#options.projectEnvironment === "node_docker";
+    const containerUser = preparedProject ? "0:0" : executionUser;
     const shmBytes = Math.max(64 * 1024, Math.floor(resources.tmpfsBytes / 8));
     const remainingTmpfsBytes = resources.tmpfsBytes - shmBytes;
     const homeTmpfsBytes = Math.floor(remainingTmpfsBytes / 2);
@@ -668,18 +673,17 @@ class ExecutionContainer {
         this.name,
         "--label",
         `kestrel.factory.execution=${this.name}`,
-        "--read-only",
+        ...(preparedProject ? ["--privileged", "--cgroupns", "private"] : ["--read-only"]),
         "--network",
-        "none",
+        preparedProject ? "bridge" : "none",
         "--log-driver",
         "none",
         "--restart",
         "no",
         "--init",
-        "--cap-drop",
-        "ALL",
-        "--security-opt",
-        "no-new-privileges:true",
+        ...(preparedProject
+          ? []
+          : ["--cap-drop", "ALL", "--security-opt", "no-new-privileges:true"]),
         "--pids-limit",
         String(resources.pidsLimit),
         "--memory",
@@ -706,10 +710,20 @@ class ExecutionContainer {
         commandCwd,
         "--env",
         "HOME=/home/codex",
+        ...(preparedProject
+          ? [
+              "--env",
+              "DOCKER_HOST=unix:///run/kestrel-docker.sock",
+              "--env",
+              "DOCKER_BIN=/usr/local/bin/docker",
+              "--env",
+              `KESTREL_EXECUTION_USER=${executionUser}`,
+            ]
+          : []),
         "--entrypoint",
-        program,
+        preparedProject ? "/usr/local/bin/kestrel-project-entrypoint" : program,
         image,
-        ...command.slice(1),
+        ...(preparedProject ? command : command.slice(1)),
       ],
       signal,
     );
@@ -726,11 +740,12 @@ class ExecutionContainer {
       state.image !== image ||
       state.user !== containerUser ||
       state.running !== false ||
-      state.network !== "none" ||
+      state.network !== (preparedProject ? "bridge" : "none") ||
       state.logDriver !== "none" ||
-      state.readonly !== true ||
-      state.privileged !== false ||
+      state.readonly !== !preparedProject ||
+      state.privileged !== preparedProject ||
       state.pidMode !== "" ||
+      (preparedProject && state.cgroupns !== "private") ||
       state.restart !== "no" ||
       state.init !== true ||
       state.pidsLimit !== resources.pidsLimit ||
@@ -742,10 +757,11 @@ class ExecutionContainer {
       Object.keys(actualTmpfs).length !== 2 ||
       actualTmpfs["/tmp"] !== temporaryTmpfs ||
       actualTmpfs["/home/codex"] !== homeTmpfs ||
-      !Array.isArray(state.capDrop) ||
-      !state.capDrop.includes("ALL") ||
-      !Array.isArray(state.securityOpt) ||
-      !state.securityOpt.includes("no-new-privileges:true") ||
+      (!preparedProject &&
+        (!Array.isArray(state.capDrop) ||
+          !state.capDrop.includes("ALL") ||
+          !Array.isArray(state.securityOpt) ||
+          !state.securityOpt.includes("no-new-privileges:true"))) ||
       record(state.labels)["kestrel.factory.execution"] !== this.name ||
       !Array.isArray(actualMounts) ||
       actualMounts.length !== this.#mounts.length ||
@@ -767,6 +783,19 @@ class ExecutionContainer {
   async startExecutor(signal: AbortSignal): Promise<void> {
     await this.assertDaemon(signal);
     await this.cli(["start", this.id], signal);
+    if (this.#options.projectEnvironment === "node_docker") {
+      for (let probe = 0; probe < 300; probe++) {
+        try {
+          await this.cli(["exec", this.id, "node", "-e", READY], signal);
+          return;
+        } catch {
+          checkAbort(signal);
+          if ((await this.inspect()).running !== true) break;
+          await delay(1000, undefined, { signal });
+        }
+      }
+      throw new CodexExecutionError("sandbox_unavailable", undefined, "project_preparation_failed");
+    }
     await this.cli(["exec", this.id, "node", "-e", READY], signal).catch(() => {
       throw new CodexExecutionError("sandbox_unavailable", undefined, "executor_unavailable");
     });

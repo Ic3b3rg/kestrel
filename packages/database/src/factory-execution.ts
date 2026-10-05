@@ -750,7 +750,7 @@ export function reserveFactoryExecutionContainer(
     );
     if (
       Number(count.rows[0]?.count) >=
-      (row.purpose === "feature_verification" || row.purpose === "correction" ? 1442 : 39)
+      (row.purpose === "feature_verification" || row.purpose === "correction" ? 1443 : 40)
     )
       throw new FactoryError("conflict", "The attempt environment limit was reached");
     await client.query(
@@ -769,6 +769,18 @@ export function reserveFactoryExecutionContainer(
       ]);
     }
   });
+}
+
+/** Read-only stop/release proof for the installation's retained resource lease. */
+export async function isFactoryExecutionReservationReleased(
+  pool: DatabasePool,
+  runId: string,
+): Promise<boolean> {
+  const result = await pool.query<{ released: boolean }>(
+    "SELECT reservation_released_at IS NOT NULL AS released FROM factory_execution_runs WHERE id=$1",
+    [runId],
+  );
+  return result.rows[0]?.released === true;
 }
 
 export async function identifyFactoryExecutionContainer(

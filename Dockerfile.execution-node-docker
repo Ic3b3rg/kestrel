@@ -1,0 +1,21 @@
+ARG EXECUTOR_IMAGE
+FROM docker@sha256:7dcdfc4a20246236f558175182ccace1eb15a41bd3eb119dd2284f393498b7c1 AS docker
+FROM ${EXECUTOR_IMAGE}
+
+COPY --from=docker /usr/local/bin/ /usr/local/bin/
+COPY --from=docker /usr/local/libexec/docker/cli-plugins /usr/local/libexec/docker/cli-plugins
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates iptables util-linux \
+  && rm -rf /var/lib/apt/lists/* \
+  && npx --yes --package @playwright/test@1.62.1 playwright install --with-deps chromium
+RUN mkdir -p /opt/playwright \
+  && cp -a /home/codex/.cache/ms-playwright/. /opt/playwright/ \
+  && chmod -R a+rwX /opt/playwright
+COPY --chmod=755 scripts/factory-project-entrypoint.sh /usr/local/bin/kestrel-project-entrypoint
+COPY --chmod=755 scripts/factory-project-preparation.mjs /usr/local/lib/kestrel-project-preparation.mjs
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright \
+    NODE_OPTIONS=--max-old-space-size=2048 \
+    DOCKER_HOST=unix:///run/kestrel-docker.sock \
+    DOCKER_BIN=/usr/local/bin/docker
+LABEL kestrel.factory.environment="node-docker-v1"
+ENTRYPOINT ["/usr/local/bin/kestrel-project-entrypoint"]

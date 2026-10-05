@@ -317,6 +317,29 @@ afterAll(async () => {
   await pool.end();
 });
 
+it("prepares the authorized environment before implementation and releases capacity after verified teardown", async () => {
+  const release = vi.fn(() => events.push("capacity-released"));
+  await processor({
+    prepareProjectEnvironment: () =>
+      Promise.resolve({
+        runtimeOptions: {
+          containerImage: `sha256:${"b".repeat(64)}`,
+          projectEnvironment: "node_docker",
+        },
+        release,
+      }),
+  }).process({ runId: run.id });
+  expect(vi.mocked(finishFactoryExecution).mock.calls.at(-1)?.[2].question).toBeNull();
+  expect(vi.mocked(finishFactoryExecution).mock.calls.at(-1)?.[2]).toMatchObject({
+    verified: true,
+    writerStopped: true,
+  });
+  expect(events.indexOf("verification")).toBeLessThan(events.indexOf("implementation"));
+  expect(runVerification.mock.calls[0]?.[0].command).toEqual(["true"]);
+  expect(release).toHaveBeenCalledOnce();
+  expect(events.at(-1)).toBe("capacity-released");
+});
+
 it("blocks a legacy approval before opening a workspace or starting a model", async () => {
   run.lifecycleProfile = null;
   await processor().process({ runId: run.id });

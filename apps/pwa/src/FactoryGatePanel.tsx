@@ -74,8 +74,7 @@ export function FactoryGatePanel({
   const current = gate.resolution === null ? (confirmed ?? gate) : gate;
   const productDecision = gate.reason === "input_required";
   const automaticRecovery = gate.reason === "usage_limit" || gate.reason === "unavailable";
-  const technicalPause =
-    automaticRecovery || gate.reason === "timeout" || gate.reason === "verification_failed";
+  const technicalPause = !productDecision;
   const canAnswer = ![
     "cancelled",
     "stale_gate",
@@ -150,9 +149,7 @@ export function FactoryGatePanel({
           : technicalPause
             ? "Technical interruption"
             : canAnswer
-              ? productDecision
-                ? "Your decision is needed"
-                : "Technical interruption"
+              ? "Your decision is needed"
               : "Retained question"}
       </h4>
       <p className="whitespace-pre-wrap break-words font-medium">{gate.question}</p>
@@ -233,7 +230,7 @@ export function FactoryGatePanel({
           </div>
           <div className="space-y-1">
             <label htmlFor={`${id}-answer`} className="block text-sm font-medium">
-              {productDecision ? "Your answer" : "Recovery note"}
+              Your answer
             </label>
             <textarea
               id={`${id}-answer`}
@@ -248,9 +245,7 @@ export function FactoryGatePanel({
           <p className="text-sm text-muted-foreground">
             {decision === "requires_plan_change"
               ? "Record what must change. Execution will stay paused; this does not approve a new scope."
-              : productDecision
-                ? "Answer the product question above. Kestrel handles implementation choices and checks within the agreed requirements."
-                : "Confirm that the technical problem is resolved before retrying the same approved plan."}
+              : "Answer the product question above. Kestrel handles implementation choices and checks within the agreed requirements."}
           </p>
           {busy ? (
             <FormFeedback kind="pending">Saving your answer for this gate…</FormFeedback>

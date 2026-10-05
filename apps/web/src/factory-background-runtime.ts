@@ -1,5 +1,6 @@
 import { createProjectIssueDispatcher } from "./project-issue-dispatch.js";
 import { createFactoryImagePreparer } from "./factory-image-preparation.js";
+import { createFactoryProjectEnvironmentPreparer } from "./factory-project-environment.js";
 import { createCodexExecutionContainerRecovery } from "./codex-execution-runtime.js";
 import { reconcileFactorySandboxes } from "./factory-sandbox.js";
 import {
@@ -52,6 +53,7 @@ import {
   reconcileFactoryReviewCorrections,
   reconcileFactoryFeatureMerges,
   reconcileTransientFactoryGates,
+  isFactoryExecutionReservationReleased,
   type createPgBoss,
   type DatabasePool,
 } from "@kestrel/database";
@@ -82,6 +84,7 @@ interface Options {
   codexAgentRuntime: CodexAgentRuntimePort;
   containerImage?: string;
   dockerExecutable?: string;
+  trustedDockerProjects?: readonly string[];
 }
 
 /** Owns Factory background work; the web host retains HTTP and its shared database pools. */
@@ -98,6 +101,7 @@ export function createFactoryBackgroundRuntime({
   codexAgentRuntime,
   containerImage: factoryExecutionImage,
   dockerExecutable: factoryDockerExecutable,
+  trustedDockerProjects = [],
 }: Options) {
   const changeOverviewRenderer = createChangeOverviewRenderer({
     credentialStore,
@@ -149,6 +153,17 @@ export function createFactoryBackgroundRuntime({
     readSourceConfig,
     ...(factoryExecutionImage === undefined ? {} : { containerImage: factoryExecutionImage }),
     ...(prepareContainerImage === undefined ? {} : { prepareContainerImage }),
+    ...(trustedDockerProjects.length === 0
+      ? {}
+      : {
+          prepareProjectEnvironment: createFactoryProjectEnvironmentPreparer({
+            authorizedProjects: trustedDockerProjects,
+            isReservationReleased: (runId) => isFactoryExecutionReservationReleased(pool, runId),
+            ...(factoryDockerExecutable === undefined
+              ? {}
+              : { dockerExecutable: factoryDockerExecutable }),
+          }),
+        }),
     ...(factoryDockerExecutable === undefined ? {} : { dockerExecutable: factoryDockerExecutable }),
   });
   const conceptualReviewProcessor = createFactoryConceptualReviewProcessor({

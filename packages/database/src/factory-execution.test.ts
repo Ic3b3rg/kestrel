@@ -400,9 +400,11 @@ it.each([1, 2])(
 
 it.each([
   { purpose: "work_item", count: 38, allowed: true },
-  { purpose: "work_item", count: 39, allowed: false },
+  { purpose: "work_item", count: 39, allowed: true },
+  { purpose: "work_item", count: 40, allowed: false },
   { purpose: "feature_verification", count: 1441, allowed: true },
-  { purpose: "feature_verification", count: 1442, allowed: false },
+  { purpose: "feature_verification", count: 1442, allowed: true },
+  { purpose: "feature_verification", count: 1443, allowed: false },
 ])(
   "keeps separate finite environment bounds for each purpose: %j",
   async ({ purpose, count, allowed }) => {

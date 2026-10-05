@@ -26,6 +26,7 @@ import {
   FactoryExecutionError as ExecutionFailure,
   factoryExecutionFailure as failureFor,
 } from "./factory-sandbox.js";
+import type { FactoryProjectEnvironmentPreparer } from "./factory-project-environment.js";
 
 export const FACTORY_EXECUTION_WORK_OPTIONS = {
   batchSize: 1,
@@ -58,6 +59,7 @@ export interface FactoryExecutionProcessorOptions {
   runtime?: CodexExecutionRuntime;
   containerImage?: string;
   prepareContainerImage?: (signal: AbortSignal) => Promise<string>;
+  prepareProjectEnvironment?: FactoryProjectEnvironmentPreparer;
   dockerExecutable?: string;
 }
 
@@ -408,16 +410,21 @@ async function execute(
     verified = false;
     failure = new ExecutionFailure("stop_unconfirmed");
   }
-  await finishFactoryExecution(pool, run, {
-    verified,
-    finalSummary: verified ? finalSummary : null,
-    writerStopped: sandbox.writerStopped,
-    failure: failure?.code ?? null,
-    question: verified
-      ? null
-      : publicText(failure?.question ?? (failure === null ? "" : (recovery[failure.code] ?? ""))) ||
-        null,
-  });
+  try {
+    await finishFactoryExecution(pool, run, {
+      verified,
+      finalSummary: verified ? finalSummary : null,
+      writerStopped: sandbox.writerStopped,
+      failure: failure?.code ?? null,
+      question: verified
+        ? null
+        : publicText(
+            failure?.question ?? (failure === null ? "" : (recovery[failure.code] ?? "")),
+          ) || null,
+    });
+  } finally {
+    sandbox.close();
+  }
 }
 
 export function createFactoryExecutionProcessor(options: FactoryExecutionProcessorOptions) {

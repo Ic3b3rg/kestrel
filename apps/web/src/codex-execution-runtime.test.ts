@@ -102,6 +102,25 @@ it("preserves the image toolchain PATH for controller verification", async () =>
   expect(create).not.toContain("PATH=/usr/local/bin:/usr/bin:/bin");
 });
 
+it("runs trusted Docker verification inside one owned resource boundary without the host socket", async () => {
+  const { cwd, runtime } = await fixture("happy", { projectEnvironment: "node_docker" });
+  await runtime.runVerification({
+    ...input(cwd),
+    workspaceCwd: cwd,
+    cwd: ".",
+    command: ["npm", "run", "test:black-box"],
+    processId: "prepared-verification",
+    timeoutMs: 10_000,
+  });
+  const create = (await dockerCalls(cwd)).find((args) => args[0] === "create");
+  expect(create).toContain("/usr/local/bin/kestrel-project-entrypoint");
+  expect(create).toContain("--privileged");
+  expect(create).toContain("private");
+  expect(create).toContain("DOCKER_HOST=unix:///run/kestrel-docker.sock");
+  expect(create).not.toContain("--publish");
+  expect(create?.join(" ")).not.toContain("source=/var/run/docker.sock");
+});
+
 it("emits public reasoning summaries and bounded command results", async () => {
   const { cwd, runtime } = await fixture("activity");
   const turn: CodexExecutionTurnInput = input(cwd);
