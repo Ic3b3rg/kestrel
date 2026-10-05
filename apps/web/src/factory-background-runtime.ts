@@ -54,6 +54,7 @@ import {
   reconcileFactoryFeatureMerges,
   reconcileTransientFactoryGates,
   isFactoryExecutionReservationReleased,
+  claimFactoryExecutionHeavySlot,
   type createPgBoss,
   type DatabasePool,
 } from "@kestrel/database";
@@ -159,6 +160,7 @@ export function createFactoryBackgroundRuntime({
           prepareProjectEnvironment: createFactoryProjectEnvironmentPreparer({
             authorizedProjects: trustedDockerProjects,
             isReservationReleased: (runId) => isFactoryExecutionReservationReleased(pool, runId),
+            claimHeavySlot: (runId) => claimFactoryExecutionHeavySlot(pool, runId),
             ...(factoryDockerExecutable === undefined
               ? {}
               : { dockerExecutable: factoryDockerExecutable }),

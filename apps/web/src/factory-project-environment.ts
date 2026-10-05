@@ -30,10 +30,12 @@ export function createFactoryProjectEnvironmentPreparer({
   authorizedProjects,
   dockerExecutable = "docker",
   isReservationReleased = () => Promise.resolve(false),
+  claimHeavySlot,
 }: {
   authorizedProjects: readonly string[];
   dockerExecutable?: string;
   isReservationReleased?: (runId: string) => Promise<boolean>;
+  claimHeavySlot: (runId: string) => Promise<boolean>;
 }): FactoryProjectEnvironmentPreparer {
   const authorized = new Set(authorizedProjects);
   let occupied: { runId: string; token: symbol } | null = null;
@@ -69,6 +71,15 @@ export function createFactoryProjectEnvironmentPreparer({
       }
     };
     try {
+      // Durable custody survives a host restart and fences uncertain containers.
+      while (!(await claimHeavySlot(runId))) {
+        if (!waiting) {
+          await activity("Waiting for local execution capacity.");
+          waiting = true;
+        }
+        await delay(5_000, undefined, { signal });
+      }
+      signal.throwIfAborted();
       const capacity = capacitySchema.parse(
         JSON.parse(
           await cli(["info", "--format", '{"memoryBytes":{{.MemTotal}},"cpus":{{.NCPU}}}'], signal),
@@ -81,22 +92,27 @@ export function createFactoryProjectEnvironmentPreparer({
           "The Docker VM has insufficient capacity for this Project's Docker-backed checks. The prepared environment needs at least 4 GiB plus 1.5 GiB reserved for other work.",
         );
       for (;;) {
-        const percentages = (
-          await cli(["stats", "--no-stream", "--format", "{{.MemPerc}}"], signal)
-        )
-          .split(/\s+/u)
-          .filter(Boolean);
-        const usedPercent = percentages.reduce(
-          (total, value) =>
-            total +
-            z
-              .number()
-              .min(0)
-              .max(100)
-              .parse(Number(value.replace("%", ""))),
-          0,
-        );
-        if (capacity.memoryBytes * (1 - usedPercent / 100) >= memoryBytes + GiB) break;
+        const usage = await cli(["stats", "--no-stream", "--format", "{{.MemUsage}}"], signal);
+        const usedBytes = usage
+          .split("\n")
+          .filter(Boolean)
+          .reduce((total, value) => {
+            const match = /^(\d+(?:\.\d+)?)\s*(B|kB|MB|GB|TB|KiB|MiB|GiB|TiB)\s*\//u.exec(value);
+            if (match === null) throw new Error("Invalid Docker memory usage");
+            const units: Record<string, number> = {
+              B: 1,
+              kB: 1000,
+              MB: 1000 ** 2,
+              GB: 1000 ** 3,
+              TB: 1000 ** 4,
+              KiB: 1024,
+              MiB: 1024 ** 2,
+              GiB: GiB,
+              TiB: 1024 ** 4,
+            };
+            return total + Number(match[1]) * (units[match[2] ?? ""] ?? NaN);
+          }, 0);
+        if (capacity.memoryBytes - usedBytes >= memoryBytes + GiB) break;
         if (!waiting) {
           await activity("Waiting for local execution capacity.");
           waiting = true;

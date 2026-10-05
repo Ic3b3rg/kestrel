@@ -206,6 +206,7 @@ export function readFactoryExecutionRun(
       item_state: string | null;
       agent_path: string | null;
       detail: string | null;
+      retain_detail: boolean;
       exit_code: number | null;
       created_at: Date;
     }>(
@@ -237,7 +238,8 @@ export function readFactoryExecutionRun(
         ...(event.item_id == null ? {} : { itemId: event.item_id }),
         ...(event.item_state == null ? {} : { itemState: event.item_state }),
         ...(event.agent_path == null ? {} : { agentPath: event.agent_path }),
-        ...(!["running", "verifying", "stopping"].includes(row.state) || event.detail == null
+        ...((!["running", "verifying", "stopping"].includes(row.state) && !event.retain_detail) ||
+        event.detail == null
           ? {}
           : { detail: event.detail }),
         ...(event.exit_code == null ? {} : { exitCode: event.exit_code }),

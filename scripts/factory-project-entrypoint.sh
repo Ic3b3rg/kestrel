@@ -25,5 +25,13 @@ chmod 660 /run/kestrel-docker.sock
 run_task() {
   setpriv --reuid "$execution_uid" --regid "$execution_gid" --clear-groups -- "$@"
 }
-run_task node /usr/local/lib/kestrel-project-preparation.mjs
-run_task "$@"
+# Daemon readiness has 60 seconds; dependency preparation has its own 14-minute budget.
+run_task timeout --signal=TERM --kill-after=5s 840s node /usr/local/lib/kestrel-project-preparation.mjs
+if [[ -n ${KESTREL_VERIFICATION_TIMEOUT_MS:-} ]]; then
+  [[ $KESTREL_VERIFICATION_TIMEOUT_MS =~ ^[0-9]+$ ]] || exit 64
+  # Start the original command's deadline only after its prerequisites are ready.
+  command_seconds=$(awk "BEGIN {printf \"%.3f\", $KESTREL_VERIFICATION_TIMEOUT_MS / 1000}")
+  run_task timeout --signal=TERM --kill-after=5s "${command_seconds}s" "$@"
+else
+  run_task "$@"
+fi

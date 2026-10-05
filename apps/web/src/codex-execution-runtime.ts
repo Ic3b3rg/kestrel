@@ -579,7 +579,12 @@ class ExecutionContainer {
     )
       throw new CodexExecutionError("sandbox_unavailable", undefined, "daemon_identity_changed");
   }
-  async create(command: readonly string[], commandCwd: string, signal: AbortSignal): Promise<void> {
+  async create(
+    command: readonly string[],
+    commandCwd: string,
+    signal: AbortSignal,
+    commandTimeoutMs?: number,
+  ): Promise<void> {
     const program = command[0];
     if (program === undefined) throw new CodexExecutionError("invalid_response");
     if (!/^sha256:[a-f0-9]{64}$/u.test(this.#options.containerImage))
@@ -718,6 +723,9 @@ class ExecutionContainer {
               "DOCKER_BIN=/usr/local/bin/docker",
               "--env",
               `KESTREL_EXECUTION_USER=${executionUser}`,
+              ...(commandTimeoutMs === undefined
+                ? []
+                : ["--env", `KESTREL_VERIFICATION_TIMEOUT_MS=${String(commandTimeoutMs)}`]),
             ]
           : []),
         "--entrypoint",
@@ -1450,7 +1458,11 @@ async function isolated<T>(
   operation: (container: ExecutionContainer, control: string, signal: AbortSignal) => Promise<T>,
 ): Promise<T> {
   boundedString(requestId);
-  if (timeoutMs !== null) timeout(timeoutMs);
+  if (
+    timeoutMs !== null &&
+    (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 8_110_000)
+  )
+    throw new CodexExecutionError("invalid_response");
   if (input.signal?.aborted) throw new CodexExecutionError("cancelled");
   const controller = new AbortController();
   const timer =
@@ -1555,6 +1567,8 @@ export function createCodexExecutionRuntime(
     },
     async runVerification(input) {
       try {
+        const commandTimeout = timeout(input.timeoutMs);
+        const prepared = options.projectEnvironment === "node_docker";
         if (
           input.command.length < 1 ||
           input.command.length > 128 ||
@@ -1575,15 +1589,18 @@ export function createCodexExecutionRuntime(
           input,
           workspace,
           input.processId,
-          input.timeoutMs,
+          prepared ? 910_000 + commandTimeout : commandTimeout,
           async (container, _control, signal) => {
             await container.create(
               input.command,
               path === "" ? "/workspace" : `/workspace/${path.split(sep).join("/")}`,
               signal,
+              prepared ? commandTimeout : undefined,
             );
             const started = performance.now();
             const result = await container.verify(signal);
+            if (prepared && (result.exitCode === 124 || result.exitCode === 137))
+              throw new CodexExecutionError("timeout");
             return {
               ...result,
               processId: input.processId,

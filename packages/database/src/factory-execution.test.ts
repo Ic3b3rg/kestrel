@@ -193,7 +193,7 @@ it("atomically retains the actual consequential question and approved identity w
     ]),
   );
   expect(query.mock.calls).toContainEqual([
-    "UPDATE factory_execution_activity SET detail = NULL WHERE run_id = $1 AND detail IS NOT NULL",
+    "UPDATE factory_execution_activity SET detail = NULL WHERE run_id = $1 AND detail IS NOT NULL AND NOT retain_detail",
     [runId],
   ]);
   expect(query.mock.calls.at(-1)?.[0]).toBe("COMMIT");
@@ -247,7 +247,7 @@ it.each([
       expect.arrayContaining([runId, "interrupted", "inspect_environment"]),
     );
     expect(calls).toContainEqual([
-      "UPDATE factory_execution_activity SET detail = NULL WHERE run_id = $1 AND detail IS NOT NULL",
+      "UPDATE factory_execution_activity SET detail = NULL WHERE run_id = $1 AND detail IS NOT NULL AND NOT retain_detail",
       [runId],
     ]);
   },

@@ -651,14 +651,14 @@ export function recordFactoryExecutionActivity(
   item: Pick<
     FactoryExecutionRun["activity"][number],
     "itemId" | "itemState" | "agentPath" | "detail" | "exitCode"
-  > = {},
+  > & { retainDetail?: boolean } = {},
 ): Promise<void> {
   return withRun(pool, run, async (client, _feature, row) => {
     if (row.reservation_released_at !== null) throw new FactoryError("conflict");
     await client.query(
       `INSERT INTO factory_execution_activity
-         (run_id, kind, summary, item_id, item_state, agent_path, detail, exit_code)
-       SELECT $1,$2,$3,$4,$5,$6,$7,$8
+         (run_id, kind, summary, item_id, item_state, agent_path, detail, exit_code, retain_detail)
+       SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9
        WHERE (SELECT count(*) FROM factory_execution_activity WHERE run_id = $1) < 1000`,
       [
         run.id,
@@ -671,6 +671,7 @@ export function recordFactoryExecutionActivity(
           ? item.detail.slice(0, 8192)
           : null,
         item.exitCode ?? null,
+        item.retainDetail === true && kind === "lifecycle",
       ],
     );
   });
@@ -781,6 +782,28 @@ export async function isFactoryExecutionReservationReleased(
     [runId],
   );
   return result.rows[0]?.released === true;
+}
+
+/** Claim installation capacity atomically; only retained stop proof releases it. */
+export function claimFactoryExecutionHeavySlot(
+  pool: DatabasePool,
+  runId: string,
+): Promise<boolean> {
+  return transaction(pool, async (client) => {
+    await client.query(
+      "SELECT pg_advisory_xact_lock(hashtextextended('factory-heavy-slot-v1', 0))",
+    );
+    const result = await client.query(
+      `UPDATE factory_execution_runs SET heavy_slot_claimed_at = COALESCE(heavy_slot_claimed_at, clock_timestamp())
+       WHERE id = $1 AND reservation_released_at IS NULL AND stop_requested_at IS NULL
+         AND state IN ('queued','running','verifying')
+         AND NOT EXISTS (SELECT 1 FROM factory_execution_runs other
+           WHERE other.id <> $1 AND other.heavy_slot_claimed_at IS NOT NULL AND other.reservation_released_at IS NULL)
+       RETURNING id`,
+      [runId],
+    );
+    return result.rowCount === 1;
+  });
 }
 
 export async function identifyFactoryExecutionContainer(

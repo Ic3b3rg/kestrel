@@ -15,7 +15,12 @@ it.skipIf(image === undefined)(
       await writeFile(join(cwd, ".git"), "gitdir: /controller-owned-live-fixture\n");
       await writeFile(
         join(cwd, "package.json"),
-        JSON.stringify({ name: "environment-probe", version: "1.0.0", private: true }),
+        JSON.stringify({
+          name: "environment-probe",
+          version: "1.0.0",
+          private: true,
+          scripts: { build: 'node -e "setTimeout(()=>{},2000)"' },
+        }),
       );
       await writeFile(
         join(cwd, "package-lock.json"),
@@ -42,7 +47,7 @@ it.skipIf(image === undefined)(
         workspaceCwd: cwd,
         cwd: ".",
         processId: `prepared-live:${String(Date.now())}`,
-        timeoutMs: 180_000,
+        timeoutMs: 1_000,
         beforeContainerCreate: () => {
           events.push("reserved");
           return Promise.resolve();
@@ -84,6 +89,18 @@ it.skipIf(image === undefined)(
       expect(await readFile(join(cwd, "node_modules/.kestrel-environment-v1"), "utf8")).toMatch(
         /^[a-f0-9]{64}$/u,
       );
+      await expect(
+        runtime.runVerification({
+          workspaceCwd: cwd,
+          cwd: ".",
+          processId: `prepared-timeout:${String(Date.now())}`,
+          timeoutMs: 100,
+          beforeContainerCreate: () => Promise.resolve(),
+          onContainer: () => Promise.resolve(),
+          onStopped: () => Promise.resolve(),
+          command: ["node", "-e", "setTimeout(()=>{},2000)"],
+        }),
+      ).rejects.toMatchObject({ code: "timeout" });
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

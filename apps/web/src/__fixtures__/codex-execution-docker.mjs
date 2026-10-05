@@ -73,6 +73,7 @@ if (args[0] === "image") {
 } else if (args[0] === "start") {
   const current = state();
   if (args.includes("--attach")) {
+    if (mode === "slow_preparation") await new Promise((resolve) => setTimeout(resolve, 750));
     if (mode === "verification_start_rejected") process.exit(1);
     const exitCode = mode === "verification_failed" ? 7 : 0;
     save({ ...current, running: false, status: "exited", exitCode });

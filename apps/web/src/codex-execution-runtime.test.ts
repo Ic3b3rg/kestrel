@@ -121,6 +121,19 @@ it("runs trusted Docker verification inside one owned resource boundary without 
   expect(create?.join(" ")).not.toContain("source=/var/run/docker.sock");
 });
 
+it("gives a verification command its full deadline after slow environment preparation", async () => {
+  const { cwd, runtime } = await fixture("slow_preparation", { projectEnvironment: "node_docker" });
+  const result = await runtime.runVerification({
+    ...input(cwd),
+    workspaceCwd: cwd,
+    cwd: ".",
+    command: ["node", "--test"],
+    processId: "prepared-deadline",
+    timeoutMs: 500,
+  });
+  expect(result.exitCode).toBe(0);
+});
+
 it("emits public reasoning summaries and bounded command results", async () => {
   const { cwd, runtime } = await fixture("activity");
   const turn: CodexExecutionTurnInput = input(cwd);

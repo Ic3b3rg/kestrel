@@ -259,8 +259,36 @@ describe("Factory Human Gates over HTTP and PostgreSQL", () => {
       expect(claims.map((run) => run.featureId).sort()).toEqual([first, other].sort());
       original = required(claims.find((run) => run.featureId === first));
       expect(original.key).toBe("order");
+      const competing = required(claims.find((run) => run.featureId === other));
+      // Each module opens a fresh database connection, as a restarted host would.
+      expect(
+        await module<boolean>(
+          `console.log(JSON.stringify(await db.claimFactoryExecutionHeavySlot(pool,${JSON.stringify(original.id)})));`,
+        ),
+      ).toBe(true);
+      expect(
+        await module<boolean>(
+          `console.log(JSON.stringify(await db.claimFactoryExecutionHeavySlot(pool,${JSON.stringify(competing.id)})));`,
+        ),
+      ).toBe(false);
+      await module(
+        `await db.recordFactoryExecutionActivity(pool,${JSON.stringify(original)},'lifecycle','Prerequisite probe failed',{detail:'npm run build\nexit 1',exitCode:1,retainDetail:true}); console.log('null');`,
+      );
       gate = await block(original);
-      await verify(required(claims.find((run) => run.featureId === other)));
+      const retained = FactoryExecutionRunSchema.parse(
+        await (
+          await stack.fetchApi(`${path(projects.kestrel, first)}/execution/runs/${original.id}`)
+        ).json(),
+      );
+      expect(
+        retained.activity.find((event) => event.summary === "Prerequisite probe failed")?.detail,
+      ).toBe("npm run build\nexit 1");
+      expect(
+        await module<boolean>(
+          `console.log(JSON.stringify(await db.claimFactoryExecutionHeavySlot(pool,${JSON.stringify(competing.id)})));`,
+        ),
+      ).toBe(true);
+      await verify(competing);
       const final = required((await claim([other]))[0]);
       expect(final.purpose).toBe("feature_verification");
       await verify(final);

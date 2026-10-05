@@ -16,6 +16,10 @@ dependency installation, build and capability probes before the implementation t
 verification operation uses the same environment preparation and preserves its original program,
 arguments and deadline.
 
+Dependency preparation has a separate bounded budget. A controller-selected timeout wrapper starts
+the approved verification deadline after preparation; an outer failsafe covers preparation, command
+time and teardown grace. There is no aggregate implementation deadline.
+
 `KESTREL_FACTORY_TRUSTED_DOCKER_PROJECTS` is an explicit comma-separated Project ID allowlist in the
 host supervisor environment. Repository content and agent output cannot grant that capability. An
 empty allowlist retains the existing unprivileged, read-only-root, network-isolated executor.
@@ -36,12 +40,14 @@ Implementation and verification remain separate containers; only stopped impleme
 checkpointed, and all approved checks must pass on that exact checkpoint.
 
 One heavy slot prevents this installation's Factory attempts from starting heavy phases
-concurrently. The envelope uses at most 5.5 GiB, 512 processes and two effective CPUs, leaving at
-least 1.5 GiB of Docker VM capacity unassigned. Actual running container memory is checked before
-admission; low capacity waits visibly and cancellably. This is Docker VM admission, not a complete
-workstation memory-pressure scheduler. Local inference, external Docker activity and applications
-outside the VM still compete for physical memory. The first live measurement must report those
-limits honestly.
+concurrently. A database claim and unique index retain that slot across host restart until the
+existing execution reservation has stop/release proof. Bounded prerequisite output is explicitly
+retained after completion; ordinary transient activity detail keeps its existing disposal policy.
+The envelope uses at most 5.5 GiB, 512 processes and two effective CPUs, leaving at least 1.5 GiB of
+Docker VM capacity unassigned. Actual running container memory is checked before admission; low
+capacity waits visibly and cancellably. This is Docker VM admission, not a complete workstation
+memory-pressure scheduler. Local inference, external Docker activity and applications outside the VM
+still compete for physical memory. The first live measurement must report those limits honestly.
 
 Routine technical interruptions have an execution status and a bounded repair or retry path. Only
 `input_required` represents a product decision and exposes an answer form. Preserve earlier failures

@@ -22,13 +22,14 @@ it.each(["stopped", "reconciled"])(
     const docker = join(root, "docker");
     await writeFile(
       docker,
-      `#!${process.execPath}\nconst args=process.argv.slice(2); console.log(args[0]==='info' ? JSON.stringify({memoryBytes:8*1024**3,cpus:12}) : args[0]==='stats' ? '1' : args.includes('{{.Id}} {{index .Config.Labels "org.opencontainers.image.version"}}') ? '${imageId} 0.155.1' : '${imageId}');\n`,
+      `#!${process.execPath}\nconst args=process.argv.slice(2); console.log(args[0]==='info' ? JSON.stringify({memoryBytes:8*1024**3,cpus:12}) : args[0]==='stats' ? '64MiB / 8GiB' : args.includes('{{.Id}} {{index .Config.Labels "org.opencontainers.image.version"}}') ? '${imageId} 0.155.1' : '${imageId}');\n`,
     );
     await chmod(docker, 0o755);
     vi.stubEnv("KESTREL_STATE_ROOT", root);
     const prepare = createFactoryProjectEnvironmentPreparer({
       authorizedProjects: ["project-a"],
       dockerExecutable: docker,
+      claimHeavySlot: () => Promise.resolve(true),
       isReservationReleased: (runId) =>
         Promise.resolve(stop === "reconciled" && confirmed && runId === "first"),
     });
@@ -66,3 +67,43 @@ it.each(["stopped", "reconciled"])(
     next?.release();
   },
 );
+
+it("retains a heavy reservation across preparer restart and admits actual small-container usage", async () => {
+  const root = await mkdtemp(join(tmpdir(), "kestrel-prepared-restart-"));
+  directories.push(root);
+  const imageId = `sha256:${"b".repeat(64)}`;
+  await writeFile(join(root, "factory-execution-image"), `${imageId}\n`);
+  const docker = join(root, "docker");
+  await writeFile(
+    docker,
+    `#!${process.execPath}\nconst args=process.argv.slice(2); console.log(args[0]==='info' ? JSON.stringify({memoryBytes:8*1024**3,cpus:12}) : args[0]==='stats' ? '128MiB / 256MiB' : args.includes('{{.Id}} {{index .Config.Labels "org.opencontainers.image.version"}}') ? '${imageId} 0.155.1' : '${imageId}');\n`,
+    { mode: 0o700 },
+  );
+  vi.stubEnv("KESTREL_STATE_ROOT", root);
+  let priorStopped = false;
+  const claimHeavySlot = vi.fn(() => Promise.resolve(priorStopped));
+  const restarted = createFactoryProjectEnvironmentPreparer({
+    authorizedProjects: ["project-a"],
+    dockerExecutable: docker,
+    claimHeavySlot,
+  });
+  const events: string[] = [];
+  const activity = (event: string) => {
+    events.push(event);
+    return Promise.resolve();
+  };
+  const abort = new AbortController();
+  const waiting = restarted({ projectId: "project-a", runId: "new-run" }, abort.signal, activity);
+  await vi.waitFor(() => expect(events).toContain("Waiting for local execution capacity."));
+  expect(events.some((event) => event.startsWith("Preparing"))).toBe(false);
+  abort.abort();
+  await expect(waiting).rejects.toThrow();
+  priorStopped = true;
+  const admitted = await restarted(
+    { projectId: "project-a", runId: "new-run" },
+    new AbortController().signal,
+    activity,
+  );
+  expect(admitted?.runtimeOptions.containerResources?.memoryBytes).toBe(5.5 * 1024 ** 3);
+  admitted?.release();
+});

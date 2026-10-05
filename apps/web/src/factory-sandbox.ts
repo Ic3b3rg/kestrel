@@ -386,6 +386,7 @@ export function createFactorySandbox(options: FactorySandboxOptions) {
             {
               detail: publicText(`${result.stdout}\n${result.stderr}`, 8192),
               exitCode: result.exitCode,
+              retainDetail: true,
             },
           );
           if (result.exitCode !== 0)
