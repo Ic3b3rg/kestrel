@@ -53,7 +53,9 @@ repository.
   chosen memory/PID/CPU envelope. Do not remove memory limits or silently overcommit a 16 GiB
   workstation. Waiting for resources is technical activity, not an Operator decision.
 - Do not introduce an aggregate 30-minute implementation timeout. Individual checks retain their
-  approved deadlines. Cancellation and uncertain teardown retain the existing fence.
+  approved deadlines. Cancellation and uncertain teardown retain the existing fence. The
+  implementation prompt projects the legacy plan timeout as a per-command ceiling and explicitly
+  states that it is not an aggregate implementation budget; retained plans are not rewritten.
 - Classify product ambiguity separately from environment, resource, provider and code-check
   failures. Repair within approved scope; exhausted technical recovery remains visible as a
   technical interruption, without a product-answer form.
@@ -110,6 +112,18 @@ The real prepared-environment probe passed in 34.6 seconds, including a nested b
 command timeout and absence of all three owned volumes. This proves the capability on this machine;
 the persisted issue still needs its unchanged acceptance checks. Unknown storage after a lost create
 acknowledgement retains custody and a technical interruption.
+
+Attempt 9 (`01a10c8d-82dd-7ba4-8f39-5c5af1a16ea3`) reached real HTTP and browser assertions and
+saved fixture repairs. Its first independent check passed; the next reproduced a 180-second setup
+timeout while the new daemon downloaded and built its project image. That failed evidence remains
+retained. The new prerequisite stage builds the declared root Dockerfile before starting the command
+deadline, keeping that build cache private to the operation. It adds cold preparation time to each
+fresh environment; it does not increase the original test deadlines or omit checks. Executor
+readiness uses the same separate 910-second startup envelope as controller verification (60 seconds
+daemon readiness, 840 seconds preparation, 10 seconds grace), then clears that deadline before
+implementation. Attempt 9 peaked at 3.640 GiB and 346 PIDs, with zero observed OOM kills; the task
+was interrupted after 42 minutes for a confirmed preparation failure, not an aggregate task
+deadline.
 
 Raw measurements and diagnostics are retained outside worktrees under the installation state root,
 in `measurements/background-execution-20261005`. Diagnostic reads contribute to the I/O counters;

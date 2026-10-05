@@ -46,6 +46,13 @@ representative execution read approximately 25 GB and wrote 39 GB before multipl
 startup deadlines. Images reached Created state while complete filesystem copies accumulated. The
 earlier VFS compatibility fallback therefore did not establish a usable Project environment.
 
+The next cold-daemon check reached its test's 180-second setup limit during image preparation, while
+the same check passed after its private cache was warm. Preparation therefore also builds the
+declared root Dockerfile, when present, before the approved command clock starts. This uses the same
+retained source and resource boundary; it neither replaces tests nor shares writable cache across
+operations. Each fresh environment pays the cold build cost, within preparation's separate budget.
+Other Docker contexts and toolchains are not certified by this first profile.
+
 An anonymous `local` volume provides non-overlay backing storage without a shared daemon or cache.
 Docker creates it as part of the already-reserved outer container, avoiding an independently delayed
 volume-create request. The ledger records required storage before issuing container creation. A lost

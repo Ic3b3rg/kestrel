@@ -210,6 +210,8 @@ const ENVIRONMENTS = [
   { environmentId: "remote", cwd: "/workspace", runtimeWorkspaceRoots: ["/workspace"] },
 ];
 const OUTPUT_CAP = 64 * 1024;
+// Private daemon (60s), project preparation (840s), and termination grace (10s).
+const PREPARED_STARTUP_TIMEOUT_MS = 910_000;
 const CONTAINER_INSPECT =
   '{"id":{{json .Id}},"name":{{json .Name}},"running":{{.State.Running}},"status":{{json .State.Status}},"exitCode":{{.State.ExitCode}},"image":{{json .Image}},"user":{{json .Config.User}},"network":{{json .HostConfig.NetworkMode}},"logDriver":{{json .HostConfig.LogConfig.Type}},"readonly":{{.HostConfig.ReadonlyRootfs}},"privileged":{{.HostConfig.Privileged}},"pidMode":{{json .HostConfig.PidMode}},"cgroupns":{{json .HostConfig.CgroupnsMode}},"restart":{{json .HostConfig.RestartPolicy.Name}},"init":{{.HostConfig.Init}},"pidsLimit":{{.HostConfig.PidsLimit}},"memory":{{.HostConfig.Memory}},"memorySwap":{{.HostConfig.MemorySwap}},"nanoCpus":{{.HostConfig.NanoCpus}},"cpusetCpus":{{json .HostConfig.CpusetCpus}},"shmSize":{{.HostConfig.ShmSize}},"tmpfs":{{json .HostConfig.Tmpfs}},"capDrop":{{json .HostConfig.CapDrop}},"securityOpt":{{json .HostConfig.SecurityOpt}},"mounts":{{json .Mounts}},"labels":{{json .Config.Labels}}}';
 const FORWARD =
@@ -608,8 +610,10 @@ class ExecutionContainer {
       throw new CodexExecutionError("sandbox_unavailable", undefined, "docker_operation_failed");
     return result.stdout.trim();
   }
-  async inspect(): Promise<Record<string, unknown>> {
-    return record(JSON.parse(await this.cli(["inspect", "--format", CONTAINER_INSPECT, this.id])));
+  async inspect(signal?: AbortSignal): Promise<Record<string, unknown>> {
+    return record(
+      JSON.parse(await this.cli(["inspect", "--format", CONTAINER_INSPECT, this.id], signal)),
+    );
   }
   async assertDaemon(signal?: AbortSignal): Promise<void> {
     if (
@@ -863,20 +867,41 @@ class ExecutionContainer {
   }
   async startExecutor(signal: AbortSignal): Promise<void> {
     await this.assertDaemon(signal);
-    await this.cli(["start", this.id], signal);
     if (this.#options.projectEnvironment === "node_docker") {
-      for (let probe = 0; probe < 300; probe++) {
-        try {
-          await this.cli(["exec", this.id, "node", "-e", READY], signal);
-          return;
-        } catch {
-          checkAbort(signal);
-          if ((await this.inspect()).running !== true) break;
-          await delay(1000, undefined, { signal });
+      const preparation = new AbortController();
+      const preparationSignal = AbortSignal.any([signal, preparation.signal]);
+      const timer = setTimeout(
+        () =>
+          preparation.abort(
+            new CodexExecutionError("sandbox_unavailable", undefined, "project_preparation_failed"),
+          ),
+        PREPARED_STARTUP_TIMEOUT_MS,
+      );
+      try {
+        await this.cli(["start", this.id], preparationSignal);
+        while (!preparationSignal.aborted) {
+          try {
+            await this.cli(["exec", this.id, "node", "-e", READY], preparationSignal);
+            return;
+          } catch {
+            checkAbort(preparationSignal);
+            if ((await this.inspect(preparationSignal)).running !== true) break;
+            await delay(1000, undefined, { signal: preparationSignal });
+          }
         }
+        throw new CodexExecutionError(
+          "sandbox_unavailable",
+          undefined,
+          "project_preparation_failed",
+        );
+      } catch (error) {
+        checkAbort(preparationSignal);
+        throw error;
+      } finally {
+        clearTimeout(timer);
       }
-      throw new CodexExecutionError("sandbox_unavailable", undefined, "project_preparation_failed");
     }
+    await this.cli(["start", this.id], signal);
     await this.cli(["exec", this.id, "node", "-e", READY], signal).catch(() => {
       throw new CodexExecutionError("sandbox_unavailable", undefined, "executor_unavailable");
     });
@@ -1696,7 +1721,7 @@ export function createCodexExecutionRuntime(
           input,
           workspace,
           input.processId,
-          prepared ? 910_000 + commandTimeout : commandTimeout,
+          prepared ? PREPARED_STARTUP_TIMEOUT_MS + commandTimeout : commandTimeout,
           async (container, _control, signal) => {
             await container.create(
               input.command,

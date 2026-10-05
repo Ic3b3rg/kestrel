@@ -705,7 +705,11 @@ it("resumes only the recorded question in a fresh turn while retaining the froze
   expect(context.gateResolution).toEqual(run.gateResolution);
   expect(context.requirements).toEqual(run.plan.acceptance);
   expect(context.workItem).toEqual(run.plan.workItems[0]);
-  expect(context.limits).toEqual(run.plan.limits);
+  expect(context.limits).toEqual({
+    maxConcurrentProjects: 2,
+    maxActiveFeaturesPerProject: 1,
+    maxVerificationCommandTimeoutSeconds: 60,
+  });
   expect(input).not.toHaveProperty("threadId");
   expect(runVerification).toHaveBeenCalledOnce();
   expect(finishFactoryExecution).toHaveBeenCalledWith(
@@ -1268,6 +1272,21 @@ it("gates persistent verification failures after at most three technical rounds"
       failure: "verification_failed",
     }),
   );
+});
+
+it("does not give implementation an aggregate deadline from legacy plan limits", async () => {
+  run.plan.limits.attemptTimeoutSeconds = 1800;
+  await processor().process({ runId: run.id });
+  const input = runTurn.mock.calls[0]?.[0];
+  if (input === undefined) throw new Error("No implementation turn started");
+  const context = JSON.parse(input.prompt.split("\n").at(-1) ?? "null") as { limits: unknown };
+  expect(context.limits).not.toHaveProperty("attemptTimeoutSeconds");
+  expect(context.limits).toMatchObject({ maxVerificationCommandTimeoutSeconds: 1800 });
+  expect(input.prompt).toContain("There is no aggregate implementation deadline.");
+  expect(input.prompt).toContain(
+    "The legacy attemptTimeoutSeconds in the retained plan is a per-command verification ceiling",
+  );
+  expect(runVerification.mock.calls[0]?.[0].timeoutMs).toBe(10_000);
 });
 
 it("keeps a legacy execution alive beyond the plan's elapsed-time limit", async () => {

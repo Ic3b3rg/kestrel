@@ -113,6 +113,12 @@ if (args[0] === "image") {
     console.log(id);
   }
 } else if (args[0] === "exec") {
+  if (mode === "delayed_executor" && !args.includes("-i")) {
+    const attemptsPath = join(root, "readiness-attempts.json");
+    const attempts = existsSync(attemptsPath) ? JSON.parse(readFileSync(attemptsPath, "utf8")) : 0;
+    writeFileSync(attemptsPath, JSON.stringify(attempts + 1));
+    if (attempts < 301) process.exit(1);
+  }
   // A real child transports bytes when the runtime's loopback proxy is exercised.
   if (args.includes("-i")) process.stdin.pipe(process.stdout);
 } else if (args[0] === "rm") {

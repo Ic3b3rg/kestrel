@@ -60,6 +60,10 @@ it.skipIf(image === undefined)(
     try {
       await writeFile(join(cwd, ".git"), "gitdir: /controller-owned-live-fixture\n");
       await writeFile(
+        join(cwd, "Dockerfile"),
+        "FROM scratch\nCOPY package.json /package.json\nLABEL org.kestrel.fixture.prepared=true\n",
+      );
+      await writeFile(
         join(cwd, "package.json"),
         JSON.stringify({
           name: "environment-probe",
@@ -109,7 +113,7 @@ it.skipIf(image === undefined)(
         command: [
           "node",
           "-e",
-          `const {execFileSync}=require('node:child_process'); const fs=require('node:fs'); const temp=fs.mkdtempSync(require('node:path').join(require('node:os').tmpdir(),'git-fixture-')); const fixture=require('node:path').join(temp,'git'); let tempExecutable; try { fs.writeFileSync(fixture,${JSON.stringify("#!/bin/sh\necho fixture-ready\n")},{mode:0o700}); tempExecutable=execFileSync(fixture,{encoding:'utf8'}).trim()==='fixture-ready'; } finally {fs.rmSync(temp,{recursive:true,force:true});} console.log(JSON.stringify({tempExecutable,driver:execFileSync('docker',['info','--format','{{.Driver}}'],{encoding:'utf8'}).trim(),docker:JSON.parse(execFileSync('docker',['info','--format','{{json .}}'],{encoding:'utf8'})).ServerVersion,heap:require('node:v8').getHeapStatistics().heap_size_limit,cpus:require('node:os').availableParallelism(),memory:fs.readFileSync('/sys/fs/cgroup/memory.max','utf8').trim(),pids:fs.readFileSync('/sys/fs/cgroup/pids.max','utf8').trim(),chromium:fs.readdirSync('/opt/playwright').some(x=>x.startsWith('chromium-'))}));`,
+          `const {execFileSync}=require('node:child_process'); const fs=require('node:fs'); const temp=fs.mkdtempSync(require('node:path').join(require('node:os').tmpdir(),'git-fixture-')); const fixture=require('node:path').join(temp,'git'); let tempExecutable; try { fs.writeFileSync(fixture,${JSON.stringify("#!/bin/sh\necho fixture-ready\n")},{mode:0o700}); tempExecutable=execFileSync(fixture,{encoding:'utf8'}).trim()==='fixture-ready'; } finally {fs.rmSync(temp,{recursive:true,force:true});} console.log(JSON.stringify({tempExecutable,preparedImage:execFileSync('docker',['image','ls','--filter','label=org.kestrel.fixture.prepared=true','--format','{{.ID}}'],{encoding:'utf8'}).trim().length>0,driver:execFileSync('docker',['info','--format','{{.Driver}}'],{encoding:'utf8'}).trim(),docker:JSON.parse(execFileSync('docker',['info','--format','{{json .}}'],{encoding:'utf8'})).ServerVersion,heap:require('node:v8').getHeapStatistics().heap_size_limit,cpus:require('node:os').availableParallelism(),memory:fs.readFileSync('/sys/fs/cgroup/memory.max','utf8').trim(),pids:fs.readFileSync('/sys/fs/cgroup/pids.max','utf8').trim(),chromium:fs.readdirSync('/opt/playwright').some(x=>x.startsWith('chromium-'))}));`,
         ],
       });
       expect(result.exitCode, result.stderr).toBe(0);
@@ -123,6 +127,7 @@ it.skipIf(image === undefined)(
           pids: z.string(),
           chromium: z.boolean(),
           tempExecutable: z.boolean(),
+          preparedImage: z.boolean(),
         })
         .parse(JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "{}"));
       expect(facts).toMatchObject({
@@ -132,6 +137,7 @@ it.skipIf(image === undefined)(
         pids: "512",
         chromium: true,
         tempExecutable: true,
+        preparedImage: true,
       });
       expect(facts.heap).toBeGreaterThan(1.5 * 1024 ** 3);
       expect(facts.docker).toMatch(/^\d+\./u);

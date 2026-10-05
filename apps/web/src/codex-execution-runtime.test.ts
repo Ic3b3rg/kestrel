@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as realDelay } from "node:timers/promises";
+import type * as TimersPromises from "node:timers/promises";
 
 import { afterEach, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -23,6 +24,15 @@ import {
 } from "./codex-execution-runtime.js";
 
 const directories: string[] = [];
+const readinessClock = vi.hoisted(() => ({ skipDelay: false }));
+vi.mock("node:timers/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof TimersPromises>();
+  return {
+    ...actual,
+    setTimeout: (...args: Parameters<typeof actual.setTimeout>) =>
+      readinessClock.skipDelay ? Promise.resolve() : actual.setTimeout(...args),
+  };
+});
 const daemonId = "c20f7230-59a2-4824-a2f4-fda71c982ee6";
 vi.setConfig({ testTimeout: 20_000 });
 const fixturePath = fileURLToPath(
@@ -120,6 +130,23 @@ it("runs trusted Docker verification inside one owned resource boundary without 
   expect(create).not.toContain("--publish");
   expect(create?.join(" ")).not.toContain("source=/var/run/docker.sock");
 });
+
+it("starts implementation after a prepared environment needs more than the legacy readiness allowance", async () => {
+  const { cwd, runtime } = await fixture("delayed_executor", {
+    projectEnvironment: "node_docker",
+    timeoutMs: null,
+  });
+  readinessClock.skipDelay = true;
+  const turn = input(cwd);
+  try {
+    const result = await runtime.runTurn(turn);
+    expect(result.text).toBe("Implemented. 🪶");
+    expect(turn.onQuestion).not.toHaveBeenCalled();
+    expect(turn.onStopped).toHaveBeenCalledOnce();
+  } finally {
+    readinessClock.skipDelay = false;
+  }
+}, 90_000);
 
 it("retains and removes private Docker storage with its verification container", async () => {
   const { cwd, runtime } = await fixture("happy", { projectEnvironment: "node_docker" });

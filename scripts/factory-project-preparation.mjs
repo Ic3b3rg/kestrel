@@ -70,3 +70,10 @@ try {
     await rm(context, { recursive: true, force: true });
   }
 }
+// An empty daemon can run the probe yet still leave project image downloads/builds
+// inside a test's short setup deadline. Prepare the declared root image first.
+// Its cache remains private to this operation and is removed with the outer volume.
+if (await exists("Dockerfile")) {
+  await command("docker", ["build", "--tag", `kestrel-preparation-project:${randomUUID()}`, "."]);
+  console.log("Project container image ready");
+}
