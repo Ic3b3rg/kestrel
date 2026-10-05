@@ -11,6 +11,8 @@ import { randomUUID } from "node:crypto";
 
 import { FactoryError, withFactoryFeature, type FeatureRow } from "./factory-planning.js";
 import type { DatabasePool } from "./pool.js";
+import { workspaceFor, type FactoryFeatureWorkspace } from "./factory-execution-ledger.js";
+import type { ClaimedFactoryExecution } from "./factory-execution.js";
 
 interface GateRow {
   id: string;
@@ -30,6 +32,8 @@ interface GateRow {
   resolved_at: Date | null;
   run_state: string;
   run_failure: string | null;
+  run_source: ClaimedFactoryExecution["source"];
+  workspace_restoration: FactoryFeatureWorkspace | null;
   attempt: number;
   reservation_released_at: Date | null;
   has_pending_container: boolean;
@@ -40,7 +44,7 @@ interface GateRow {
 }
 
 const gateSelection = `SELECT gate.*, run.state AS run_state, run.failure AS run_failure,
-  run.attempt, run.reservation_released_at, item.board_column,
+  run.source AS run_source, run.attempt, run.reservation_released_at, item.board_column,
   EXISTS (SELECT 1 FROM factory_work_items pending WHERE pending.feature_id = gate.feature_id AND pending.plan_version = gate.plan_version AND pending.board_column NOT IN ('in_review', 'completed')) AS has_unverified_item,
   EXISTS (SELECT 1 FROM factory_execution_containers container
     WHERE container.run_id = run.id AND container.stopped_at IS NULL) AS has_pending_container,
@@ -106,6 +110,7 @@ function blockedReason(
   )
     return "unconfirmed_stop";
   if (
+    row.workspace_restoration == null &&
     [row.reason, row.run_failure].some(
       (reason) => reason === "source_changed" || reason === "revision_changed",
     )
@@ -204,6 +209,7 @@ export function resolveFactoryGate(
   gateId: string,
   actorId: string,
   input: ResolveFactoryGateCommand,
+  verifyRetainedWorkspace?: (workspace: Readonly<FactoryFeatureWorkspace>) => Promise<void>,
 ): Promise<FactoryGate> {
   const command = ResolveFactoryGateCommandSchema.parse(input);
   return withFactoryFeature(pool, projectId, featureId, async (client, feature) => {
@@ -241,13 +247,46 @@ export function resolveFactoryGate(
       feature.approved_plan_version !== command.expectedPlanVersion
     )
       throw new FactoryError("conflict", "The current gate and approved plan version must match");
-    const reason = blockedReason(feature, row);
+    let reason = blockedReason(feature, row);
+    let restoration: FactoryFeatureWorkspace | null = null;
+    if (
+      command.decision === "resume_within_plan" &&
+      reason === "workspace_uncertain" &&
+      verifyRetainedWorkspace !== undefined
+    ) {
+      const workspace = await workspaceFor(client, featureId);
+      const owner =
+        workspace === null
+          ? null
+          : await client.query<{ id: string }>(
+              "SELECT COALESCE(canonical_project_id, id) AS id FROM projects WHERE id = $1",
+              [workspace.projectId],
+            );
+      if (
+        workspace !== null &&
+        owner?.rows[0]?.id === feature.project_id &&
+        workspace.repositoryId === row.run_source?.repositoryId &&
+        workspace.sourceIdentity === row.run_source.identity
+      ) {
+        await verifyRetainedWorkspace(Object.freeze({ ...workspace }));
+        restoration = workspace;
+        reason = blockedReason(feature, { ...row, workspace_restoration: restoration });
+      }
+    }
     if (command.decision === "resume_within_plan" && reason !== null)
       throw new FactoryError("conflict", `This attempt cannot resume: ${reason}`);
     const updated = await client.query(
       `UPDATE factory_human_gates SET request_id = $2, resolved_by = $3, decision = $4, answer = $5,
-       resolved_at = clock_timestamp() WHERE id = $1 AND resolved_at IS NULL RETURNING id`,
-      [gateId, command.requestId, actorId, command.decision, command.answer],
+       resolved_at = clock_timestamp(), workspace_restoration = $6
+       WHERE id = $1 AND resolved_at IS NULL RETURNING id`,
+      [
+        gateId,
+        command.requestId,
+        actorId,
+        command.decision,
+        command.answer,
+        restoration === null ? null : JSON.stringify(restoration),
+      ],
     );
     if (updated.rowCount !== 1) throw new FactoryError("conflict");
     if (command.decision === "resume_within_plan")
@@ -261,7 +300,11 @@ export function resolveFactoryGate(
         featureId,
         row.work_item_id,
         command.decision === "resume_within_plan"
-          ? "The Operator answered the gate within the approved plan; one controlled retry is queued."
+          ? restoration !== null
+            ? "The saved workspace matches its retained checkpoint; one controlled retry is queued."
+            : row.reason === "input_required"
+              ? "The Operator answered the gate within the approved plan; one controlled retry is queued."
+              : "One controlled technical retry is queued within the approved plan."
           : "The Operator identified a required plan change. Execution remains gated until an updated plan is approved.",
       ],
     );

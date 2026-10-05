@@ -18,6 +18,17 @@ const otherId = "01991c36-7f90-7000-8000-000000000008";
 const now = new Date("2026-09-08T12:00:00.000Z");
 
 function storage() {
+  const workspace = {
+    projectId,
+    featureId,
+    repositoryId: otherId,
+    sourceIdentity: "a".repeat(64),
+    baseCommitId: "b".repeat(40),
+    headCommitId: "c".repeat(40),
+    treeId: "d".repeat(40),
+    objectFormat: "sha1" as const,
+    branch: `refs/heads/kestrel/feature/${featureId}`,
+  };
   const feature = {
     id: featureId,
     project_id: projectId,
@@ -41,6 +52,8 @@ function storage() {
     resolved_at: null as Date | null,
     run_state: "blocked",
     run_failure: "input_required",
+    run_source: { repositoryId: otherId, identity: workspace.sourceIdentity },
+    workspace_restoration: null as unknown,
     attempt: 1,
     reservation_released_at: now as Date | null,
     has_pending_container: false,
@@ -90,6 +103,25 @@ function storage() {
     }
     if (statement.includes("FROM factory_verification_results"))
       return { rowCount: hasFailedVerification ? 1 : 0, rows: [{ failed: hasFailedVerification }] };
+    if (statement.includes("FROM factory_feature_workspaces"))
+      return {
+        rowCount: 1,
+        rows: [
+          {
+            project_id: workspace.projectId,
+            feature_id: workspace.featureId,
+            repository_id: workspace.repositoryId,
+            source_identity: workspace.sourceIdentity,
+            base_commit_id: workspace.baseCommitId,
+            head_commit_id: workspace.headCommitId,
+            tree_id: workspace.treeId,
+            object_format: workspace.objectFormat,
+            branch: workspace.branch,
+          },
+        ],
+      };
+    if (statement.includes("FROM projects WHERE id = $1"))
+      return { rowCount: 1, rows: [{ id: projectId }] };
     if (statement.includes("UPDATE factory_human_gates")) {
       if (gate.resolved_at !== null) return { rowCount: 0, rows: [] };
       Object.assign(gate, {
@@ -98,6 +130,8 @@ function storage() {
         decision: statement.includes("resolved_by = NULL") ? "resume_within_plan" : parameters?.[3],
         answer: statement.includes("resolved_by = NULL") ? parameters?.[2] : parameters?.[4],
         resolved_at: now,
+        workspace_restoration:
+          typeof parameters?.[5] === "string" ? (JSON.parse(parameters[5]) as unknown) : null,
       });
       return { rowCount: 1, rows: [{ id: gate.id }] };
     }
@@ -118,6 +152,7 @@ function storage() {
     gate,
     activity,
     query,
+    workspace,
     client,
     pool,
     setFailedVerification: (value: boolean) => {
@@ -326,6 +361,68 @@ it.each(["source_changed", "revision_changed"])(
     ).rejects.toMatchObject({ code: "conflict" });
   },
 );
+
+it.each(["source_changed", "revision_changed"])(
+  "queues %s only after server verification of the retained workspace and preserves its receipt",
+  async (reason) => {
+    const state = storage();
+    state.gate.reason = reason;
+    state.gate.run_failure = reason;
+    const inspect = vi.fn(() => Promise.resolve());
+    const result = await resolveFactoryGate(
+      state.pool,
+      projectId,
+      featureId,
+      gateId,
+      operatorId,
+      answer,
+      inspect,
+    );
+    expect(inspect).toHaveBeenCalledWith(state.workspace);
+    expect(state.gate.workspace_restoration).toEqual(state.workspace);
+    expect(state.feature.state).toBe("queued");
+    expect(result.resolution?.decision).toBe("resume_within_plan");
+    expect(
+      await factoryGateForRetry(state.client as never, state.feature as never, runId),
+    ).not.toBeNull();
+  },
+);
+
+it.each([projectId, otherId])(
+  "preserves custody %s through the same Project family",
+  async (custodyProjectId) => {
+    const state = storage();
+    state.gate.reason = "source_changed";
+    state.gate.run_failure = "source_changed";
+    state.workspace.projectId = custodyProjectId;
+    const inspect = vi.fn(() => Promise.resolve());
+    const result = await resolveFactoryGate(
+      state.pool,
+      custodyProjectId === projectId ? otherId : projectId,
+      featureId,
+      gateId,
+      operatorId,
+      answer,
+      inspect,
+    );
+    expect(inspect).toHaveBeenCalledWith(state.workspace);
+    expect(state.gate.workspace_restoration).toEqual(state.workspace);
+    expect(result.resolution?.decision).toBe("resume_within_plan");
+  },
+);
+
+it("keeps the technical pause when the saved workspace cannot be confirmed", async () => {
+  const state = storage();
+  state.gate.reason = "source_changed";
+  state.gate.run_failure = "source_changed";
+  const inspect = vi.fn(() => Promise.reject(new Error("Workspace still differs")));
+  await expect(
+    resolveFactoryGate(state.pool, projectId, featureId, gateId, operatorId, answer, inspect),
+  ).rejects.toThrow("Workspace still differs");
+  expect(state.feature.state).toBe("gated");
+  expect(state.gate.resolved_at).toBeNull();
+  expect(state.gate.workspace_restoration).toBeNull();
+});
 
 it("records a required plan change without changing approval, Work Items, or queue eligibility", async () => {
   const state = storage();

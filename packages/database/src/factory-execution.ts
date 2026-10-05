@@ -475,6 +475,7 @@ export async function claimFactoryExecution(
       }
       let gateResolution: ClaimedFactoryExecution["gateResolution"] = null;
       if (row.resume_gate_id !== null) {
+        const retainedWorkspace = await workspaceFor(client, row.feature_id);
         const gates = await client.query<{
           id: string;
           run_id: string;
@@ -492,8 +493,11 @@ export async function claimFactoryExecution(
              AND previous.source IS NOT DISTINCT FROM $6::jsonb AND previous.accepted_commands = $7::jsonb
              AND previous.purpose = $8 AND gate.purpose = $8
              AND previous.verification_manifest IS NOT DISTINCT FROM $9::jsonb
-             AND gate.reason NOT IN ('source_changed', 'revision_changed')
-             AND previous.failure NOT IN ('source_changed', 'revision_changed')
+             AND ((gate.reason NOT IN ('source_changed', 'revision_changed')
+                   AND previous.failure NOT IN ('source_changed', 'revision_changed'))
+               OR (gate.workspace_restoration = $10::jsonb
+                   AND gate.workspace_restoration->>'repositoryId' = $6::jsonb->>'repositoryId'
+                   AND gate.workspace_restoration->>'sourceIdentity' = $6::jsonb->>'identity'))
              AND NOT EXISTS (SELECT 1 FROM factory_execution_containers WHERE run_id = previous.id AND stopped_at IS NULL)`,
           [
             row.resume_gate_id,
@@ -505,6 +509,7 @@ export async function claimFactoryExecution(
             JSON.stringify(row.accepted_commands),
             row.purpose ?? "work_item",
             row.verification_manifest == null ? null : JSON.stringify(row.verification_manifest),
+            retainedWorkspace === null ? null : JSON.stringify(retainedWorkspace),
           ],
         );
         const gate = gates.rows[0];

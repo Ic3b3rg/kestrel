@@ -59,6 +59,10 @@ repository.
   technical interruption, without a product-answer form.
 - Preserve all historical attempts and failed evidence. Prove success with a new persisted execution
   and exact-revision results, never a database status edit.
+- A source interruption may retry after the server proves that the stopped workspace matches its
+  retained checkpoint. A text answer cannot provide that proof. Preserve the exact inspection
+  receipt with gate resolution; implementation and verification recheck the revision before
+  proceeding.
 
 ## Acceptance
 

@@ -1,4 +1,10 @@
-import { readLocalSourceConfig } from "@kestrel/local-source";
+import {
+  readLocalSourceConfig,
+  openFeatureWorkspace,
+  assertFeatureWorkspaceSnapshot,
+  FeatureWorkspaceError,
+  LocalSourceError,
+} from "@kestrel/local-source";
 import { readIssueStartContext } from "../factory-planning-source.js";
 import { renderFeaturePlanArtifacts } from "../factory-plan-artifacts.js";
 import type { FastifyInstance } from "fastify";
@@ -20,6 +26,7 @@ import {
   readFactoryExecutionRun,
   readFactoryGate,
   resolveFactoryGate,
+  FactoryError,
   type DatabasePool,
 } from "@kestrel/database";
 import { factoryError } from "./factory-planning.js";
@@ -117,6 +124,20 @@ export function registerFactoryExecutionRoutes(app: FastifyInstance, pool: Datab
           gateId,
           actorId,
           ResolveFactoryGateCommandSchema.parse(request.body),
+          async (workspace) => {
+            const config = await readLocalSourceConfig();
+            try {
+              const retained = await openFeatureWorkspace(config, workspace);
+              await assertFeatureWorkspaceSnapshot(retained, workspace);
+            } catch (error) {
+              if (error instanceof FeatureWorkspaceError || error instanceof LocalSourceError)
+                throw new FactoryError(
+                  "conflict",
+                  "The workspace does not match its saved revision. Restore the retained checkpoint before retrying.",
+                );
+              throw error;
+            }
+          },
         );
       } catch (error) {
         const failure = factoryError(request, error);

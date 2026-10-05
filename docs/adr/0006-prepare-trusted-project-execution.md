@@ -76,6 +76,14 @@ Routine technical interruptions have an execution status and a bounded repair or
 `input_required` represents a product decision and exposes an answer form. Preserve earlier failures
 and never promote an experimental runner result into the real application's completion state.
 
+A workspace interruption keeps its source fence. Once its recorded revision has been restored, an
+installation-owned inspection may confirm the exact saved workspace under the Feature lock. Gate
+resolution records that source-bound revision receipt atomically, without accepting a proof field
+from the client. Pending writers, stale approval, changed source identity and failed inspection
+still block a retry. The Sandbox checks the same revision again before execution; the receipt does
+not authorize new source or certify code. Uncheckpointed changes from the interrupted diagnostic
+attempt were archived before restoring its two changed files to the existing checkpoint.
+
 Alternatives rejected for this slice: host Docker socket access, project commands in the Operator
 checkout, a universal environment/plugin framework, keeping one mutable implementation process alive
 through controller verification, and deleting all resource limits. Flutter, Android emulation,
