@@ -63,7 +63,7 @@ it.skipIf(image === undefined)(
         command: [
           "node",
           "-e",
-          `const {execFileSync}=require('node:child_process'); const fs=require('node:fs'); console.log(JSON.stringify({docker:JSON.parse(execFileSync('docker',['info','--format','{{json .}}'],{encoding:'utf8'})).ServerVersion,heap:require('node:v8').getHeapStatistics().heap_size_limit,cpus:require('node:os').availableParallelism(),memory:fs.readFileSync('/sys/fs/cgroup/memory.max','utf8').trim(),pids:fs.readFileSync('/sys/fs/cgroup/pids.max','utf8').trim(),chromium:fs.readdirSync('/opt/playwright').some(x=>x.startsWith('chromium-'))}));`,
+          `const {execFileSync}=require('node:child_process'); const fs=require('node:fs'); const temp=fs.mkdtempSync(require('node:path').join(require('node:os').tmpdir(),'git-fixture-')); const fixture=require('node:path').join(temp,'git'); let tempExecutable; try { fs.writeFileSync(fixture,${JSON.stringify("#!/bin/sh\necho fixture-ready\n")},{mode:0o700}); tempExecutable=execFileSync(fixture,{encoding:'utf8'}).trim()==='fixture-ready'; } finally {fs.rmSync(temp,{recursive:true,force:true});} console.log(JSON.stringify({tempExecutable,docker:JSON.parse(execFileSync('docker',['info','--format','{{json .}}'],{encoding:'utf8'})).ServerVersion,heap:require('node:v8').getHeapStatistics().heap_size_limit,cpus:require('node:os').availableParallelism(),memory:fs.readFileSync('/sys/fs/cgroup/memory.max','utf8').trim(),pids:fs.readFileSync('/sys/fs/cgroup/pids.max','utf8').trim(),chromium:fs.readdirSync('/opt/playwright').some(x=>x.startsWith('chromium-'))}));`,
         ],
       });
       expect(result.exitCode, result.stderr).toBe(0);
@@ -75,6 +75,7 @@ it.skipIf(image === undefined)(
           memory: z.string(),
           pids: z.string(),
           chromium: z.boolean(),
+          tempExecutable: z.boolean(),
         })
         .parse(JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "{}"));
       expect(facts).toMatchObject({
@@ -82,6 +83,7 @@ it.skipIf(image === undefined)(
         memory: String(5.5 * 1024 ** 3),
         pids: "512",
         chromium: true,
+        tempExecutable: true,
       });
       expect(facts.heap).toBeGreaterThan(1.5 * 1024 ** 3);
       expect(facts.docker).toMatch(/^\d+\./u);

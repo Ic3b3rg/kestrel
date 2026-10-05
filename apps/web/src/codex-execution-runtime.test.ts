@@ -121,6 +121,21 @@ it("runs trusted Docker verification inside one owned resource boundary without 
   expect(create?.join(" ")).not.toContain("source=/var/run/docker.sock");
 });
 
+it("permits required downloads only inside the authorized prepared environment", async () => {
+  const { cwd, runtime, logPath } = await fixture("happy", { projectEnvironment: "node_docker" });
+  await runtime.runTurn(input(cwd));
+  const messages = await protocolMessages(logPath);
+  expect(messages.find((message) => message.method === "thread/start")?.params).toMatchObject({
+    sandbox: "read-only",
+  });
+  expect(messages.find((message) => message.method === "turn/start")?.params).toMatchObject({
+    sandboxPolicy: { type: "externalSandbox", networkAccess: "enabled" },
+  });
+  expect(
+    messages.find((message) => message.method === "thread/start")?.params.developerInstructions,
+  ).toContain("package downloads and Docker image pulls");
+});
+
 it("gives a verification command its full deadline after slow environment preparation", async () => {
   const { cwd, runtime } = await fixture("slow_preparation", { projectEnvironment: "node_docker" });
   const result = await runtime.runVerification({

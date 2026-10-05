@@ -661,7 +661,7 @@ class ExecutionContainer {
     const temporaryTmpfsBytes = remainingTmpfsBytes - homeTmpfsBytes;
     if (homeTmpfsBytes < 1 || temporaryTmpfsBytes < 1)
       throw new CodexExecutionError("invalid_response");
-    const temporaryTmpfs = `rw,nosuid,nodev,size=${String(temporaryTmpfsBytes)},mode=1777`;
+    const temporaryTmpfs = `rw,nosuid,nodev,${preparedProject ? "exec," : ""}size=${String(temporaryTmpfsBytes)},mode=1777`;
     const homeTmpfs = `rw,nosuid,nodev,size=${String(homeTmpfsBytes)},mode=1777`;
     this.#reserved = true;
     await withCancellation(
@@ -1395,7 +1395,9 @@ class ExecutionTurn {
         },
         developerInstructions:
           this.#options.developerInstructions ??
-          "Implement only the approved scope in the selected remote workspace. That environment is contained externally. Use only the remote shell to work or wait for its commands; do not call host tools such as clock.sleep. Do not access external services, privileges, or Git metadata writes. Ask when requirements or authorization must change.",
+          (this.#options.projectEnvironment === "node_docker"
+            ? "Implement only the approved scope in the selected remote workspace. The installation authorized package downloads and Docker image pulls needed for this Project's development and approved checks inside the externally contained environment. Run dependency installation, builds and integrated checks sequentially within the selected memory, CPU and process limits. Use only the remote shell to work or wait for commands; do not call host tools such as clock.sleep. Do not access unrelated external services, credentials, privileges or Git metadata writes. Resolve routine technical failures from the available requirements, code and command output; ask only when product requirements or authorization must change."
+            : "Implement only the approved scope in the selected remote workspace. That environment is contained externally. Use only the remote shell to work or wait for its commands; do not call host tools such as clock.sleep. Do not access external services, privileges, or Git metadata writes. Ask when requirements or authorization must change."),
       })
       .then(record);
     const sandbox = record(thread.sandbox);
@@ -1423,7 +1425,11 @@ class ExecutionTurn {
         input: [{ type: "text", text: this.#input.prompt }],
         approvalPolicy: "never",
         approvalsReviewer: "user",
-        sandboxPolicy: { type: "externalSandbox", networkAccess: "restricted" },
+        sandboxPolicy: {
+          type: "externalSandbox",
+          networkAccess:
+            this.#options.projectEnvironment === "node_docker" ? "enabled" : "restricted",
+        },
         environments: ENVIRONMENTS,
         ...(this.#input.outputSchema === undefined
           ? {}

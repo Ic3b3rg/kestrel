@@ -24,6 +24,12 @@ time and teardown grace. There is no aggregate implementation deadline.
 host supervisor environment. Repository content and agent output cannot grant that capability. An
 empty allowlist retains the existing unprivileged, read-only-root, network-isolated executor.
 
+The prepared environment permits the package downloads and Docker image pulls needed by approved
+Project commands. Its agent instructions and remote sandbox network declaration reflect that
+installation authorization; the host session remains read-only. Its `/tmp` mount permits executable
+test fixtures, while retaining `nosuid` and `nodev`. The default executor keeps its restricted
+network and temporary mount policy.
+
 The trusted environment uses a privileged outer container with a private cgroup namespace and a
 private inner Docker daemon. Its daemon state is in the outer writable layer; it mounts neither the
 host daemon socket nor host devices explicitly and publishes no outer ports. The task runs as the
