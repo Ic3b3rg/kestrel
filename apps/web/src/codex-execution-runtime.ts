@@ -98,6 +98,7 @@ export interface CodexVerificationResult {
   stdoutTruncated: boolean;
   stderrTruncated: boolean;
   durationMs: number;
+  timedOut?: boolean;
 }
 export interface CodexExecutionRuntime {
   runTurn(input: CodexExecutionTurnInput): Promise<CodexExecutionTurnResult>;
@@ -1599,10 +1600,11 @@ export function createCodexExecutionRuntime(
             );
             const started = performance.now();
             const result = await container.verify(signal);
-            if (prepared && (result.exitCode === 124 || result.exitCode === 137))
-              throw new CodexExecutionError("timeout");
             return {
               ...result,
+              ...(prepared && (result.exitCode === 124 || result.exitCode === 137)
+                ? { timedOut: true }
+                : {}),
               processId: input.processId,
               durationMs: Math.round(performance.now() - started),
             };

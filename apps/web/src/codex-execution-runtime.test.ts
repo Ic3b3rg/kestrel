@@ -134,6 +134,24 @@ it("gives a verification command its full deadline after slow environment prepar
   expect(result.exitCode).toBe(0);
 });
 
+it("retains partial command output when a prepared verification times out", async () => {
+  const { cwd, runtime } = await fixture("prepared_timeout", { projectEnvironment: "node_docker" });
+  const result = await runtime.runVerification({
+    ...input(cwd),
+    workspaceCwd: cwd,
+    cwd: ".",
+    command: ["node", "--test"],
+    processId: "prepared-timeout-output",
+    timeoutMs: 1000,
+  });
+  expect(result).toMatchObject({
+    exitCode: 124,
+    timedOut: true,
+    stdout: "verified 🪶\n",
+    stderr: "check details\n",
+  });
+});
+
 it("emits public reasoning summaries and bounded command results", async () => {
   const { cwd, runtime } = await fixture("activity");
   const turn: CodexExecutionTurnInput = input(cwd);

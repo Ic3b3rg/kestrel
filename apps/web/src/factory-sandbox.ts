@@ -512,7 +512,7 @@ export function createFactorySandbox(options: FactorySandboxOptions) {
           checkFailure = factoryExecutionFailure(error, signal, true);
         }
         const outcome =
-          checkFailure?.code === "timeout"
+          checkFailure?.code === "timeout" || checked?.timedOut === true
             ? "timeout"
             : checkFailure?.code === "cancelled" || checkFailure?.code === "interrupted"
               ? "cancelled"

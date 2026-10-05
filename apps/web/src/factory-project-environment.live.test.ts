@@ -100,7 +100,7 @@ it.skipIf(image === undefined)(
           onStopped: () => Promise.resolve(),
           command: ["node", "-e", "setTimeout(()=>{},2000)"],
         }),
-      ).rejects.toMatchObject({ code: "timeout" });
+      ).resolves.toMatchObject({ exitCode: 124, timedOut: true });
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
