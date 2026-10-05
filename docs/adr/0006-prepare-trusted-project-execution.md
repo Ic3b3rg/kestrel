@@ -38,6 +38,23 @@ boundary than the default executor: this route is for trusted code on a dedicate
 not hostile or multi-tenant workloads. It is not a promise that privileged code cannot escape its
 resource boundary. That limitation is part of its installation authorization.
 
+The private daemon explicitly uses the classic `vfs` storage driver. A real nested build reproduced
+the default containerd snapshotter's overlay-on-overlay mount failure; a FUSE trial mounted layers
+but failed to execute their binaries on this Docker VM. The same network-free build and run passed
+with VFS. VFS copies complete layers and therefore trades storage and I/O for compatibility; its
+cost must be measured on the representative Project. Docker state stays inside the disposable outer
+container. Separate daemon-state volumes, used by Dev Containers to avoid overlay backing storage,
+would require additional durable custody and cleanup and are outside this slice.
+
+Preparation builds and runs an installation-owned scratch image using the installed static Docker
+CLI, without network access, before implementation or verification. Daemon readiness alone is not a
+usable-environment certificate. The temporary context and successful probe image are removed in
+`finally`; remaining daemon cache is removed with the owned outer container.
+
+Sources: [Docker storage drivers](https://docs.docker.com/engine/storage/drivers/vfs-driver/),
+[daemon feature configuration](https://docs.docker.com/reference/cli/dockerd/), and
+[Dev Containers daemon-state storage](https://github.com/devcontainers/features/blob/main/src/docker-in-docker/NOTES.md).
+
 The existing durable outer container ledger owns creation, exact identity and stop witnesses.
 Stopping and removing that outer container stops its private daemon and inner workloads together. No
 persistent inner daemon or shared writable Docker volume is added. A prerequisite probe consumes one

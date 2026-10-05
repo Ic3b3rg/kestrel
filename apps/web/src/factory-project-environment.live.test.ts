@@ -88,6 +88,22 @@ it.skipIf(image === undefined)(
       expect(facts.heap).toBeGreaterThan(1.5 * 1024 ** 3);
       expect(facts.docker).toMatch(/^\d+\./u);
       expect(events).toEqual(["reserved", "identified", "stopped"]);
+      const nestedDocker = await runtime.runVerification({
+        workspaceCwd: cwd,
+        cwd: ".",
+        processId: `prepared-docker:${String(Date.now())}`,
+        timeoutMs: 60_000,
+        beforeContainerCreate: () => Promise.resolve(),
+        onContainer: () => Promise.resolve(),
+        onStopped: () => Promise.resolve(),
+        command: [
+          "node",
+          "-e",
+          `const fs=require('node:fs'); const {execFileSync}=require('node:child_process'); const context=fs.mkdtempSync('/tmp/docker-workload-'); const tag='kestrel-live-workload'; let built=false; try { fs.copyFileSync('/usr/local/bin/docker',context+'/docker'); fs.writeFileSync(context+'/Dockerfile',${JSON.stringify('FROM scratch\nCOPY docker /docker\nRUN ["/docker", "--version"]\nENTRYPOINT ["/docker", "--version"]\n')}); execFileSync('docker',['build','--network=none','-t',tag,context],{stdio:'inherit'}); built=true; const output=execFileSync('docker',['run','--rm','--network=none',tag],{encoding:'utf8'}); if(!output.startsWith('Docker version '))throw new Error(output); console.log('Nested Docker workload ready'); } finally { if(built)execFileSync('docker',['image','rm','--force',tag],{stdio:'inherit'}); fs.rmSync(context,{recursive:true,force:true}); }`,
+        ],
+      });
+      expect(nestedDocker.exitCode, nestedDocker.stderr).toBe(0);
+      expect(nestedDocker.stdout).toContain("Nested Docker workload ready");
       expect(await readFile(join(cwd, "node_modules/.kestrel-environment-v1"), "utf8")).toMatch(
         /^[a-f0-9]{64}$/u,
       );

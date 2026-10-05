@@ -131,9 +131,10 @@ it("permits required downloads only inside the authorized prepared environment",
   expect(messages.find((message) => message.method === "turn/start")?.params).toMatchObject({
     sandboxPolicy: { type: "externalSandbox", networkAccess: "enabled" },
   });
-  expect(
-    messages.find((message) => message.method === "thread/start")?.params.developerInstructions,
-  ).toContain("package downloads and Docker image pulls");
+  expect(messages.find((message) => message.method === "thread/start")?.params).toHaveProperty(
+    "developerInstructions",
+    expect.stringContaining("package downloads and Docker image pulls"),
+  );
 });
 
 it("gives a verification command its full deadline after slow environment preparation", async () => {

@@ -6,6 +6,7 @@ execution_gid=${KESTREL_EXECUTION_USER#*:}
 mkdir -p /home/codex /run/kestrel-docker /var/lib/docker
 chown "$execution_uid:$execution_gid" /home/codex
 dockerd --host unix:///run/kestrel-docker.sock --data-root /var/lib/docker \
+  --feature=containerd-snapshotter=false --storage-driver=vfs \
   --exec-root /run/kestrel-docker > /var/log/kestrel-docker.log 2>&1 &
 daemon_pid=$!
 cleanup() {

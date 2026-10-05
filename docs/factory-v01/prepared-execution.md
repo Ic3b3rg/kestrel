@@ -7,8 +7,9 @@ asking the Operator to resolve routine technical failures. Issue: conversation-a
 new tracker issue. The existing documentation-capability issue is the integrated acceptance case.
 Branch: `fix/factory-prepared-execution` in the dedicated prepared-execution worktree. PR:
 [#321](https://github.com/Ic3b3rg/kestrel/pull/321), draft pending integrated acceptance. Next gate:
-HTTP acceptance and the measured persisted task. Verification tier: contained runtime, controller,
-board and one real persisted task. Runtime owner: the canonical Kestrel runtime supervisor.
+the measured persisted task; HTTP and regression acceptance passed. Verification tier: contained
+runtime, controller, board and one real persisted task. Runtime owner: the canonical Kestrel runtime
+supervisor.
 
 ## Triage
 
